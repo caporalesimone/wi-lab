@@ -1,0 +1,32 @@
+[Unit]
+Description=Wi-Lab WiFi Access Point Manager
+Documentation=https://github.com/caporalesimone/wi-lab
+After=wilab-namespace.service
+Requires=wilab-namespace.service
+PartOf=wilab-namespace.service
+
+[Service]
+Type=simple
+WorkingDirectory=WILAB_DIR
+
+# Start Wi-Lab using Python venv in the wilab namespace
+ExecStart=/usr/bin/ip netns exec wilab VENV_PATH/bin/python WILAB_DIR/main.py
+
+# Restart policy
+Restart=always
+RestartSec=10s
+
+# Timeout for start/stop operations
+TimeoutStartSec=60s
+TimeoutStopSec=30s
+
+# Environment
+Environment="CONFIG_PATH=WILAB_DIR/config.yaml"
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wilab
+
+[Install]
+WantedBy=multi-user.target

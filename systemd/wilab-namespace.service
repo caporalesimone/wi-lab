@@ -1,0 +1,27 @@
+[Unit]
+Description=Wi-Lab Network Namespace
+Documentation=https://github.com/your-org/wi-lab
+After=network-online.target
+Wants=network-online.target
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Setup namespace and move WiFi interfaces
+ExecStart=/home/simone/wi-lab/scripts/setup-namespace.sh
+
+# Cleanup namespace and restore WiFi interfaces
+ExecStop=/home/simone/wi-lab/scripts/teardown-namespace.sh
+
+# Restart on failure
+Restart=on-failure
+RestartSec=5s
+
+# Timeout for start/stop operations
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target
