@@ -31,6 +31,11 @@ class AppConfig(BaseModel):
     dns_server: str = "192.168.10.21"
     internet_enabled_by_default: bool = True
     networks: List[NetworkEntry]
+    cors_origins: Optional[List[str]] = Field(
+        default=None,
+        description="CORS allowed origins. If None or empty, CORS is disabled (secure for production). "
+                    "For development, add frontend URLs like ['http://localhost:4200', 'http://192.168.1.100:4200']"
+    )
 
     @field_validator('upstream_interface')
     @classmethod

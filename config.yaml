@@ -25,6 +25,16 @@ auth_token: "secret-token-12345"
 # Swagger UI docs at: http://localhost:8080/docs
 api_port: 8080
 
+# CORS allowed origins (for frontend development)
+# If the field is not specified or empty (all entries are commented),
+# CORS is disabled (secure for production).
+# For development with Angular frontend, uncomment and configure:
+cors_origins:
+  # - "http://localhost:4200"           # Angular dev server (local)
+  # - "http://localhost:80"             # Production frontend (if served separately)
+#
+# SECURITY: Only add trusted origins! Leaving this commented disables CORS (recommended for production)
+
 # ==============================================================================
 # NETWORK TIMEOUTS
 # ==============================================================================
