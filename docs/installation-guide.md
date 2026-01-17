@@ -182,13 +182,13 @@ Restart the service for changes to take effect:
 
 ```bash
 # Reload config and restart
-sudo systemctl restart wilab.service
+sudo systemctl restart wi-lab.service
 
 # Check status
-sudo systemctl status wilab.service
+sudo systemctl status wi-lab.service
 
 # View logs
-sudo journalctl -u wilab.service -n 20
+sudo journalctl -u wi-lab.service -n 20
 ```
 
 ---
@@ -213,14 +213,14 @@ cat config.yaml | head -20
 ls -la /opt/wilab-venv/bin/python
 
 # Check 5: Service enabled and running
-sudo systemctl is-enabled wilab.service
-sudo systemctl is-active wilab.service
+sudo systemctl is-enabled wi-lab.service
+sudo systemctl is-active wi-lab.service
 
 # Check 6: API responding
 curl -s http://localhost:8080/api/v1/health | jq '.'
 
 # Check 7: Service logs clean
-sudo journalctl -u wilab.service --since "5 minutes ago" | tail -20
+sudo journalctl -u wi-lab.service --since "5 minutes ago" | tail -20
 ```
 
 All checks should pass ✅ before proceeding to API testing.
@@ -261,7 +261,7 @@ After successful installation:
 1. **Access the API:** Open `http://localhost:8080/docs` in your browser
 2. **Create your first WiFi network** using the API
 3. **Connect a client device** to the WiFi network
-4. **Monitor logs** with `sudo journalctl -u wilab.service -f`
+4. **Monitor logs** with `sudo journalctl -u wi-lab.service -f`
 
 For troubleshooting, see [troubleshooting.md](troubleshooting.md).
 

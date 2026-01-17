@@ -6,10 +6,10 @@
 
 ```bash
 # Is Wi-Lab running?
-sudo systemctl status wilab.service
+sudo systemctl status wi-lab.service
 
 # Is it enabled for autostart?
-sudo systemctl is-enabled wilab.service
+sudo systemctl is-enabled wi-lab.service
 # Output: enabled or disabled
 
 # Is API responding?
@@ -21,19 +21,19 @@ curl http://localhost:8080/api/v1/health
 
 ```bash
 # Real-time logs (follow mode)
-sudo journalctl -u wilab.service -f
+sudo journalctl -u wi-lab.service -f
 
 # Last 100 lines
-sudo journalctl -u wilab.service -n 100
+sudo journalctl -u wi-lab.service -n 100
 
 # Since last boot
-sudo journalctl -u wilab.service -b
+sudo journalctl -u wi-lab.service -b
 
 # Since 1 hour ago
-sudo journalctl -u wilab.service --since "1 hour ago"
+sudo journalctl -u wi-lab.service --since "1 hour ago"
 
 # Errors only
-sudo journalctl -u wilab.service | grep -E "ERROR|CRITICAL|Traceback"
+sudo journalctl -u wi-lab.service | grep -E "ERROR|CRITICAL|Traceback"
 ```
 
 ---
@@ -44,13 +44,13 @@ sudo journalctl -u wilab.service | grep -E "ERROR|CRITICAL|Traceback"
 
 ```bash
 # Start Wi-Lab
-sudo systemctl start wilab.service
+sudo systemctl start wi-lab.service
 
 # Stop Wi-Lab
-sudo systemctl stop wilab.service
+sudo systemctl stop wi-lab.service
 
 # Restart Wi-Lab (stop + start)
-sudo systemctl restart wilab.service
+sudo systemctl restart wi-lab.service
 
 # Reload configuration (if systemd file changed)
 sudo systemctl daemon-reload
@@ -60,13 +60,13 @@ sudo systemctl daemon-reload
 
 ```bash
 # Enable autostart on boot
-sudo systemctl enable wilab.service
+sudo systemctl enable wi-lab.service
 
 # Disable autostart
-sudo systemctl disable wilab.service
+sudo systemctl disable wi-lab.service
 
 # Check autostart status
-sudo systemctl is-enabled wilab.service
+sudo systemctl is-enabled wi-lab.service
 ```
 
 ---
@@ -82,7 +82,7 @@ sudo systemctl is-enabled wilab.service
 **Diagnosis:**
 ```bash
 # Check logs for errors
-sudo journalctl -u wilab.service -n 50 | grep -i "error"
+sudo journalctl -u wi-lab.service -n 50 | grep -i "error"
 
 # Check Python syntax errors
 /opt/wilab-venv/bin/python /home/simone/wi-lab/main.py
@@ -106,10 +106,10 @@ nano /home/simone/wi-lab/config.yaml
 python3 -c "from wilab.config import load_config; load_config('config.yaml')"
 
 # Restart service
-sudo systemctl restart wilab.service
+sudo systemctl restart wi-lab.service
 
 # Check logs
-sudo journalctl -u wilab.service -f
+sudo journalctl -u wi-lab.service -f
 ```
 
 ### Issue 2: API Responds But Cannot Create WiFi Network
@@ -122,7 +122,7 @@ sudo journalctl -u wilab.service -f
 **Diagnosis:**
 ```bash
 # Check logs for detailed error
-sudo journalctl -u wilab.service -f
+sudo journalctl -u wi-lab.service -f
 
 # Verify WiFi interface exists
 iw dev
@@ -146,7 +146,7 @@ iw dev
 # Update config.yaml with exact name
 
 # Restart service
-sudo systemctl restart wilab.service
+sudo systemctl restart wi-lab.service
 
 # Try creating network again via API
 curl -X POST http://localhost:8080/api/v1/interface/wlx782051245264/network \
@@ -194,7 +194,7 @@ sudo iptables -L FORWARD -n -v | head -20
 **Resolution:**
 ```bash
 # Verify logs
-sudo journalctl -u wilab.service -f
+sudo journalctl -u wi-lab.service -f
 
 # If subnet conflict suspected:
 # Check host subnet
@@ -204,7 +204,7 @@ ip addr show | grep "inet "
 grep dhcp_base_network config.yaml
 
 # If conflict: update config, restart service
-sudo systemctl restart wilab.service
+sudo systemctl restart wi-lab.service
 ```
 
 ### Issue 4: SSH Connection Lost After Network Creation
@@ -222,14 +222,14 @@ sudo systemctl restart wilab.service
 ```bash
 # At console:
 # Stop service
-sudo systemctl stop wilab.service
+sudo systemctl stop wi-lab.service
 
 # Fix config
 nano /home/simone/wi-lab/config.yaml
 # Change dhcp_base_network to different subnet
 
 # Restart
-sudo systemctl restart wilab.service
+sudo systemctl restart wi-lab.service
 ```
 
 **Option B: Reboot**
@@ -344,7 +344,7 @@ echo ""
 
 # 1. Service status
 echo "1. Service Status:"
-sudo systemctl status wilab.service | grep "Active:"
+sudo systemctl status wi-lab.service | grep "Active:"
 
 # 2. API health
 echo ""
@@ -370,7 +370,7 @@ sudo ss -tlnp | grep :8080 | awk '{print "✓", $4}'
 # 6. Recent errors
 echo ""
 echo "6. Recent Errors:"
-sudo journalctl -u wilab.service -n 20 | grep -i "error" | wc -l
+sudo journalctl -u wi-lab.service -n 20 | grep -i "error" | wc -l
 
 echo ""
 echo "=== Check Complete ==="
@@ -391,14 +391,14 @@ See [swagger.md](swagger.md) for complete API testing guide with examples.
 PYTHONVERBOSE=2 /opt/wilab-venv/bin/python /home/simone/wi-lab/main.py
 
 # View with timestamps
-sudo journalctl -u wilab.service --timestamps=precise -f
+sudo journalctl -u wi-lab.service --timestamps=precise -f
 ```
 
 ### Manual Service Start (For Debugging)
 
 ```bash
 # Stop background service
-sudo systemctl stop wilab.service
+sudo systemctl stop wi-lab.service
 
 # Run in foreground (Ctrl+C to stop)
 CONFIG_PATH=/home/simone/wi-lab/config.yaml /opt/wilab-venv/bin/python /home/simone/wi-lab/main.py
@@ -410,7 +410,7 @@ CONFIG_PATH=/home/simone/wi-lab/config.yaml /opt/wilab-venv/bin/python /home/sim
 
 ## Getting Help
 
-1. **Check logs:** `sudo journalctl -u wilab.service -n 50`
+1. **Check logs:** `sudo journalctl -u wi-lab.service -n 50`
 2. **Verify configuration:** See [installation-guide.md](installation-guide.md)
 3. **Network issues:** See [networking.md](networking.md)
 4. **API testing:** See [swagger.md](swagger.md)
