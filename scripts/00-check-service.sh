@@ -3,7 +3,7 @@
 
 set -e
 
-SERVICE_NAME="${SERVICE_NAME:-wilab.service}"
+SERVICE_NAME="${SERVICE_NAME:-wi-lab.service}"
 
 echo "=== Wi-Lab Service Check (${SERVICE_NAME}) ==="
 

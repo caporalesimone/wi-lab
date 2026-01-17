@@ -151,7 +151,7 @@ wi-lab/
 │   ├── test_api.py          # API endpoint tests
 │   └── test_wifi.py         # WiFi operations tests
 ├── systemd/
-│   └── wilab.service        # Systemd service file
+│   └── wi-lab.service        # Systemd service file
 └── main.py                  # Application entry point (minimal, just startup)
 ```
 
@@ -350,10 +350,10 @@ System tools (Ubuntu packages):
 ## Production Deployment
 Wi-Lab runs as a systemd service with Python virtual environment:
 - **Virtual env**: `/opt/wilab-venv` (created by setup.sh)
-- **Service**: `wilab.service` (systemd unit file)
+- **Service**: `wi-lab.service` (systemd unit file)
 - **Config**: `config.yaml` in installation directory
 - **Autostart**: Enabled via systemd
-- **Logging**: Via journald (`journalctl -u wilab.service`)
+- **Logging**: Via journald (`journalctl -u wi-lab.service`)
 
 Installation:
 ```bash

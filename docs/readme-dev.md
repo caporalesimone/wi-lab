@@ -280,10 +280,10 @@ pytest tests/test_file.py -v -s
 
 ```bash
 # If running via systemd
-sudo journalctl -u wilab.service -f
+sudo journalctl -u wi-lab.service -f
 
 # View recent errors
-sudo journalctl -u wilab.service | grep ERROR
+sudo journalctl -u wi-lab.service | grep ERROR
 ```
 
 ---
