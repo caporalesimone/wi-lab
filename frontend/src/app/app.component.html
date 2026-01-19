@@ -1,0 +1,30 @@
+<div class="app-container">
+  <mat-toolbar color="primary">
+    <mat-icon>wifi</mat-icon>
+    <span class="toolbar-title">{{ title }}</span>
+  </mat-toolbar>
+
+  <div class="content">
+    <div *ngIf="loading" class="loading-container">
+      <mat-spinner></mat-spinner>
+      <p>Loading interfaces...</p>
+    </div>
+
+    <div *ngIf="error" class="error-container">
+      <mat-icon color="warn">error</mat-icon>
+      <p>{{ error }}</p>
+      <button mat-raised-button color="primary" (click)="loadInterfaces()">
+        <mat-icon>refresh</mat-icon>
+        Retry
+      </button>
+    </div>
+
+    <div *ngIf="!loading && !error" class="networks-container">
+      <app-network-card
+        *ngFor="let iface of interfaces"
+        [netId]="iface.net_id"
+        [interface]="iface.interface">
+      </app-network-card>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,86 @@
+<mat-card class="network-card" [class.active]="status?.active">
+  <mat-card-header>
+    <mat-card-title>
+      <mat-icon>{{ status?.active ? 'wifi' : 'wifi_off' }}</mat-icon>
+      {{ netId }}
+    </mat-card-title>
+    <mat-card-subtitle>{{ interface }}</mat-card-subtitle>
+  </mat-card-header>
+
+  <mat-card-content>
+    <div *ngIf="status?.active" class="network-info">
+      <div class="info-row">
+        <span class="label">SSID:</span>
+        <span class="value">{{ status?.ssid }}</span>
+      </div>
+      <div class="info-row" *ngIf="status?.password">
+        <span class="label">Password:</span>
+        <span class="value">{{ status?.password }}</span>
+      </div>
+      <div class="info-row" *ngIf="status?.channel">
+        <span class="label">Channel:</span>
+        <span class="value">{{ status?.channel }}</span>
+      </div>
+      <div class="info-row" *ngIf="status?.band">
+        <span class="label">Band:</span>
+        <span class="value">{{ status?.band }}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Clients:</span>
+        <span class="value">{{ clientsCount }}</span>
+      </div>
+      <div class="status-chips">
+        <mat-chip [class.enabled]="status?.internet_enabled">
+          <mat-icon>{{ status?.internet_enabled ? 'cloud_done' : 'cloud_off' }}</mat-icon>
+          Internet {{ status?.internet_enabled ? 'Enabled' : 'Disabled' }}
+        </mat-chip>
+      </div>
+    </div>
+    <div *ngIf="!status?.active" class="inactive-message">
+      <mat-icon>wifi_off</mat-icon>
+      <p>No active network</p>
+    </div>
+  </mat-card-content>
+
+  <mat-card-actions>
+    <div class="actions-container">
+      <div class="button-row">
+        <button
+          mat-raised-button
+          color="primary"
+          (click)="startWiFi()"
+          [disabled]="loading || status?.active">
+          <mat-icon>play_arrow</mat-icon>
+          Start WiFi
+        </button>
+        <button
+          mat-raised-button
+          color="warn"
+          (click)="stopWiFi()"
+          [disabled]="loading || !status?.active">
+          <mat-icon>stop</mat-icon>
+          Stop WiFi
+        </button>
+      </div>
+      <div class="button-row">
+        <button
+          mat-raised-button
+          color="accent"
+          (click)="enableInternet()"
+          [disabled]="loading || !status?.active || status?.internet_enabled">
+          <mat-icon>cloud_done</mat-icon>
+          Enable Internet
+        </button>
+        <button
+          mat-raised-button
+          color="accent"
+          (click)="disableInternet()"
+          [disabled]="loading || !status?.active || !status?.internet_enabled">
+          <mat-icon>cloud_off</mat-icon>
+          Disable Internet
+        </button>
+      </div>
+    </div>
+    <mat-spinner *ngIf="loading" diameter="24" class="loading-spinner"></mat-spinner>
+  </mat-card-actions>
+</mat-card>
