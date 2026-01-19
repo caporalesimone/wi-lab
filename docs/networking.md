@@ -154,19 +154,19 @@ ps aux | grep "[d]nsmasq"
 
 ```bash
 # Real-time logs
-sudo journalctl -u wilab.service -f
+sudo journalctl -u wi-lab.service -f
 
 # Last 50 lines
-sudo journalctl -u wilab.service -n 50
+sudo journalctl -u wi-lab.service -n 50
 
 # Since last boot
-sudo journalctl -u wilab.service -b
+sudo journalctl -u wi-lab.service -b
 
 # Errors only
-sudo journalctl -u wilab.service | grep -i "error\|critical"
+sudo journalctl -u wi-lab.service | grep -i "error\|critical"
 
 # Last hour
-sudo journalctl -u wilab.service --since "1 hour ago"
+sudo journalctl -u wi-lab.service --since "1 hour ago"
 ```
 
 ---
@@ -190,9 +190,9 @@ grep "dhcp_base_network:" config.yaml
 
 **Solution:**
 1. Use system console or IPMI access
-2. Stop Wi-Lab: `sudo systemctl stop wilab.service`
+2. Stop Wi-Lab: `sudo systemctl stop wi-lab.service`
 3. Update `config.yaml` with different subnet: `192.168.120.0/24`
-4. Restart: `sudo systemctl restart wilab.service`
+4. Restart: `sudo systemctl restart wi-lab.service`
 
 **Prevention:**
 ```bash
@@ -210,7 +210,7 @@ ip addr show | grep "inet "
 **Diagnosis:**
 ```bash
 # Check if isolation is enabled
-grep -A 5 "isolation_enabled" /etc/systemd/system/wilab.service
+grep -A 5 "isolation_enabled" /etc/systemd/system/wi-lab.service
 
 # View isolation rules
 sudo iptables -L FORWARD -n -v | grep "192.168"
@@ -221,13 +221,13 @@ Isolation is currently **disabled** by default. If you've enabled it and SSH is 
 
 ```bash
 # Temporarily stop Wi-Lab
-sudo systemctl stop wilab.service
+sudo systemctl stop wi-lab.service
 
 # Flush FORWARD rules (WARNING: clears all routing!)
 sudo iptables -F FORWARD
 
 # Restart
-sudo systemctl restart wilab.service
+sudo systemctl restart wi-lab.service
 ```
 
 ### Issue: Slow WiFi Performance
@@ -258,7 +258,7 @@ Specify channel when creating network via API.
 ps aux | grep "[d]nsmasq"
 
 # Check dnsmasq logs
-sudo journalctl -u wilab.service | grep -i "dnsmasq"
+sudo journalctl -u wi-lab.service | grep -i "dnsmasq"
 
 # Check client connections
 curl http://localhost:8080/api/v1/interface/wlx782051245264/clients
@@ -294,7 +294,7 @@ If you lose SSH or network access after Wi-Lab operations:
 **Option 1: Physical Console**
 ```bash
 # At console, stop Wi-Lab
-sudo systemctl stop wilab.service
+sudo systemctl stop wi-lab.service
 
 # Verify SSH works
 ssh user@host
@@ -315,7 +315,7 @@ If you need to manually remove Wi-Lab's network modifications:
 
 ```bash
 # Stop Wi-Lab service
-sudo systemctl stop wilab.service
+sudo systemctl stop wi-lab.service
 
 # Kill any remaining processes
 sudo pkill -f hostapd
@@ -347,7 +347,7 @@ done
 2. **Choose non-conflicting WiFi subnet:** e.g., `192.168.120.0/24`
 3. **Test network creation/deletion:** Verify SSH remains accessible
 4. **Test client connectivity:** Connect device, verify IP assignment
-5. **Monitor logs:** Check for errors: `sudo journalctl -u wilab.service -f`
+5. **Monitor logs:** Check for errors: `sudo journalctl -u wi-lab.service -f`
 
 ### Ongoing Monitoring
 
@@ -359,7 +359,7 @@ watch -n 2 'ps aux | grep -E "[h]ostapd|[d]nsmasq"'
 watch -n 2 'sudo iptables -L FORWARD -n | tail -10'
 
 # Monitor service health
-watch -n 5 'sudo systemctl status wilab.service'
+watch -n 5 'sudo systemctl status wi-lab.service'
 ```
 
 ### Configuration Backup
@@ -373,7 +373,7 @@ sudo iptables-restore < ~/.iptables-backup-pre-wilab.rules
 
 # Backup config and service file
 cp config.yaml config.yaml.backup
-sudo cp /etc/systemd/system/wilab.service /etc/systemd/system/wilab.service.backup
+sudo cp /etc/systemd/system/wi-lab.service /etc/systemd/system/wi-lab.service.backup
 ```
 
 ### Secure Timeout Configuration
