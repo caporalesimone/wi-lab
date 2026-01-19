@@ -108,7 +108,7 @@ class NetworkManager:
         except InterfaceError as e:
             logger.error(f"Interface validation failed: {e}")
             raise ValueError(str(e)) from e
-        
+
         # Determine internet enabled status
         internet_enabled = (
             req.internet_enabled
@@ -150,6 +150,31 @@ class NetworkManager:
             except Exception:
                 pass
             raise ValueError(f"Failed to start AP: {e}") from e
+
+        # Assign gateway IP (.1) to interface AFTER hostapd starts (hostapd resets the interface)
+        # subnet is e.g. "192.168.120.0/24", gateway must be .1
+        from ipaddress import IPv4Network as IPv4Net
+        from ..network.commands import execute_ip, CommandError
+        net = IPv4Net(subnet, strict=False)
+        gateway_ip = str(net.network_address + 1)  # .1 of the subnet
+        try:
+            # Check if IP is already present
+            ip_addr_output = execute_ip(["addr", "show", cfg_net.interface])
+            if gateway_ip not in ip_addr_output:
+                logger.info(f"Assigning gateway IP {gateway_ip}/24 to interface {cfg_net.interface}")
+                execute_ip(["addr", "add", f"{gateway_ip}/24", "dev", cfg_net.interface])
+                logger.info(f"Gateway IP {gateway_ip}/24 assigned to {cfg_net.interface}")
+            else:
+                logger.info(f"Gateway IP {gateway_ip}/24 already present on {cfg_net.interface}")
+        except CommandError as e:
+            logger.error(f"Failed to assign gateway IP: {e}")
+            # Rollback hostapd and DHCP
+            try:
+                self.hostapd_manager.stop(net_id)
+                self.dhcp_server.stop(net_id)
+            except Exception:
+                pass
+            raise ValueError(f"Failed to assign gateway IP: {e}")
 
         # Apply TX power level from request
         tx_power_level = req.tx_power_level
@@ -387,42 +412,74 @@ class NetworkManager:
 
     def list_clients(self, net_id: str) -> List[ClientInfo]:
         """
-        List connected WiFi clients for a network by parsing dnsmasq lease file.
+        List currently connected WiFi clients using real-time data from iw station dump.
+        Optionally enriches with IP from DHCP lease file if available.
         
         Args:
             net_id: Network identifier
             
         Returns:
-            List of ClientInfo objects (IP and MAC address)
+            List of ClientInfo objects (MAC and IP address if known)
         """
         clients = []
         
-        # Get DHCP info to find lease file
-        dhcp_info = self.dhcp_server.get_subnet_info(net_id)
-        if not dhcp_info:
+        # Get interface for this network
+        cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
+        if not cfg_net:
             return clients
         
-        lease_file = dhcp_info.get('lease_file')
-        if not lease_file or not os.path.exists(lease_file):
-            return clients
+        interface = cfg_net.interface
         
-        # Parse dnsmasq lease file
-        # Format: <timestamp> <mac> <ip> <hostname> <client-id>
+        # Get currently associated stations using iw (real-time)
         try:
-            with open(lease_file, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    parts = line.split()
-                    if len(parts) >= 3:
-                        # Extract MAC and IP (fields 1 and 2)
-                        mac = parts[1]
-                        ip = parts[2]
-                        clients.append(ClientInfo(mac=mac, ip=ip))
+            station_output = execute_iw(["dev", interface, "station", "dump"])
         except Exception as e:
-            logger.warning(f"Could not read lease file {lease_file}: {e}")
+            logger.warning(f"Could not get station dump for {interface}: {e}")
+            return clients
+
+        # Parse iw station dump output to extract MAC addresses
+        # Format: "Station xx:xx:xx:xx:xx:xx (on wlanX)" followed by stats
+        connected_macs = []
+        for line in station_output.splitlines():
+            line = line.strip()
+            if line.startswith("Station "):
+                parts = line.split()
+                if len(parts) >= 2:
+                    mac = parts[1].lower()
+                    connected_macs.append(mac)
+
+        if not connected_macs:
+            return clients
+
+        # Build MAC -> IP mapping from DHCP lease file (only valid leases)
+        mac_to_ip = {}
+        now = int(time.time())
+        dhcp_info = self.dhcp_server.get_subnet_info(net_id)
+        if dhcp_info:
+            lease_file = dhcp_info.get('lease_file')
+            if lease_file and os.path.exists(lease_file):
+                try:
+                    with open(lease_file, 'r') as f:
+                        for line in f:
+                            parts = line.strip().split()
+                            if len(parts) >= 3:
+                                try:
+                                    lease_expiry = int(parts[0])
+                                except Exception:
+                                    continue
+                                # Only include valid (non-expired) leases
+                                if lease_expiry > now:
+                                    mac = parts[1].lower()
+                                    ip = parts[2]
+                                    mac_to_ip[mac] = ip
+                except Exception as e:
+                    logger.warning(f"Could not read lease file: {e}")
+
+        # Build client list: only include clients with BOTH WiFi association AND valid DHCP lease
+        for mac in connected_macs:
+            ip = mac_to_ip.get(mac)
+            if ip:  # Only count as connected if they have a valid IP lease
+                clients.append(ClientInfo(mac=mac, ip=ip))
         
         return clients
 

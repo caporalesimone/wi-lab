@@ -325,22 +325,22 @@ Wi-Lab runs as a systemd service after installation:
 
 ```bash
 # Start service
-sudo systemctl start wilab.service
+sudo systemctl start wi-lab.service
 
 # Stop service
-sudo systemctl stop wilab.service
+sudo systemctl stop wi-lab.service
 
 # Restart service
-sudo systemctl restart wilab.service
+sudo systemctl restart wi-lab.service
 
 # Check status
-sudo systemctl status wilab.service
+sudo systemctl status wi-lab.service
 
 # View logs (real-time)
-sudo journalctl -u wilab.service -f
+sudo journalctl -u wi-lab.service -f
 
 # View logs (last 50 lines)
-sudo journalctl -u wilab.service -n 50
+sudo journalctl -u wi-lab.service -n 50
 ```
 
 ---
@@ -376,7 +376,7 @@ See [LICENSE](LICENSE) file.
 
 - **GitHub Issues:** Report bugs and feature requests
 - **Documentation:** Check docs/ folder for detailed guides
-- **Logs:** `sudo journalctl -u wilab.service -f`
+- **Logs:** `sudo journalctl -u wi-lab.service -f`
 
 ---
 
