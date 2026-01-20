@@ -92,11 +92,33 @@ export class WilabApiService {
 
   private handleError = (error: HttpErrorResponse) => {
     let errorMessage = 'Unknown error occurred';
-    if (error.error instanceof ErrorEvent) {
+    
+    // Error status 0 typically indicates CORS, network, or connection issues
+    if (error.status === 0) {
+      if (error.error instanceof ErrorEvent) {
+        // Client-side error (network, CORS, etc.)
+        errorMessage = `Connection Error: ${error.error.message}\n\nPossible causes:\n- CORS not configured on backend\n- Network connectivity issue\n- Backend server not running\n\nCheck browser console for details.`;
+      } else {
+        // No response from server
+        errorMessage = `Connection Error: Unable to reach server at ${this.apiUrl}\n\nPossible causes:\n- CORS not configured (add your frontend URL to backend config.yaml cors_origins)\n- Backend server not running\n- Network connectivity issue\n- Firewall blocking the request`;
+      }
+    } else if (error.error instanceof ErrorEvent) {
+      // Client-side error
       errorMessage = `Error: ${error.error.message}`;
     } else {
-      errorMessage = `Error Code: ${error.status}\nMessage: ${error.error?.detail || error.message}`;
+      // Server-side error
+      const detail = error.error?.detail || error.error?.message || error.message;
+      errorMessage = `Error Code: ${error.status}\nMessage: ${detail}`;
     }
+    
+    console.error('API Error:', {
+      status: error.status,
+      statusText: error.statusText,
+      url: error.url,
+      error: error.error,
+      message: error.message
+    });
+    
     return throwError(() => new Error(errorMessage));
   };
 }
