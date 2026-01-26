@@ -209,7 +209,7 @@ echo ""
 # STEP 1: Setup Python Virtual Environment
 ################################################################################
 
-log_info "Step 1/3: Setting up Python virtual environment..."
+log_info "Step 1: Setting up Python virtual environment..."
 
 VENV_PATH="/opt/wilab-venv"
 
@@ -244,7 +244,7 @@ echo ""
 # STEP 2: Configure Systemd Services
 ################################################################################
 
-log_info "Step 2/3: Configuring systemd services..."
+log_info "Step 2: Configuring systemd services..."
 
 # Create temporary file
 WILAB_SERVICE=$(mktemp)
@@ -297,7 +297,7 @@ echo ""
 # STEP 3: Enable Autostart
 ################################################################################
 
-log_info "Step 3/3: Enabling autostart..."
+log_info "Step 3: Enabling autostart..."
 
 # Reload systemd
 log_info "Reloading systemd daemon..."
@@ -308,6 +308,49 @@ log_success "Systemd daemon reloaded"
 log_info "Enabling service..."
 sudo systemctl enable wi-lab.service
 log_success "Service enabled for autostart"
+
+echo ""
+
+################################################################################
+# STEP 4: Build and Deploy Frontend
+################################################################################
+
+log_info "Step 4: Building and deploying frontend..."
+
+FRONTEND_DIR="${WILAB_DIR}/frontend"
+DEPLOY_SCRIPT="${FRONTEND_DIR}/deploy_frontend.sh"
+
+# Check if frontend directory exists
+if [ ! -d "$FRONTEND_DIR" ]; then
+    log_error "Frontend directory not found at $FRONTEND_DIR"
+    exit 1
+fi
+
+# Check if deploy script exists
+if [ ! -f "$DEPLOY_SCRIPT" ]; then
+    log_error "Deploy script not found at $DEPLOY_SCRIPT"
+    exit 1
+fi
+
+# Make sure the script is executable
+chmod +x "$DEPLOY_SCRIPT"
+
+# Run the frontend build script
+log_info "Running frontend build (this may take a few minutes)..."
+cd "$FRONTEND_DIR"
+bash "$DEPLOY_SCRIPT"
+
+# Verify build output exists
+BUILD_OUTPUT="$FRONTEND_DIR/dist/wi-lab-frontend/browser"
+if [ ! -d "$BUILD_OUTPUT" ]; then
+    log_error "Build output not found at $BUILD_OUTPUT"
+    exit 1
+fi
+
+log_success "Frontend built successfully"
+log_info "Frontend files available at: $BUILD_OUTPUT"
+log_info "FastAPI will serve these files from: $BUILD_OUTPUT"
+log_info "Access the frontend at: http://localhost:8080/"
 
 echo ""
 

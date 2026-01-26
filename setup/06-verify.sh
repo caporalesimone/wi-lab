@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/common.sh"
 WILAB_DIR="${WILAB_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 VENV_PATH="${VENV_PATH:-/opt/wilab-venv}"
 
-log_info "Stage 06/06: Verification..."
+log_info "Stage 06: Verification..."
 
 log_info "Service file:"
 if systemctl is-enabled wi-lab.service &>/dev/null; then

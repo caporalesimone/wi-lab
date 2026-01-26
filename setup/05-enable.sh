@@ -4,7 +4,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-log_info "Stage 05/06: Enabling autostart..."
+log_info "Stage 05: Enabling autostart..."
 
 log_info "Reloading systemd daemon..."
 systemctl daemon-reload

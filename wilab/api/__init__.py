@@ -1,16 +1,28 @@
+from contextlib import asynccontextmanager
+from pathlib import Path
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.openapi.utils import get_openapi
+
+from .dependencies import get_config, get_manager
 from .routes import router
 from ..version import __version__
-from .dependencies import get_config, get_manager
-from contextlib import asynccontextmanager
-import logging
-import os
 
 logger = logging.getLogger(__name__)
+
+
+def _candidate_frontend_paths() -> list[Path]:
+    project_root = Path(__file__).resolve().parents[2]
+    return [
+        project_root / "frontend" / "dist" / "wi-lab-frontend" / "browser",  # Docker build output (preferred)
+#        Path("/opt/wilab-frontend"),  # System install location used previously
+#        project_root / "wilab-frontend",  # Local sibling folder
+#        Path.home() / "wi-lab" / "wilab-frontend",  # User home
+#        Path("/root/wi-lab/wilab-frontend"),  # Root home (service as root)
+    ]
 
 
 @asynccontextmanager
@@ -47,104 +59,42 @@ def create_app() -> FastAPI:
 
     # Include API router
     app.include_router(router)
-    
-    # Serve static files (frontend) if directory exists
-    # Try multiple possible locations (in order of preference)
-    possible_paths = [
-        "/opt/wilab-frontend",  # Standard location (recommended)
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "wilab-frontend"),  # Next to project
-        os.path.expanduser("~/wi-lab/wilab-frontend"),  # User's home
-        "/root/wi-lab/wilab-frontend",  # Root's home (if service runs as root)
-    ]
-    
-    frontend_path = None
-    for path in possible_paths:
-        if os.path.exists(path) and os.path.isdir(path):
-            frontend_path = path
-            break
-    
-    if frontend_path:
-        # Serve index.html for root
-        @app.get("/")
-        async def serve_index():
-            index_path = os.path.join(frontend_path, "index.html")
-            if os.path.exists(index_path):
-                return FileResponse(index_path)
-            return {"error": "Frontend index.html not found"}
-        
-        # Serve frontend files and handle SPA routing
-        @app.get("/{full_path:path}")
-        async def serve_frontend(full_path: str):
-            # Don't interfere with API routes, docs, or openapi
-            if (full_path.startswith("api/") or 
-                full_path == "docs" or 
-                full_path.startswith("docs/") or
-                full_path == "openapi.json"):
-                return None
-            
-            # Check if it's a file that exists (e.g., main-xxx.js, styles-xxx.css, favicon.ico)
-            file_path = os.path.join(frontend_path, full_path)
-            if os.path.exists(file_path) and os.path.isfile(file_path):
-                return FileResponse(file_path)
-            
-            # For Angular SPA routes (anything else), serve index.html
-            index_path = os.path.join(frontend_path, "index.html")
-            if os.path.exists(index_path):
-                return FileResponse(index_path)
-            return {"error": "Frontend not found"}
-        
-        logger.info(f"Frontend static files served from {frontend_path}")
-    else:
-        logger.warning(f"Frontend directory not found. Tried: {', '.join(possible_paths)}. Skipping static file serving.")
 
     # Serve static files (frontend) if directory exists
-    # Try multiple possible locations (in order of preference)
-    possible_paths = [
-        "/opt/wilab-frontend",  # Standard location (recommended)
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "wilab-frontend"),  # Next to project
-        os.path.expanduser("~/wi-lab/wilab-frontend"),  # User's home
-        "/root/wi-lab/wilab-frontend",  # Root's home (if service runs as root)
-    ]
-
-    frontend_path = None
-    for path in possible_paths:
-        if os.path.exists(path) and os.path.isdir(path):
-            frontend_path = path
-            break
+    frontend_candidates = _candidate_frontend_paths()
+    frontend_path = next((path for path in frontend_candidates if path.is_dir()), None)
 
     if frontend_path:
-        # Serve index.html for root
-        @app.get("/")
+        @app.get("/", include_in_schema=False)
         async def serve_index():
-            index_path = os.path.join(frontend_path, "index.html")
-            if os.path.exists(index_path):
+            index_path = frontend_path / "index.html"
+            if index_path.is_file():
                 return FileResponse(index_path)
             return {"error": "Frontend index.html not found"}
 
-        # Serve frontend files and handle SPA routing
-        @app.get("/{full_path:path}")
+        @app.get("/{full_path:path}", include_in_schema=False)
         async def serve_frontend(full_path: str):
-            # Don't interfere with API routes, docs, or openapi
-            if (full_path.startswith("api/") or
-                full_path == "docs" or
-                full_path.startswith("docs/") or
-                full_path == "openapi.json"):
+            if (
+                full_path.startswith("api/")
+                or full_path == "docs"
+                or full_path.startswith("docs/")
+                or full_path == "openapi.json"
+            ):
                 return None
 
-            # Check if it's a file that exists (e.g., main-xxx.js, styles-xxx.css, favicon.ico)
-            file_path = os.path.join(frontend_path, full_path)
-            if os.path.exists(file_path) and os.path.isfile(file_path):
+            file_path = frontend_path / full_path
+            if file_path.is_file():
                 return FileResponse(file_path)
 
-            # For Angular SPA routes (anything else), serve index.html
-            index_path = os.path.join(frontend_path, "index.html")
-            if os.path.exists(index_path):
+            index_path = frontend_path / "index.html"
+            if index_path.is_file():
                 return FileResponse(index_path)
             return {"error": "Frontend not found"}
 
         logger.info(f"Frontend static files served from {frontend_path}")
     else:
-        logger.warning(f"Frontend directory not found. Tried: {', '.join(possible_paths)}. Skipping static file serving.")
+        tried = ", ".join(str(path) for path in frontend_candidates)
+        logger.warning(f"Frontend directory not found. Tried: {tried}. Skipping static file serving.")
 
     # Inject examples for OpenAPI/Swagger documentation
     def custom_openapi():

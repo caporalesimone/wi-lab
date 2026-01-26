@@ -10,7 +10,7 @@ VENV_PATH="${VENV_PATH:-/opt/wilab-venv}"
 SERVICE_TEMPLATE="$SCRIPT_DIR/systemd/wi-lab.service.template"
 SERVICE_TARGET="/etc/systemd/system/wi-lab.service"
 
-log_info "Stage 04/06: Configuring systemd service..."
+log_info "Stage 04: Configuring systemd service..."
 
 if [ ! -f "$SERVICE_TEMPLATE" ]; then
     log_error "Service template not found at $SERVICE_TEMPLATE"

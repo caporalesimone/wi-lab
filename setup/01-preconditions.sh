@@ -4,7 +4,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-log_info "Stage 01/06: Preconditions..."
+log_info "Stage 01: Preconditions..."
 
 if [[ $EUID -ne 0 ]]; then
     log_error "This script must be run as root (use: sudo bash setup.sh)"

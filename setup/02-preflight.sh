@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/common.sh"
 WILAB_DIR="${WILAB_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 VENV_PATH="${VENV_PATH:-/opt/wilab-venv}"
 
-log_info "Stage 02/06: Pre-flight checks..."
+log_info "Stage 02: Pre-flight checks..."
 
 declare -a REQUIRED_CMDS=(
     "python3"
