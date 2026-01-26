@@ -1,0 +1,2 @@
+- Execute always tests before doing a commit.
+- Write clear, concise, and descriptive commit messages.
