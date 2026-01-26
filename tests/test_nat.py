@@ -203,10 +203,19 @@ class TestEnableNat:
         
         iptables_calls = []
         
-        # Mock upstream discovery
+        # Mock upstream discovery - distinguish between ip route and iptables -C commands
+        def mock_execute_command(cmd):
+            if isinstance(cmd, list) and len(cmd) > 1:
+                if cmd[1] == "route" or "route" in cmd:
+                    return "default via 10.0.0.1 dev eth1"
+                elif "-C" in cmd:
+                    # Rule check always returns "not found" (exception)
+                    raise Exception("Rule not found")
+            return "default via 10.0.0.1 dev eth1"
+        
         monkeypatch.setattr(
             "wilab.network.nat.execute_command",
-            lambda cmd: "default via 10.0.0.1 dev eth1"
+            mock_execute_command
         )
         monkeypatch.setattr(
             "wilab.network.nat.execute_iptables",
