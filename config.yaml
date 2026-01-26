@@ -26,16 +26,14 @@ auth_token: "secret-token-12345"
 api_port: 8080
 
 # CORS allowed origins (for frontend development)
-
 # If the field is not specified or empty (all entries are commented), 
 # CORS is disabled (secure for production).
 # For development with Angular frontend, uncomment and configure:
 cors_origins:
-  - "http://localhost:4200"           # Angular server - default
+   - "http://localhost:4200"           # Angular server - default
   # - "http://10.206.94.26:4200"        # Angular - Furio PC
   # - "http://localhost:80"               # Production frontend (if served separately)
 # 
-
 # SECURITY: Only add trusted origins! Leaving this commented disables CORS (recommended for production)
 
 # ==============================================================================
@@ -94,7 +92,7 @@ upstream_interface: "auto"
 #   - Use your local gateway: "192.168.10.1"
 #   - Use local DNS server: "192.168.10.21"
 #   - Use public DNS: "8.8.8.8" (not recommended in isolated labs)
-dns_server: "192.168.10.21"
+dns_server: "208.67.222.222"
 
 # Whether to enable Internet access by default for new networks
 # - true: Clients can reach external networks (NAT enabled)
@@ -136,12 +134,17 @@ internet_enabled_by_default: true
 # Actual dBm values depend on WiFi interface capabilities.
 networks:
   - net_id: "ap-01"
-    interface: "wlx782051245264"
+    interface: "wlxbc071dc527d6"
     # subnet: "192.168.120.0/24"  # Optional: uncomment to use custom subnet
 
   - net_id: "ap-02"
-    interface: "wls16"
+    interface: "wlx7820512451b4"
     # subnet: "192.168.121.0/24"  # Optional: uncomment to use custom subnet
+
+  - net_id: "ap-03"
+    interface: "wlx782051245264"
+    # subnet: "192.168.122.0/24"  # Optional: uncomment to use custom subnet
+
 
 # Uncomment additional networks as needed:
 # - net_id: "ap-03"

@@ -32,6 +32,27 @@ else
     exit 1
 fi
 
+# Verify config file exists in repository root
+CONFIG_PATH="$(cd "${SCRIPT_DIR}/.." && pwd)/config.yaml"
+if [ ! -f "${CONFIG_PATH}" ]; then
+    log_error "Missing configuration file: config.yaml. Please rename config.yaml.example to config.yaml and update it with your settings."
+    exit 1
+fi
+
+# Verify Docker is installed
+if ! command -v docker &> /dev/null; then
+    log_error "Docker is not installed. Please install Docker to continue."
+    exit 1
+fi
+log_success "Docker is installed"
+
+# Verify Docker daemon is running
+if ! docker ps &> /dev/null; then
+    log_error "Docker daemon is not running or user does not have permission. Please start Docker and ensure your user is in the 'docker' group."
+    exit 1
+fi
+log_success "Docker daemon is accessible"
+
 log_success "Preconditions satisfied"
 
 echo ""
