@@ -1,0 +1,68 @@
+<h2 mat-dialog-title>Start WiFi Network</h2>
+
+<mat-dialog-content>
+  <form [formGroup]="form" class="network-form">
+    <mat-form-field appearance="outline">
+      <mat-label>SSID</mat-label>
+      <input matInput formControlName="ssid" required>
+      <mat-error *ngIf="form.get('ssid')?.hasError('required')">SSID is required</mat-error>
+      <mat-error *ngIf="form.get('ssid')?.hasError('maxlength')">SSID must be 32 characters or less</mat-error>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Channel</mat-label>
+      <input matInput type="number" formControlName="channel" required>
+      <mat-hint *ngIf="form.get('band')?.value === '2.4ghz'">1-14 for 2.4GHz</mat-hint>
+      <mat-hint *ngIf="form.get('band')?.value === '5ghz'">36-165 for 5GHz</mat-hint>
+      <mat-error *ngIf="form.get('channel')?.hasError('required')">Channel is required</mat-error>
+      <mat-error *ngIf="form.get('channel')?.hasError('min') || form.get('channel')?.hasError('max')">Invalid channel for selected band</mat-error>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Band</mat-label>
+      <mat-select formControlName="band" required>
+        <mat-option *ngFor="let band of bands" [value]="band">{{ band }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Encryption</mat-label>
+      <mat-select formControlName="encryption" required>
+        <mat-option *ngFor="let enc of encryptionTypes" [value]="enc">{{ enc.toUpperCase() }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" *ngIf="form.get('encryption')?.value !== 'open'">
+      <mat-label>Password</mat-label>
+      <input matInput type="text" formControlName="password" [required]="form.get('encryption')?.value !== 'open'">
+      <mat-hint>Minimum 8 characters</mat-hint>
+      <mat-error *ngIf="form.get('password')?.hasError('required')">Password is required</mat-error>
+      <mat-error *ngIf="form.get('password')?.hasError('minlength')">Password must be at least 8 characters</mat-error>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>TX Power Level</mat-label>
+      <mat-select formControlName="tx_power_level" required>
+        <mat-option *ngFor="let level of txPowerLevels" [value]="level">
+          Level {{ level }} {{ level === 1 ? '(Min)' : level === 4 ? '(Max)' : '' }}
+        </mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Timeout (seconds)</mat-label>
+      <input matInput type="number" formControlName="timeout">
+      <mat-hint>60-86400 seconds (default: 3600 = 1 hour)</mat-hint>
+    </mat-form-field>
+
+    <mat-checkbox formControlName="hidden">Hidden SSID</mat-checkbox>
+    <mat-checkbox formControlName="internet_enabled">Internet Enabled</mat-checkbox>
+  </form>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="onCancel()">Cancel</button>
+  <button mat-raised-button color="primary" (click)="onSubmit()" [disabled]="!form.valid">
+    Start Network
+  </button>
+</mat-dialog-actions>

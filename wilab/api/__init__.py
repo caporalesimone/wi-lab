@@ -47,6 +47,55 @@ def create_app() -> FastAPI:
 
     # Include API router
     app.include_router(router)
+    
+    # Serve static files (frontend) if directory exists
+    # Try multiple possible locations (in order of preference)
+    possible_paths = [
+        "/opt/wilab-frontend",  # Standard location (recommended)
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "wilab-frontend"),  # Next to project
+        os.path.expanduser("~/wi-lab/wilab-frontend"),  # User's home
+        "/root/wi-lab/wilab-frontend",  # Root's home (if service runs as root)
+    ]
+    
+    frontend_path = None
+    for path in possible_paths:
+        if os.path.exists(path) and os.path.isdir(path):
+            frontend_path = path
+            break
+    
+    if frontend_path:
+        # Serve index.html for root
+        @app.get("/")
+        async def serve_index():
+            index_path = os.path.join(frontend_path, "index.html")
+            if os.path.exists(index_path):
+                return FileResponse(index_path)
+            return {"error": "Frontend index.html not found"}
+        
+        # Serve frontend files and handle SPA routing
+        @app.get("/{full_path:path}")
+        async def serve_frontend(full_path: str):
+            # Don't interfere with API routes, docs, or openapi
+            if (full_path.startswith("api/") or 
+                full_path == "docs" or 
+                full_path.startswith("docs/") or
+                full_path == "openapi.json"):
+                return None
+            
+            # Check if it's a file that exists (e.g., main-xxx.js, styles-xxx.css, favicon.ico)
+            file_path = os.path.join(frontend_path, full_path)
+            if os.path.exists(file_path) and os.path.isfile(file_path):
+                return FileResponse(file_path)
+            
+            # For Angular SPA routes (anything else), serve index.html
+            index_path = os.path.join(frontend_path, "index.html")
+            if os.path.exists(index_path):
+                return FileResponse(index_path)
+            return {"error": "Frontend not found"}
+        
+        logger.info(f"Frontend static files served from {frontend_path}")
+    else:
+        logger.warning(f"Frontend directory not found. Tried: {', '.join(possible_paths)}. Skipping static file serving.")
 
     # Serve static files (frontend) if directory exists
     # Try multiple possible locations (in order of preference)
