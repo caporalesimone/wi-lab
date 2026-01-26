@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.openapi.utils import get_openapi
 
 from .dependencies import get_config, get_manager
-from .routes import router
+from .routes import router as api_router
 from ..version import __version__
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ def create_app() -> FastAPI:
         logger.info("CORS disabled (no cors_origins configured)")
 
     # Include API router
-    app.include_router(router)
+    app.include_router(api_router)
 
     # Serve static files (frontend) if directory exists
     frontend_candidates = _candidate_frontend_paths()
