@@ -12,6 +12,54 @@ This document outlines the development milestones for Wi-Lab from v1.1.0 through
 
 ---
 
+# 🚀 PRIORITY: API Simplification - Network Endpoints Consolidation
+
+**Status:** PROPOSED  
+**Estimated Effort:** ~1.5 hours  
+**Priority:** HIGH  
+
+### Problem Statement
+Current API has redundant endpoints for network status retrieval:
+- `GET /interface/{net_id}/network` - Full status (13 fields) including password & expiration
+- `GET /interface/{net_id}/status` - Minimal status (3 fields) for health checks
+- `GET /interface/{net_id}/summary` - Extended info (16 fields) with DHCP details & connected clients
+
+**Redundancy:** `/network` and `/summary` overlap ~90% with only minor differences (password vs DHCP/clients).
+
+### Proposed Solution
+**Consolidate to 2 endpoints:**
+
+1. **`GET /interface/{net_id}/status`** - Keep minimal (3 fields: net_id, interface, active)
+   - Use case: Lightweight polling, health checks
+   - Size: ~80 bytes
+
+2. **`GET /interface/{net_id}/network`** - Unified complete endpoint (merge current `/network` + `/summary`)
+   - Returns: All configuration + password + expires_in + DHCP details + connected clients
+   - Use case: Full network state retrieval
+   - Size: ~600 bytes
+   - Clients can ignore unused fields if needed
+
+### Implementation Tasks
+- [ ] Update `NetworkStatus` model in `wilab/models.py` to include DHCP and clients fields
+- [ ] Modify `get_network()` in `wilab/api/routes/network.py` to return complete data (call `get_summary()` internally)
+- [ ] Remove `/interface/{net_id}/summary` endpoint
+- [ ] Update Swagger documentation
+- [ ] Update frontend to use new consolidated endpoint
+- [ ] Update integration tests
+- [ ] Add deprecation notice in CHANGELOG
+
+### Benefits
+- **Simpler API:** From 3 to 2 endpoints
+- **Better DX:** One call for complete network state
+- **Easier maintenance:** Less code duplication
+- **Backward compatible:** Keep `/status` unchanged
+
+### Breaking Changes
+- `/interface/{net_id}/summary` endpoint removed
+- Clients using `/summary` should migrate to `/network`
+
+---
+
 # 🎯 Release 1: v1.1.0 - "Traffic Statistics API"
 
 **Target Release:** Week 1  
