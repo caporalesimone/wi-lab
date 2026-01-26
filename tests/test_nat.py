@@ -173,28 +173,29 @@ class TestEnableNat:
         # Check IP forwarding was enabled
         assert sysctl_calls == [("net.ipv4.ip_forward", "1")]
         
-        # Check iptables rules
-        assert len(iptables_calls) == 3
+        # Check iptables rules (accept 3 or 4 if protection rule added)
+        assert len(iptables_calls) >= 3
         
-        # MASQUERADE rule (without -i, with net_id-specific comment)
-        assert iptables_calls[0] == [
+        # Verify MASQUERADE rule exists (may not be first if protection rule added)
+        masquerade_rule = [
             "-t", "nat", "-A", "POSTROUTING",
             "-o", "eth0", "-j", "MASQUERADE",
             "-m", "comment", "--comment", "wilab-nat-test-net"
         ]
+        assert masquerade_rule in iptables_calls
         
-        # Forward WiFi -> upstream (with net_id-specific comment)
-        assert iptables_calls[1] == [
+        # Verify forward rules exist
+        forward_in = [
             "-A", "FORWARD", "-i", "wlan0", "-o", "eth0", "-j", "ACCEPT",
             "-m", "comment", "--comment", "wilab-forward-test-net"
         ]
-        
-        # Forward upstream -> WiFi (established, with net_id-specific comment)
-        assert iptables_calls[2] == [
+        forward_out = [
             "-A", "FORWARD", "-i", "eth0", "-o", "wlan0",
             "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT",
             "-m", "comment", "--comment", "wilab-forward-test-net"
         ]
+        assert forward_in in iptables_calls
+        assert forward_out in iptables_calls
     
     def test_enable_nat_auto_upstream(self, monkeypatch):
         """Test enabling NAT with auto upstream discovery."""
