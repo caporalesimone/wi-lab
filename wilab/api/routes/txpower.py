@@ -10,7 +10,14 @@ from ...api.dependencies import get_manager
 router = APIRouter(prefix="/interface", tags=["TX Power"])
 
 
-@router.get("/{net_id}/txpower", response_model=TxPowerInfo)
+@router.get(
+    "/{net_id}/txpower",
+    response_model=TxPowerInfo,
+    responses={
+        200: {"description": "TX power info retrieved successfully"},
+        404: {"description": "net_id not found or network not active"},
+    },
+)
 async def get_tx_power(
     net_id: str,
     manager: NetworkManager = Depends(get_manager),
@@ -37,7 +44,14 @@ async def get_tx_power(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/{net_id}/txpower", response_model=TxPowerInfo)
+@router.post(
+    "/{net_id}/txpower",
+    response_model=TxPowerInfo,
+    responses={
+        200: {"description": "TX power level set successfully"},
+        404: {"description": "net_id not found or network not active"},
+    },
+)
 async def set_tx_power(
     net_id: str,
     req: TxPowerRequest,

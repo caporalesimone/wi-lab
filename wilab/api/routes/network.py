@@ -10,7 +10,15 @@ from ...api.dependencies import get_manager
 router = APIRouter(prefix="/interface", tags=["Network"])
 
 
-@router.post("/{net_id}/network", response_model=NetworkStatus)
+@router.post(
+    "/{net_id}/network",
+    response_model=NetworkStatus,
+    responses={
+        200: {"description": "Network created and started successfully"},
+        404: {"description": "net_id not found in configuration"},
+        409: {"description": "Network already active; stop it first"},
+    },
+)
 async def start_network(
     net_id: str,
     req: NetworkCreateRequest = Body(
@@ -63,7 +71,13 @@ async def start_network(
         raise HTTPException(status_code=404, detail=error_msg)
 
 
-@router.delete("/{net_id}/network")
+@router.delete(
+    "/{net_id}/network",
+    responses={
+        200: {"description": "Network stopped successfully"},
+        404: {"description": "net_id not found"},
+    },
+)
 async def stop_network(
     net_id: str,
     manager: NetworkManager = Depends(get_manager),
@@ -87,7 +101,14 @@ async def stop_network(
     return {"net_id": net_id}
 
 
-@router.get("/{net_id}/network", response_model=NetworkStatus)
+@router.get(
+    "/{net_id}/network",
+    response_model=NetworkStatus,
+    responses={
+        200: {"description": "Network status retrieved successfully"},
+        404: {"description": "net_id not found"},
+    },
+)
 async def get_network(
     net_id: str,
     manager: NetworkManager = Depends(get_manager),
@@ -109,7 +130,13 @@ async def get_network(
     return st
 
 
-@router.get("/{net_id}/status")
+@router.get(
+    "/{net_id}/status",
+    responses={
+        200: {"description": "Network minimal status retrieved successfully"},
+        404: {"description": "net_id not found"},
+    },
+)
 async def get_status(
     net_id: str,
     manager: NetworkManager = Depends(get_manager),
@@ -130,7 +157,13 @@ async def get_status(
     return {"net_id": st.net_id, "interface": st.interface, "active": st.active}
 
 
-@router.get("/{net_id}/summary")
+@router.get(
+    "/{net_id}/summary",
+    responses={
+        200: {"description": "Network summary retrieved successfully"},
+        404: {"description": "net_id not found"},
+    },
+)
 async def get_summary(
     net_id: str,
     manager: NetworkManager = Depends(get_manager),

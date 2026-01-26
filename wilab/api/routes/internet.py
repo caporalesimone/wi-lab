@@ -9,7 +9,14 @@ from ...api.dependencies import get_manager
 router = APIRouter(prefix="/interface", tags=["Internet"])
 
 
-@router.post("/{net_id}/internet/enable")
+@router.post(
+    "/{net_id}/internet/enable",
+    responses={
+        200: {"description": "Internet access enabled successfully"},
+        404: {"description": "net_id not found or network not active"},
+        500: {"description": "NAT configuration failed"},
+    },
+)
 async def internet_enable(
     net_id: str,
     manager: NetworkManager = Depends(get_manager),
@@ -40,7 +47,13 @@ async def internet_enable(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/{net_id}/internet/disable")
+@router.post(
+    "/{net_id}/internet/disable",
+    responses={
+        200: {"description": "Internet access disabled successfully"},
+        404: {"description": "net_id not found or network not active"},
+    },
+)
 async def internet_disable(
     net_id: str,
     manager: NetworkManager = Depends(get_manager),

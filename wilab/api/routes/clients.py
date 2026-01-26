@@ -10,7 +10,14 @@ from ...api.dependencies import get_manager
 router = APIRouter(prefix="/interface", tags=["Clients"])
 
 
-@router.get("/{net_id}/clients", response_model=ClientsResponse)
+@router.get(
+    "/{net_id}/clients",
+    response_model=ClientsResponse,
+    responses={
+        200: {"description": "Client list retrieved successfully"},
+        404: {"description": "net_id not found"},
+    },
+)
 async def list_clients(
     net_id: str,
     manager: NetworkManager = Depends(get_manager),
