@@ -88,6 +88,27 @@ class NatManager:
         except Exception as e:
             logger.warning(f"Failed to disable IP forwarding: {e}")
     
+    def _rule_exists(self, table: Optional[str], args: list) -> bool:
+        """
+        Check if an iptables rule exists.
+        
+        Args:
+            table: Table name (e.g., "nat") or None for filter
+            args: Rule arguments to check
+            
+        Returns:
+            True if rule exists, False otherwise
+        """
+        try:
+            cmd = ["iptables"]
+            if table:
+                cmd.extend(["-t", table])
+            cmd.extend(["-C"] + args)
+            execute_command(cmd)
+            return True
+        except Exception:
+            return False
+    
     def enable_nat(self, wifi_interface: str, net_id: str) -> None:
         """
         Enable NAT for a WiFi interface to allow Internet access.
@@ -109,52 +130,80 @@ class NatManager:
             try:
                 forward_policy = execute_command(["iptables", "-S", "FORWARD"])
                 if "-P FORWARD DROP" in forward_policy:
-                    logger.warning("FORWARD policy is DROP - adding accept rule for existing connections first")
                     # Add rule to accept ESTABLISHED connections FIRST to protect existing SSH
-                    execute_iptables([
-                        "-I", "FORWARD", "1",
+                    # Only add if not already present
+                    protect_rule = [
+                        "FORWARD",
                         "-m", "conntrack",
                         "--ctstate", "ESTABLISHED,RELATED",
                         "-j", "ACCEPT",
                         "-m", "comment",
                         "--comment", "wilab-protect-existing"
-                    ])
+                    ]
+                    if not self._rule_exists(None, protect_rule):
+                        logger.warning("FORWARD policy is DROP - adding accept rule for existing connections first")
+                        execute_iptables([
+                            "-I", "FORWARD", "1",
+                            "-m", "conntrack",
+                            "--ctstate", "ESTABLISHED,RELATED",
+                            "-j", "ACCEPT",
+                            "-m", "comment",
+                            "--comment", "wilab-protect-existing"
+                        ])
+                    else:
+                        logger.debug("FORWARD protection rule already exists")
             except Exception as e:
                 logger.warning(f"Could not check FORWARD policy: {e}")
             
             # Enable IP forwarding first
             self.enable_ip_forwarding()
             
-            # Add MASQUERADE rule for outgoing traffic from WiFi interface
-            # SAFETY: Rule is specific to both upstream (-o) and WiFi interface (-s subnet)
-            # Use net_id in comment to allow per-network rule management
-            # Note: We use source IP range to identify the network since -i doesn't work in POSTROUTING
-            execute_iptables([
-                "-t", "nat",
-                "-A", "POSTROUTING",
+            # Add MASQUERADE rule (check if exists first to avoid duplicates)
+            masquerade_rule = [
+                "POSTROUTING",
                 "-o", upstream,
                 "-j", "MASQUERADE",
                 "-m", "comment",
                 "--comment", f"wilab-nat-{net_id}"
-            ])
+            ]
+            if not self._rule_exists("nat", masquerade_rule):
+                execute_iptables([
+                    "-t", "nat",
+                    "-A", "POSTROUTING",
+                    "-o", upstream,
+                    "-j", "MASQUERADE",
+                    "-m", "comment",
+                    "--comment", f"wilab-nat-{net_id}"
+                ])
+                logger.debug(f"Added MASQUERADE rule for {net_id}")
+            else:
+                logger.debug(f"MASQUERADE rule already exists for {net_id}")
             
-            # Allow forwarding from WiFi to upstream
-            # SAFETY: Limited to specific WiFi interface to avoid impacting host routing
-            # iptables -A FORWARD -i <wifi> -o <upstream> -j ACCEPT -m comment --comment "wilab-forward-<net_id>"
-            execute_iptables([
-                "-A", "FORWARD",
+            # Allow forwarding from WiFi to upstream (check if exists first)
+            forward_in_rule = [
+                "FORWARD",
                 "-i", wifi_interface,
                 "-o", upstream,
                 "-j", "ACCEPT",
                 "-m", "comment",
                 "--comment", f"wilab-forward-{net_id}"
-            ])
+            ]
+            if not self._rule_exists(None, forward_in_rule):
+                execute_iptables([
+                    "-A", "FORWARD",
+                    "-i", wifi_interface,
+                    "-o", upstream,
+                    "-j", "ACCEPT",
+                    "-m", "comment",
+                    "--comment", f"wilab-forward-{net_id}"
+                ])
+                logger.debug(f"Added FORWARD ingress rule for {net_id}")
+            else:
+                logger.debug(f"FORWARD ingress rule already exists for {net_id}")
             
-            # Allow established/related connections back
-            # SAFETY: Limited to specific WiFi interface to avoid impacting host routing
-            # iptables -A FORWARD -i <upstream> -o <wifi> -m state --state RELATED,ESTABLISHED -j ACCEPT -m comment --comment "wilab-forward-<net_id>"
-            execute_iptables([
-                "-A", "FORWARD",
+            # Allow established/related connections back (check if exists first)
+            forward_out_rule = [
+                "FORWARD",
                 "-i", upstream,
                 "-o", wifi_interface,
                 "-m", "state",
@@ -162,7 +211,21 @@ class NatManager:
                 "-j", "ACCEPT",
                 "-m", "comment",
                 "--comment", f"wilab-forward-{net_id}"
-            ])
+            ]
+            if not self._rule_exists(None, forward_out_rule):
+                execute_iptables([
+                    "-A", "FORWARD",
+                    "-i", upstream,
+                    "-o", wifi_interface,
+                    "-m", "state",
+                    "--state", "RELATED,ESTABLISHED",
+                    "-j", "ACCEPT",
+                    "-m", "comment",
+                    "--comment", f"wilab-forward-{net_id}"
+                ])
+                logger.debug(f"Added FORWARD egress rule for {net_id}")
+            else:
+                logger.debug(f"FORWARD egress rule already exists for {net_id}")
             
             logger.info(f"NAT enabled for {net_id} ({wifi_interface})")
         
