@@ -33,26 +33,19 @@ source "$SETUP_DIR/common.sh"
 log_info "Wi-Lab Setup - Starting..."
 echo ""
 
-# Define setup stages in execution order
-STAGES=(
-    "01-preconditions.sh"
-    "02-preflight.sh"
-    "03-venv.sh"
-    "04-systemd.sh"
-    "05-enable.sh"
-    "07-deploy-frontend.sh"
-    "06-verify.sh"
-    "99-final-test.sh"
-)
+# Dynamically discover and execute setup stages
+# Find all setup scripts matching pattern [0-9][0-9]-*.sh and sort numerically
+# Exclude common.sh (library file)
+mapfile -t STAGES < <(find "$SETUP_DIR" -maxdepth 1 -type f -name '[0-9][0-9]-*.sh' | sort -V)
 
-# Execute each stage
-for stage in "${STAGES[@]}"; do
-    STAGE_PATH="$SETUP_DIR/$stage"
-    
-    if [ ! -f "$STAGE_PATH" ]; then
-        log_error "Stage script not found: $STAGE_PATH"
-        exit 1
-    fi
+if [ ${#STAGES[@]} -eq 0 ]; then
+    log_error "No setup stages found in $SETUP_DIR"
+    exit 1
+fi
+
+# Execute each stage in order
+for STAGE_PATH in "${STAGES[@]}"; do
+    stage=$(basename "$STAGE_PATH")
     
     log_info "Running: $stage"
     bash "$STAGE_PATH"
