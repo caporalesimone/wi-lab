@@ -19,10 +19,23 @@ BASE_URL="http://localhost:${API_PORT}"
 log_info "Testing homepage..."
 HOMEPAGE_URL="${BASE_URL}/"
 
-if curl -s -I "$HOMEPAGE_URL" 2>&1 | grep -q "200\|301\|302"; then
-    log_success "Homepage is responding"
-else
-    log_warning "Homepage may not be available"
-fi
+# Retry logic with exponential backoff
+RETRY_COUNT=5
+RETRY_DELAY=2
+for ((i=1; i<=RETRY_COUNT; i++)); do
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -L "$HOMEPAGE_URL" 2>&1)
+    if [[ "$HTTP_CODE" =~ ^(200|301|302|304)$ ]]; then
+        log_success "Homepage is responding (HTTP $HTTP_CODE)"
+        break
+    else
+        if [ $i -lt $RETRY_COUNT ]; then
+            log_info "Homepage not ready (HTTP $HTTP_CODE), retrying in ${RETRY_DELAY}s... (attempt $i/$RETRY_COUNT)"
+            sleep $RETRY_DELAY
+            RETRY_DELAY=$((RETRY_DELAY + 1))
+        else
+            log_warning "Homepage may not be available (HTTP $HTTP_CODE)"
+        fi
+    fi
+done
 
 log_success "Homepage test completed"

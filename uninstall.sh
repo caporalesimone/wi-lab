@@ -78,12 +78,13 @@ echo ""
 # STEP 2: Remove virtual environment (MANDATORY)
 ################################################################################
 
+log_info "Step 2: Removing virtual environment..."
 if [ -d "$VENV_PATH" ]; then
     log_info "Removing virtual environment..."
     rm -rf "$VENV_PATH"
     log_success "Virtual environment removed"
 else
-    log_info "Virtual environment not found at $VENV_PATH"
+    log_warning "Virtual environment not found at $VENV_PATH"
 fi
 
 echo ""
