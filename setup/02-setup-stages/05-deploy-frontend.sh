@@ -1,14 +1,11 @@
 #!/bin/bash
-set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common.sh"
+source "$SCRIPT_DIR/../common.sh"
+setup_common_vars
 
-WILAB_DIR="${WILAB_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FRONTEND_DIR="$WILAB_DIR/frontend"
 DEPLOY_SCRIPT="$FRONTEND_DIR/deploy_frontend.sh"
-
-log_info "Stage 07: Building and deploying frontend..."
 
 # Check if frontend directory exists
 if [ ! -d "$FRONTEND_DIR" ]; then

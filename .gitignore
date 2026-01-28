@@ -208,3 +208,6 @@ __marimo__/
 
 # Local configuration file (example provided as config.yaml.example)
 config.yaml
+
+#other files
+test-report.txt

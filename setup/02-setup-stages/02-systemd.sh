@@ -1,16 +1,11 @@
 #!/bin/bash
-set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common.sh"
+source "$SCRIPT_DIR/../common.sh"
+setup_common_vars
 
-WILAB_DIR="${WILAB_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-VENV_PATH="${VENV_PATH:-/opt/wilab-venv}"
-
-SERVICE_TEMPLATE="$SCRIPT_DIR/systemd/wi-lab.service.template"
+SERVICE_TEMPLATE="$SCRIPT_DIR/../systemd/wi-lab.service.template"
 SERVICE_TARGET="/etc/systemd/system/wi-lab.service"
-
-log_info "Stage 04: Configuring systemd service..."
 
 if [ ! -f "$SERVICE_TEMPLATE" ]; then
     log_error "Service template not found at $SERVICE_TEMPLATE"

@@ -1,13 +1,8 @@
 #!/bin/bash
-set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common.sh"
-
-WILAB_DIR="${WILAB_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-VENV_PATH="${VENV_PATH:-/opt/wilab-venv}"
-
-log_info "Stage 03: Setting up Python virtual environment..."
+source "$SCRIPT_DIR/../common.sh"
+setup_common_vars
 
 if [ -d "$VENV_PATH" ]; then
     log_warning "Virtual environment already exists at $VENV_PATH"
