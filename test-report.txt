@@ -1,0 +1,36 @@
+[1m============================= test session starts ==============================[0m
+platform linux -- Python 3.13.7, pytest-9.0.2, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/simone/wi-lab
+configfile: pytest.ini
+plugins: anyio-4.12.1, typeguard-4.4.2
+[1mcollecting ... [0mcollected 125 items
+
+tests/test_api.py::TestHealthEndpoint::test_health_check [32mPASSED[0m[32m          [  0%][0m
+tests/test_api.py::TestInterfacesEndpoint::test_list_interfaces [32mPASSED[0m[32m   [  1%][0m
+tests/test_api.py::TestInterfacesEndpoint::test_list_interfaces_structure [32mPASSED[0m[32m [  2%][0m
+tests/test_api.py::TestAppMetadata::test_app_version [32mPASSED[0m[32m              [  3%][0m
+tests/test_api.py::TestAppMetadata::test_app_title [32mPASSED[0m[32m                [  4%][0m
+tests/test_api.py::TestAuthentication::test_request_without_auth [32mPASSED[0m[32m  [  4%][0m
+tests/test_api.py::TestAuthentication::test_start_network_without_auth [32mPASSED[0m[32m [  5%][0m
+tests/test_api.py::TestAuthentication::test_start_network_with_invalid_token [32mPASSED[0m[32m [  6%][0m
+tests/test_api.py::TestAuthentication::test_start_network_with_valid_token [31mFAILED[0m[31m [  7%][0m
+tests/test_api.py::TestNetworkCreateEndpoint::test_start_network_invalid_json [32mPASSED[0m[31m [  8%][0m
+tests/test_api.py::TestNetworkCreateEndpoint::test_start_network_unknown_network [32mPASSED[0m[31m [  8%][0m
+tests/test_api.py::TestNetworkCreateEndpoint::test_start_network_invalid_encryption [32mPASSED[0m[31m [  9%][0m
+tests/test_api.py::TestNetworkCreateEndpoint::test_start_network_invalid_band [32mPASSED[0m[31m [ 10%][0m
+tests/test_api.py::TestNetworkCreateEndpoint::test_network_response_structure [32mPASSED[0m[31m [ 11%][0m
+tests/test_api.py::TestNetworkGetEndpoint::test_get_network_status_inactive [32mPASSED[0m[31m [ 12%][0m
+tests/test_api.py::TestNetworkGetEndpoint::test_get_network_status_unknown [32mPASSED[0m[31m [ 12%][0m
+tests/test_api.py::TestNetworkDeleteEndpoint::test_stop_network_inactive [32mPASSED[0m[31m [ 13%][0m
+tests/test_api.py::TestNetworkDeleteEndpoint::test_stop_network_unknown [32mPASSED[0m[31m [ 14%][0m
+tests/test_api.py::TestInternetControlEndpoints::test_enable_internet_inactive [32mPASSED[0m[31m [ 15%][0m
+tests/test_api.py::TestInternetControlEndpoints::test_disable_internet_inactive [32mPASSED[0m[31m [ 16%][0m
+tests/test_api.py::TestClientsEndpoint::test_list_clients_inactive [32mPASSED[0m[31m [ 16%][0m
+tests/test_api.py::TestClientsEndpoint::test_list_clients_response_structure [32mPASSED[0m[31m [ 17%][0m
+tests/test_api.py::TestSummaryEndpoint::test_summary_unknown_net [32mPASSED[0m[31m  [ 18%][0m
+tests/test_api.py::TestSummaryEndpoint::test_summary_active_network [31mFAILED[0m[31m [ 19%][0m
+tests/test_commands.py::TestCommandExecution::test_execute_command_success [32mPASSED[0m[31m [ 20%][0m
+tests/test_commands.py::TestCommandExecution::test_execute_command_failure [32mPASSED[0m[31m [ 20%][0m
+tests/test_commands.py::TestCommandExecution::test_execute_command_not_found [32mPASSED[0m[31m [ 21%][0m
+tests/test_commands.py::TestCommandExecution::test_execute_command_timeout 
