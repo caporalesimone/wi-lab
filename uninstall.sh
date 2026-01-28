@@ -75,10 +75,50 @@ fi
 echo ""
 
 ################################################################################
-# STEP 2: Remove virtual environment (MANDATORY)
+# STEP 2: Remove Docker image and containers
 ################################################################################
 
-log_info "Step 2: Removing virtual environment..."
+if command -v docker >/dev/null 2>&1; then
+    log_info "Step 2: Removing Docker frontend build image and containers..."
+    
+    # Extract IMAGE_NAME from deploy_frontend.sh to stay in sync
+    DEPLOY_SCRIPT="$WILAB_DIR/frontend/deploy_frontend.sh"
+    if [ -f "$DEPLOY_SCRIPT" ]; then
+        DOCKER_IMAGE=$(grep '^IMAGE_NAME=' "$DEPLOY_SCRIPT" | cut -d'"' -f2)
+        
+        if [ -n "$DOCKER_IMAGE" ]; then
+            # Remove any running containers from this image
+            if docker ps -a --format '{{.Image}}' | grep -q "^${DOCKER_IMAGE}$"; then
+                log_info "Removing containers from $DOCKER_IMAGE..."
+                docker ps -a --filter "ancestor=${DOCKER_IMAGE}" -q | xargs -r docker rm -f 2>/dev/null || true
+                log_success "Containers removed"
+            fi
+            
+            # Remove the image
+            if docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^${DOCKER_IMAGE}$"; then
+                log_info "Removing Docker image: $DOCKER_IMAGE..."
+                docker rmi -f "$DOCKER_IMAGE" 2>/dev/null || log_warning "Failed to remove Docker image"
+                log_success "Docker image removed"
+            else
+                log_info "Docker image $DOCKER_IMAGE not found"
+            fi
+        else
+            log_warning "Could not extract IMAGE_NAME from $DEPLOY_SCRIPT"
+        fi
+    else
+        log_info "Deploy script not found at $DEPLOY_SCRIPT; skipping Docker image removal"
+    fi
+else
+    log_info "Step 2: Docker not found; skipping Docker cleanup"
+fi
+
+echo ""
+
+################################################################################
+# STEP 3: Remove virtual environment (MANDATORY)
+################################################################################
+
+log_info "Step 3: Removing virtual environment..."
 if [ -d "$VENV_PATH" ]; then
     log_info "Removing virtual environment..."
     rm -rf "$VENV_PATH"
