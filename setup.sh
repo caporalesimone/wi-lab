@@ -32,11 +32,6 @@ echo ""
 # Find all setup scripts matching pattern [0-9][0-9]-*.sh and sort numerically
 mapfile -t PRECOND_STAGES < <(find "$SETUP_DIR/01-preconditions" -maxdepth 1 -type f -name '[0-9][0-9]-*.sh' | sort -V)
 
-if [ ${#PRECOND_STAGES[@]} -eq 0 ]; then
-    log_error "No precondition stages found in $SETUP_DIR/01-preconditions"
-    exit 1
-fi
-
 log_header "Precondition Checks"
 echo ""
 
@@ -59,11 +54,6 @@ echo ""
 # Find all setup scripts matching pattern [0-9][0-9]-*.sh and sort numerically
 # Exclude common.sh (library file)
 mapfile -t STAGES < <(find "$SETUP_DIR/02-setup-stages" -maxdepth 1 -type f -name '[0-9][0-9]-*.sh' | sort -V)
-
-if [ ${#STAGES[@]} -eq 0 ]; then
-    log_error "No setup stages found in $SETUP_DIR/02-setup-stages"
-    exit 1
-fi
 
 ################################################################################
 # Step 3: Confirmation prompt
