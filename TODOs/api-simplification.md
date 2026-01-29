@@ -30,14 +30,14 @@ Consolidate to 2 endpoints:
 
 ## Implementation Tasks
 
-- [ ] Update `NetworkStatus` model in `wilab/models.py` to include DHCP and clients fields
-- [ ] Modify `get_network()` in `wilab/api/routes/network.py` to return complete data
-- [ ] Remove `/interface/{net_id}/summary` endpoint
-- [ ] Update Swagger documentation with consolidated endpoint
-- [ ] Update frontend to use new consolidated endpoint
-- [ ] Update integration tests for new endpoint structure
-- [ ] Add deprecation notice in CHANGELOG for `/summary` endpoint
-- [ ] Test backward compatibility where possible
+- 1 [ ] Update `NetworkStatus` model in `wilab/models.py` to include DHCP and clients fields
+- 2 [ ] Modify `get_network()` in `wilab/api/routes/network.py` to return complete data
+- 3 [ ] Remove `/interface/{net_id}/summary` endpoint
+- 4 [ ] Update Swagger documentation with consolidated endpoint
+- 5 [ ] Update frontend to use new consolidated endpoint
+- 6 [ ] Update integration tests for new endpoint structure
+- 7 [ ] Add deprecation notice in CHANGELOG for `/summary` endpoint
+- 8 [ ] Test backward compatibility where possible
 
 ## Benefits
 
