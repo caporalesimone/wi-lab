@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from ...wifi.manager import NetworkManager
 from ...api.dependencies import get_config, get_manager
 from ...network.commands import execute_command, CommandError
+from ...version import __version__
 
 router = APIRouter(tags=["System"])
 
@@ -35,7 +36,7 @@ async def health_check(
     Returns:
         dict: Health status with 'ok' or 'degraded' overall status and component details.
     """
-    health_data = {"status": "ok", "version": None, "checks": {}}
+    health_data = {"status": "ok", "version": __version__, "checks": {}}
 
     # Check dnsmasq instances
     dhcp_status = manager.dhcp_server.status()
