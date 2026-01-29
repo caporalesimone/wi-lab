@@ -103,7 +103,7 @@ Add to response:
 {
   "network_name": "wifi-network-1",
   "status": "active",
-  "device_busy_tag": {
+  "device_busy_status": {
     "is_busy": true,
     "available_at": "2026-01-29T14:30:45Z",
     "available_at_epoch": 1743397845
@@ -197,6 +197,58 @@ Allows early manual release of reservation:
 - ✅ Operations blocked on busy networks with appropriate error messages
 - ✅ All tests pass (unit, integration, frontend)
 - ✅ API documentation updated
+
+---
+
+## 🔶 To Be Confirmed
+
+### Frontend Enhancements (TBD)
+
+#### Active Reservations Status Panel
+- [ ] Display all active network reservations in a dedicated UI panel
+- [ ] Show real-time countdown timer for each reservation
+- [ ] Add visual progress bar showing reservation time remaining
+  - Linear progress bar: 0-100% representing elapsed time
+  - Color transition: Green → Yellow → Red as time runs out
+- [ ] Allow sorting/filtering of active reservations
+
+#### Reservation History Log (TBD)
+- [ ] Display log of recent reservations (in-memory, no DB persistence)
+  - Network name
+  - Reservation duration (requested vs actual)
+  - Start time and end time
+  - Status (Active / Expired / Released)
+- [ ] Configurable log size (e.g., last 50 reservations)
+- [ ] Clear history option
+- [ ] **Decision needed:** Persistence scope
+  - Current proposal: In-memory only (cleared on service restart)
+  - Alternative: Session-based persistence
+  - Alternative: Full database persistence
+
+### Security Enhancement (TBD)
+
+#### Reservation Code / Token System
+- [ ] Reservation endpoint returns a random security code/token
+  - Format: Random alphanumeric string (e.g., 12-16 chars)
+  - Example: `aBcD9eF2gH1jKl3m`
+- [ ] All subsequent API calls on the reserved device MUST include this code
+  - Add `Authorization` header or query parameter: `reservation_code`
+  - Example: `POST /api/networks/wifi-1/activate?reservation_code=aBcD9eF2gH1jKl3m`
+- [ ] Prevent operations without valid code during active reservation
+  - Return 403 Forbidden with message: "Reservation code required or invalid"
+- [ ] Code expires when reservation expires or is manually released
+
+#### Benefits
+- Prevents accidental/unauthorized modifications during active reservation
+- Ensures only the entity that made the reservation can operate on it
+- Defense-in-depth security layer
+- Useful in multi-user or automated testing scenarios
+
+#### Implementation Considerations
+- [ ] Include code in all network operation endpoints
+- [ ] Validate code on every request targeting busy network
+- [ ] Log all requests with/without valid code
+- [ ] Clear code when reservation expires
 
 ---
 
