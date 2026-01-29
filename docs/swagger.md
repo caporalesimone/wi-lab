@@ -21,9 +21,10 @@ Access interactive API testing and documentation at:
 
 ## Common Endpoints
 
-### Health Check (No Auth)
+### Health Check (Requires Auth)
 ```bash
-curl http://localhost:8080/api/v1/health
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/v1/health
 ```
 
 ### Debug Information (Requires Auth)

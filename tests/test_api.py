@@ -31,14 +31,19 @@ def invalid_token():
 class TestHealthEndpoint:
     """Tests for health check endpoint."""
     
-    def test_health_check(self, client):
-        """Test health check endpoint returns valid status."""
+    def test_health_check_requires_auth(self, client):
+        """Test health check requires authentication."""
         resp = client.get('/api/v1/health')
+        assert resp.status_code == 401
+    
+    def test_health_check(self, client, valid_token):
+        """Test health check endpoint returns valid status."""
+        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
         assert data['status'] in ['ok', 'degraded', 'standby']
     
-    def test_health_check_standby_mode(self, client, monkeypatch):
+    def test_health_check_standby_mode(self, client, valid_token, monkeypatch):
         """Test health endpoint in standby mode (no active networks)."""
         from wilab.api.dependencies import get_manager
         
@@ -50,14 +55,14 @@ class TestHealthEndpoint:
         
         monkeypatch.setattr('wilab.api.routes.health.get_manager', mock_manager)
         
-        resp = client.get('/api/v1/health')
+        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
         data = resp.json()
         assert data['status'] == 'standby'
         assert data['active_networks'] == 0
     
-    def test_health_check_response_structure(self, client):
+    def test_health_check_response_structure(self, client, valid_token):
         """Test health response contains all required fields."""
-        resp = client.get('/api/v1/health')
+        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
         data = resp.json()
         
         # Check required top-level fields
@@ -70,9 +75,9 @@ class TestHealthEndpoint:
         assert data['version'] is not None
         assert len(data['version']) > 0
     
-    def test_health_check_dnsmasq_field(self, client):
+    def test_health_check_dnsmasq_field(self, client, valid_token):
         """Test health check includes dnsmasq status."""
-        resp = client.get('/api/v1/health')
+        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
         data = resp.json()
         
         assert 'dnsmasq' in data['checks']
@@ -81,9 +86,9 @@ class TestHealthEndpoint:
         assert isinstance(data['checks']['dnsmasq']['running'], bool)
         assert isinstance(data['checks']['dnsmasq']['instances'], int)
     
-    def test_health_check_iptables_nat_field(self, client):
+    def test_health_check_iptables_nat_field(self, client, valid_token):
         """Test health check includes iptables NAT status."""
-        resp = client.get('/api/v1/health')
+        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
         data = resp.json()
         
         assert 'iptables_nat' in data['checks']
@@ -92,9 +97,9 @@ class TestHealthEndpoint:
         assert isinstance(data['checks']['iptables_nat']['configured'], bool)
         assert isinstance(data['checks']['iptables_nat']['errors'], list)
     
-    def test_health_check_upstream_interface_field(self, client):
+    def test_health_check_upstream_interface_field(self, client, valid_token):
         """Test health check includes upstream interface status."""
-        resp = client.get('/api/v1/health')
+        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
         data = resp.json()
         
         assert 'upstream_interface' in data['checks']
@@ -102,7 +107,7 @@ class TestHealthEndpoint:
         assert 'reachable' in data['checks']['upstream_interface']
         assert isinstance(data['checks']['upstream_interface']['reachable'], bool)
     
-    def test_health_check_degraded_on_dhcp_down(self, client, monkeypatch):
+    def test_health_check_degraded_on_dhcp_down(self, client, valid_token, monkeypatch):
         """Test health returns degraded when DHCP is down but network is active."""
         from wilab.models import NetworkStatus
         from wilab.api.dependencies import get_manager as original_get_manager
@@ -124,7 +129,7 @@ class TestHealthEndpoint:
         monkeypatch.setattr(real_mgr.dhcp_server, 'status', 
                           lambda: {'running': False, 'instances': []})
         
-        resp = client.get('/api/v1/health')
+        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
         data = resp.json()
         assert data['status'] == 'degraded'
         assert data['active_networks'] == 1
@@ -134,7 +139,7 @@ class TestHealthEndpoint:
         real_mgr.active.clear()
         monkeypatch.setattr(real_mgr.dhcp_server, 'status', original_status)
     
-    def test_health_check_upstream_error_handling(self, client, monkeypatch):
+    def test_health_check_upstream_error_handling(self, client, valid_token, monkeypatch):
         """Test health gracefully handles upstream interface errors."""
         from wilab.api.dependencies import get_manager as original_get_manager
         from wilab.network.commands import CommandError
@@ -150,7 +155,7 @@ class TestHealthEndpoint:
             lambda: (_ for _ in ()).throw(CommandError("Test error"))
         )
         
-        resp = client.get('/api/v1/health')
+        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
         assert resp.status_code == 200  # Should not crash
         data = resp.json()
         assert 'upstream_interface' in data['checks']

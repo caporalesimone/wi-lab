@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from ...wifi.manager import NetworkManager
 from ...api.dependencies import get_config, get_manager
+from ...api.auth import require_token
 from ...network.commands import execute_command, CommandError
 from ...version import __version__
 
@@ -26,7 +27,9 @@ async def list_interfaces(config=Depends(get_config)):
 
 @router.get("/health")
 async def health_check(
-    manager: NetworkManager = Depends(get_manager), config=Depends(get_config)
+    manager: NetworkManager = Depends(get_manager), 
+    config=Depends(get_config),
+    _: bool = Depends(require_token)
 ):
     """
     Comprehensive health check for Wi-Lab service.
