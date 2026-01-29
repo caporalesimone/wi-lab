@@ -5,6 +5,7 @@ import { catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import {
   InterfaceInfo,
+  InterfacesResponse,
   NetworkStatus,
   NetworkCreateRequest,
   ClientsResponse
@@ -26,8 +27,8 @@ export class WilabApiService {
 
   constructor(private http: HttpClient) {}
 
-  public getInterfaces(): Observable<InterfaceInfo[]> {
-    return this.http.get<InterfaceInfo[]>(`${this.apiUrl}/interfaces`, {
+  public getInterfaces(): Observable<InterfacesResponse> {
+    return this.http.get<InterfacesResponse>(`${this.apiUrl}/interfaces`, {
       headers: this.getHeaders()
     }).pipe(
       catchError(this.handleError)

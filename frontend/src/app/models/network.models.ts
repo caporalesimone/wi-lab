@@ -3,6 +3,11 @@ export interface InterfaceInfo {
   interface: string;
 }
 
+export interface InterfacesResponse {
+  version: string;
+  networks: InterfaceInfo[];
+}
+
 export interface NetworkStatus {
   net_id: string;
   interface: string;

@@ -28,6 +28,7 @@ import { InterfaceInfo } from './models/network.models';
 })
 export class AppComponent implements OnInit {
   title = 'Wi-Lab Network Management';
+  version: string | null = null;
   interfaces: InterfaceInfo[] = [];
   loading = true;
   error: string | null = null;
@@ -42,8 +43,10 @@ export class AppComponent implements OnInit {
     this.loading = true;
     this.error = null;
     this.apiService.getInterfaces().subscribe({
-      next: (interfaces) => {
-        this.interfaces = interfaces;
+      next: (response) => {
+        this.version = response.version;
+        this.interfaces = response.networks;
+        this.title = `Wi-Lab Network Management - ${this.version}`;
         this.loading = false;
       },
       error: (err) => {
