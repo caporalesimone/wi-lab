@@ -1,6 +1,6 @@
 """Internet connectivity (NAT) management endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 
 from ...wifi.manager import NetworkManager
 from ...api.auth import require_token
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/interface", tags=["Internet"])
     },
 )
 async def internet_enable(
-    net_id: str,
+    net_id: str = Path(..., examples=["ap-01"]),
     manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):
@@ -55,7 +55,7 @@ async def internet_enable(
     },
 )
 async def internet_disable(
-    net_id: str,
+    net_id: str = Path(..., examples=["ap-01"]),
     manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):

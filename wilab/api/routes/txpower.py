@@ -1,6 +1,6 @@
 """TX power (transmit power) management endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body, Path
 
 from ...models import TxPowerRequest, TxPowerInfo
 from ...wifi.manager import NetworkManager
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/interface", tags=["TX Power"])
     },
 )
 async def get_tx_power(
-    net_id: str,
+    net_id: str = Path(..., examples=["ap-01"]),
     manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):

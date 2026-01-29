@@ -1,6 +1,6 @@
 """WiFi client management endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 
 from ...models import ClientsResponse
 from ...wifi.manager import NetworkManager
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/interface", tags=["Clients"])
     },
 )
 async def list_clients(
-    net_id: str,
+    net_id: str = Path(..., examples=["ap-01"]),
     manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):

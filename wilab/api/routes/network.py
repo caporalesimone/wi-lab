@@ -1,6 +1,6 @@
 """WiFi network lifecycle endpoints (create, delete, query)."""
 
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Path
 
 from ...models import NetworkCreateRequest, NetworkStatus
 from ...wifi.manager import NetworkManager
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/interface", tags=["Network"])
     },
 )
 async def start_network(
-    net_id: str,
+    net_id: str = Path(..., examples=["ap-01"]),
     req: NetworkCreateRequest = Body(
         ...,
         examples={
@@ -79,7 +79,7 @@ async def start_network(
     },
 )
 async def stop_network(
-    net_id: str,
+    net_id: str = Path(..., examples=["ap-01"]),
     manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):
@@ -110,7 +110,7 @@ async def stop_network(
     },
 )
 async def get_network(
-    net_id: str,
+    net_id: str = Path(..., examples=["ap-01"]),
     manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):
