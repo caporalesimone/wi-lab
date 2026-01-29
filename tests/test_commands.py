@@ -27,8 +27,8 @@ class TestCommandExecution:
     def test_execute_command_timeout(self):
         """Test command timeout raises error."""
         with pytest.raises(CommandError, match="timed out|timeout"):
-            # Use 20 seconds to exceed the 15-second timeout in execute_command
-            execute_command(['sleep', '20'], check=True)
+            # Use 2 seconds to exceed the 1-second timeout in execute_command
+            execute_command(['sleep', '2'], check=True)
     
     def test_execute_command_check_false(self):
         """Test command with check=False doesn't raise."""

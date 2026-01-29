@@ -30,7 +30,7 @@ def execute_command(cmd: List[str], check: bool = True) -> str:
             capture_output=True,
             text=True,
             check=False,
-            timeout=15  # Longer timeout for hostapd initialization
+            timeout=1  # 1 second timeout for system commands
         )
         
         if check and result.returncode != 0:
