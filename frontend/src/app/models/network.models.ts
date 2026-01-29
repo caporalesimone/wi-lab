@@ -30,6 +30,18 @@ export interface NetworkStatus {
   tx_power_level?: number;
   expires_at?: string;
   expires_in?: number;
+  dhcp?: {
+    interface: string;
+    subnet: string;
+    gateway: string;
+    config_file: string;
+    pid_file: string;
+    lease_file: string;
+    network_addr: string;
+    dhcp_range: string;
+  };
+  clients_connected?: number;
+  clients?: ClientInfo[];
 }
 
 export interface NetworkCreateRequest {

@@ -115,11 +115,11 @@ async def get_network(
     _auth: bool = Depends(require_token),
 ):
     """
-    Get complete network configuration and live status.
+    Get complete network configuration, status, DHCP info, and connected clients.
 
     Returns:
-        NetworkStatus: Full details (SSID, channel, password, expiration time in both
-            absolute format 'yyyy-mm-dd HH:MM:SS' and remaining seconds), active state.
+        NetworkStatus: Full details including SSID, channel, password, expiration time,
+            DHCP configuration, and list of connected clients.
 
     Raises:
         HTTPException 404: net_id not found.
@@ -128,57 +128,3 @@ async def get_network(
     if not st:
         raise HTTPException(status_code=404, detail="Unknown net_id")
     return st
-
-
-@router.get(
-    "/{net_id}/status",
-    responses={
-        200: {"description": "Network minimal status retrieved successfully"},
-        404: {"description": "net_id not found"},
-    },
-)
-async def get_status(
-    net_id: str,
-    manager: NetworkManager = Depends(get_manager),
-    _auth: bool = Depends(require_token),
-):
-    """
-    Get minimal network status (summary flag only).
-
-    Returns:
-        dict: Lightweight status object with net_id, interface name, active flag.
-
-    Raises:
-        HTTPException 404: net_id not found.
-    """
-    st = manager.get_status(net_id)
-    if not st:
-        raise HTTPException(status_code=404, detail="Unknown net_id")
-    return {"net_id": st.net_id, "interface": st.interface, "active": st.active}
-
-
-@router.get(
-    "/{net_id}/summary",
-    responses={
-        200: {"description": "Network summary retrieved successfully"},
-        404: {"description": "net_id not found"},
-    },
-)
-async def get_summary(
-    net_id: str,
-    manager: NetworkManager = Depends(get_manager),
-    _auth: bool = Depends(require_token),
-):
-    """
-    Get detailed network summary including DHCP info and connected clients.
-
-    Returns:
-        dict: Network summary with SSID, interface, DHCP pool, gateway, connected clients.
-
-    Raises:
-        HTTPException 404: net_id not found.
-    """
-    summary = manager.get_summary(net_id)
-    if not summary:
-        raise HTTPException(status_code=404, detail="Unknown net_id")
-    return summary

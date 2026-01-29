@@ -84,6 +84,10 @@ class NetworkCreateRequest(BaseModel):
             raise ValueError(f"Password required for {v} encryption")
         return v
 
+class ClientInfo(BaseModel):
+    mac: str
+    ip: str
+
 class NetworkStatus(BaseModel):
     net_id: str
     interface: str
@@ -99,15 +103,14 @@ class NetworkStatus(BaseModel):
     tx_power_level: Optional[int] = Field(None, description="TX power level 1-4 (4 = max)")
     expires_at: Optional[str] = Field(None, description="Network expiration date and time in format: yyyy-mm-dd HH:MM:SS")
     expires_in: Optional[int] = Field(None, description="Seconds remaining until network auto-shutdown")
+    dhcp: Optional[dict] = Field(None, description="DHCP server configuration details")
+    clients_connected: Optional[int] = Field(None, description="Number of clients currently connected")
+    clients: Optional[List[ClientInfo]] = Field(None, description="List of connected clients")
 
 class InterfaceStatus(BaseModel):
     net_id: str
     interface: str
     active: bool
-
-class ClientInfo(BaseModel):
-    mac: str
-    ip: str
 
 class ClientsResponse(BaseModel):
     net_id: str

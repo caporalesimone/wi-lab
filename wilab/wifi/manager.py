@@ -308,31 +308,15 @@ class NetworkManager:
         if hasattr(st, '_expires_at_timestamp'):
             st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))
         
+        # Add DHCP info and clients if active
+        if st.active:
+            dhcp_info = self.dhcp_server.get_subnet_info(net_id)
+            clients = self.list_clients(net_id)
+            st.dhcp = dhcp_info if dhcp_info else {}
+            st.clients = clients
+            st.clients_connected = len(clients)
+        
         return st
-
-    def get_summary(self, net_id: str) -> Optional[dict]:
-        """Return a compact summary of network state for debugging/monitoring."""
-        st = self.get_status(net_id)
-        if not st:
-            return None
-        dhcp_info = self.dhcp_server.get_subnet_info(net_id)
-        clients = self.list_clients(net_id)
-        return {
-            "net_id": st.net_id,
-            "interface": st.interface,
-            "active": st.active,
-            "internet_enabled": st.internet_enabled,
-            "expires_at": st.expires_at,
-            "ssid": st.ssid,
-            "channel": st.channel,
-            "encryption": st.encryption,
-            "band": st.band,
-            "hidden": st.hidden,
-            "subnet": st.subnet,
-            "dhcp": dhcp_info if dhcp_info else {},
-            "clients_connected": len(clients),
-            "clients": clients,
-        }
 
     def enable_internet(self, net_id: str) -> NetworkStatus:
         """
