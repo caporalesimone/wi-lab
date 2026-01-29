@@ -87,9 +87,8 @@ async def health_check(
     has_active_networks = len(manager.active) > 0
     
     if not has_active_networks:
-        # Standby mode - service is healthy but no networks are active
+        # Standby - service is healthy but no networks are active
         health_data["status"] = "standby"
-        health_data["mode"] = "standby"
         health_data["active_networks"] = 0
     else:
         # Normal operation - check component health
@@ -101,7 +100,6 @@ async def health_check(
             ]
         )
         health_data["status"] = "ok" if all_ok else "degraded"
-        health_data["mode"] = "active"
         health_data["active_networks"] = len(manager.active)
 
     return health_data

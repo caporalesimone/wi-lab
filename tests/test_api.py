@@ -53,7 +53,6 @@ class TestHealthEndpoint:
         resp = client.get('/api/v1/health')
         data = resp.json()
         assert data['status'] == 'standby'
-        assert data['mode'] == 'standby'
         assert data['active_networks'] == 0
     
     def test_health_check_response_structure(self, client):
@@ -64,7 +63,6 @@ class TestHealthEndpoint:
         # Check required top-level fields
         assert 'status' in data
         assert 'version' in data
-        assert 'mode' in data
         assert 'active_networks' in data
         assert 'checks' in data
         
@@ -129,7 +127,6 @@ class TestHealthEndpoint:
         resp = client.get('/api/v1/health')
         data = resp.json()
         assert data['status'] == 'degraded'
-        assert data['mode'] == 'active'
         assert data['active_networks'] == 1
         assert data['checks']['dnsmasq']['running'] is False
         
