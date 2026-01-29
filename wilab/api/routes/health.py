@@ -84,15 +84,25 @@ async def health_check(
         }
 
     # Determine overall status
-    all_ok = all(
-        [
-            health_data["checks"]["dnsmasq"].get("running") is not False,
-            health_data["checks"]["iptables_nat"].get("configured") is not False,
-            health_data["checks"]["upstream_interface"].get("reachable") is not False,
-        ]
-    )
-
-    health_data["status"] = "ok" if all_ok else "degraded"
+    has_active_networks = len(manager.active) > 0
+    
+    if not has_active_networks:
+        # Standby mode - service is healthy but no networks are active
+        health_data["status"] = "standby"
+        health_data["mode"] = "standby"
+        health_data["active_networks"] = 0
+    else:
+        # Normal operation - check component health
+        all_ok = all(
+            [
+                health_data["checks"]["dnsmasq"].get("running") is not False,
+                health_data["checks"]["iptables_nat"].get("configured") is not False,
+                health_data["checks"]["upstream_interface"].get("reachable") is not False,
+            ]
+        )
+        health_data["status"] = "ok" if all_ok else "degraded"
+        health_data["mode"] = "active"
+        health_data["active_networks"] = len(manager.active)
 
     return health_data
 
