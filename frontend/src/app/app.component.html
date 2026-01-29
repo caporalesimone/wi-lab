@@ -7,13 +7,13 @@
   <div class="content">
     <div *ngIf="loading" class="loading-container">
       <mat-spinner></mat-spinner>
-      <p>Loading interfaces...</p>
+      <p>Loading status...</p>
     </div>
 
     <div *ngIf="error" class="error-container">
       <mat-icon color="warn">error</mat-icon>
       <p>{{ error }}</p>
-      <button mat-raised-button color="primary" (click)="loadInterfaces()">
+      <button mat-raised-button color="primary" (click)="loadStatus()">
         <mat-icon>refresh</mat-icon>
         Retry
       </button>

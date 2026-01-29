@@ -1,4 +1,4 @@
-"""Health and system status endpoints."""
+"""System status endpoint."""
 
 from fastapi import APIRouter, Depends
 
@@ -11,38 +11,30 @@ from ...version import __version__
 router = APIRouter(tags=["System"])
 
 
-@router.get("/interfaces")
-async def list_interfaces(config=Depends(get_config)):
-    """
-    List all managed WiFi interfaces configured in the system.
-
-    Returns:
-        dict: Contains version and array of objects with net_id and interface name.
-    """
-    return {
-        "version": __version__,
-        "networks": [{"net_id": n.net_id, "interface": n.interface} for n in config.networks]
-    }
-
-
-@router.get("/health")
-async def health_check(
+@router.get("/status")
+async def system_status(
     manager: NetworkManager = Depends(get_manager), 
     config=Depends(get_config),
     _: bool = Depends(require_token)
 ):
     """
-    Comprehensive health check for Wi-Lab service.
-
-    Verifies status of:
-    - DHCP (dnsmasq) instances
-    - NAT (iptables) configuration
-    - Upstream interface reachability
+    Comprehensive system status including interfaces and health check.
 
     Returns:
-        dict: Health status with 'ok' or 'degraded' overall status and component details.
+        dict: Contains:
+            - version: Software version
+            - networks: List of managed interfaces
+            - status: Overall health (ok|degraded|standby)
+            - active_networks: Number of active networks
+            - checks: Component health details
     """
-    health_data = {"status": "ok", "version": __version__, "checks": {}}
+    status_data = {
+        "version": __version__,
+        "status": "ok",
+    }
+
+    # === HEALTH CHECK ===
+    health_data = {"checks": {}}
 
     # Check dnsmasq instances
     dhcp_status = manager.dhcp_server.status()
@@ -67,7 +59,6 @@ async def health_check(
     # Check upstream interface reachability
     try:
         upstream = manager.nat_manager.get_upstream_interface()
-        # Check if interface has IP and is up
         ip_output = execute_command(["ip", "addr", "show", upstream])
         has_ip = "inet " in ip_output
         is_up = "state UP" in ip_output or "UP" in ip_output
@@ -94,8 +85,8 @@ async def health_check(
     
     if not has_active_networks:
         # Standby - service is healthy but no networks are active
-        health_data["status"] = "standby"
-        health_data["active_networks"] = 0
+        status_data["status"] = "standby"
+        status_data["active_networks"] = 0
     else:
         # Normal operation - check component health
         all_ok = all(
@@ -105,10 +96,13 @@ async def health_check(
                 health_data["checks"]["upstream_interface"].get("reachable") is not False,
             ]
         )
-        health_data["status"] = "ok" if all_ok else "degraded"
-        health_data["active_networks"] = len(manager.active)
+        status_data["status"] = "ok" if all_ok else "degraded"
+        status_data["active_networks"] = len(manager.active)
 
-    return health_data
+    # Add networks, checks, and rest of data
+    status_data["networks"] = [{"net_id": n.net_id, "interface": n.interface} for n in config.networks]
+    status_data.update(health_data)
+    return status_data
 
 
 @router.get("/debug")

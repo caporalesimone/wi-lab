@@ -29,6 +29,7 @@ import { InterfaceInfo } from './models/network.models';
 export class AppComponent implements OnInit {
   title = 'Wi-Lab Network Management';
   version: string | null = null;
+  status: string | null = null;
   interfaces: InterfaceInfo[] = [];
   loading = true;
   error: string | null = null;
@@ -36,23 +37,24 @@ export class AppComponent implements OnInit {
   constructor(private apiService: WilabApiService) {}
 
   public ngOnInit() {
-    this.loadInterfaces();
+    this.loadStatus();
   }
 
-  public loadInterfaces() {
+  public loadStatus() {
     this.loading = true;
     this.error = null;
-    this.apiService.getInterfaces().subscribe({
+    this.apiService.getStatus().subscribe({
       next: (response) => {
         this.version = response.version;
+        this.status = response.status;
         this.interfaces = response.networks;
         this.title = `Wi-Lab Network Management - ${this.version}`;
         this.loading = false;
       },
       error: (err) => {
-        this.error = `Failed to load interfaces: ${err.message}`;
+        this.error = `Failed to load status: ${err.message}`;
         this.loading = false;
-        console.error('Error loading interfaces:', err);
+        console.error('Error loading status:', err);
       }
     });
   }

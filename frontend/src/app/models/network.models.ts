@@ -3,9 +3,16 @@ export interface InterfaceInfo {
   interface: string;
 }
 
-export interface InterfacesResponse {
+export interface StatusResponse {
   version: string;
+  status: string;
   networks: InterfaceInfo[];
+  active_networks: number;
+  checks: {
+    dnsmasq: { running: boolean; instances: number };
+    iptables_nat: { configured: boolean; errors: string[] };
+    upstream_interface: { name: string; up: boolean; has_ip: boolean; reachable: boolean };
+  };
 }
 
 export interface NetworkStatus {

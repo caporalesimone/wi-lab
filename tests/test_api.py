@@ -28,23 +28,26 @@ def invalid_token():
     return "Bearer invalid-token-12345"
 
 
-class TestHealthEndpoint:
-    """Tests for health check endpoint."""
+class TestStatusEndpoint:
+    """Tests for system status endpoint."""
     
-    def test_health_check_requires_auth(self, client):
-        """Test health check requires authentication."""
-        resp = client.get('/api/v1/health')
+    def test_status_requires_auth(self, client):
+        """Test status endpoint requires authentication."""
+        resp = client.get('/api/v1/status')
         assert resp.status_code == 401
     
-    def test_health_check(self, client, valid_token):
-        """Test health check endpoint returns valid status."""
-        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
+    def test_status(self, client, valid_token):
+        """Test status endpoint returns valid response."""
+        resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
         assert data['status'] in ['ok', 'degraded', 'standby']
+        assert 'version' in data
+        assert 'networks' in data
+        assert 'checks' in data
     
-    def test_health_check_standby_mode(self, client, valid_token, monkeypatch):
-        """Test health endpoint in standby mode (no active networks)."""
+    def test_status_standby_mode(self, client, valid_token, monkeypatch):
+        """Test status endpoint in standby mode (no active networks)."""
         from wilab.api.dependencies import get_manager
         
         # Mock manager with no active networks
@@ -53,62 +56,59 @@ class TestHealthEndpoint:
             mgr.active = {}  # No active networks = standby
             return mgr
         
-        monkeypatch.setattr('wilab.api.routes.health.get_manager', mock_manager)
+        monkeypatch.setattr('wilab.api.routes.status.get_manager', mock_manager)
         
-        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
+        resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         data = resp.json()
         assert data['status'] == 'standby'
         assert data['active_networks'] == 0
     
-    def test_health_check_response_structure(self, client, valid_token):
-        """Test health response contains all required fields."""
-        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
+    def test_status_response_structure(self, client, valid_token):
+        """Test status response contains all required fields."""
+        resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         data = resp.json()
         
         # Check required top-level fields
         assert 'status' in data
         assert 'version' in data
+        assert 'networks' in data
         assert 'active_networks' in data
         assert 'checks' in data
         
-        # Check version is populated
+        # Check version and networks
         assert data['version'] is not None
         assert len(data['version']) > 0
+        assert isinstance(data['networks'], list)
     
-    def test_health_check_dnsmasq_field(self, client, valid_token):
-        """Test health check includes dnsmasq status."""
-        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
+    def test_status_health_checks(self, client, valid_token):
+        """Test status includes all health checks."""
+        resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         data = resp.json()
         
+        # Check all required checks
         assert 'dnsmasq' in data['checks']
+        assert 'iptables_nat' in data['checks']
+        assert 'upstream_interface' in data['checks']
+        
+        # Check dnsmasq structure
         assert 'running' in data['checks']['dnsmasq']
         assert 'instances' in data['checks']['dnsmasq']
         assert isinstance(data['checks']['dnsmasq']['running'], bool)
         assert isinstance(data['checks']['dnsmasq']['instances'], int)
-    
-    def test_health_check_iptables_nat_field(self, client, valid_token):
-        """Test health check includes iptables NAT status."""
-        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
-        data = resp.json()
         
-        assert 'iptables_nat' in data['checks']
+        # Check iptables_nat structure
         assert 'configured' in data['checks']['iptables_nat']
         assert 'errors' in data['checks']['iptables_nat']
         assert isinstance(data['checks']['iptables_nat']['configured'], bool)
         assert isinstance(data['checks']['iptables_nat']['errors'], list)
-    
-    def test_health_check_upstream_interface_field(self, client, valid_token):
-        """Test health check includes upstream interface status."""
-        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
-        data = resp.json()
         
-        assert 'upstream_interface' in data['checks']
+        # Check upstream_interface structure
         assert 'name' in data['checks']['upstream_interface']
         assert 'reachable' in data['checks']['upstream_interface']
         assert isinstance(data['checks']['upstream_interface']['reachable'], bool)
     
-    def test_health_check_degraded_on_dhcp_down(self, client, valid_token, monkeypatch):
-        """Test health returns degraded when DHCP is down but network is active."""
+    def test_status_degraded_on_dhcp_down(self, client, valid_token, monkeypatch):
+        """Test status returns degraded when DHCP is down but network is active."""
         from wilab.models import NetworkStatus
         from wilab.api.dependencies import get_manager as original_get_manager
         
@@ -129,7 +129,7 @@ class TestHealthEndpoint:
         monkeypatch.setattr(real_mgr.dhcp_server, 'status', 
                           lambda: {'running': False, 'instances': []})
         
-        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
+        resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         data = resp.json()
         assert data['status'] == 'degraded'
         assert data['active_networks'] == 1
@@ -139,8 +139,8 @@ class TestHealthEndpoint:
         real_mgr.active.clear()
         monkeypatch.setattr(real_mgr.dhcp_server, 'status', original_status)
     
-    def test_health_check_upstream_error_handling(self, client, valid_token, monkeypatch):
-        """Test health gracefully handles upstream interface errors."""
+    def test_status_upstream_error_handling(self, client, valid_token, monkeypatch):
+        """Test status gracefully handles upstream interface errors."""
         from wilab.api.dependencies import get_manager as original_get_manager
         from wilab.network.commands import CommandError
         
@@ -155,7 +155,7 @@ class TestHealthEndpoint:
             lambda: (_ for _ in ()).throw(CommandError("Test error"))
         )
         
-        resp = client.get('/api/v1/health', headers={'Authorization': valid_token})
+        resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200  # Should not crash
         data = resp.json()
         assert 'upstream_interface' in data['checks']
@@ -227,30 +227,6 @@ class TestDebugEndpoint:
         
         # Check managed interfaces
         assert isinstance(data['interfaces']['managed'], list)
-
-
-class TestInterfacesEndpoint:
-    """Tests for listing managed interfaces."""
-    
-    def test_list_interfaces(self, client):
-        """Test listing all managed interfaces."""
-        resp = client.get('/api/v1/interfaces')
-        assert resp.status_code == 200
-        data = resp.json()
-        assert 'version' in data
-        assert 'networks' in data
-        assert len(data['networks']) > 0
-        assert any(d['net_id'] == 'ap-01' for d in data['networks'])
-    
-    def test_list_interfaces_structure(self, client):
-        """Test that interface list has correct structure."""
-        resp = client.get('/api/v1/interfaces')
-        data = resp.json()
-        assert 'version' in data
-        assert len(data['version']) > 0
-        for interface in data['networks']:
-            assert 'net_id' in interface
-            assert 'interface' in interface
 
 
 class TestAppMetadata:

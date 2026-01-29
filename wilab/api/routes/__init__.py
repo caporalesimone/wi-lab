@@ -12,7 +12,7 @@ All routes are prefixed with /api/v1.
 
 from fastapi import APIRouter
 
-from .health import router as health_router
+from .status import router as health_router
 from .network import router as network_router
 from .internet import router as internet_router
 from .clients import router as clients_router

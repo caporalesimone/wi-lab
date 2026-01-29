@@ -1,2 +1,4 @@
 - Execute always tests before doing a commit.
+- Add more tests for each new implementation.
 - Write clear, concise, and descriptive commit messages.
+- Do not include in the commit message the report of the tests results.
