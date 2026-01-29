@@ -112,11 +112,6 @@ class InterfaceStatus(BaseModel):
     interface: str
     active: bool
 
-class ClientsResponse(BaseModel):
-    net_id: str
-    clients: List[ClientInfo]
-
-
 class TxPowerRequest(BaseModel):
     level: int = Field(..., ge=1, le=4, description="TX power level 1 (low) to 4 (max)")
 

@@ -7,8 +7,7 @@ import {
   InterfaceInfo,
   StatusResponse,
   NetworkStatus,
-  NetworkCreateRequest,
-  ClientsResponse
+  NetworkCreateRequest
 } from '../models/network.models';
 
 @Injectable({
@@ -76,15 +75,6 @@ export class WilabApiService {
     return this.http.post<{ net_id: string; internet_enabled: boolean }>(
       `${this.apiUrl}/interface/${netId}/internet/disable`,
       {},
-      { headers: this.getHeaders() }
-    ).pipe(
-      catchError(this.handleError)
-    );
-  }
-
-  public getClients(netId: string): Observable<ClientsResponse> {
-    return this.http.get<ClientsResponse>(
-      `${this.apiUrl}/interface/${netId}/clients`,
       { headers: this.getHeaders() }
     ).pipe(
       catchError(this.handleError)

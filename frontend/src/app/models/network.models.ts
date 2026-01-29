@@ -60,8 +60,3 @@ export interface ClientInfo {
   mac: string;
   ip: string;
 }
-
-export interface ClientsResponse {
-  net_id: string;
-  clients: ClientInfo[];
-}

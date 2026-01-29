@@ -517,30 +517,3 @@ class TestInternetControlEndpoints:
         assert resp.status_code in [404, 422, 500]
 
 
-class TestClientsEndpoint:
-    """Tests for listing connected clients."""
-    
-    def test_list_clients_inactive(self, client, valid_token):
-        """Test listing clients on inactive network."""
-        resp = client.get(
-            '/api/v1/interface/ap-01/clients',
-            headers={'Authorization': valid_token}
-        )
-        # Should return empty list or 200
-        assert resp.status_code in [200, 404]
-    
-    def test_list_clients_response_structure(self, client, valid_token):
-        """Test clients response structure."""
-        resp = client.get(
-            '/api/v1/interface/ap-01/clients',
-            headers={'Authorization': valid_token}
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            assert 'net_id' in data
-            assert 'clients' in data
-            assert isinstance(data['clients'], list)
-
-
-
-

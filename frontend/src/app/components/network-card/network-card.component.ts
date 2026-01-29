@@ -73,11 +73,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy {
     this.wilabApiService.getNetworkStatus(this.netId).subscribe({
       next: (status) => {
         this.status = status;
-        if (status.active) {
-          this.loadClients();
-        } else {
-          this.clientsCount = 0;
-        }
+        this.clientsCount = status.clients_connected || 0;
         if (showNotification) {
           this.loading = false;
           this.snackBar.open('Status updated', 'Close', {
@@ -112,20 +108,6 @@ export class NetworkCardComponent implements OnInit, OnDestroy {
             });
           }
         }
-      }
-    });
-  }
-
-  public loadClients() {
-    if (!this.status?.active) return;
-    
-    this.wilabApiService.getClients(this.netId).subscribe({
-      next: (response) => {
-        this.clientsCount = response.clients.length;
-      },
-      error: (err) => {
-        console.error('Error loading clients:', err);
-        this.clientsCount = 0;
       }
     });
   }
