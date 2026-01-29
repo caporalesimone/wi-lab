@@ -32,11 +32,136 @@ class TestHealthEndpoint:
     """Tests for health check endpoint."""
     
     def test_health_check(self, client):
-        """Test health check endpoint."""
+        """Test health check endpoint returns valid status."""
         resp = client.get('/api/v1/health')
         assert resp.status_code == 200
         data = resp.json()
-        assert data['status'] in ['ok', 'degraded', 'standby']  # standby when no networks active
+        assert data['status'] in ['ok', 'degraded', 'standby']
+    
+    def test_health_check_standby_mode(self, client, monkeypatch):
+        """Test health endpoint in standby mode (no active networks)."""
+        from wilab.api.dependencies import get_manager
+        
+        # Mock manager with no active networks
+        def mock_manager(*args, **kwargs):
+            mgr = get_manager()
+            mgr.active = {}  # No active networks = standby
+            return mgr
+        
+        monkeypatch.setattr('wilab.api.routes.health.get_manager', mock_manager)
+        
+        resp = client.get('/api/v1/health')
+        data = resp.json()
+        assert data['status'] == 'standby'
+        assert data['mode'] == 'standby'
+        assert data['active_networks'] == 0
+    
+    def test_health_check_response_structure(self, client):
+        """Test health response contains all required fields."""
+        resp = client.get('/api/v1/health')
+        data = resp.json()
+        
+        # Check required top-level fields
+        assert 'status' in data
+        assert 'version' in data
+        assert 'mode' in data
+        assert 'active_networks' in data
+        assert 'checks' in data
+        
+        # Check version is populated
+        assert data['version'] is not None
+        assert len(data['version']) > 0
+    
+    def test_health_check_dnsmasq_field(self, client):
+        """Test health check includes dnsmasq status."""
+        resp = client.get('/api/v1/health')
+        data = resp.json()
+        
+        assert 'dnsmasq' in data['checks']
+        assert 'running' in data['checks']['dnsmasq']
+        assert 'instances' in data['checks']['dnsmasq']
+        assert isinstance(data['checks']['dnsmasq']['running'], bool)
+        assert isinstance(data['checks']['dnsmasq']['instances'], int)
+    
+    def test_health_check_iptables_nat_field(self, client):
+        """Test health check includes iptables NAT status."""
+        resp = client.get('/api/v1/health')
+        data = resp.json()
+        
+        assert 'iptables_nat' in data['checks']
+        assert 'configured' in data['checks']['iptables_nat']
+        assert 'errors' in data['checks']['iptables_nat']
+        assert isinstance(data['checks']['iptables_nat']['configured'], bool)
+        assert isinstance(data['checks']['iptables_nat']['errors'], list)
+    
+    def test_health_check_upstream_interface_field(self, client):
+        """Test health check includes upstream interface status."""
+        resp = client.get('/api/v1/health')
+        data = resp.json()
+        
+        assert 'upstream_interface' in data['checks']
+        assert 'name' in data['checks']['upstream_interface']
+        assert 'reachable' in data['checks']['upstream_interface']
+        assert isinstance(data['checks']['upstream_interface']['reachable'], bool)
+    
+    def test_health_check_degraded_on_dhcp_down(self, client, monkeypatch):
+        """Test health returns degraded when DHCP is down but network is active."""
+        from wilab.models import NetworkStatus
+        from wilab.api.dependencies import get_manager as original_get_manager
+        
+        # Get the real manager once, then mock it
+        real_mgr = original_get_manager()
+        
+        # Add an active network
+        real_mgr.active['test-net'] = NetworkStatus(
+            net_id='test-net',
+            interface='wlan0',
+            active=True,
+            ssid='TestAP',
+            subnet='192.168.120.0/24'
+        )
+        
+        # Mock DHCP as not running
+        original_status = real_mgr.dhcp_server.status
+        monkeypatch.setattr(real_mgr.dhcp_server, 'status', 
+                          lambda: {'running': False, 'instances': []})
+        
+        resp = client.get('/api/v1/health')
+        data = resp.json()
+        assert data['status'] == 'degraded'
+        assert data['mode'] == 'active'
+        assert data['active_networks'] == 1
+        assert data['checks']['dnsmasq']['running'] is False
+        
+        # Cleanup
+        real_mgr.active.clear()
+        monkeypatch.setattr(real_mgr.dhcp_server, 'status', original_status)
+    
+    def test_health_check_upstream_error_handling(self, client, monkeypatch):
+        """Test health gracefully handles upstream interface errors."""
+        from wilab.api.dependencies import get_manager as original_get_manager
+        from wilab.network.commands import CommandError
+        
+        # Get the real manager once
+        real_mgr = original_get_manager()
+        
+        # Mock get_upstream_interface to raise error
+        original_get_upstream = real_mgr.nat_manager.get_upstream_interface
+        monkeypatch.setattr(
+            real_mgr.nat_manager,
+            'get_upstream_interface',
+            lambda: (_ for _ in ()).throw(CommandError("Test error"))
+        )
+        
+        resp = client.get('/api/v1/health')
+        assert resp.status_code == 200  # Should not crash
+        data = resp.json()
+        assert 'upstream_interface' in data['checks']
+        assert data['checks']['upstream_interface']['reachable'] is False
+        assert 'error' in data['checks']['upstream_interface']
+        
+        # Cleanup
+        monkeypatch.setattr(real_mgr.nat_manager, 'get_upstream_interface', original_get_upstream)
 
 
 class TestInterfacesEndpoint:
