@@ -232,14 +232,18 @@ class TestInterfacesEndpoint:
         resp = client.get('/api/v1/interfaces')
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) > 0
-        assert any(d['net_id'] == 'ap-01' for d in data)
+        assert 'version' in data
+        assert 'networks' in data
+        assert len(data['networks']) > 0
+        assert any(d['net_id'] == 'ap-01' for d in data['networks'])
     
     def test_list_interfaces_structure(self, client):
         """Test that interface list has correct structure."""
         resp = client.get('/api/v1/interfaces')
         data = resp.json()
-        for interface in data:
+        assert 'version' in data
+        assert len(data['version']) > 0
+        for interface in data['networks']:
             assert 'net_id' in interface
             assert 'interface' in interface
 

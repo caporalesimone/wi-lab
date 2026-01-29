@@ -16,9 +16,12 @@ async def list_interfaces(config=Depends(get_config)):
     List all managed WiFi interfaces configured in the system.
 
     Returns:
-        list[dict]: Array of objects containing net_id and interface name for each network.
+        dict: Contains version and array of objects with net_id and interface name.
     """
-    return [{"net_id": n.net_id, "interface": n.interface} for n in config.networks]
+    return {
+        "version": __version__,
+        "networks": [{"net_id": n.net_id, "interface": n.interface} for n in config.networks]
+    }
 
 
 @router.get("/health")
