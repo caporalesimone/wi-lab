@@ -161,6 +161,57 @@ class TestHealthEndpoint:
         monkeypatch.setattr(real_mgr.nat_manager, 'get_upstream_interface', original_get_upstream)
 
 
+class TestDebugEndpoint:
+    """Tests for debug endpoint."""
+    
+    def test_debug_endpoint_basic(self, client):
+        """Test debug endpoint returns valid response."""
+        resp = client.get('/api/v1/debug')
+        assert resp.status_code == 200
+        data = resp.json()
+        assert 'version' in data
+        assert 'active_networks' in data
+    
+    def test_debug_endpoint_structure(self, client):
+        """Test debug endpoint response structure."""
+        resp = client.get('/api/v1/debug')
+        data = resp.json()
+        
+        # Check main sections
+        assert 'version' in data
+        assert 'active_networks' in data
+        assert 'networks_list' in data
+        assert 'health' in data
+        assert 'services' in data
+        assert 'configuration' in data
+        
+        # Check health section
+        assert 'status' in data['health']
+        assert 'checks' in data['health']
+        assert data['health']['status'] in ['ok', 'degraded', 'standby']
+    
+    def test_debug_endpoint_services_section(self, client):
+        """Test debug endpoint includes detailed services info."""
+        resp = client.get('/api/v1/debug')
+        data = resp.json()
+        
+        assert 'services' in data
+        assert 'dnsmasq' in data['services']
+        assert 'hostapd' in data['services']
+        assert 'iptables' in data['services']
+    
+    def test_debug_endpoint_configuration_section(self, client):
+        """Test debug endpoint includes configuration info."""
+        resp = client.get('/api/v1/debug')
+        data = resp.json()
+        
+        assert 'configuration' in data
+        assert 'upstream_interface' in data['configuration']
+        assert 'networks_configured' in data['configuration']
+        assert 'networks' in data['configuration']
+        assert isinstance(data['configuration']['networks'], list)
+
+
 class TestInterfacesEndpoint:
     """Tests for listing managed interfaces."""
     

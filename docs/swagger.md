@@ -45,7 +45,53 @@ Provides formatted API documentation without interactive testing.
 curl http://localhost:8080/api/v1/health
 ```
 
-### Example 2: Create WiFi Network (With Authentication)
+### Example 2: Debug Information (With Authentication)
+
+**⚠️ WARNING: Debug-Only Endpoint**
+
+This endpoint is for troubleshooting only. **DO NOT** use in frontend with frequent polling.
+
+```bash
+TOKEN="your-auth-token-from-config"
+
+# Get comprehensive debug information
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/v1/debug
+```
+
+**Performance:** 150-600ms depending on active networks. Expensive operation.
+
+**When to use:**
+- Manual troubleshooting via curl/Postman
+- One-time diagnostics
+- Backend debugging
+
+**When NOT to use:**
+- Frontend applications
+- Automated monitoring (use `/health` instead)
+- Polling more than once per minute
+- Performance-critical paths
+
+**Response includes:**
+```json
+{
+  "version": "1.1.0",
+  "active_networks": 2,
+  "networks_list": ["ap-01", "ap-02"],
+  "health": {
+    "status": "ok|degraded|standby",
+    "checks": {...}
+  },
+  "services": {
+    "dnsmasq": {...},
+    "hostapd": {...},
+    "iptables": {...}
+  },
+  "configuration": {...}
+}
+```
+
+### Example 3: Create WiFi Network (With Authentication)
 
 ```bash
 TOKEN="your-auth-token-from-config"

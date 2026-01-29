@@ -105,14 +105,117 @@ async def health_check(
     return health_data
 
 
-@router.get("/status/services")
-async def services_status(
-    manager: NetworkManager = Depends(get_manager),
+@router.get("/debug")
+async def debug_info(
+    manager: NetworkManager = Depends(get_manager), config=Depends(get_config)
 ):
     """
-    Get status of system services (dnsmasq, hostapd, iptables).
-
+    Comprehensive debug information for troubleshooting.
+    
+    ⚠️ DEBUG ENDPOINT - DO NOT USE IN FRONTEND WITH FREQUENT POLLING
+    
+    This endpoint is expensive and should only be called manually for troubleshooting.
+    It combines health checks with detailed service information and system state.
+    
+    **DO NOT** call this endpoint:
+    - More than once per minute
+    - From frontend UI
+    - In automated monitoring without caching
+    
+    Performance: 150-600ms depending on network count
+    
     Returns:
-        dict: Detailed status of each service managing the WiFi AP infrastructure.
+        dict: Complete system debug information including:
+            - Health status (ok|degraded|standby)
+            - Service status (dnsmasq, hostapd, iptables detailed)
+            - Active networks list
+            - System information
     """
-    return manager.services_status()
+    debug_data = {
+        "version": __version__,
+        "active_networks": len(manager.active),
+        "networks_list": list(manager.active.keys()),
+    }
+
+    # === HEALTH STATUS ===
+    health_data = {"status": "ok", "checks": {}}
+
+    # Check dnsmasq instances
+    dhcp_status = manager.dhcp_server.status()
+    health_data["checks"]["dnsmasq"] = {
+        "running": dhcp_status.get("running", False),
+        "instances": len(dhcp_status.get("instances", [])),
+    }
+
+    # Check iptables NAT configuration
+    try:
+        nat_status = manager.nat_manager.status()
+        has_nat_rules = bool(
+            nat_status.get("nat") and "MASQUERADE" in nat_status.get("nat", "")
+        )
+        health_data["checks"]["iptables_nat"] = {
+            "configured": has_nat_rules,
+            "errors": nat_status.get("errors", []),
+        }
+    except Exception as e:
+        health_data["checks"]["iptables_nat"] = {"configured": False, "error": str(e)}
+
+    # Check upstream interface reachability
+    try:
+        upstream = manager.nat_manager.get_upstream_interface()
+        ip_output = execute_command(["ip", "addr", "show", upstream])
+        has_ip = "inet " in ip_output
+        is_up = "state UP" in ip_output or "UP" in ip_output
+        health_data["checks"]["upstream_interface"] = {
+            "name": upstream,
+            "up": is_up,
+            "has_ip": has_ip,
+            "reachable": is_up and has_ip,
+        }
+    except CommandError as e:
+        health_data["checks"]["upstream_interface"] = {
+            "name": config.upstream_interface,
+            "reachable": False,
+            "error": str(e),
+        }
+    except Exception as e:
+        health_data["checks"]["upstream_interface"] = {
+            "reachable": False,
+            "error": str(e),
+        }
+
+    # Determine overall health status
+    has_active_networks = len(manager.active) > 0
+    if not has_active_networks:
+        health_data["status"] = "standby"
+    else:
+        all_ok = all(
+            [
+                health_data["checks"]["dnsmasq"].get("running") is not False,
+                health_data["checks"]["iptables_nat"].get("configured") is not False,
+                health_data["checks"]["upstream_interface"].get("reachable") is not False,
+            ]
+        )
+        health_data["status"] = "ok" if all_ok else "degraded"
+
+    debug_data["health"] = health_data
+
+    # === SERVICES DETAILED STATUS ===
+    services = manager.services_status()
+    debug_data["services"] = {
+        "dnsmasq": services.get("dnsmasq"),
+        "hostapd": services.get("hostapd"),
+        "iptables": services.get("iptables"),
+    }
+
+    # === CONFIGURATION INFO ===
+    debug_data["configuration"] = {
+        "upstream_interface": config.upstream_interface,
+        "networks_configured": len(config.networks),
+        "networks": [
+            {"net_id": n.net_id, "interface": n.interface}
+            for n in config.networks
+        ],
+    }
+
+    return debug_data
