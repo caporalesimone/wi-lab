@@ -114,108 +114,102 @@ async def debug_info(
     
     ⚠️ DEBUG ENDPOINT - DO NOT USE IN FRONTEND WITH FREQUENT POLLING
     
-    This endpoint is expensive and should only be called manually for troubleshooting.
-    It combines health checks with detailed service information and system state.
-    
-    **DO NOT** call this endpoint:
-    - More than once per minute
-    - From frontend UI
-    - In automated monitoring without caching
+    This endpoint is expensive (150-600ms) and should only be called manually for troubleshooting.
     
     Performance: 150-600ms depending on network count
     
     Returns:
-        dict: Complete system debug information including:
-            - Health status (ok|degraded|standby)
-            - Service status (dnsmasq, hostapd, iptables detailed)
-            - Active networks list
-            - System information
+        dict: Complete system debug information.
     """
-    debug_data = {
-        "version": __version__,
-        "active_networks": len(manager.active),
-        "networks_list": list(manager.active.keys()),
-    }
-
-    # === HEALTH STATUS ===
-    health_data = {"status": "ok", "checks": {}}
-
-    # Check dnsmasq instances
+    # === DETERMINE OVERALL STATUS ===
+    has_active_networks = len(manager.active) > 0
+    
+    # Check dnsmasq
     dhcp_status = manager.dhcp_server.status()
-    health_data["checks"]["dnsmasq"] = {
-        "running": dhcp_status.get("running", False),
-        "instances": len(dhcp_status.get("instances", [])),
-    }
-
-    # Check iptables NAT configuration
+    dhcp_running = dhcp_status.get("running", False)
+    
+    # Check iptables NAT
     try:
         nat_status = manager.nat_manager.status()
-        has_nat_rules = bool(
+        nat_configured = bool(
             nat_status.get("nat") and "MASQUERADE" in nat_status.get("nat", "")
         )
-        health_data["checks"]["iptables_nat"] = {
-            "configured": has_nat_rules,
-            "errors": nat_status.get("errors", []),
-        }
+        nat_errors = nat_status.get("errors", [])
     except Exception as e:
-        health_data["checks"]["iptables_nat"] = {"configured": False, "error": str(e)}
-
-    # Check upstream interface reachability
+        nat_configured = False
+        nat_errors = [str(e)]
+    
+    # Check upstream interface
     try:
         upstream = manager.nat_manager.get_upstream_interface()
         ip_output = execute_command(["ip", "addr", "show", upstream])
-        has_ip = "inet " in ip_output
-        is_up = "state UP" in ip_output or "UP" in ip_output
-        health_data["checks"]["upstream_interface"] = {
-            "name": upstream,
-            "up": is_up,
-            "has_ip": has_ip,
-            "reachable": is_up and has_ip,
-        }
+        upstream_up = "state UP" in ip_output or "UP" in ip_output
+        upstream_has_ip = "inet " in ip_output
+        upstream_reachable = upstream_up and upstream_has_ip
+        upstream_name = upstream
     except CommandError as e:
-        health_data["checks"]["upstream_interface"] = {
-            "name": config.upstream_interface,
-            "reachable": False,
-            "error": str(e),
-        }
+        upstream_reachable = False
+        upstream_name = config.upstream_interface
+        upstream_up = False
+        upstream_has_ip = False
     except Exception as e:
-        health_data["checks"]["upstream_interface"] = {
-            "reachable": False,
-            "error": str(e),
-        }
-
-    # Determine overall health status
-    has_active_networks = len(manager.active) > 0
+        upstream_reachable = False
+        upstream_name = None
+        upstream_up = False
+        upstream_has_ip = False
+    
+    # Determine overall status
     if not has_active_networks:
-        health_data["status"] = "standby"
+        status = "standby"
     else:
-        all_ok = all(
-            [
-                health_data["checks"]["dnsmasq"].get("running") is not False,
-                health_data["checks"]["iptables_nat"].get("configured") is not False,
-                health_data["checks"]["upstream_interface"].get("reachable") is not False,
-            ]
-        )
-        health_data["status"] = "ok" if all_ok else "degraded"
-
-    debug_data["health"] = health_data
-
-    # === SERVICES DETAILED STATUS ===
+        all_ok = dhcp_running and nat_configured and upstream_reachable
+        status = "ok" if all_ok else "degraded"
+    
+    # === GET DETAILED SERVICES INFO ===
     services = manager.services_status()
-    debug_data["services"] = {
-        "dnsmasq": services.get("dnsmasq"),
-        "hostapd": services.get("hostapd"),
-        "iptables": services.get("iptables"),
-    }
-
-    # === CONFIGURATION INFO ===
-    debug_data["configuration"] = {
-        "upstream_interface": config.upstream_interface,
-        "networks_configured": len(config.networks),
-        "networks": [
-            {"net_id": n.net_id, "interface": n.interface}
-            for n in config.networks
-        ],
+    
+    debug_data = {
+        "version": __version__,
+        "status": status,
+        
+        "system": {
+            "active_networks": len(manager.active),
+            "configured_networks": len(config.networks),
+            "upstream_interface": config.upstream_interface,
+        },
+        
+        "services": {
+            "dnsmasq": {
+                "running": dhcp_running,
+                "instances": len(dhcp_status.get("instances", [])),
+            },
+            "hostapd": {
+                "running": services.get("hostapd", {}).get("running", False),
+                "instances": len(services.get("hostapd", {}).get("instances", [])),
+            },
+            "iptables_nat": {
+                "configured": nat_configured,
+                "errors": nat_errors,
+            },
+        },
+        
+        "interfaces": {
+            "upstream": {
+                "name": upstream_name,
+                "up": upstream_up,
+                "has_ip": upstream_has_ip,
+                "reachable": upstream_reachable,
+            },
+            "managed": [
+                {"net_id": n.net_id, "interface": n.interface}
+                for n in config.networks
+            ],
+        },
+        
+        "raw_diagnostics": {
+            "iptables_nat_rules": nat_status.get("nat", "") if 'nat_status' in locals() else "",
+            "iptables_forward_rules": nat_status.get("forward", "") if 'nat_status' in locals() else "",
+        },
     }
 
     return debug_data

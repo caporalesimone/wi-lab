@@ -170,7 +170,8 @@ class TestDebugEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert 'version' in data
-        assert 'active_networks' in data
+        assert 'status' in data
+        assert 'system' in data
     
     def test_debug_endpoint_structure(self, client):
         """Test debug endpoint response structure."""
@@ -179,37 +180,48 @@ class TestDebugEndpoint:
         
         # Check main sections
         assert 'version' in data
-        assert 'active_networks' in data
-        assert 'networks_list' in data
-        assert 'health' in data
-        assert 'services' in data
-        assert 'configuration' in data
+        assert 'status' in data
+        assert data['status'] in ['ok', 'degraded', 'standby']
         
-        # Check health section
-        assert 'status' in data['health']
-        assert 'checks' in data['health']
-        assert data['health']['status'] in ['ok', 'degraded', 'standby']
+        # Check system section
+        assert 'system' in data
+        assert 'active_networks' in data['system']
+        assert 'configured_networks' in data['system']
+        assert 'upstream_interface' in data['system']
     
     def test_debug_endpoint_services_section(self, client):
-        """Test debug endpoint includes detailed services info."""
+        """Test debug endpoint includes services info."""
         resp = client.get('/api/v1/debug')
         data = resp.json()
         
         assert 'services' in data
         assert 'dnsmasq' in data['services']
         assert 'hostapd' in data['services']
-        assert 'iptables' in data['services']
+        assert 'iptables_nat' in data['services']
+        
+        # Check service structure
+        assert 'running' in data['services']['dnsmasq']
+        assert 'instances' in data['services']['dnsmasq']
+        assert isinstance(data['services']['dnsmasq']['instances'], int)
     
-    def test_debug_endpoint_configuration_section(self, client):
-        """Test debug endpoint includes configuration info."""
+    def test_debug_endpoint_interfaces_section(self, client):
+        """Test debug endpoint includes interfaces info."""
         resp = client.get('/api/v1/debug')
         data = resp.json()
         
-        assert 'configuration' in data
-        assert 'upstream_interface' in data['configuration']
-        assert 'networks_configured' in data['configuration']
-        assert 'networks' in data['configuration']
-        assert isinstance(data['configuration']['networks'], list)
+        assert 'interfaces' in data
+        assert 'upstream' in data['interfaces']
+        assert 'managed' in data['interfaces']
+        
+        # Check upstream interface structure
+        upstream = data['interfaces']['upstream']
+        assert 'name' in upstream
+        assert 'up' in upstream
+        assert 'has_ip' in upstream
+        assert 'reachable' in upstream
+        
+        # Check managed interfaces
+        assert isinstance(data['interfaces']['managed'], list)
 
 
 class TestInterfacesEndpoint:
