@@ -12,10 +12,10 @@ Each feature is fully detailed in dedicated markdown files in the `TODOs/` direc
 
 | Version | Feature | File | Description |
 |---------|---------|------|-------------|
-| v1.1.0 | API Simplification | [api-simplification.md](TODOs/api-simplification.md) | Streamline API complexity by consolidating overlapping endpoints. Reduces network endpoints from 3 to 2. |
-| v1.2.0 | Traffic Statistics | [traffic-statistics.md](TODOs/traffic-statistics.md) | Real-time traffic statistics collection (TX/RX bytes, packets, errors) for network monitoring. |
-| v1.3.0 | Link Quality Simulation | [link-quality-simulation.md](TODOs/link-quality-simulation.md) | Simulate poor network conditions (packet loss, latency) using Linux `tc` for safe, reproducible testing. |
-| v1.4.0 | Device Busy Reservation | [device-busy-reservation.md](TODOs/device-busy-reservation.md) | Exclusive network reservation with timer-based automatic release. Prevents concurrent access with countdown UI. |
+| v1.2.0 | API Simplification | [api-simplification.md](TODOs/api-simplification.md) | Streamline API complexity by consolidating overlapping endpoints. Reduces network endpoints from 3 to 2. |
+| v1.3.0 | Traffic Statistics | [traffic-statistics.md](TODOs/traffic-statistics.md) | Real-time traffic statistics collection (TX/RX bytes, packets, errors) for network monitoring. |
+| v1.4.0 | Link Quality Simulation | [link-quality-simulation.md](TODOs/link-quality-simulation.md) | Simulate poor network conditions (packet loss, latency) using Linux `tc` for safe, reproducible testing. |
+| v1.5.0 | Device Busy Reservation | [device-busy-reservation.md](TODOs/device-busy-reservation.md) | Exclusive network reservation with timer-based automatic release. Prevents concurrent access with countdown UI. |
 
 ---
 
