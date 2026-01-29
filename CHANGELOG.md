@@ -4,6 +4,75 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [1.2.0] - 2026-01-29
+
+### 🚀 Major API Simplification
+
+- **Unified Network Endpoints** (Breaking Change):
+  - Consolidated 4 redundant endpoints into single `GET /interface/{net_id}/network`
+  - **Removed endpoints**: `/interface/{net_id}/status`, `/interface/{net_id}/summary`, `/interface/{net_id}/clients`
+  - New unified endpoint returns complete network state: configuration, DHCP info, connected clients
+  - 75% reduction in API surface area (4→1 endpoints)
+  - Enhanced `NetworkStatus` model with `dhcp`, `clients`, `clients_connected` fields
+  - Frontend migrated to use unified endpoint (1 call instead of 3)
+
+### ✨ Features
+
+- **Version Display**: Software version (1.2.0) now displayed in frontend page title
+- **Enhanced Swagger UI**: Added example values (`ap-01`) precompiled in all `net_id` parameters
+- **System Health Monitoring**:
+  - Added `/api/v1/status` endpoint (renamed from `/health`) with comprehensive health checks
+  - Standby mode when no networks active
+  - Checks: dnsmasq status, iptables NAT, upstream interface connectivity
+  - Status levels: `ok`, `standby`, `degraded`
+  
+- **Debug Endpoint**: New `/api/v1/debug` endpoint for troubleshooting
+  - System info: OS, kernel, Python version, uptime
+  - Network diagnostics: active networks, DHCP leases, iptables rules
+  - Service status: hostapd, dnsmasq processes
+  - ~600ms response time for comprehensive diagnostics
+
+### 🔒 Security
+
+- **Authentication Enforcement**: `/api/v1/status` endpoint now requires authentication token
+- All system status endpoints protected behind auth layer
+
+### 🔧 Refactoring & Code Quality
+
+- **API Route Organization**:
+  - Renamed `health.py` → `status.py` for semantic clarity
+  - Removed `clients.py` route file (functionality merged into network endpoint)
+  - Deleted `ClientsResponse` model (no longer needed)
+  - Cleaner route structure and reduced code duplication
+
+- **JSON Response Optimization**:
+  - Reordered `/status` endpoint fields: `version` → `status` → `networks` → `active_networks` → `checks`
+  - More logical field ordering for better API ergonomics
+
+- **Code Reduction**:
+  - Removed `get_summary()` method from NetworkManager
+  - Eliminated 251 lines of redundant code across backend and frontend
+  - Simplified frontend service: removed `getClients()` and `loadClients()` methods
+
+### 🧪 Testing
+
+- **Test Suite Optimization**: Reduced from 33 to 29 tests (removed redundant endpoint tests)
+- **Enhanced Coverage**: Added comprehensive test for unified network endpoint with DHCP and clients validation
+- All tests passing with new consolidated structure
+
+### 📚 Documentation
+
+- **API Simplification**: Updated `TODOs/api-simplification.md` to COMPLETED status
+- **Swagger Documentation**: Updated OpenAPI specs with consolidated endpoint structure
+- Improved endpoint descriptions and response examples
+
+### ⚡ Performance
+
+- Frontend efficiency: Single API call replaces 2-3 previous calls for network status
+- Reduced network overhead and improved page load times
+
+---
+
 ## [1.1.0] - 2026-01-29
 
 ### 🔧 Refactoring & Infrastructure Improvements
