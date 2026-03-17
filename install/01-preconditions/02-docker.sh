@@ -8,7 +8,7 @@
 # - Docker daemon is running
 # - User has Docker permissions
 #
-# Usage: bash setup/01-preconditions/02-docker.sh
+# Usage: bash install/01-preconditions/02-docker.sh
 ################################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

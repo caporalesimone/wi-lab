@@ -5,7 +5,7 @@
 # 
 # Tests the API health endpoint
 #
-# Usage: bash setup/03-tests/03-api-health.sh
+# Usage: bash install/03-tests/03-api-health.sh
 ################################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

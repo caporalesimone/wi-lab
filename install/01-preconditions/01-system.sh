@@ -8,7 +8,7 @@
 # - OS is Ubuntu 25 or newer
 # - Required system packages are available
 #
-# Usage: bash setup/01-preconditions/01-system.sh
+# Usage: bash install/01-preconditions/01-system.sh
 ################################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

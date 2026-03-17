@@ -8,7 +8,7 @@
 # - Ask user if missing tools should be installed
 # - Install missing packages only with user confirmation
 #
-# Usage: bash setup/01-preconditions/04-tools.sh
+# Usage: bash install/01-preconditions/04-tools.sh
 ################################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

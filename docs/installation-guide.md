@@ -106,13 +106,13 @@ which iptables
 which iw
 ```
 
-If any tools are missing, the `setup.sh` script will install them.
+If any tools are missing, the `install.sh` script will install them.
 
 ---
 
 ## Quick Setup
 
-The `setup.sh` script automates the entire installation process:
+The `install.sh` script automates the entire installation process:
 
 ```bash
 # 1. Clone repository
@@ -124,14 +124,14 @@ nano config.yaml
 # See below for configuration guide
 
 # 3. Run automated setup
-sudo bash setup.sh
+sudo bash install.sh
 
 # 4. Verify installation
 curl http://localhost:8080/api/v1/health
 # Expected output: {"status":"ok"}
 ```
 
-The `setup.sh` script automatically:
+The `install.sh` script automatically:
 - ✅ Verifies and installs all required system packages
 - ✅ Creates Python virtual environment at `/opt/wilab-venv`
 - ✅ Installs Python dependencies
@@ -142,9 +142,9 @@ The `setup.sh` script automatically:
 
 ---
 
-## Manual Configuration (After Running setup.sh)
+## Manual Configuration (After Running install.sh)
 
-If you need to manually configure Wi-Lab after running `setup.sh`, or if you're deploying in a custom environment:
+If you need to manually configure Wi-Lab after running `install.sh`, or if you're deploying in a custom environment:
 
 ### Configure config.yaml
 

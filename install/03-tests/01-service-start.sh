@@ -5,7 +5,7 @@
 # 
 # Starts the wi-lab service and waits for initialization
 #
-# Usage: bash setup/03-tests/01-service-start.sh
+# Usage: bash install/03-tests/01-service-start.sh
 ################################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

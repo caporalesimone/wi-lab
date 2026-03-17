@@ -34,7 +34,9 @@ setup_common_vars() {
 # Ensure script is run as root
 require_root() {
     if [[ $EUID -ne 0 ]]; then
-        log_error "This script must be run as root (use: sudo bash setup.sh)"
+        local script_name
+        script_name="${ROOT_HINT_SCRIPT:-$(basename "$0")}"
+        log_error "This script must be run as root (use: sudo bash ${script_name})"
         exit 1
     fi
 }

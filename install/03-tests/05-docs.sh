@@ -8,7 +8,7 @@
 # - OpenAPI JSON schema
 # - ReDoc
 #
-# Usage: bash setup/03-tests/05-docs.sh
+# Usage: bash install/03-tests/05-docs.sh
 ################################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

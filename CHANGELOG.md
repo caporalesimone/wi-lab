@@ -78,22 +78,22 @@ All notable changes to Wi-Lab are documented in this file.
 ### 🔧 Refactoring & Infrastructure Improvements
 
 - **Modularized Setup Infrastructure**:
-  - Centralized common functions in `setup/common.sh` (9 reusable functions)
+  - Centralized common functions in `install/common.sh` (9 reusable functions)
   - Split setup into 15 modular stages (5 preconditions + 5 setup + 5 tests)
   - Eliminated all code duplication across setup scripts
-  - 60% reduction in setup.sh size (from 436 to 76 lines)
+  - 60% reduction in install.sh size (from 436 to 76 lines)
 
 - **Dynamic Stage Discovery**:
-  - Setup stages automatically discovered at runtime from `setup/` directory
+  - Setup stages automatically discovered at runtime from `install/` directory
   - Numerical sorting ensures correct execution order
-  - Add new stages without modifying setup.sh
+  - Add new stages without modifying install.sh
   - Each stage independent and reusable
 
 - **Setup Orchestrator Pattern**:
-  - Replaced monolithic setup.sh with slim orchestrator
-  - Complex logic moved to individual `setup/*` stage scripts
+  - Replaced monolithic install.sh with slim orchestrator
+  - Complex logic moved to individual `install/*` stage scripts
   - User confirmation flow and dynamic config extraction
-  - Added `setup/99-final-test.sh` for comprehensive verification
+  - Added `install/99-final-test.sh` for comprehensive verification
 
 - **API Routes Refactoring**:
   - Split monolithic `routes.py` into modular domain-based structure
@@ -101,7 +101,7 @@ All notable changes to Wi-Lab are documented in this file.
   - Improved maintainability and testability
 
 - **Make Scripts Executable**:
-  - Ensured all setup.sh and uninstall.sh scripts have execute permissions
+  - Ensured all install.sh and uninstall.sh scripts have execute permissions
   - Improved CI/CD pipeline compatibility
 
 ### 🐛 Bug Fixes

@@ -8,7 +8,7 @@
 # - requirements.txt exists
 # - main.py exists
 #
-# Usage: bash setup/01-preconditions/03-config.sh
+# Usage: bash install/01-preconditions/03-config.sh
 ################################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

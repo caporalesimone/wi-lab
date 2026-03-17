@@ -18,7 +18,7 @@ nano config.yaml
 # Update: auth_token, networks[].interface, dns_server, dhcp_base_network
 
 # 3. Run automated setup (installs everything!)
-sudo bash setup.sh
+sudo bash install.sh
 
 # 4. Verify installation
 curl http://localhost:8080/api/v1/health

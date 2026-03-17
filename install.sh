@@ -5,17 +5,18 @@
 # Stage 1-5: Installation stages (venv, systemd, frontend, etc.)
 # Stage 99: Final tests
 #
-# Usage: sudo bash setup.sh
+# Usage: sudo bash install.sh
 ################################################################################
 
 set -e
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SETUP_DIR="$SCRIPT_DIR/setup"
+SETUP_DIR="$SCRIPT_DIR/install"
 
 # Import common logging functions
 source "$SETUP_DIR/common.sh"
+export ROOT_HINT_SCRIPT="install.sh"
 
 ################################################################################
 # Setup execution

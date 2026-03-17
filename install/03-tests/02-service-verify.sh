@@ -5,7 +5,7 @@
 # 
 # Verifies that the wi-lab service is running
 #
-# Usage: bash setup/03-tests/02-service-verify.sh
+# Usage: bash install/03-tests/02-service-verify.sh
 ################################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

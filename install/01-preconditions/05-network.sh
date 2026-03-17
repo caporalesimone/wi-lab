@@ -7,7 +7,7 @@
 # - WiFi interface defined in config
 # - WiFi interface is available on host
 #
-# Usage: bash setup/01-preconditions/05-network.sh
+# Usage: bash install/01-preconditions/05-network.sh
 ################################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
