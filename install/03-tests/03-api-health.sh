@@ -18,6 +18,7 @@ BASE_URL="http://localhost:${API_PORT}"
 
 log_info "Testing health endpoint..."
 HEALTH_URL="${BASE_URL}/api/v1/health"
+log_info "Health endpoint URL: $HEALTH_URL"
 
 # Retry logic: attempt up to 20 times with 3-second delay
 # Service can take time to fully initialize all components
@@ -28,8 +29,13 @@ HEALTH_OK=false
 
 while [ $ATTEMPT -lt $MAX_RETRIES ]; do
     ATTEMPT=$((ATTEMPT + 1))
-    if curl -s -f "$HEALTH_URL" > /dev/null 2>&1; then
-        HEALTH_RESPONSE=$(curl -s "$HEALTH_URL")
+    
+    # Test with debug output to detect connection issues
+    HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/health_response.txt "$HEALTH_URL" 2>/tmp/health_error.txt)
+    CURL_EXIT=$?
+    
+    if [ $CURL_EXIT -eq 0 ] && [ "$HTTP_CODE" = "200" ]; then
+        HEALTH_RESPONSE=$(cat /tmp/health_response.txt)
         log_success "Health endpoint is responding (attempt $ATTEMPT/$MAX_RETRIES)"
         echo "   Response: $HEALTH_RESPONSE"
         HEALTH_OK=true
@@ -37,13 +43,19 @@ while [ $ATTEMPT -lt $MAX_RETRIES ]; do
     fi
     
     if [ $ATTEMPT -lt $MAX_RETRIES ]; then
-        log_info "Waiting for API to start... (attempt $ATTEMPT/$MAX_RETRIES, waiting ${RETRY_DELAY}s)"
+        ERROR_MSG=$(cat /tmp/health_error.txt 2>/dev/null)
+        if [ -n "$ERROR_MSG" ]; then
+            log_info "Attempt $ATTEMPT/$MAX_RETRIES: Connection error: $ERROR_MSG (waiting ${RETRY_DELAY}s)"
+        else
+            log_info "Attempt $ATTEMPT/$MAX_RETRIES: HTTP $HTTP_CODE, curl exit: $CURL_EXIT (waiting ${RETRY_DELAY}s)"
+        fi
         sleep $RETRY_DELAY
     fi
 done
 
 if [ "$HEALTH_OK" = false ]; then
     log_warning "Health endpoint not responding after $MAX_RETRIES attempts (~$((MAX_RETRIES * RETRY_DELAY))s total)"
+    log_warning "Last response: HTTP $HTTP_CODE, curl exit: $CURL_EXIT"
 fi
 
 log_success "API health test completed"
