@@ -22,6 +22,7 @@ declare -a REQUIRED_CMDS=(
     "dnsmasq"
     "iw"
     "jq"
+    "nmcli"
     "systemctl"
 )
 
@@ -33,6 +34,7 @@ declare -A CMD_TO_PKGS=(
     [dnsmasq]="dnsmasq"
     [iw]="iw"
     [jq]="jq"
+    [nmcli]="network-manager"
 )
 
 ################################################################################

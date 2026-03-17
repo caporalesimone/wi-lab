@@ -34,6 +34,23 @@ class NetworkManager:
         self._expiry_thread.start()
         logger.info("NetworkManager initialized")
 
+    def _configure_networkmanager_unmanaged(self, interface: str) -> None:
+        """Best-effort: ask NetworkManager to stop managing AP interface."""
+        try:
+            execute_command(["nmcli", "--version"])
+        except CommandError:
+            logger.debug("nmcli not available, skipping NetworkManager unmanaged setup")
+            return
+
+        try:
+            execute_command(["nmcli", "device", "set", interface, "managed", "no"])
+            # Drop any active NM connection on the device to release control quickly.
+            execute_command(["nmcli", "device", "disconnect", interface], check=False)
+            time.sleep(0.2)
+            logger.info(f"Configured {interface} as unmanaged in NetworkManager")
+        except CommandError as e:
+            logger.warning(f"Could not configure NetworkManager unmanaged for {interface}: {e}")
+
     def _get_subnet(self, net_id: str) -> str:
         """Assign a /24 subnet by incrementing the third octet from dhcp_base_network."""
         cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
@@ -115,6 +132,9 @@ class NetworkManager:
             if req.internet_enabled is not None
             else self.config.internet_enabled_by_default
         )
+
+        # Best-effort: prevent NetworkManager/wpa_supplicant from contending AP interface.
+        self._configure_networkmanager_unmanaged(cfg_net.interface)
         
         # Start DHCP server
         try:
@@ -317,6 +337,22 @@ class NetworkManager:
             st.clients_connected = len(clients)
         
         return st
+
+    def get_summary(self, net_id: str) -> Optional[dict]:
+        """Backward-compatible summary view for a network."""
+        st = self.get_status(net_id)
+        if st is None:
+            return None
+
+        clients = st.clients or []
+        return {
+            "net_id": st.net_id,
+            "interface": st.interface,
+            "active": st.active,
+            "dhcp": st.dhcp or {},
+            "clients_connected": st.clients_connected if st.clients_connected is not None else len(clients),
+            "clients": [c.model_dump() if hasattr(c, "model_dump") else c for c in clients],
+        }
 
     def enable_internet(self, net_id: str) -> NetworkStatus:
         """

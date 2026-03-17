@@ -365,6 +365,32 @@ class TestNetworkCreateEndpoint:
             }
         )
         assert resp.status_code == 422  # Validation error
+
+    def test_start_network_runtime_failure_returns_500(self, client, valid_token, monkeypatch):
+        """Operational failures during startup must map to 500, not 404."""
+        from wilab.api.dependencies import _manager
+        if _manager:
+            monkeypatch.setattr(
+                _manager,
+                'start_network',
+                lambda *args, **kwargs: (_ for _ in ()).throw(
+                    ValueError('Failed to start AP: hostapd failed to start')
+                )
+            )
+
+        resp = client.post(
+            '/api/v1/interface/ap-01/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestAP',
+                'channel': 6,
+                'encryption': 'wpa2',
+                'password': 'testpass123',
+                'band': '2.4ghz',
+                'tx_power_level': 4
+            }
+        )
+        assert resp.status_code == 500
     
     def test_network_response_structure(self, client, valid_token, monkeypatch):
         """Test that network response has correct structure."""

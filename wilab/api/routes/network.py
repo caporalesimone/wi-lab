@@ -17,6 +17,7 @@ router = APIRouter(prefix="/interface", tags=["Network"])
         200: {"description": "Network created and started successfully"},
         404: {"description": "net_id not found in configuration"},
         409: {"description": "Network already active; stop it first"},
+        500: {"description": "Failed to start network due to runtime error"},
     },
 )
 async def start_network(
@@ -66,9 +67,12 @@ async def start_network(
         return manager.start_network(net_id, req)
     except ValueError as e:
         error_msg = str(e)
-        if "already active" in error_msg.lower():
+        error_msg_lower = error_msg.lower()
+        if "already active" in error_msg_lower:
             raise HTTPException(status_code=409, detail=error_msg)
-        raise HTTPException(status_code=404, detail=error_msg)
+        if "unknown net_id" in error_msg_lower:
+            raise HTTPException(status_code=404, detail=error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @router.delete(

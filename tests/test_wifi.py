@@ -3,6 +3,7 @@ import time
 from wilab.config import load_config, NetworkEntry
 from wilab.wifi.manager import NetworkManager
 from wilab.models import NetworkCreateRequest
+from wilab.network.commands import CommandError
 
 
 class TestNetworkManagerInit:
@@ -21,6 +22,37 @@ class TestNetworkManagerInit:
         mgr = NetworkManager(cfg)
         assert hasattr(mgr, 'dhcp_server')
         assert mgr.dhcp_server is not None
+
+    def test_configure_networkmanager_unmanaged_when_nmcli_available(self, monkeypatch):
+        """Test unmanaged setup triggers nmcli commands when available."""
+        cfg = load_config()
+        mgr = NetworkManager(cfg)
+        calls = []
+
+        def mock_execute_command(cmd, check=True):
+            calls.append((cmd, check))
+            return ""
+
+        monkeypatch.setattr('wilab.wifi.manager.execute_command', mock_execute_command)
+
+        mgr._configure_networkmanager_unmanaged('wlan0')
+
+        assert any(c[0] == ['nmcli', '--version'] for c in calls)
+        assert any(c[0] == ['nmcli', 'device', 'set', 'wlan0', 'managed', 'no'] for c in calls)
+        assert any(c[0] == ['nmcli', 'device', 'disconnect', 'wlan0'] for c in calls)
+
+    def test_configure_networkmanager_unmanaged_when_nmcli_missing(self, monkeypatch):
+        """Test unmanaged setup is skipped cleanly when nmcli is unavailable."""
+        cfg = load_config()
+        mgr = NetworkManager(cfg)
+
+        def mock_execute_command(cmd, check=True):
+            raise CommandError("Command not found: nmcli")
+
+        monkeypatch.setattr('wilab.wifi.manager.execute_command', mock_execute_command)
+
+        # Should not raise
+        mgr._configure_networkmanager_unmanaged('wlan0')
 
 
 class TestSubnetResolution:
