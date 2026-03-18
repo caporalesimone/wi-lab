@@ -13,12 +13,12 @@
 ################################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SETUP_DIR="$SCRIPT_DIR/install"
+INSTALL_DIR="$SCRIPT_DIR/install"
 
 # Import common logging functions
-source "$SETUP_DIR/common.sh"
+source "$INSTALL_DIR/common.sh"
 export ROOT_HINT_SCRIPT="uninstall.sh"
-setup_common_vars
+install_common_vars
 
 SERVICE_FILE="/etc/systemd/system/wi-lab.service"
 

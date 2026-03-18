@@ -25,8 +25,8 @@ log_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
-# Initialize common variables used across stages
-setup_common_vars() {
+# Initialize common variables used across installation stages
+install_common_vars() {
     WILAB_DIR="${WILAB_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
     VENV_PATH="${VENV_PATH:-/opt/wilab-venv}"
 }

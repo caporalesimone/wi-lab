@@ -2,7 +2,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../common.sh"
-setup_common_vars
+install_common_vars
 
 FRONTEND_DIR="$WILAB_DIR/frontend"
 DEPLOY_SCRIPT="$FRONTEND_DIR/deploy_frontend.sh"

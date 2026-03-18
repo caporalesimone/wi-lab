@@ -12,17 +12,17 @@ set -e
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SETUP_DIR="$SCRIPT_DIR/install"
+INSTALL_DIR="$SCRIPT_DIR/install"
 
 # Import common logging functions
-source "$SETUP_DIR/common.sh"
+source "$INSTALL_DIR/common.sh"
 export ROOT_HINT_SCRIPT="install.sh"
 
 ################################################################################
-# Setup execution
+# Installation execution
 ################################################################################
 
-log_info "Wi-Lab Setup - Starting..."
+log_info "Wi-Lab Installation - Starting..."
 echo ""
 
 ################################################################################
@@ -30,8 +30,8 @@ echo ""
 ################################################################################
 
 # Dynamically discover precondition stages
-# Find all setup scripts matching pattern [0-9][0-9]-*.sh and sort numerically
-mapfile -t PRECOND_STAGES < <(find "$SETUP_DIR/01-preconditions" -maxdepth 1 -type f -name '[0-9][0-9]-*.sh' | sort -V)
+# Find all stage scripts matching pattern [0-9][0-9]-*.sh and sort numerically
+mapfile -t PRECOND_STAGES < <(find "$INSTALL_DIR/01-preconditions" -maxdepth 1 -type f -name '[0-9][0-9]-*.sh' | sort -V)
 
 log_header "Precondition Checks"
 echo ""
@@ -48,13 +48,13 @@ log_success "All precondition checks passed ✅"
 echo ""
 
 ################################################################################
-# Step 2: Discover setup stages
+# Step 2: Discover installation stages
 ################################################################################
 
-# Dynamically discover setup stages
-# Find all setup scripts matching pattern [0-9][0-9]-*.sh and sort numerically
+# Dynamically discover installation stages
+# Find all stage scripts matching pattern [0-9][0-9]-*.sh and sort numerically
 # Exclude common.sh (library file)
-mapfile -t STAGES < <(find "$SETUP_DIR/02-setup-stages" -maxdepth 1 -type f -name '[0-9][0-9]-*.sh' | sort -V)
+mapfile -t STAGES < <(find "$INSTALL_DIR/02-install-stages" -maxdepth 1 -type f -name '[0-9][0-9]-*.sh' | sort -V)
 
 ################################################################################
 # Step 3: Confirmation prompt
@@ -89,7 +89,7 @@ echo ""
 # Execute stages
 ################################################################################
 
-log_header "Setup Stages"
+log_header "Installation Stages"
 echo ""
 
 # Execute each stage in order
@@ -101,7 +101,7 @@ for STAGE_PATH in "${STAGES[@]}"; do
     echo ""
 done
 
-log_success "All setup stages completed! ✅"
+log_success "All installation stages completed! ✅"
 echo ""
 
 ################################################################################
@@ -109,7 +109,7 @@ echo ""
 ################################################################################
 
 # Dynamically discover test stages
-mapfile -t TEST_STAGES < <(find "$SETUP_DIR/03-tests" -maxdepth 1 -type f -name '[0-9][0-9]-*.sh' | sort -V)
+mapfile -t TEST_STAGES < <(find "$INSTALL_DIR/03-tests" -maxdepth 1 -type f -name '[0-9][0-9]-*.sh' | sort -V)
 
 if [ ${#TEST_STAGES[@]} -gt 0 ]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

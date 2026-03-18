@@ -2,7 +2,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../common.sh"
-setup_common_vars
+install_common_vars
 
 if [ -d "$VENV_PATH" ]; then
     log_warning "Virtual environment already exists at $VENV_PATH"

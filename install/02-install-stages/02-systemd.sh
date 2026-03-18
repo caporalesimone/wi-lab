@@ -2,7 +2,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../common.sh"
-setup_common_vars
+install_common_vars
 
 SERVICE_TEMPLATE="$SCRIPT_DIR/../systemd/wi-lab.service.template"
 SERVICE_TARGET="/etc/systemd/system/wi-lab.service"

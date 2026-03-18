@@ -10,7 +10,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../common.sh"
-setup_common_vars
+install_common_vars
 
 # Extract API port for test URLs
 API_PORT=$(get_api_port)
