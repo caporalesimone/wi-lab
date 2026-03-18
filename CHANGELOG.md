@@ -36,6 +36,9 @@ All notable changes to Wi-Lab are documented in this file.
   - Green badge with `cloud_done` when Internet is available
   - Yellow badge with `cloud_off` when Internet is disabled
   - Added hover tooltip text: `Internet available` / `Internet disabled`
+- Updated inactive card copy:
+  - Replaced `No active network` with `Access point <net_id> disabled.`
+  - Network name is emphasized in bold for better visibility
 
 ### 🧪 Testing
 

@@ -75,7 +75,7 @@
     </div>
     <div *ngIf="!status?.active" class="inactive-message">
       <mat-icon>wifi_off</mat-icon>
-      <p>No active network</p>
+      <p>Access point <strong>{{ netId }}</strong> disabled</p>
     </div>
   </mat-card-content>
 
