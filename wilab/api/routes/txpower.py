@@ -15,6 +15,7 @@ router = APIRouter(prefix="/interface", tags=["TX Power"])
     response_model=TxPowerInfo,
     responses={
         200: {"description": "TX power info retrieved successfully"},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found or network not active"},
     },
 )
@@ -49,6 +50,7 @@ async def get_tx_power(
     response_model=TxPowerInfo,
     responses={
         200: {"description": "TX power level set successfully"},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found or network not active"},
     },
 )

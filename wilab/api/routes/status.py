@@ -11,7 +11,13 @@ from ...version import __version__
 router = APIRouter(tags=["System"])
 
 
-@router.get("/status")
+@router.get(
+    "/status",
+    responses={
+        200: {"description": "System status retrieved successfully"},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
+    },
+)
 async def system_status(
     manager: NetworkManager = Depends(get_manager), 
     config=Depends(get_config),
@@ -105,7 +111,13 @@ async def system_status(
     return status_data
 
 
-@router.get("/debug")
+@router.get(
+    "/debug",
+    responses={
+        200: {"description": "Debug information retrieved successfully"},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
+    },
+)
 async def debug_info(
     manager: NetworkManager = Depends(get_manager), config=Depends(get_config)
 ):

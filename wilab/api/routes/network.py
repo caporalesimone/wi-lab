@@ -15,6 +15,7 @@ router = APIRouter(prefix="/interface", tags=["Network"])
     response_model=NetworkStatus,
     responses={
         200: {"description": "Network created and started successfully"},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found in configuration"},
         409: {"description": "Network already active; stop it first"},
         500: {"description": "Failed to start network due to runtime error"},
@@ -79,7 +80,7 @@ async def start_network(
     "/{net_id}/network",
     responses={
         200: {"description": "Network stopped successfully"},
-        404: {"description": "net_id not found"},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
     },
 )
 async def stop_network(
@@ -110,6 +111,7 @@ async def stop_network(
     response_model=NetworkStatus,
     responses={
         200: {"description": "Network status retrieved successfully"},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found"},
     },
 )

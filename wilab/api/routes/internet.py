@@ -13,6 +13,7 @@ router = APIRouter(prefix="/interface", tags=["Internet"])
     "/{net_id}/internet/enable",
     responses={
         200: {"description": "Internet access enabled successfully"},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found or network not active"},
         500: {"description": "NAT configuration failed"},
     },
@@ -51,6 +52,7 @@ async def internet_enable(
     "/{net_id}/internet/disable",
     responses={
         200: {"description": "Internet access disabled successfully"},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found or network not active"},
     },
 )
