@@ -5,6 +5,7 @@ from wilab.config import load_config
 from wilab.version import __version__
 from wilab.wifi.manager import NetworkManager
 from wilab.api import dependencies
+from wilab.models import ClientInfo
 
 
 @pytest.fixture
@@ -495,6 +496,65 @@ class TestNetworkGetEndpoint:
         assert data['clients_connected'] == 0
         assert 'clients' in data
         assert isinstance(data['clients'], list)
+
+    def test_get_network_status_returns_client_entries_with_ip_and_mac(self, client, valid_token, monkeypatch):
+        """Test active network status returns stable clients[] entries with ip and mac."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+
+        def mock_dhcp_start(net_id, interface, subnet, dns_server='192.168.10.21'):
+            info = {
+                'interface': interface,
+                'subnet': subnet,
+                'gateway': '192.168.10.1',
+                'dhcp_range': '192.168.10.10,192.168.10.250',
+            }
+            manager.dhcp_server._instances[net_id] = info
+            return info
+
+        monkeypatch.setattr(manager.dhcp_server, 'start', mock_dhcp_start)
+        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **kw: {})
+        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(
+            manager,
+            'list_clients',
+            lambda _net_id: [
+                ClientInfo(mac='aa:bb:cc:dd:ee:01', ip='192.168.10.10'),
+                ClientInfo(mac='aa:bb:cc:dd:ee:02', ip='192.168.10.11'),
+            ]
+        )
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
+        start_resp = client.post(
+            '/api/v1/interface/ap-01/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestAP',
+                'channel': 6,
+                'encryption': 'wpa2',
+                'password': 'testpass123',
+                'band': '2.4ghz',
+                'tx_power_level': 4
+            }
+        )
+        assert start_resp.status_code == 200
+
+        resp = client.get(
+            '/api/v1/interface/ap-01/network',
+            headers={'Authorization': valid_token}
+        )
+        assert resp.status_code == 200
+
+        data = resp.json()
+        assert data['clients_connected'] == 2
+        assert data['clients'] == [
+            {'mac': 'aa:bb:cc:dd:ee:01', 'ip': '192.168.10.10'},
+            {'mac': 'aa:bb:cc:dd:ee:02', 'ip': '192.168.10.11'},
+        ]
+        for client_entry in data['clients']:
+            assert set(client_entry.keys()) == {'ip', 'mac'}
+            assert isinstance(client_entry['ip'], str)
+            assert isinstance(client_entry['mac'], str)
 
 
 class TestNetworkDeleteEndpoint:

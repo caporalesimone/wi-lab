@@ -1,4 +1,7 @@
-<mat-card class="network-card" [class.active]="status?.active">
+<mat-card
+  class="network-card"
+  [class.active-online]="status?.active && status?.internet_enabled"
+  [class.active-offline]="status?.active && !status?.internet_enabled">
   <mat-card-header>
     <mat-card-title>
       <mat-icon>{{ status?.active ? 'wifi' : 'wifi_off' }}</mat-icon>
@@ -25,9 +28,38 @@
         <span class="label">Band:</span>
         <span class="value">{{ status?.band }}</span>
       </div>
-      <div class="info-row">
-        <span class="label">Clients:</span>
-        <span class="value">{{ clientsCount }}</span>
+      <div class="info-row" *ngIf="status?.tx_power_level !== undefined && status?.tx_power_level !== null">
+        <span class="label">TX Power:</span>
+        <span class="value">{{ getTxPowerLabel(status?.tx_power_level) }}</span>
+      </div>
+      <div class="info-row" *ngIf="status?.expires_in !== undefined && status?.expires_in !== null">
+        <span class="label">Expires in:</span>
+        <span class="value">{{ formatExpiresIn(status?.expires_in) }}</span>
+      </div>
+      <div class="clients-section">
+        <div class="clients-header">
+          <span class="label">Connected Clients:</span>
+          <span class="value">{{ clientsCount }}</span>
+        </div>
+        <div class="clients-table-wrapper" *ngIf="clients.length > 0; else noClientsConnected">
+          <table class="clients-table">
+            <thead>
+              <tr>
+                <th>IP Address</th>
+                <th>MAC Address</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let client of clients">
+                <td>{{ client.ip }}</td>
+                <td>{{ client.mac }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <ng-template #noClientsConnected>
+          <div class="clients-empty-state">No clients connected</div>
+        </ng-template>
       </div>
       <div class="status-chips">
         <mat-chip [class.enabled]="status?.internet_enabled">

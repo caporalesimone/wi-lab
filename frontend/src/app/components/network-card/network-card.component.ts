@@ -9,7 +9,7 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { interval, Subscription } from 'rxjs';
 import { WilabApiService } from '../../services/wilab-api.service';
-import { NetworkStatus } from '../../models/network.models';
+import { ClientInfo, NetworkStatus } from '../../models/network.models';
 import { environment } from '../../../environments/environment';
 import { NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
 
@@ -36,6 +36,50 @@ export class NetworkCardComponent implements OnInit, OnDestroy {
   loading = false;
   pollingSubscription?: Subscription;
   clientsCount = 0;
+
+  public get clients(): ClientInfo[] {
+    return this.status?.clients ?? [];
+  }
+
+  public getTxPowerLabel(level?: number): string {
+    if (level === undefined || level === null) {
+      return 'Unknown';
+    }
+
+    if (level === 1) {
+      return 'Level 1 (Min)';
+    }
+
+    if (level === 4) {
+      return 'Level 4 (Max)';
+    }
+
+    return `Level ${level}`;
+  }
+
+  public formatExpiresIn(totalSeconds?: number): string {
+    if (totalSeconds === undefined || totalSeconds === null) {
+      return 'Unknown';
+    }
+
+    const remainingSeconds = Math.max(0, totalSeconds);
+    const hours = Math.floor(remainingSeconds / 3600);
+    const minutes = Math.floor((remainingSeconds % 3600) / 60);
+    const seconds = remainingSeconds % 60;
+    const parts: string[] = [];
+
+    if (hours > 0) {
+      parts.push(`${hours}h`);
+    }
+
+    if (remainingSeconds >= 60) {
+      parts.push(`${minutes}m`);
+    }
+
+    parts.push(`${seconds}s`);
+
+    return parts.join(' ');
+  }
 
   constructor(
     private wilabApiService: WilabApiService,

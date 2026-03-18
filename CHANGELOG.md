@@ -4,6 +4,47 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [1.x.y] - 2026-03-18
+
+### ✨ Features
+
+- **Client Details in Network Cards (Phase 1)**
+  - Replaced count-only view with a connected clients table in each active AP card
+  - Added client list columns for `IP Address` and `MAC Address`
+  - Added empty-state message when no clients are connected
+  - Kept polling-based refresh behavior unchanged
+
+- **Network Card Status Visibility Improvements**
+  - Added `TX Power` row with descriptive values matching the creation dialog labels
+  - Added `Expires in` row with human-readable duration formatting (`h m s`)
+  - Dynamic card border state by Internet status:
+    - Green when Internet is enabled
+    - Yellow when Internet is disabled
+
+### 🎨 UI/UX
+
+- Simplified clients summary presentation:
+  - Removed duplicate `Clients` row
+  - Kept `Connected Clients:` label with right-aligned count
+- Improved spacing and readability in network cards:
+  - Increased separation between interface subtitle and details section
+  - Reduced vertical spacing between detail rows (`SSID`, `Password`, `Channel`, etc.)
+
+### 🧪 Testing
+
+- Added/updated backend API coverage for `GET /api/v1/interface/{net_id}/network` client structure:
+  - Validates `clients[]` payload entries include stable `ip` and `mac` fields
+  - Confirms correct `clients_connected` count for active networks
+
+### 📝 Documentation
+
+- Consolidated client and traffic planning docs into:
+  - `TODOs/clients-info-and-statistics.md`
+- Removed overlapping legacy planning document:
+  - `TODOs/traffic-statistics.md`
+
+---
+
 ## [1.2.1] - 2026-03-18
 
 ### 🐛 Bug Fixes
