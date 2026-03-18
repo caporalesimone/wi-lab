@@ -38,8 +38,11 @@ export class NetworkFormDialogComponent {
     private dialogRef: MatDialogRef<NetworkFormDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: { netId: string }
   ) {
+    // Generate dynamic SSID based on AP ID (e.g., "test-network-ap-01")
+    const defaultSsid = `test-network-${this.data.netId}`;
+    
     this.form = this.formBuilder.group({
-      ssid: ['test1', [Validators.required, Validators.maxLength(32)]],
+      ssid: [defaultSsid, [Validators.required, Validators.maxLength(32)]],
       channel: [6, [Validators.required, Validators.min(1), Validators.max(165)]],
       band: ['2.4ghz', Validators.required],
       encryption: ['wpa2', Validators.required],
