@@ -52,33 +52,10 @@ fi
 echo ""
 
 # ============================================================================
-# STEP 2: Optional - Stop frontend Docker container if running
+# STEP 2: Wait before restart
 # ============================================================================
 
-if command -v docker >/dev/null 2>&1; then
-    log_info "Step 2: Checking for frontend container..."
-    
-    # Try to find and stop frontend container (usually wi-lab-frontend or similar)
-    FRONTEND_CONTAINER=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -i 'frontend\|wilab' | head -1 || true)
-    
-    if [ -n "$FRONTEND_CONTAINER" ]; then
-        log_info "Stopping frontend container: $FRONTEND_CONTAINER"
-        docker stop "$FRONTEND_CONTAINER" 2>/dev/null || log_warning "Could not stop container"
-        log_success "Frontend container stopped"
-    else
-        log_info "No frontend container found"
-    fi
-else
-    log_info "Step 2: Docker not found; skipping frontend check"
-fi
-
-echo ""
-
-# ============================================================================
-# STEP 3: Wait before restart
-# ============================================================================
-
-log_info "Step 3: Waiting $WAIT_TIME seconds before restart..."
+log_info "Step 2: Waiting $WAIT_TIME seconds before restart..."
 echo ""
 
 # Show countdown
@@ -91,10 +68,10 @@ echo ""
 echo ""
 
 # ============================================================================
-# STEP 4: Start the service
+# STEP 3: Start the service
 # ============================================================================
 
-log_info "Step 4: Starting service..."
+log_info "Step 3: Starting service..."
 systemctl start $SERVICE_NAME
 log_success "Service started"
 
