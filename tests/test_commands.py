@@ -8,6 +8,20 @@ from wilab.network.commands import (
 
 class TestCommandExecution:
     """Tests for basic command execution."""
+
+    def test_execute_command_uses_default_timeout(self):
+        """Test default timeout is 8 seconds."""
+        with patch('wilab.network.commands.subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout='ok', stderr='')
+            execute_command(['echo', 'hello'])
+            assert mock_run.call_args.kwargs['timeout'] == 8.0
+
+    def test_execute_command_enforces_min_timeout(self):
+        """Test timeout lower than 5 seconds is clamped to 5."""
+        with patch('wilab.network.commands.subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout='ok', stderr='')
+            execute_command(['echo', 'hello'], timeout=1.0)
+            assert mock_run.call_args.kwargs['timeout'] == 5.0
     
     def test_execute_command_success(self):
         """Test successful command execution."""
@@ -27,8 +41,14 @@ class TestCommandExecution:
     def test_execute_command_timeout(self):
         """Test command timeout raises error."""
         with pytest.raises(CommandError, match="timed out|timeout"):
-            # Use 2 seconds to exceed the 1-second timeout in execute_command
-            execute_command(['sleep', '2'], check=True)
+            # Explicit timeout below 5 is clamped to 5, so use sleep 6.
+            execute_command(['sleep', '6'], check=True, timeout=1.0)
+
+    def test_execute_command_custom_timeout(self):
+        """Test custom timeout allows longer-running command."""
+        # timeout=3 is clamped to 5, which is still enough for sleep 2
+        result = execute_command(['sleep', '2'], check=True, timeout=3.0)
+        assert result == ''
     
     def test_execute_command_check_false(self):
         """Test command with check=False doesn't raise."""

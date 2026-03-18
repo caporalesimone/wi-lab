@@ -10,13 +10,14 @@ class CommandError(Exception):
     pass
 
 
-def execute_command(cmd: List[str], check: bool = True) -> str:
+def execute_command(cmd: List[str], check: bool = True, timeout: float = 8.0) -> str:
     """
     Execute a shell command safely.
     
     Args:
         cmd: List of command arguments
         check: Raise CommandError if return code is non-zero
+        timeout: Command timeout in seconds (minimum enforced to 5)
         
     Returns:
         stdout as string
@@ -25,12 +26,14 @@ def execute_command(cmd: List[str], check: bool = True) -> str:
         CommandError: If command fails and check=True
     """
     try:
+        effective_timeout = max(5.0, timeout)
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             check=False,
-            timeout=1  # 1 second timeout for system commands
+            timeout=effective_timeout
         )
         
         if check and result.returncode != 0:

@@ -24,7 +24,7 @@ require_root
 
 SERVICE_NAME="wi-lab.service"
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME"
-WAIT_TIME=10
+WAIT_TIME=5
 
 echo ""
 log_header "Wi-Lab Service Restart"

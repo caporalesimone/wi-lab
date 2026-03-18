@@ -190,7 +190,7 @@ class HostapdManager:
                     "-B",  # Background
                     "-P", pid_file,  # PID file
                     config_file
-                ])
+                ], timeout=8.0)
             except CommandError as e:
                 raise HostapdError(f"hostapd failed to start: {e}") from e
             
