@@ -29,6 +29,13 @@ All notable changes to Wi-Lab are documented in this file.
 - Improved spacing and readability in network cards:
   - Increased separation between interface subtitle and details section
   - Reduced vertical spacing between detail rows (`SSID`, `Password`, `Channel`, etc.)
+- Refined card header layout:
+  - Kept WiFi icon, network name, and interface subtitle consistently left-aligned
+- Moved Internet status indicator to the top-right corner of the card:
+  - Replaced text chip with icon-only rounded rectangular badge
+  - Green badge with `cloud_done` when Internet is available
+  - Yellow badge with `cloud_off` when Internet is disabled
+  - Added hover tooltip text: `Internet available` / `Internet disabled`
 
 ### 🧪 Testing
 
