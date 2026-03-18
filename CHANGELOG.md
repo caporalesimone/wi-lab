@@ -4,6 +4,57 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [1.2.1] - 2026-03-18
+
+### 🐛 Bug Fixes
+
+- **Hostapd Startup Timeout**: Fixed intermittent hostapd failures on interface transitions
+  - Command execution timeout increased from hardcoded 1s to configurable 8s default
+  - Minimum timeout floor enforced at 5s to prevent accidental timeouts
+  - Resolves "Failed to start hostapd" errors during AP initialization
+  - Added comprehensive test coverage for timeout enforcement
+
+### ✨ Features
+
+- **Dynamic WiFi Network Names**: SSID now generated based on AP identifier
+  - Format: `test-network-ap-01`, `test-network-ap-02`, `test-network-ap-03`
+  - Each AP card displays unique, recognizable network name
+  - Prevents duplicate network names across multiple access points
+  - Frontend dynamically generates SSID from AP ID parameter
+
+### 🔧 Refactoring & Infrastructure
+
+- **Setup → Install Terminology Migration**:
+  - Renamed `install/02-setup-stages/` → `install/02-install-stages/`
+  - Updated variable naming: `SETUP_DIR` → `INSTALL_DIR`, `setup_common_vars()` → `install_common_vars()`
+  - Consistent terminology across all installation scripts and documentation
+  - Removed backward compatibility alias (internal scripts only)
+
+- **API Response Documentation**:
+  - Explicitly documented 401 Unauthorized responses in OpenAPI/Swagger schema
+  - All authentication-protected endpoints now properly reflected in API documentation
+  - Improved API contract clarity for client implementations
+
+- **Development Tooling**:
+  - Added `restart-service.sh` utility script for rapid development iteration
+  - Simplified restart flow: stop (10s → 5s) → wait → start
+  - Removed unnecessary Docker container check (frontend served as static files)
+
+### 📝 Testing
+
+- Enhanced timeout behavior validation:
+  - Test coverage for default 8s timeout enforcement
+  - Test coverage for 5s minimum timeout clamping
+  - Added custom timeout configuration tests
+  - All 136+ tests passing
+
+### 📦 Dependencies & Build
+
+- Frontend build optimization: reduced bundle size analysis and warnings review
+- Docker multi-stage build for frontend compilation remains unchanged
+
+---
+
 ## [1.2.0] - 2026-01-29
 
 ### 🚀 Major API Simplification
