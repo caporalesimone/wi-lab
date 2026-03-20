@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Diagnose hostapd/AP startup failures for a configured Wi-Lab network."""
+"""Diagnose hostapd/AP startup failures for a configured Wi-Lab network.
+
+Usage examples (run these from inside the diagnostics directory):
+
+    python3 diagnose-ap.py --net-id ap-03 --config ../config.yaml
+    python3 diagnose-ap.py --net-id ap-03 --config ../config.yaml --recover
+
+"""
 
 from __future__ import annotations
 
@@ -341,7 +348,7 @@ def main() -> int:
     print_header("Recovery Actions")
     default_actions = [
         "Stop Wi-Lab service before low-level interface recovery.",
-        "Run 'sudo python3 scripts/10-diagnose-ap.py --net-id <id> --recover' for automated recovery.",
+        "Run 'sudo python3 diagnose-ap.py --net-id <id> --config ../config.yaml --recover' from diagnostics/ for automated recovery.",
         "Try: ip link set <iface> down; iw dev <iface> set type managed; ip link set <iface> up.",
         "If still busy: unplug/replug the USB adapter and retry network creation.",
         "If recurring: reload the driver module or upgrade kernel/driver for this chipset.",
