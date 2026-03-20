@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, Path
 
 from ...models import TxPowerRequest, TxPowerInfo
-from ...wifi.manager import NetworkManager
+from ...wifi.manager import NetworkManager, TxPowerMismatchError
 from ...api.auth import require_token
 from ...api.dependencies import get_manager
 
@@ -27,14 +27,13 @@ async def get_tx_power(
     """
     Get current TX power details for an active network.
 
-    Retrieves the current TX power level (1-4 scale) and hardware limits
-    for the network's wireless interface.
+    Retrieves requested and reported TX power values for the network interface.
 
     Args:
         net_id: Unique network identifier.
 
     Returns:
-        TxPowerInfo: Current power level, hardware max (dBm), and description.
+        TxPowerInfo: max_dbm, levels_dbm, and nested tx_power requested/reported values.
 
     Raises:
         HTTPException 404: net_id not found or network not active.
@@ -52,6 +51,7 @@ async def get_tx_power(
         200: {"description": "TX power level set successfully"},
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found or network not active"},
+        422: {"description": "Unprocessable Entity (requested TX power not applied by hardware)"},
     },
 )
 async def set_tx_power(
@@ -78,8 +78,11 @@ async def set_tx_power(
 
     Raises:
         HTTPException 404: net_id not found or network not active.
+        HTTPException 422: requested TX power cannot be applied by hardware.
     """
     try:
         return manager.set_tx_power_level(net_id, req.level)
+    except TxPowerMismatchError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

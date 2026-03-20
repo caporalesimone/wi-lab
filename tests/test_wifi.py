@@ -1,7 +1,7 @@
 import pytest
 import time
 from wilab.config import load_config, NetworkEntry
-from wilab.wifi.manager import NetworkManager
+from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
 from wilab.models import NetworkCreateRequest
 from wilab.network.commands import CommandError
 
@@ -544,13 +544,13 @@ class TestTxPower:
             calls.append((interface, level, channel))
             return {
                 'interface': interface,
-                'channel': channel,
-                'frequency_mhz': 2437,
                 'max_dbm': 20.0,
                 'levels_dbm': {1: 5.0, 2: 10.0, 3: 15.0, 4: 20.0},
-                'current_level': level,
-                'current_dbm': 20.0,
-                'reported_dbm': 20.0,
+                'tx_power': {
+                    'requested_level': level,
+                    'reported_level': level,
+                    'reported_dbm': 20.0,
+                },
             }
 
         monkeypatch.setattr(mgr, '_set_tx_power', fake_set_tx_power)
@@ -579,19 +579,16 @@ class TestTxPower:
         monkeypatch.setattr(mgr.isolation_manager, 'add_network', lambda *a, **k: None)
 
         def fake_set_tx_power(interface, level, channel, verify_change=False):
-            result = {
+            return {
                 'interface': interface,
-                'channel': channel,
-                'frequency_mhz': 2437,
                 'max_dbm': 20.0,
                 'levels_dbm': {1: 5.0, 2: 10.0, 3: 15.0, 4: 20.0},
-                'current_level': level,
-                'current_dbm': float(level * 5),
-                'reported_dbm': float(level * 5) if not verify_change else None,
+                'tx_power': {
+                    'requested_level': level,
+                    'reported_level': level if not verify_change else None,
+                    'reported_dbm': float(level * 5) if not verify_change else None,
+                },
             }
-            if verify_change:
-                result['warning'] = None
-            return result
 
         monkeypatch.setattr(mgr, '_set_tx_power', fake_set_tx_power)
 
@@ -605,9 +602,52 @@ class TestTxPower:
 
         mgr.start_network('ap-01', req)
         info = mgr.set_tx_power_level('ap-01', 2)
-        assert info['current_level'] == 2
+        assert info['tx_power']['requested_level'] == 2
         assert mgr.active['ap-01'].tx_power_level == 2
 
         # GET should reflect the last level
         info2 = mgr.get_tx_power_info('ap-01')
-        assert info2['current_level'] == 2
+        assert info2['tx_power']['requested_level'] == 2
+
+    def test_set_tx_power_level_mismatch_raises_and_preserves_state(self, monkeypatch):
+        cfg = load_config()
+        mgr = NetworkManager(cfg)
+
+        monkeypatch.setattr(mgr.dhcp_server, 'start', lambda **kwargs: {'gateway': '192.168.120.1'})
+        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda **kwargs: {})
+        monkeypatch.setattr(mgr.nat_manager, 'enable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(mgr.isolation_manager, 'add_network', lambda *a, **k: None)
+
+        monkeypatch.setattr(
+            mgr,
+            '_set_tx_power',
+            lambda interface, level, channel, verify_change=False: {
+                'interface': interface,
+                'max_dbm': 20.0,
+                'levels_dbm': {1: 5.0, 2: 10.0, 3: 15.0, 4: 20.0},
+                'tx_power': {
+                    'requested_level': level,
+                    'reported_level': level,
+                    'reported_dbm': float(level * 5),
+                },
+            },
+        )
+
+        req = NetworkCreateRequest(
+            ssid='TestAP',
+            channel=6,
+            encryption='open',
+            band='2.4ghz',
+            tx_power_level=4,
+        )
+        mgr.start_network('ap-01', req)
+
+        def fake_mismatch(*args, **kwargs):
+            raise TxPowerMismatchError('Interface does not support dynamic power change.')
+
+        monkeypatch.setattr(mgr, '_set_tx_power', fake_mismatch)
+
+        with pytest.raises(TxPowerMismatchError):
+            mgr.set_tx_power_level('ap-01', 2)
+
+        assert mgr.active['ap-01'].tx_power_level == 4

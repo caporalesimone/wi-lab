@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from wilab.api import create_app
 from wilab.config import load_config
 from wilab.version import __version__
-from wilab.wifi.manager import NetworkManager
+from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
 from wilab.api import dependencies
 from wilab.models import ClientInfo
 
@@ -461,6 +461,7 @@ class TestNetworkGetEndpoint:
         monkeypatch.setattr(manager.dhcp_server, 'start', mock_dhcp_start)
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **kw: {})
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         # Start network
@@ -496,6 +497,13 @@ class TestNetworkGetEndpoint:
         assert data['clients_connected'] == 0
         assert 'clients' in data
         assert isinstance(data['clients'], list)
+        assert 'tx_power' in data
+        assert data['tx_power'] == {
+            'requested_level': 4,
+            'reported_level': 4,
+            'reported_dbm': 20.0,
+        }
+        assert 'tx_power_level' not in data
 
     def test_get_network_status_returns_client_entries_with_ip_and_mac(self, client, valid_token, monkeypatch):
         """Test active network status returns stable clients[] entries with ip and mac."""
@@ -579,6 +587,140 @@ class TestNetworkDeleteEndpoint:
         )
         # Should succeed (no error on stopping non-existent)
         assert resp.status_code == 200
+
+
+class TestTxPowerGetEndpoint:
+    """Tests for txpower GET response shape."""
+
+    def test_get_txpower_nested_shape(self, client, valid_token, monkeypatch):
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+
+        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
+        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
+        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
+        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 10.0)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
+        start_resp = client.post(
+            '/api/v1/interface/ap-01/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestAP',
+                'channel': 6,
+                'encryption': 'wpa2',
+                'password': 'testpass123',
+                'band': '2.4ghz',
+                'tx_power_level': 2
+            }
+        )
+        assert start_resp.status_code == 200
+
+        resp = client.get('/api/v1/interface/ap-01/txpower', headers={'Authorization': valid_token})
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data['net_id'] == 'ap-01'
+        assert 'max_dbm' in data
+        assert 'levels_dbm' in data
+        assert 'tx_power' in data
+        assert data['tx_power']['requested_level'] == 2
+        assert data['tx_power']['reported_level'] == 2
+        assert data['tx_power']['reported_dbm'] == 10.0
+
+    def test_get_txpower_omits_legacy_warning_fields(self, client, valid_token, monkeypatch):
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+
+        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
+        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
+        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
+        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
+        start_resp = client.post(
+            '/api/v1/interface/ap-01/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestAP',
+                'channel': 6,
+                'encryption': 'wpa2',
+                'password': 'testpass123',
+                'band': '2.4ghz',
+                'tx_power_level': 4
+            }
+        )
+        assert start_resp.status_code == 200
+
+        resp = client.get('/api/v1/interface/ap-01/txpower', headers={'Authorization': valid_token})
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert 'current_level' not in data
+        assert 'current_dbm' not in data
+        assert 'reported_dbm' not in data
+        assert 'warning' not in data
+
+
+class TestTxPowerPostEndpoint:
+    """Tests for txpower POST behavior."""
+
+    def test_post_txpower_success_shape_without_warning(self, client, valid_token, monkeypatch):
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+
+        monkeypatch.setattr(
+            manager,
+            'set_tx_power_level',
+            lambda net_id, level: {
+                'net_id': net_id,
+                'interface': 'wlx-test0',
+                'max_dbm': 20.0,
+                'levels_dbm': {'1': 5.0, '2': 10.0, '3': 15.0, '4': 20.0},
+                'tx_power': {
+                    'requested_level': level,
+                    'reported_level': level,
+                    'reported_dbm': float(level * 5),
+                },
+            },
+        )
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
+        resp = client.post(
+            '/api/v1/interface/ap-01/txpower',
+            headers={'Authorization': valid_token},
+            json={'level': 2},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data['net_id'] == 'ap-01'
+        assert data['tx_power']['requested_level'] == 2
+        assert data['tx_power']['reported_level'] == 2
+        assert data['tx_power']['reported_dbm'] == 10.0
+        assert 'warning' not in data
+
+    def test_post_txpower_mismatch_returns_422(self, client, valid_token, monkeypatch):
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+
+        def fake_set_tx_power_level(_net_id, _level):
+            raise TxPowerMismatchError('Interface does not support dynamic power change.')
+
+        monkeypatch.setattr(manager, 'set_tx_power_level', fake_set_tx_power_level)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
+        resp = client.post(
+            '/api/v1/interface/ap-01/txpower',
+            headers={'Authorization': valid_token},
+            json={'level': 2},
+        )
+
+        assert resp.status_code == 422
+        data = resp.json()
+        assert data['detail'] == 'Interface does not support dynamic power change.'
 
 
 class TestInternetControlEndpoints:

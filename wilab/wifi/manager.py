@@ -7,7 +7,7 @@ from datetime import datetime
 import re
 import threading
 from ..config import AppConfig
-from ..models import NetworkCreateRequest, NetworkStatus, ClientInfo
+from ..models import NetworkCreateRequest, NetworkStatus, ClientInfo, NetworkTxPower
 from ..network.dhcp import DhcpServer, DhcpServerError
 from ..network.nat import NatManager
 from ..network.isolation import IsolationManager
@@ -16,6 +16,10 @@ from .interface import validate_interface_exists, validate_interface_wireless, v
 from ..network.commands import execute_iw, execute_command, CommandError
 
 logger = logging.getLogger(__name__)
+
+
+class TxPowerMismatchError(Exception):
+    """Raised when reported TX power does not match the requested level."""
 
 
 class NetworkManager:
@@ -335,6 +339,32 @@ class NetworkManager:
             st.dhcp = dhcp_info if dhcp_info else {}
             st.clients = clients
             st.clients_connected = len(clients)
+
+            if st.tx_power_level is not None:
+                tx_power_data = {
+                    "requested_level": st.tx_power_level,
+                    "reported_level": None,
+                    "reported_dbm": None,
+                }
+                if st.channel is not None:
+                    try:
+                        caps = self._get_channel_capabilities(st.interface, st.channel)
+                        levels_dbm = self._compute_level_dbm(caps["max_dbm"])
+                        reported_dbm = self._read_current_txpower(st.interface)
+                        reported_level = None
+                        if reported_dbm is not None:
+                            reported_level = min(
+                                levels_dbm,
+                                key=lambda lvl: abs(levels_dbm[lvl] - reported_dbm),
+                            )
+                        tx_power_data.update({
+                            "reported_level": reported_level,
+                            "reported_dbm": reported_dbm,
+                        })
+                    except Exception as exc:
+                        logger.warning(f"Failed to build tx_power status for {net_id}: {exc}")
+
+                st.tx_power = NetworkTxPower(**tx_power_data)
         
         return st
 
@@ -584,6 +614,11 @@ class NetworkManager:
         levels[4] = max(levels[3], levels[4])
         return levels
 
+    def _reported_level_from_dbm(self, levels_dbm: Dict[int, float], reported_dbm: Optional[float]) -> Optional[int]:
+        if reported_dbm is None:
+            return None
+        return min(levels_dbm, key=lambda lvl: abs(levels_dbm[lvl] - reported_dbm))
+
     def _set_tx_power(self, interface: str, level: int, channel: int, verify_change: bool = False) -> dict:
         """
         Set TX power for interface.
@@ -595,7 +630,7 @@ class NetworkManager:
             verify_change: If True, wait 3s and verify power actually changed
             
         Returns:
-            Dict with power info and optional warning if change not supported
+            Dict with tx power info
         """
         if level not in [1, 2, 3, 4]:
             raise ValueError("TX power level must be 1-4")
@@ -604,41 +639,34 @@ class NetworkManager:
         desired_dbm = levels_dbm[level]
         desired_mbm = int(round(desired_dbm * 100))
         
-        # Read current power before change (if verifying)
-        power_before = None
-        if verify_change:
-            power_before = self._read_current_txpower(interface)
-        
         try:
             execute_iw(["dev", interface, "set", "txpower", "fixed", str(desired_mbm)])
         except CommandError as e:
             raise ValueError(f"Failed to set txpower: {e}") from e
-        
-        warning = None
+
         power_after = None
         if verify_change:
             # Wait for driver to apply change
             time.sleep(3)
             power_after = self._read_current_txpower(interface)
-            
-            # Check if power actually changed (tolerance 0.5 dBm)
-            if power_after is not None and power_before is not None:
-                if abs(power_after - power_before) < 0.5:
-                    warning = "Interface does not support dynamic power change. Please recreate the network with desired power level."
-                    logger.warning(f"{interface}: TX power change not applied (before={power_before}, after={power_after})")
+
+            # Compare requested vs reported directly.
+            if power_after is not None and abs(power_after - desired_dbm) > 0.5:
+                logger.warning(
+                    f"{interface}: TX power mismatch (requested={desired_dbm}, reported={power_after})"
+                )
+                raise TxPowerMismatchError("Interface does not support dynamic power change.")
         
         result = {
             "interface": interface,
-            "channel": channel,
-            "frequency_mhz": caps["frequency_mhz"],
             "max_dbm": caps["max_dbm"],
             "levels_dbm": levels_dbm,
-            "current_level": level,
-            "current_dbm": desired_dbm,
-            "reported_dbm": power_after,  # Power reported by interface after change
+            "tx_power": {
+                "requested_level": level,
+                "reported_level": self._reported_level_from_dbm(levels_dbm, power_after),
+                "reported_dbm": power_after,
+            },
         }
-        if warning:
-            result["warning"] = warning
         return result
 
     def set_tx_power_level(self, net_id: str, level: int) -> dict:
@@ -690,25 +718,21 @@ class NetworkManager:
         # Read actual current power from interface
         reported_dbm = self._read_current_txpower(cfg_net.interface)
         
-        # Check if there's a mismatch (tolerance 0.5 dBm)
-        warning = None
+        # Keep mismatch as server-side observability; GET payload no longer exposes warning.
         if reported_dbm is not None and abs(reported_dbm - expected_dbm) > 0.5:
-            warning = "Interface does not support dynamic power change. Please recreate the network with desired power level."
             logger.info(f"{net_id}: Power mismatch - expected {expected_dbm} dBm, reported {reported_dbm} dBm")
         
         result = {
             "net_id": net_id,
             "interface": cfg_net.interface,
-            "channel": st.channel,
-            "frequency_mhz": caps["frequency_mhz"],
             "max_dbm": caps["max_dbm"],
             "levels_dbm": levels_dbm,
-            "current_level": level,
-            "current_dbm": expected_dbm,
-            "reported_dbm": reported_dbm,
+            "tx_power": {
+                "requested_level": level,
+                "reported_level": self._reported_level_from_dbm(levels_dbm, reported_dbm),
+                "reported_dbm": reported_dbm,
+            },
         }
-        if warning:
-            result["warning"] = warning
         return result
 
     def _expiry_loop(self) -> None:

@@ -39,9 +39,9 @@
         <span class="label">Band:</span>
         <span class="value">{{ status?.band }}</span>
       </div>
-      <div class="info-row" *ngIf="status?.tx_power_level !== undefined && status?.tx_power_level !== null">
-        <span class="label">TX Power:</span>
-        <span class="value">{{ getTxPowerLabel(status?.tx_power_level) }}</span>
+      <div class="info-row" *ngIf="status?.tx_power?.requested_level !== undefined && status?.tx_power?.requested_level !== null">
+        <span class="label">TX Power requested/reported:</span>
+        <span class="value">{{ status?.tx_power?.requested_level }}/{{ status?.tx_power?.reported_level ?? '-' }}</span>
       </div>
       <div class="info-row" *ngIf="status?.expires_in !== undefined && status?.expires_in !== null">
         <span class="label">Expires in:</span>

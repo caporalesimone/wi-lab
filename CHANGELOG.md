@@ -6,6 +6,12 @@ All notable changes to Wi-Lab are documented in this file.
 
 ## [1.x.y] - 2026-03-18
 
+### 🐛 Bug Fixes
+
+- **TX Power POST Hardware Mismatch Handling**
+  - `POST /api/v1/interface/{net_id}/txpower` now returns HTTP `422 Unprocessable Entity` when the wireless interface reports a different power than the requested one
+  - Replaced warning-style success handling with explicit API error semantics for unsupported dynamic TX power changes
+
 ### ✨ Features
 
 - **Client Details in Network Cards (Phase 1)**
@@ -20,6 +26,16 @@ All notable changes to Wi-Lab are documented in this file.
   - Dynamic card border state by Internet status:
     - Green when Internet is enabled
     - Yellow when Internet is disabled
+
+- **AP Diagnostic Utility Restoration**
+  - Restored the AP diagnostic helper on `main`
+  - Moved the script from `scripts/10-diagnose-ap.py` to `diagnostics/diagnose-ap.py`
+  - Added clearer command-line usage examples for running diagnostics from the repository root
+
+- **Requested vs Reported TX Power API Model**
+  - Added nested `tx_power` payloads exposing `requested_level`, `reported_level`, and `reported_dbm`
+  - `GET /api/v1/interface/{net_id}/network` now includes TX power details alongside DHCP and client information
+  - `GET /api/v1/interface/{net_id}/txpower` now returns the same requested/reported TX power structure
 
 ### 🎨 UI/UX
 
@@ -39,12 +55,31 @@ All notable changes to Wi-Lab are documented in this file.
 - Updated inactive card copy:
   - Replaced `No active network` with `Access point <net_id> disabled.`
   - Network name is emphasized in bold for better visibility
+- Updated frontend network cards to display `TX Power requested/reported` instead of a single legacy TX power level
+
+### 🔧 Refactoring & Infrastructure
+
+- **TX Power Response Reshape**
+  - Introduced shared backend model for requested/reported TX power data
+  - Removed legacy flat TX power fields such as `current_level`, `current_dbm`, and top-level `reported_dbm`
+  - Removed the legacy warning field from successful TX power responses
+
+- **OpenAPI Example Alignment**
+  - Updated Swagger examples for `GET /api/v1/interface/{net_id}/network`
+  - Updated Swagger examples for `GET /api/v1/interface/{net_id}/txpower` to match the nested `tx_power` response shape
 
 ### 🧪 Testing
 
 - Added/updated backend API coverage for `GET /api/v1/interface/{net_id}/network` client structure:
   - Validates `clients[]` payload entries include stable `ip` and `mac` fields
   - Confirms correct `clients_connected` count for active networks
+- Added manager-level TX power coverage:
+  - Validates requested TX power updates keep internal state in sync on success
+  - Validates hardware mismatch raises an error and preserves the previous configured TX power level
+- Added API coverage for TX power endpoints:
+  - Verifies nested `tx_power` serialization on `GET /api/v1/interface/{net_id}/txpower`
+  - Confirms legacy warning and flat TX power fields are no longer exposed by the GET response
+  - Confirms `POST /api/v1/interface/{net_id}/txpower` returns `422` on hardware mismatch
 
 ### 📝 Documentation
 

@@ -27,7 +27,11 @@ export interface NetworkStatus {
   hidden?: boolean;
   subnet?: string;
   internet_enabled: boolean;
-  tx_power_level?: number;
+  tx_power?: {
+    requested_level: number;
+    reported_level?: number;
+    reported_dbm?: number;
+  };
   expires_at?: string;
   expires_in?: number;
   dhcp?: {

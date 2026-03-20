@@ -131,6 +131,48 @@ def create_app() -> FastAPI:
                 txpower_content["application/json"]["example"] = {
                     "level": 2
                 }
+
+            # GET /interface/{net_id}/network response example
+            network_get = paths.get("/api/v1/interface/{net_id}/network", {}).get("get", {})
+            network_responses = network_get.get("responses", {})
+            network_200 = network_responses.get("200", {})
+            network_200_content = network_200.get("content", {})
+            if "application/json" in network_200_content:
+                network_200_content["application/json"]["example"] = {
+                    "net_id": "ap-01",
+                    "interface": "wlxbc071dc527d6",
+                    "active": True,
+                    "ssid": "test-network-ap-01",
+                    "channel": 6,
+                    "password": "12345678",
+                    "encryption": "wpa2",
+                    "band": "2.4ghz",
+                    "hidden": False,
+                    "subnet": "192.168.120.0/24",
+                    "internet_enabled": True,
+                    "tx_power": {
+                        "requested_level": 4,
+                        "reported_level": 4,
+                        "reported_dbm": 20.0,
+                    },
+                    "expires_at": "2026-03-20 19:33:46",
+                    "expires_in": 3471,
+                    "dhcp": {
+                        "interface": "wlxbc071dc527d6",
+                        "subnet": "192.168.120.0/24",
+                        "gateway": "192.168.120.1",
+                        "config_file": "/tmp/wilab-dnsmasq/dnsmasq-ap-01.conf",
+                        "pid_file": "/tmp/wilab-dnsmasq/pids/dnsmasq-ap-01.pid",
+                        "lease_file": "/tmp/wilab-dnsmasq/leases-ap-01.db",
+                        "network_addr": "192.168.120.0",
+                        "dhcp_range": "192.168.120.10,192.168.120.250",
+                    },
+                    "clients_connected": 2,
+                    "clients": [
+                        {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.120.10"},
+                        {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.120.11"},
+                    ],
+                }
             
             # GET /interface/{net_id}/txpower response example
             txpower_get = paths.get("/api/v1/interface/{net_id}/txpower", {}).get("get", {})
@@ -141,8 +183,6 @@ def create_app() -> FastAPI:
                 txpower_200_content["application/json"]["example"] = {
                     "net_id": "ap-01",
                     "interface": "wlx782051245264",
-                    "channel": 6,
-                    "frequency_mhz": 2437,
                     "max_dbm": 20.0,
                     "levels_dbm": {
                         "1": 5.0,
@@ -150,10 +190,11 @@ def create_app() -> FastAPI:
                         "3": 15.0,
                         "4": 20.0
                     },
-                    "current_level": 2,
-                    "current_dbm": 10.0,
-                    "reported_dbm": 10.0,
-                    "warning": None
+                    "tx_power": {
+                        "requested_level": 1,
+                        "reported_level": 1,
+                        "reported_dbm": 0.0
+                    }
                 }
         except Exception:
             # If schema structure changes, skip injection silently

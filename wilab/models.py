@@ -88,6 +88,12 @@ class ClientInfo(BaseModel):
     mac: str
     ip: str
 
+
+class NetworkTxPower(BaseModel):
+    requested_level: int = Field(..., ge=1, le=4, description="Requested TX power level 1-4")
+    reported_level: Optional[int] = Field(None, ge=1, le=4, description="TX power level derived from reported_dbm")
+    reported_dbm: Optional[float] = Field(None, description="TX power currently reported by interface in dBm")
+
 class NetworkStatus(BaseModel):
     net_id: str
     interface: str
@@ -100,7 +106,8 @@ class NetworkStatus(BaseModel):
     hidden: Optional[bool] = None
     subnet: Optional[str] = None
     internet_enabled: bool = False
-    tx_power_level: Optional[int] = Field(None, description="TX power level 1-4 (4 = max)")
+    tx_power_level: Optional[int] = Field(None, description="Internal requested TX power level 1-4", exclude=True)
+    tx_power: Optional[NetworkTxPower] = Field(None, description="Requested and reported TX power details")
     expires_at: Optional[str] = Field(None, description="Network expiration date and time in format: yyyy-mm-dd HH:MM:SS")
     expires_in: Optional[int] = Field(None, description="Seconds remaining until network auto-shutdown")
     dhcp: Optional[dict] = Field(None, description="DHCP server configuration details")
@@ -119,11 +126,6 @@ class TxPowerRequest(BaseModel):
 class TxPowerInfo(BaseModel):
     net_id: str
     interface: str
-    channel: int
-    frequency_mhz: int
     max_dbm: float
     levels_dbm: dict
-    current_level: int
-    current_dbm: float
-    reported_dbm: Optional[float] = Field(None, description="TX power reported by interface (may differ from current_dbm if driver doesn't support dynamic changes)")
-    warning: Optional[str] = Field(None, description="Warning message if power change not supported")
+    tx_power: NetworkTxPower
