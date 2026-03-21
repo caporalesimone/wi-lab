@@ -4,6 +4,30 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [1.x.y] - 2026-ZZ-WW
+
+### ✨ Features
+
+- TBD
+
+### 🐛 Bug Fixes
+
+- TBD
+
+### 🔧 Refactoring & Infrastructure
+
+- TBD
+
+### 🧪 Testing
+
+- TBD
+
+### 📝 Documentation
+
+- TBD
+
+---
+
 ## [1.3.0] - 2026-03-18
 
 ### 🐛 Bug Fixes
