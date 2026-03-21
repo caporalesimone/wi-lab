@@ -11,6 +11,9 @@ All notable changes to Wi-Lab are documented in this file.
 - **TX Power POST Hardware Mismatch Handling**
   - `POST /api/v1/interface/{net_id}/txpower` now returns HTTP `422 Unprocessable Entity` when the wireless interface reports a different power than the requested one
   - Replaced warning-style success handling with explicit API error semantics for unsupported dynamic TX power changes
+- **TX Power POST Out-of-Range Validation**
+  - `POST /api/v1/interface/{net_id}/txpower` now always returns HTTP `422 Unprocessable Entity` for out-of-range levels
+  - Out-of-range errors now use a short and stable payload: `{"detail": "Requested power out of range. Valid values are 1, 2, 3, 4."}`
 
 ### ✨ Features
 
@@ -67,6 +70,7 @@ All notable changes to Wi-Lab are documented in this file.
 - **OpenAPI Example Alignment**
   - Updated Swagger examples for `GET /api/v1/interface/{net_id}/network`
   - Updated Swagger examples for `GET /api/v1/interface/{net_id}/txpower` to match the nested `tx_power` response shape
+  - Added explicit Swagger examples for `POST /api/v1/interface/{net_id}/txpower` success and `422` error variants (out-of-range and hardware mismatch)
 
 ### 🧪 Testing
 
@@ -80,6 +84,8 @@ All notable changes to Wi-Lab are documented in this file.
   - Verifies nested `tx_power` serialization on `GET /api/v1/interface/{net_id}/txpower`
   - Confirms legacy warning and flat TX power fields are no longer exposed by the GET response
   - Confirms `POST /api/v1/interface/{net_id}/txpower` returns `422` on hardware mismatch
+  - Confirms `POST /api/v1/interface/{net_id}/txpower` returns the simplified `422` out-of-range error message
+  - Confirms OpenAPI schema documents `422` examples for both out-of-range and hardware mismatch cases
 
 ### 📝 Documentation
 

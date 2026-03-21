@@ -132,6 +132,41 @@ def create_app() -> FastAPI:
                     "level": 2
                 }
 
+            txpower_post_responses = txpower_post.get("responses", {})
+            txpower_post_200 = txpower_post_responses.get("200", {})
+            txpower_post_200_content = txpower_post_200.get("content", {})
+            if "application/json" in txpower_post_200_content:
+                txpower_post_200_content["application/json"]["example"] = {
+                    "net_id": "ap-01",
+                    "interface": "wlx782051245264",
+                    "max_dbm": 20.0,
+                    "levels_dbm": {
+                        "1": 5.0,
+                        "2": 10.0,
+                        "3": 15.0,
+                        "4": 20.0,
+                    },
+                    "tx_power": {
+                        "requested_level": 2,
+                        "reported_level": 2,
+                        "reported_dbm": 10.0,
+                    },
+                }
+
+            txpower_post_422 = txpower_post_responses.get("422", {})
+            txpower_post_422_content = txpower_post_422.setdefault("content", {})
+            txpower_post_422_json = txpower_post_422_content.setdefault("application/json", {})
+            txpower_post_422_json["examples"] = {
+                "out_of_range": {
+                    "summary": "Requested level is outside 1-4",
+                    "value": {"detail": "Requested power out of range. Valid values are 1, 2, 3, 4."},
+                },
+                "hardware_mismatch": {
+                    "summary": "Hardware does not apply requested TX power",
+                    "value": {"detail": "Interface does not support dynamic power change."},
+                },
+            }
+
             # GET /interface/{net_id}/network response example
             network_get = paths.get("/api/v1/interface/{net_id}/network", {}).get("get", {})
             network_responses = network_get.get("responses", {})

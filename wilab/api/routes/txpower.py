@@ -8,6 +8,8 @@ from ...api.auth import require_token
 from ...api.dependencies import get_manager
 
 router = APIRouter(prefix="/interface", tags=["TX Power"])
+VALID_TX_POWER_LEVELS = (1, 2, 3, 4)
+VALID_TX_POWER_LEVELS_TEXT = ", ".join(str(level) for level in VALID_TX_POWER_LEVELS)
 
 
 @router.get(
@@ -51,7 +53,9 @@ async def get_tx_power(
         200: {"description": "TX power level set successfully"},
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found or network not active"},
-        422: {"description": "Unprocessable Entity (requested TX power not applied by hardware)"},
+        422: {
+            "description": "Unprocessable Entity (requested power out of range or requested TX power not applied by hardware)"
+        },
     },
 )
 async def set_tx_power(
@@ -78,8 +82,14 @@ async def set_tx_power(
 
     Raises:
         HTTPException 404: net_id not found or network not active.
-        HTTPException 422: requested TX power cannot be applied by hardware.
+        HTTPException 422: requested power is out of range or cannot be applied by hardware.
     """
+    if req.level not in VALID_TX_POWER_LEVELS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Requested power out of range. Valid values are {VALID_TX_POWER_LEVELS_TEXT}.",
+        )
+
     try:
         return manager.set_tx_power_level(net_id, req.level)
     except TxPowerMismatchError as e:

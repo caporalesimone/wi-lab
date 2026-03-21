@@ -120,7 +120,7 @@ class InterfaceStatus(BaseModel):
     active: bool
 
 class TxPowerRequest(BaseModel):
-    level: int = Field(..., ge=1, le=4, description="TX power level 1 (low) to 4 (max)")
+    level: int = Field(..., description="TX power level 1 (low) to 4 (max)")
 
 
 class TxPowerInfo(BaseModel):

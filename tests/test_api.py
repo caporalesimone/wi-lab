@@ -722,6 +722,36 @@ class TestTxPowerPostEndpoint:
         data = resp.json()
         assert data['detail'] == 'Interface does not support dynamic power change.'
 
+    def test_post_txpower_out_of_range_returns_422_simple_message(self, client, valid_token):
+        resp = client.post(
+            '/api/v1/interface/ap-01/txpower',
+            headers={'Authorization': valid_token},
+            json={'level': 9},
+        )
+
+        assert resp.status_code == 422
+        data = resp.json()
+        assert data == {
+            'detail': 'Requested power out of range. Valid values are 1, 2, 3, 4.'
+        }
+
+    def test_post_txpower_openapi_documents_422_examples(self, client, valid_token):
+        resp = client.get('/openapi.json', headers={'Authorization': valid_token})
+        assert resp.status_code == 200
+        schema = resp.json()
+
+        txpower_post = schema['paths']['/api/v1/interface/{net_id}/txpower']['post']
+        responses = txpower_post['responses']
+        assert '422' in responses
+
+        examples = responses['422']['content']['application/json']['examples']
+        assert examples['out_of_range']['value']['detail'] == (
+            'Requested power out of range. Valid values are 1, 2, 3, 4.'
+        )
+        assert examples['hardware_mismatch']['value']['detail'] == (
+            'Interface does not support dynamic power change.'
+        )
+
 
 class TestInternetControlEndpoints:
     """Tests for internet enable/disable endpoints."""
