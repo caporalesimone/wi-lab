@@ -204,7 +204,8 @@ class NetworkManager:
         tx_power_level = req.tx_power_level
         try:
             tx_info = self._set_tx_power(cfg_net.interface, tx_power_level, req.channel)
-            logger.info(f"TX power set for {net_id}: level {tx_power_level} -> {tx_info.get('current_dbm')} dBm")
+            runtime_dbm = self._read_current_txpower(cfg_net.interface)
+            logger.info(f"TX power set for {net_id}: requested level {tx_power_level}, runtime reported {runtime_dbm} dBm")
         except Exception as e:
             tx_info = None
             logger.warning(f"Failed to set TX power for {net_id}: {e}")
