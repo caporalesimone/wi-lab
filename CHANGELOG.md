@@ -4,7 +4,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
-## [1.5.0] - 2026-03-23
+## [1.5.0] - 2026-03-24
 
 ### 📚 Documentation
 
@@ -37,23 +37,6 @@ All notable changes to Wi-Lab are documented in this file.
   - Added `make type-check` target to run type checker
   - Type checking included in pre-commit guidelines (warnings expected during type hint migration)
   - Updated Makefile and documentation to reflect type-checking workflow
-
-### 🛠️ Diagnostic Scripts
-
-- **Created Troubleshooting Script Suite** - 16 new operational scripts in `diagnostics/troubleshooting/`:
-  - **Service Diagnostics**: `check_service_status.sh`, `view_service_logs.sh`, `post_installation_sanity.sh`
-  - **Service Management**: `service_management.sh`, `autostart_management.sh`
-  - **Issue Resolution**: 
-    - `issue_service_fails_start.sh` - Diagnose service startup failures
-    - `issue_network_creation_fails.sh` - Debug network creation issues
-    - `issue_clients_cannot_connect.sh` - Troubleshoot client connectivity
-    - `issue_ssh_lost_recovery.sh` - Recover from SSH connection loss
-    - `issue_iptables_ssh_interference.sh` - Diagnose iptables conflicts
-    - `issue_manual_network_recovery.sh` - Perform manual network recovery
-  - **Performance & Debug**: `performance_diagnosis.sh`, `debug_verbose.sh`, `debug_manual_foreground.sh`
-  - **Comprehensive Validation**: `complete_health_check.sh`
-- Extracted all scripts from markdown documentation for easier execution
-- All scripts properly linked from `docs/troubleshooting.md`
 
 ### 🧹 Code Quality
 
