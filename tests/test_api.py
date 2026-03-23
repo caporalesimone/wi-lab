@@ -829,6 +829,86 @@ class TestTxPowerPostEndpoint:
 class TestInternetControlEndpoints:
     """Tests for internet enable/disable endpoints."""
     
+    def test_enable_internet_success(self, client, valid_token, monkeypatch):
+        """Test enabling internet on active network succeeds and returns detail message."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        
+        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
+        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
+        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
+        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
+        # Start network first
+        start_resp = client.post(
+            '/api/v1/interface/ap-01/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestAP',
+                'channel': 6,
+                'encryption': 'wpa2',
+                'password': 'testpass123',
+                'band': '2.4ghz',
+                'tx_power_level': 4
+            }
+        )
+        assert start_resp.status_code == 200
+
+        # Enable internet
+        enable_resp = client.post(
+            '/api/v1/interface/ap-01/internet/enable',
+            headers={'Authorization': valid_token}
+        )
+        assert enable_resp.status_code == 200
+        data = enable_resp.json()
+        assert data == {'detail': 'Network ap-01 internet enabled successfully'}
+    
+    def test_disable_internet_success(self, client, valid_token, monkeypatch):
+        """Test disabling internet on active network succeeds and returns detail message."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        
+        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
+        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
+        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.nat_manager, 'disable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
+        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
+        # Start network first
+        start_resp = client.post(
+            '/api/v1/interface/ap-01/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestAP',
+                'channel': 6,
+                'encryption': 'wpa2',
+                'password': 'testpass123',
+                'band': '2.4ghz',
+                'tx_power_level': 4
+            }
+        )
+        assert start_resp.status_code == 200
+
+        # Enable internet first
+        enable_resp = client.post(
+            '/api/v1/interface/ap-01/internet/enable',
+            headers={'Authorization': valid_token}
+        )
+        assert enable_resp.status_code == 200
+
+        # Then disable internet
+        disable_resp = client.post(
+            '/api/v1/interface/ap-01/internet/disable',
+            headers={'Authorization': valid_token}
+        )
+        assert disable_resp.status_code == 200
+        data = disable_resp.json()
+        assert data == {'detail': 'Network ap-01 internet disabled successfully'}
+    
     def test_enable_internet_inactive(self, client, valid_token, monkeypatch):
         """Test enabling internet on inactive network fails."""
         cfg = load_config()

@@ -23,6 +23,8 @@ All notable changes to Wi-Lab are documented in this file.
 - **Network Lifecycle API Response Simplification**
   - `POST /api/v1/interface/{net_id}/network` now returns a compact success payload: `{"detail": "Network {net_id} created successfully"}`
   - `DELETE /api/v1/interface/{net_id}/network` now returns a consistent payload: `{"detail": "Network {net_id} stopped successfully"}`
+  - `POST /api/v1/interface/{net_id}/internet/enable` now returns: `{"detail": "Network {net_id} internet enabled successfully"}`
+  - `POST /api/v1/interface/{net_id}/internet/disable` now returns: `{"detail": "Network {net_id} internet disabled successfully"}`
   - Full network details are now retrieved only via `GET /api/v1/interface/{net_id}/network`
 - **Validation Error Payload Simplification**
   - Request validation errors are exposed with a simple string payload: `{"detail": "..."}`
@@ -40,7 +42,10 @@ All notable changes to Wi-Lab are documented in this file.
   - stop active network succeeds (`200`)
   - stop inactive network returns `409`
   - stop unknown network returns `404`
-- Hardened internet-control inactive tests by isolating manager state per test
+- Added coverage for internet enable/disable success cases:
+  - `test_enable_internet_success`: validates POST returns detail message with net_id
+  - `test_disable_internet_success`: validates POST returns detail message with net_id
+- Hardened internet-control tests by isolating manager state per test
 
 ---
 

@@ -12,7 +12,14 @@ router = APIRouter(prefix="/interface", tags=["Internet"])
 @router.post(
     "/{net_id}/internet/enable",
     responses={
-        200: {"description": "Internet access enabled successfully"},
+        200: {
+            "description": "Internet access enabled successfully",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Network ap-01 internet enabled successfully"}
+                }
+            },
+        },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found or network not active"},
         500: {"description": "NAT configuration failed"},
@@ -33,7 +40,7 @@ async def internet_enable(
         net_id: Unique network identifier.
 
     Returns:
-        dict: Confirmation with net_id and internet_enabled=True.
+        dict: Confirmation message with enabled status.
 
     Raises:
         HTTPException 404: net_id not found or network not active.
@@ -41,7 +48,7 @@ async def internet_enable(
     """
     try:
         manager.enable_internet(net_id)
-        return {"net_id": net_id, "internet_enabled": True}
+        return {"detail": f"Network {net_id} internet enabled successfully"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except RuntimeError as e:
@@ -51,7 +58,14 @@ async def internet_enable(
 @router.post(
     "/{net_id}/internet/disable",
     responses={
-        200: {"description": "Internet access disabled successfully"},
+        200: {
+            "description": "Internet access disabled successfully",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Network ap-01 internet disabled successfully"}
+                }
+            },
+        },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found or network not active"},
     },
@@ -71,13 +85,13 @@ async def internet_disable(
         net_id: Unique network identifier.
 
     Returns:
-        dict: Confirmation with net_id and internet_enabled=False.
+        dict: Confirmation message with disabled status.
 
     Raises:
         HTTPException 404: net_id not found or network not active.
     """
     try:
         manager.disable_internet(net_id)
-        return {"net_id": net_id, "internet_enabled": False}
+        return {"detail": f"Network {net_id} internet disabled successfully"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
