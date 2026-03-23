@@ -41,7 +41,7 @@ cd wi-lab
 make venv
 
 # Install development/test dependencies (required once)
-.venv/bin/pip install -r requirements-dev.txt
+<install-dev-dependencies-command>
 
 # Activate it (optional but recommended for manual tools)
 source .venv/bin/activate
@@ -57,7 +57,7 @@ make help
 make test-local-quick
 ```
 
-**What's in requirements-dev.txt:**
+**What's included in development dependencies:**
 - `pytest` - Testing framework
 - `pytest-cov` - Coverage reporting
 - `pytest-asyncio` - Async test support
@@ -65,11 +65,11 @@ make test-local-quick
 - `ruff` - Fast Python linter and code formatter (replaces flake8, isort, black)
 - `mypy` - Static type checker for Python
 
-### 4. Create Configuration File
+### 4. Create Local Configuration
 
 ```bash
-# Minimal config for development
-nano config.yaml
+# Create and edit your local configuration
+nano <local-config-file>
 ```
 
 **Example config:**
@@ -99,11 +99,12 @@ networks:
 make venv
 source .venv/bin/activate
 
-# Run directly (simple)
-python main.py
+# Start the application with your preferred entry point
+# (for example, your standard run command or ASGI server)
+<your-run-command>
 
-# Or with uvicorn for hot reload (advanced)
-uvicorn wilab.api:app --reload --host 0.0.0.0 --port 8080
+# Example with hot reload (adapt module path as needed)
+uvicorn <app_module>:app --reload --host 0.0.0.0 --port 8080
 ```
 
 ### Accessing the API
@@ -112,7 +113,7 @@ Once running:
 - **API Docs:** `http://localhost:8080/docs`
 - **Alternative Docs:** `http://localhost:8080/redoc`
 
-See [docs/swagger.md](docs/swagger.md) for complete API testing guide.
+Use your API documentation endpoint as the source of truth for request/response testing.
 
 ---
 
@@ -120,9 +121,9 @@ See [docs/swagger.md](docs/swagger.md) for complete API testing guide.
 
 ### Running Tests
 
-For complete testing documentation, see [docs/unit-testing.md](docs/unit-testing.md).
+Use the project's automated test targets for full coverage.
 
-Preferred commands (via Makefile):
+Preferred commands (via project automation targets):
 
 ```bash
 # Run full test suite
@@ -138,21 +139,21 @@ make test-local-cov
 Advanced (targeted tests when needed):
 
 ```bash
-# Run specific test file
-.venv/bin/pytest tests/test_api.py -v
+# Run a subset of tests by keyword
+.venv/bin/pytest -k "keyword" -v
 
-# Run specific test
-.venv/bin/pytest tests/test_api.py::TestNetworkCreateEndpoint::test_network_response_structure -v
+# Run a specific test node
+.venv/bin/pytest <test-node-id> -v
 ```
 
-### Using the Makefile
+### Using Project Automation Targets
 
-The Makefile provides convenient shortcuts for development tasks:
+Automation targets provide convenient shortcuts for development tasks:
 
 ```bash
 # One-time local bootstrap
 make venv
-.venv/bin/pip install -r requirements-dev.txt
+<install-dev-dependencies-command>
 
 # Run tests locally
 make test-local
@@ -176,7 +177,7 @@ make type-check
 make clean-venv
 ```
 
-See [Makefile](Makefile) for complete list of available commands and their descriptions.
+Use `make help` to view the complete and always-updated list of available targets.
 
 ---
 
@@ -190,12 +191,11 @@ git checkout -b feature/my-new-feature
 
 ### 2. Make Changes
 
-Edit code in `wilab/` directory:
-- `wilab/api/` - REST API endpoints
-- `wilab/wifi/` - WiFi interface control
-- `wilab/network/` - Network management
-- `wilab/config.py` - Configuration
-- `wilab/models.py` - Data models
+Work within the main backend modules:
+- API layer
+- WiFi and network control layer
+- Configuration and validation layer
+- Domain models and shared utilities
 
 ### 3. Check Code Style
 
@@ -224,14 +224,14 @@ make test-local
 make test-local-cov
 
 # Optional targeted run during development
-.venv/bin/pytest tests/test_api.py -v
+.venv/bin/pytest -k "keyword" -v
 ```
 
 ### 6. Verify Manually
 
 ```bash
 # Run the service
-python main.py
+<your-run-command>
 
 # Validate and test from Swagger UI
 # Open: http://localhost:8080/docs
@@ -255,20 +255,11 @@ Push branch and create PR on GitHub for review.
 
 The project follows clean separation of concerns:
 
-- **`wilab/config.py`** - Loads and validates `config.yaml`
-- **`wilab/models.py`** - Pydantic models for API validation and data types
-- **`wilab/version.py`** - Version information
-- **`wilab/api/routes/`** - REST API endpoint modules
-- **`wilab/api/auth.py`** - Token authentication and security
-- **`wilab/api/__init__.py`** - FastAPI app creation and setup
-- **`wilab/wifi/interface.py`** - WiFi interface abstraction class
-- **`wilab/wifi/hostapd.py`** - hostapd configuration and process management
-- **`wilab/wifi/manager.py`** - Network lifecycle management and timeouts
-- **`wilab/network/commands.py`** - Subprocess wrapper functions (ip, iw, iptables, etc.)
-- **`wilab/network/dhcp.py`** - DHCP server configuration (dnsmasq)
-- **`wilab/network/nat.py`** - NAT rules and Internet forwarding (iptables)
-- **`wilab/network/isolation.py`** - Network isolation between WiFi APs
-- **`wilab/network/safety.py`** - Network safety checks and protections
+- **Configuration Layer** - Loads and validates runtime settings
+- **Models Layer** - Request/response schemas and domain data types
+- **API Layer** - HTTP routes, auth checks, and handlers
+- **Network Layer** - WiFi, DHCP, NAT, and isolation orchestration
+- **System Commands Layer** - Controlled wrappers around host networking commands
 
 ### Design Principles
 
@@ -286,7 +277,7 @@ The project follows clean separation of concerns:
 
 ```bash
 # Set Python verbosity
-PYTHONVERBOSE=2 python main.py
+PYTHONVERBOSE=2 <your-run-command>
 
 # Or add logging in code
 import logging
@@ -303,7 +294,7 @@ def my_function():
     return result
 
 # Run with pytest
-.venv/bin/pytest tests/test_file.py -v -s
+.venv/bin/pytest -v -s
 ```
 
 ### Check Service Logs
@@ -322,12 +313,12 @@ sudo journalctl -u wi-lab.service | grep ERROR
 
 When adding new features, update documentation:
 
-- **API changes:** Update docstrings in `wilab/api/routes/` modules
-- **Configuration:** Add comments to `config.yaml`
-- **User guide:** Update files in `docs/`
-- **Development:** Update this file if procedures change
+- **API changes:** Keep route-level descriptions and examples aligned with behavior
+- **Configuration:** Document new or changed runtime settings
+- **User guide:** Update relevant user-facing guides
+- **Development:** Update this guide if the workflow changes
 
-See `docs/` directory for all user-facing documentation.
+Keep documentation focused on workflows and behavior rather than internal file paths.
 
 ---
 
@@ -339,7 +330,7 @@ See `docs/` directory for all user-facing documentation.
 - ✅ Type checking passes: `make type-check` (warnings expected during transition)
 - ✅ All tests pass: `make test-local`
 - ✅ Coverage maintained: `make test-local-cov`
-- ✅ Optional targeted validation: `.venv/bin/pytest tests/test_api.py -v`
+- ✅ Optional targeted validation: `.venv/bin/pytest -k "keyword" -v`
 - ✅ Documentation updated: Add comments/update docs if needed
 
 ### Commit Messages
@@ -372,22 +363,22 @@ Include:
 
 ---
 
-## Documentation Links
+## Documentation Areas
 
-- **Networking:** [docs/networking.md](docs/networking.md)
-- **API Testing:** [docs/swagger.md](docs/swagger.md)
-- **Unit Testing:** [docs/unit-testing.md](docs/unit-testing.md)
-- **Troubleshooting:** [docs/troubleshooting.md](docs/troubleshooting.md)
+- Networking and connectivity
+- API testing and validation
+- Unit and integration testing
+- Troubleshooting and diagnostics
 
 ---
 
-**Development environment ready! 🚀**
+**Development environment ready!**
 
 Start developing:
 ```bash
 make venv
 source .venv/bin/activate
-python main.py
+<your-run-command>
 ```
 
-Then access API docs at: `http://localhost:8080/docs`
+Then open your API docs endpoint in the browser (for example: `http://localhost:8080/docs`).
