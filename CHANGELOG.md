@@ -4,27 +4,19 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
-## [1.x.y] - 2026-ZZ-WW
+## [1.3.1] - 2026-03-23
 
-### ✨ Features
+### 🔒 Security
 
-- TBD
-
-### 🐛 Bug Fixes
-
-- TBD
-
-### 🔧 Refactoring & Infrastructure
-
-- TBD
+- **Fixed unauthenticated access to `/api/v1/debug` endpoint**
+  - `GET /api/v1/debug` now requires a valid Bearer token, consistent with all other protected endpoints
+  - Previously, the endpoint exposed full system debug information (services, interfaces, diagnostics) without authentication
 
 ### 🧪 Testing
 
-- TBD
-
-### 📝 Documentation
-
-- TBD
+- Added `test_debug_requires_auth`: verifies `GET /api/v1/debug` returns `401` without a token
+- Added `test_debug_with_invalid_token`: verifies `GET /api/v1/debug` returns `401` with an invalid token
+- Updated existing `TestDebugEndpoint` tests to supply the valid Bearer token header
 
 ---
 

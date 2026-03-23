@@ -170,18 +170,28 @@ class TestStatusEndpoint:
 class TestDebugEndpoint:
     """Tests for debug endpoint."""
     
-    def test_debug_endpoint_basic(self, client):
-        """Test debug endpoint returns valid response."""
+    def test_debug_requires_auth(self, client):
+        """Test debug endpoint requires authentication."""
         resp = client.get('/api/v1/debug')
+        assert resp.status_code == 401
+
+    def test_debug_with_invalid_token(self, client, invalid_token):
+        """Test debug endpoint rejects invalid token."""
+        resp = client.get('/api/v1/debug', headers={'Authorization': invalid_token})
+        assert resp.status_code == 401
+
+    def test_debug_endpoint_basic(self, client, valid_token):
+        """Test debug endpoint returns valid response."""
+        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
         assert 'version' in data
         assert 'status' in data
         assert 'system' in data
     
-    def test_debug_endpoint_structure(self, client):
+    def test_debug_endpoint_structure(self, client, valid_token):
         """Test debug endpoint response structure."""
-        resp = client.get('/api/v1/debug')
+        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token})
         data = resp.json()
         
         # Check main sections
@@ -195,9 +205,9 @@ class TestDebugEndpoint:
         assert 'configured_networks' in data['system']
         assert 'upstream_interface' in data['system']
     
-    def test_debug_endpoint_services_section(self, client):
+    def test_debug_endpoint_services_section(self, client, valid_token):
         """Test debug endpoint includes services info."""
-        resp = client.get('/api/v1/debug')
+        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token})
         data = resp.json()
         
         assert 'services' in data
@@ -210,9 +220,9 @@ class TestDebugEndpoint:
         assert 'instances' in data['services']['dnsmasq']
         assert isinstance(data['services']['dnsmasq']['instances'], int)
     
-    def test_debug_endpoint_interfaces_section(self, client):
+    def test_debug_endpoint_interfaces_section(self, client, valid_token):
         """Test debug endpoint includes interfaces info."""
-        resp = client.get('/api/v1/debug')
+        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token})
         data = resp.json()
         
         assert 'interfaces' in data

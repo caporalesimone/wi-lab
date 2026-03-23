@@ -119,7 +119,9 @@ async def system_status(
     },
 )
 async def debug_info(
-    manager: NetworkManager = Depends(get_manager), config=Depends(get_config)
+    manager: NetworkManager = Depends(get_manager),
+    config=Depends(get_config),
+    _: bool = Depends(require_token),
 ):
     """
     Comprehensive debug information for troubleshooting.
