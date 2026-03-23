@@ -1,73 +1,30 @@
 # Wi-Lab Troubleshooting Guide
 
-## Quick Diagnostic Commands
+> Disclaimer: before running any troubleshooting script, align interface names (for example `wlx...`) to the real interface names on your host.
 
-### Check Service Status
+This document is script-first: operational commands are stored under [diagnostics/troubleshooting](../diagnostics/troubleshooting).
 
-```bash
-# Is Wi-Lab running?
-sudo systemctl status wi-lab.service
+Run scripts from the repository root with `bash <script>`.
 
-# Is it enabled for autostart?
-sudo systemctl is-enabled wi-lab.service
-# Output: enabled or disabled
+---
 
-# Is API responding?
-curl http://localhost:8080/api/v1/health
-# Expected: {"status":"ok"}
-```
+## Quick Diagnostics
 
-### View Service Logs
-
-```bash
-# Real-time logs (follow mode)
-sudo journalctl -u wi-lab.service -f
-
-# Last 100 lines
-sudo journalctl -u wi-lab.service -n 100
-
-# Since last boot
-sudo journalctl -u wi-lab.service -b
-
-# Since 1 hour ago
-sudo journalctl -u wi-lab.service --since "1 hour ago"
-
-# Errors only
-sudo journalctl -u wi-lab.service | grep -E "ERROR|CRITICAL|Traceback"
-```
+- Service status and Swagger reachability:
+	- [diagnostics/troubleshooting/check_service_status.sh](../diagnostics/troubleshooting/check_service_status.sh)
+- Service logs (modes: `tail`, `follow`, `boot`, `hour`, `errors`):
+	- [diagnostics/troubleshooting/view_service_logs.sh](../diagnostics/troubleshooting/view_service_logs.sh)
+- Post-installation sanity checks:
+	- [diagnostics/troubleshooting/post_installation_sanity.sh](../diagnostics/troubleshooting/post_installation_sanity.sh)
 
 ---
 
 ## Service Management
 
-### Start/Stop/Restart Service
-
-```bash
-# Start Wi-Lab
-sudo systemctl start wi-lab.service
-
-# Stop Wi-Lab
-sudo systemctl stop wi-lab.service
-
-# Restart Wi-Lab (stop + start)
-sudo systemctl restart wi-lab.service
-
-# Reload configuration (if systemd file changed)
-sudo systemctl daemon-reload
-```
-
-### Enable/Disable Autostart
-
-```bash
-# Enable autostart on boot
-sudo systemctl enable wi-lab.service
-
-# Disable autostart
-sudo systemctl disable wi-lab.service
-
-# Check autostart status
-sudo systemctl is-enabled wi-lab.service
-```
+- Start/stop/restart/reload/status:
+	- [diagnostics/troubleshooting/service_management.sh](../diagnostics/troubleshooting/service_management.sh)
+- Enable/disable/check autostart:
+	- [diagnostics/troubleshooting/autostart_management.sh](../diagnostics/troubleshooting/autostart_management.sh)
 
 ---
 
@@ -75,349 +32,89 @@ sudo systemctl is-enabled wi-lab.service
 
 ### Issue 1: Service Fails to Start
 
-**Symptoms:**
-- `systemctl status` shows "failed" or "inactive"
-- API unreachable
+Symptoms:
+- `wi-lab.service` is failed/inactive
+- Swagger UI is not reachable
 
-**Diagnosis:**
-```bash
-# Check logs for errors
-sudo journalctl -u wi-lab.service -n 50 | grep -i "error"
+Script:
+- [diagnostics/troubleshooting/issue_service_fails_start.sh](../diagnostics/troubleshooting/issue_service_fails_start.sh)
 
-# Check Python syntax errors
-/opt/wilab-venv/bin/python /home/simone/wi-lab/main.py
+### Issue 2: Cannot Create WiFi Network
 
-# Check if another service uses port 8080
-sudo lsof -ti:8080
-```
+Symptoms:
+- Swagger UI reachable
+- Create network operation fails
 
-**Common causes:**
-1. **Port 8080 in use:** Check `sudo lsof -ti:8080`, kill other process or change port in config
-2. **Config file invalid:** Run `python3 -c "import yaml; yaml.safe_load(open('config.yaml'))"`
-3. **WiFi interface not available:** Run `iw dev`, verify interface name in config
-4. **Permissions:** Service must run as root (check `User=root` in service file)
+Script:
+- [diagnostics/troubleshooting/issue_network_creation_fails.sh](../diagnostics/troubleshooting/issue_network_creation_fails.sh)
 
-**Resolution:**
-```bash
-# Fix config file if needed
-nano /home/simone/wi-lab/config.yaml
+### Issue 3: Clients Cannot Connect
 
-# Verify config
-python3 -c "from wilab.config import load_config; load_config('config.yaml')"
+Symptoms:
+- SSID visible
+- clients fail to get IP or Internet
 
-# Restart service
-sudo systemctl restart wi-lab.service
+Scripts:
+- [diagnostics/troubleshooting/issue_clients_cannot_connect.sh](../diagnostics/troubleshooting/issue_clients_cannot_connect.sh)
+- [diagnostics/troubleshooting/view_service_logs.sh](../diagnostics/troubleshooting/view_service_logs.sh)
 
-# Check logs
-sudo journalctl -u wi-lab.service -f
-```
+### Issue 4: SSH Lost After Network Changes
 
-### Issue 2: API Responds But Cannot Create WiFi Network
+Scripts:
+- Console recovery and subnet conflict checks:
+	- [diagnostics/troubleshooting/issue_ssh_lost_recovery.sh](../diagnostics/troubleshooting/issue_ssh_lost_recovery.sh)
+- iptables diagnosis:
+	- [diagnostics/troubleshooting/issue_iptables_ssh_interference.sh](../diagnostics/troubleshooting/issue_iptables_ssh_interference.sh)
+- manual destructive recovery (`--force` required):
+	- [diagnostics/troubleshooting/issue_manual_network_recovery.sh](../diagnostics/troubleshooting/issue_manual_network_recovery.sh)
 
-**Symptoms:**
-- Health check works: `curl http://localhost:8080/api/v1/health` returns `{"status":"ok"}`
-- Network creation fails
-- API returns error response
+### Issue 5: TX Power Not Applied
 
-**Diagnosis:**
-```bash
-# Check logs for detailed error
-sudo journalctl -u wi-lab.service -f
-
-# Verify WiFi interface exists
-iw dev
-
-# Check interface supports AP mode
-iw list | grep -A 5 "Supported interface modes" | grep "AP"
-
-# Verify interface is free (not in use by NetworkManager)
-nmcli dev
-```
-
-**Common causes:**
-1. **Interface not found:** Name mismatch in config
-2. **No AP mode support:** Driver doesn't support AP
-3. **Interface in use:** NetworkManager or other app controlling it
-
-**Resolution:**
-```bash
-# Find correct interface name
-iw dev
-# Update config.yaml with exact name
-
-# Restart service
-sudo systemctl restart wi-lab.service
-
-# Try creating network again via API
-curl -X POST http://localhost:8080/api/v1/interface/wlx782051245264/network \
-  -H "Authorization: Bearer your-token" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ssid": "TestAP",
-    "channel": 6,
-    "band": "2.4ghz",
-    "encryption": "wpa2",
-    "password": "test1234",
-    "tx_power_level": 4
-  }'
-```
-
-### Issue 3: WiFi Network Running But Clients Cannot Connect
-
-**Symptoms:**
-- Network visible on client devices
-- Clients cannot connect or cannot access Internet
-
-**Diagnosis:**
-```bash
-# Check network status
-curl http://localhost:8080/api/v1/interface/wlx782051245264/network
-
-# Check connected clients
-curl http://localhost:8080/api/v1/interface/wlx782051245264/clients
-
-# Check hostapd running
-ps aux | grep [h]ostapd
-
-# Check dnsmasq running
-ps aux | grep [d]nsmasq
-
-# Check iptables rules
-sudo iptables -L FORWARD -n -v | head -20
-```
-
-**Common causes:**
-1. **DHCP not working:** dnsmasq not running or misconfigured
-2. **No Internet access:** NAT rules missing or disabled
-3. **Subnet conflict:** WiFi subnet conflicts with host network
-
-**Resolution:**
-```bash
-# Verify logs
-sudo journalctl -u wi-lab.service -f
-
-# If subnet conflict suspected:
-# Check host subnet
-ip addr show | grep "inet "
-
-# Check WiFi subnet in config
-grep dhcp_base_network config.yaml
-
-# If conflict: update config, restart service
-sudo systemctl restart wi-lab.service
-```
-
-### Issue 4: SSH Connection Lost After Network Creation
-
-**Symptoms:**
-- SSH disconnects immediately after creating WiFi network
-- Cannot reconnect via SSH
-- Host networking broken
-
-**Cause:** WiFi subnet conflicts with host network (see [networking.md](networking.md))
-
-**Emergency Recovery:**
-
-**Option A: Console/IPMI Access**
-```bash
-# At console:
-# Stop service
-sudo systemctl stop wi-lab.service
-
-# Fix config
-nano /home/simone/wi-lab/config.yaml
-# Change dhcp_base_network to different subnet
-
-# Restart
-sudo systemctl restart wi-lab.service
-```
-
-**Option B: Reboot**
-```bash
-# System reboot clears iptables rules
-sudo reboot
-
-# After reboot: fix config and restart
-```
-
-**Prevention:**
-```bash
-# Before deploying, always verify host subnet
-ip addr show | grep "inet " | head -1
-# If output is 192.168.10.113/24, use 192.168.120.0/24 for WiFi
-
-# Update config
-grep dhcp_base_network config.yaml
-
-# Verify no conflict
-```
-
-### Issue 5: TX Power Not Changing
-
-**Symptoms:**
-- TX power set via API, but doesn't take effect
-- Driver doesn't support dynamic power change
-
-**Diagnosis:**
-```bash
-# Check TX power capability
-iw dev wlx782051245264 info | grep "tx power"
-
-# Verify power was set
-curl http://localhost:8080/api/v1/interface/wlx782051245264/txpower
-
-# Check for warning indicating unsupported hardware
-# Response will include: "warning": "Interface does not support dynamic power change"
-```
-
-**Common causes:**
-1. **Hardware limitation:** Driver (e.g., rtw88_8822bu) doesn't support dynamic TX power
-2. **Network must be recreated:** Some drivers require network restart to apply power changes
-
-**Resolution:**
-```bash
-# If warning present: stop and recreate network with desired TX power
-curl -X DELETE http://localhost:8080/api/v1/interface/wlx782051245264/network
-
-# Recreate with desired power level
-curl -X POST http://localhost:8080/api/v1/interface/wlx782051245264/network \
-  -H "Authorization: Bearer token" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ssid": "TestAP",
-    "channel": 6,
-    "band": "2.4ghz",
-    "encryption": "wpa2",
-    "password": "test1234",
-    "tx_power_level": 1
-  }'
-```
+Script:
+- [diagnostics/troubleshooting/issue_txpower_diagnosis.sh](../diagnostics/troubleshooting/issue_txpower_diagnosis.sh)
 
 ---
 
 ## Performance Issues
 
-### WiFi Connection Slow or Unstable
+### WiFi Slow or Unstable
 
-**Diagnosis:**
-```bash
-# Check signal strength on client device
-# Check channel and bandwidth
-iw dev wlx782051245264 info
-
-# Look for interference
-sudo iw dev wlx782051245264 scan | grep -E "SSID:|signal:"
-
-# Check TX power
-curl http://localhost:8080/api/v1/interface/wlx782051245264/txpower | jq '.'
-```
-
-**Solutions:**
-1. **Change channel:** Use less congested channels (1, 6, 11 on 2.4 GHz)
-2. **Increase TX power:** Set `tx_power_level` to 4 when creating network
-3. **Check WiFi band:** Use 5 GHz if available (less congestion)
-4. **Reduce interference:** Move away from other 2.4 GHz devices
-
----
-
-## Networking Issues
-
-For detailed networking diagnostics, troubleshooting, and iptables/DNS issues, see:
-
-**→ [networking.md](networking.md)**
-
-Key sections:
-- [Diagnostics and Monitoring](networking.md#diagnostics-and-monitoring)
-- [Troubleshooting](networking.md#troubleshooting)
-- [Emergency Recovery](networking.md#emergency-recovery)
+Script:
+- [diagnostics/troubleshooting/performance_diagnosis.sh](../diagnostics/troubleshooting/performance_diagnosis.sh)
 
 ---
 
 ## Testing and Validation
 
-### Complete Health Check
-
-```bash
-#!/bin/bash
-echo "=== Wi-Lab Health Check ==="
-echo ""
-
-# 1. Service status
-echo "1. Service Status:"
-sudo systemctl status wi-lab.service | grep "Active:"
-
-# 2. API health
-echo ""
-echo "2. API Health:"
-curl -s http://localhost:8080/api/v1/health | jq '.status'
-
-# 3. Interfaces available
-echo ""
-echo "3. Available Interfaces:"
-curl -s http://localhost:8080/api/v1/interfaces \
-  -H "Authorization: Bearer your-token" | jq '.interfaces | length'
-
-# 4. WiFi capability
-echo ""
-echo "4. WiFi Interface Status:"
-iw dev | grep -E "Interface|type"
-
-# 5. Port listening
-echo ""
-echo "5. Port 8080 Listening:"
-sudo ss -tlnp | grep :8080 | awk '{print "✓", $4}'
-
-# 6. Recent errors
-echo ""
-echo "6. Recent Errors:"
-sudo journalctl -u wi-lab.service -n 20 | grep -i "error" | wc -l
-
-echo ""
-echo "=== Check Complete ==="
-```
-
-### API Testing
-
-See [swagger.md](swagger.md) for complete API testing guide with examples.
+- Complete health check report:
+	- [diagnostics/troubleshooting/complete_health_check.sh](../diagnostics/troubleshooting/complete_health_check.sh)
+- API interactive testing:
+	- `http://localhost:8080/docs`
 
 ---
 
 ## Debug Mode
 
-### Enable Verbose Logging
+- Verbose Python startup:
+	- [diagnostics/troubleshooting/debug_verbose.sh](../diagnostics/troubleshooting/debug_verbose.sh)
+- Manual foreground service run:
+	- [diagnostics/troubleshooting/debug_manual_foreground.sh](../diagnostics/troubleshooting/debug_manual_foreground.sh)
 
-```bash
-# Increase logging in Python (if supported)
-PYTHONVERBOSE=2 /opt/wilab-venv/bin/python /home/simone/wi-lab/main.py
+---
 
-# View with timestamps
-sudo journalctl -u wi-lab.service --timestamps=precise -f
-```
+## Networking Reference
 
-### Manual Service Start (For Debugging)
-
-```bash
-# Stop background service
-sudo systemctl stop wi-lab.service
-
-# Run in foreground (Ctrl+C to stop)
-CONFIG_PATH=/home/simone/wi-lab/config.yaml /opt/wilab-venv/bin/python /home/simone/wi-lab/main.py
-
-# Errors and output visible directly
-```
+For networking model and safeguards (no operational scripts), see [networking.md](networking.md):
+- [System Modifications](networking.md#system-modifications)
+- [CRITICAL: Subnet Conflicts](networking.md#-critical-subnet-conflicts)
+- [Diagnostics and Monitoring](networking.md#diagnostics-and-monitoring)
 
 ---
 
 ## Getting Help
 
-1. **Check logs:** `sudo journalctl -u wi-lab.service -n 50`
-2. **Verify configuration:** See [installation-guide.md](installation-guide.md)
-3. **Network issues:** See [networking.md](networking.md)
-4. **API testing:** See [swagger.md](swagger.md)
-5. **Development:** See [README-DEV.md](../README-DEV.md)
-
----
-
-**Service issue resolved! 🔧**
-
-If problems persist, collect logs and create a GitHub issue.
+1. Run [diagnostics/troubleshooting/check_service_status.sh](../diagnostics/troubleshooting/check_service_status.sh)
+2. Run [diagnostics/troubleshooting/view_service_logs.sh](../diagnostics/troubleshooting/view_service_logs.sh) with `errors`
+3. Run the issue-specific script from this document
+4. Check [swagger.md](swagger.md)
+5. If unresolved, open a GitHub issue with script outputs

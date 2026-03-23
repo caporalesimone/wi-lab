@@ -28,6 +28,25 @@ sudo bash install.sh
 
 ---
 
+## Installation and Uninstallation
+
+Use the project scripts for lifecycle management:
+
+```bash
+# Install Wi-Lab and configure systemd/service dependencies
+sudo bash install.sh
+
+# Uninstall Wi-Lab and remove installed service artifacts
+sudo bash uninstall.sh
+```
+
+Notes:
+- Run from the repository root.
+- Review `config.yaml` before installation.
+- After installation, open `http://localhost:8080/docs` to validate service availability.
+
+---
+
 ## What is Wi-Lab?
 
 Wi-Lab simplifies WiFi Access Point management for testing:
@@ -103,7 +122,6 @@ Comprehensive guides available in `docs/` directory:
 
 | Document | Purpose |
 |----------|---------|
-| [installation-guide.md](docs/installation-guide.md) | Installation, configuration, WiFi interface setup |
 | [swagger.md](docs/swagger.md) | API testing via Swagger UI, endpoint examples |
 | [unit-testing.md](docs/unit-testing.md) | Running tests, test structure, pytest usage |
 | [networking.md](docs/networking.md) | Networking details, iptables rules, diagnostics |
@@ -164,7 +182,7 @@ See [LICENSE](LICENSE) file.
 
 ---
 
-**Ready to get started?** → Read [docs/installation-guide.md](docs/installation-guide.md)
+**Ready to get started?** → Run `sudo bash install.sh`
 
 **Want to contribute?** → Read [README-DEV.md](README-DEV.md)
 
@@ -269,21 +287,8 @@ sudo journalctl -u wi-lab.service -n 50
 
 ---
 
----
-
-## Development
-
-See [README-DEV.md](README-DEV.md) for:
-- Development environment setup
-- Running tests
-- Code structure
-- Contributing guidelines
-
----
-
 ## Documentation
 
-- **Installation Guide:** [docs/installation-guide.md](docs/installation-guide.md)
 - **Troubleshooting:** [docs/troubleshooting.md](docs/troubleshooting.md)
 - **Networking:** [docs/networking.md](docs/networking.md)
 - **API Documentation:** http://localhost:8080/docs (Swagger UI)

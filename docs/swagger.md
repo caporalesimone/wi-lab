@@ -15,29 +15,14 @@ Access interactive API testing and documentation at:
 **Alternative formats:**
 - ReDoc (read-only): `http://localhost:8080/redoc`
 - OpenAPI JSON: `http://localhost:8080/openapi.json`
-- OpenAPI YAML: `http://localhost:8080/openapi.yaml`
 
 ---
 
-## Common Endpoints
+## Usage Guidance
 
-### System Status (Requires Auth)
-```bash
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/status
-```
+- Use Swagger UI as the single source of truth for all available operations, schemas, and responses.
+- Prefer interactive testing from Swagger instead of manual endpoint calls in shell snippets.
+- Use the `Authorize` button once, then execute requests directly from the UI.
 
-Returns: software version, networks list, and system health status.
-
-### Debug Information (Requires Auth)
-```bash
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/debug
-```
-
-⚠️ **WARNING:** Debug endpoint is expensive (150-600ms). Use only for manual troubleshooting, not for frontend polling.
-
----
-
-## All endpoint details available in Swagger UI at `http://localhost:8080/docs`
+⚠️ **Note:** debug operations are expensive (150-600ms). Use them only for manual troubleshooting, not for frontend polling.
 

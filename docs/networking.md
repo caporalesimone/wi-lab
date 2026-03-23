@@ -140,8 +140,8 @@ cat /proc/sys/net/ipv4/ip_forward
 ### Check Active Networks
 
 ```bash
-# Via API
-curl http://localhost:8080/api/v1/interfaces
+# Use Swagger UI to inspect active networks and interface state:
+# http://localhost:8080/docs
 
 # Check hostapd processes
 ps aux | grep "[h]ostapd"
@@ -171,171 +171,15 @@ sudo journalctl -u wi-lab.service --since "1 hour ago"
 
 ---
 
-## Troubleshooting
+## Troubleshooting Reference
 
-### Issue: SSH Connection Lost After Network Creation
+Operational troubleshooting is maintained in [troubleshooting.md](troubleshooting.md).
 
-**Cause:** Host network conflicts with WiFi subnet.
-
-**Diagnosis:**
-```bash
-# Check host subnet
-ip addr show | grep "inet " | head -1
-# Example: inet 192.168.10.113/24
-
-# Check WiFi subnet in config
-grep "dhcp_base_network:" config.yaml
-# Example: dhcp_base_network: "192.168.10.0/24"
-```
-
-**Solution:**
-1. Use system console or IPMI access
-2. Stop Wi-Lab: `sudo systemctl stop wi-lab.service`
-3. Update `config.yaml` with different subnet: `192.168.120.0/24`
-4. Restart: `sudo systemctl restart wi-lab.service`
-
-**Prevention:**
-```bash
-# Before configuration, always check host subnet
-ip addr show | grep "inet "
-
-# Choose WiFi subnet that doesn't conflict
-# Good examples: 192.168.120.0/24, 10.0.0.0/24, etc.
-```
-
-### Issue: iptables Rules Interfering with SSH
-
-**Symptoms:** SSH connections drop when Wi-Lab runs specific isolation rules.
-
-**Diagnosis:**
-```bash
-# Check if isolation is enabled
-grep -A 5 "isolation_enabled" /etc/systemd/system/wi-lab.service
-
-# View isolation rules
-sudo iptables -L FORWARD -n -v | grep "192.168"
-```
-
-**Solution:**
-Isolation is currently **disabled** by default. If you've enabled it and SSH is affected:
-
-```bash
-# Temporarily stop Wi-Lab
-sudo systemctl stop wi-lab.service
-
-# Flush FORWARD rules (WARNING: clears all routing!)
-sudo iptables -F FORWARD
-
-# Restart
-sudo systemctl restart wi-lab.service
-```
-
-### Issue: Slow WiFi Performance
-
-**Cause:** Channel congestion or interference.
-
-**Diagnosis:**
-```bash
-# Check current channel and power
-iw dev wlx782051245264 info
-
-# Scan for nearby networks
-sudo iw dev wlx782051245264 scan | grep -E "channel|SSID"
-```
-
-**Solution:**
-Create WiFi networks on less congested channels:
-- 2.4 GHz: Use channels 1, 6, or 11 (non-overlapping)
-- 5 GHz: More channels available, typically less congestion
-
-Specify channel when creating network via API.
-
-### Issue: DHCP Clients Not Getting IPs
-
-**Diagnosis:**
-```bash
-# Check dnsmasq is running
-ps aux | grep "[d]nsmasq"
-
-# Check dnsmasq logs
-sudo journalctl -u wi-lab.service | grep -i "dnsmasq"
-
-# Check client connections
-curl http://localhost:8080/api/v1/interface/wlx782051245264/clients
-```
-
-**Solution:**
-```bash
-# Restart WiFi network
-curl -X DELETE http://localhost:8080/api/v1/interface/wlx782051245264/network
-
-# Recreate network
-curl -X POST http://localhost:8080/api/v1/interface/wlx782051245264/network \
-  -H "Authorization: Bearer your-token" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ssid": "TestAP",
-    "channel": 6,
-    "band": "2.4ghz",
-    "encryption": "wpa2",
-    "password": "test1234",
-    "tx_power_level": 4
-  }'
-```
-
----
-
-## Emergency Recovery
-
-### Lost Network Access
-
-If you lose SSH or network access after Wi-Lab operations:
-
-**Option 1: Physical Console**
-```bash
-# At console, stop Wi-Lab
-sudo systemctl stop wi-lab.service
-
-# Verify SSH works
-ssh user@host
-
-# Check iptables state
-sudo iptables -L -n -v
-```
-
-**Option 2: System Reboot**
-```bash
-# Reboot clears temporary iptables rules
-sudo reboot
-```
-
-### Manual Cleanup
-
-If you need to manually remove Wi-Lab's network modifications:
-
-```bash
-# Stop Wi-Lab service
-sudo systemctl stop wi-lab.service
-
-# Kill any remaining processes
-sudo pkill -f hostapd
-sudo pkill -f dnsmasq
-
-# Flush iptables rules (WARNING: removes ALL custom rules)
-sudo iptables -F FORWARD
-sudo iptables -F INPUT
-sudo iptables -t nat -F POSTROUTING
-
-# Disable IP forwarding
-sudo sysctl -w net.ipv4.ip_forward=0
-
-# Reset WiFi interfaces to managed mode
-for iface in $(iw dev | grep Interface | awk '{print $2}'); do
-    sudo ip link set "$iface" down
-    sudo iw dev "$iface" set type managed
-    sudo ip link set "$iface" up
-done
-```
+Use that document for:
+- service startup failures
+- network creation/client connectivity failures
+- SSH loss and emergency recovery procedures
+- TX power and performance diagnostics
 
 ---
 
