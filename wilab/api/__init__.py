@@ -244,6 +244,36 @@ def create_app() -> FastAPI:
                         "reported_dbm": 0.0
                     }
                 }
+
+            # Normalize all documented 422 responses to a compact payload schema.
+            simple_422_schema = {
+                "type": "object",
+                "properties": {
+                    "detail": {"type": "string"},
+                },
+                "required": ["detail"],
+            }
+            for path_item in paths.values():
+                for operation in path_item.values():
+                    if not isinstance(operation, dict):
+                        continue
+                    responses = operation.get("responses", {})
+                    response_422 = responses.get("422")
+                    if not isinstance(response_422, dict):
+                        continue
+
+                    response_422["description"] = response_422.get("description") or "Validation error"
+                    response_422_content = response_422.setdefault("content", {})
+                    response_422_json = response_422_content.setdefault("application/json", {})
+                    response_422_json["schema"] = simple_422_schema
+                    if "examples" not in response_422_json:
+                        response_422_json["example"] = {"detail": "field_name: validation error"}
+
+            # Ensure built-in FastAPI validation schemas are also compact when referenced.
+            components = openapi_schema.setdefault("components", {})
+            schemas = components.setdefault("schemas", {})
+            schemas["HTTPValidationError"] = simple_422_schema
+            schemas["ValidationError"] = simple_422_schema
         except Exception:
             # If schema structure changes, skip injection silently
             pass

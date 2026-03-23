@@ -13,7 +13,14 @@ router = APIRouter(prefix="/interface", tags=["Network"])
 @router.post(
     "/{net_id}/network",
     responses={
-        200: {"description": "Network created and started successfully"},
+        200: {
+            "description": "Network created and started successfully",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Network ap-01 created successfully"}
+                }
+            },
+        },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found in configuration"},
         409: {"description": "Network already active; stop it first"},
@@ -59,14 +66,10 @@ async def start_network(
     Returns:
         dict: Simple confirmation message. Use GET /interface/{net_id}/network
             to retrieve full network details.
-
-    Raises:
-        HTTPException 404: net_id not found in configuration.
-        HTTPException 409: Network already active; stop it first.
     """
     try:
         manager.start_network(net_id, req)
-        return {"detail": "Network created successfully"}
+        return {"detail": f"Network {net_id} created successfully"}
     except ValueError as e:
         error_msg = str(e)
         error_msg_lower = error_msg.lower()
@@ -80,7 +83,14 @@ async def start_network(
 @router.delete(
     "/{net_id}/network",
     responses={
-        200: {"description": "Network stopped successfully"},
+        200: {
+            "description": "Network stopped successfully",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Network ap-01 stopped successfully"}
+                }
+            },
+        },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found"},
         409: {"description": "Network already inactive"},
@@ -101,10 +111,6 @@ async def stop_network(
 
     Returns:
         dict: Confirmation with stopped net_id.
-
-    Raises:
-        HTTPException 409: Network is already inactive.
-        HTTPException 404: net_id not found.
     """
     st = manager.get_status(net_id)
     if not st:
@@ -113,7 +119,7 @@ async def stop_network(
         raise HTTPException(status_code=409, detail=f"Network {net_id} is already inactive")
 
     manager.stop_network(net_id)
-    return {"net_id": net_id}
+    return {"detail": f"Network {net_id} stopped successfully"}
 
 
 @router.get(
@@ -136,9 +142,6 @@ async def get_network(
     Returns:
         NetworkStatus: Full details including SSID, channel, password, expiration time,
             DHCP configuration, and list of connected clients.
-
-    Raises:
-        HTTPException 404: net_id not found.
     """
     st = manager.get_status(net_id)
     if not st:

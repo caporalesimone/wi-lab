@@ -21,13 +21,14 @@ All notable changes to Wi-Lab are documented in this file.
 ### 🔧 Refactoring & Infrastructure
 
 - **Network Lifecycle API Response Simplification**
-  - `POST /api/v1/interface/{net_id}/network` now returns a compact success payload: `{"detail": "Network created successfully"}`
+  - `POST /api/v1/interface/{net_id}/network` now returns a compact success payload: `{"detail": "Network {net_id} created successfully"}`
+  - `DELETE /api/v1/interface/{net_id}/network` now returns a consistent payload: `{"detail": "Network {net_id} stopped successfully"}`
   - Full network details are now retrieved only via `GET /api/v1/interface/{net_id}/network`
 - **Validation Error Payload Simplification**
   - Request validation errors are exposed with a simple string payload: `{"detail": "..."}`
   - Removed dependency on verbose Pydantic-style validation lists for API clients
 - **DELETE Network State Semantics**
-  - `DELETE /api/v1/interface/{net_id}/network` now returns:
+  - `DELETE /api/v1/interface/{net_id}/network` now enforces proper state transitions:
     - `404` for unknown `net_id`
     - `409` when the network is already inactive
 

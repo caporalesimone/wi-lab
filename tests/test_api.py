@@ -424,7 +424,7 @@ class TestNetworkCreateEndpoint:
             
             if resp.status_code == 200:
                 data = resp.json()
-                assert data == {'detail': 'Network created successfully'}
+                assert data == {'detail': 'Network ap-01 created successfully'}
 
     def test_start_network_422_has_simple_detail(self, client, valid_token):
         """Validation errors should return a simple string detail."""
@@ -621,7 +621,7 @@ class TestNetworkDeleteEndpoint:
             headers={'Authorization': valid_token}
         )
         assert stop_resp.status_code == 200
-        assert stop_resp.json().get('net_id') == 'ap-01'
+        assert stop_resp.json() == {'detail': 'Network ap-01 stopped successfully'}
     
     def test_stop_network_inactive(self, client, valid_token, monkeypatch):
         """Test stopping an inactive network returns 409."""
@@ -812,6 +812,18 @@ class TestTxPowerPostEndpoint:
         assert examples['hardware_mismatch']['value']['detail'] == (
             'Interface does not support dynamic power change.'
         )
+
+    def test_get_network_openapi_422_uses_simple_detail_schema(self, client, valid_token):
+        resp = client.get('/openapi.json', headers={'Authorization': valid_token})
+        assert resp.status_code == 200
+        schema = resp.json()
+
+        network_get = schema['paths']['/api/v1/interface/{net_id}/network']['get']
+        response_422 = network_get['responses']['422']
+        json_schema = response_422['content']['application/json']['schema']
+
+        assert json_schema['type'] == 'object'
+        assert json_schema['properties']['detail']['type'] == 'string'
 
 
 class TestInternetControlEndpoints:
