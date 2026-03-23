@@ -22,6 +22,7 @@ All notable changes to Wi-Lab are documented in this file.
   - `docs/readme-dev.md` now prioritizes Makefile targets over manual commands
   - Added `make venv` and `make test-local*` examples
   - Removed references to old setup patterns
+  - Added `make type-check` to development workflow documentation
 
 ### 🔧 Tool Integration
 
@@ -31,6 +32,11 @@ All notable changes to Wi-Lab are documented in this file.
   - Added `make lint-fix` target to auto-fix code style issues
   - Updated development workflow to include linting step in pre-commit checklist
   - Documented ruff usage in `docs/readme-dev.md`
+- **Added MyPy Static Type Checking**
+  - Integrated `mypy>=1.8.0` for static type validation
+  - Added `make type-check` target to run type checker
+  - Type checking included in pre-commit guidelines (warnings expected during type hint migration)
+  - Updated Makefile and documentation to reflect type-checking workflow
 
 ### 🛠️ Diagnostic Scripts
 
