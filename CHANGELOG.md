@@ -4,6 +4,62 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [1.5.0] - 2026-03-23
+
+### 📚 Documentation
+
+- **Consolidated Troubleshooting Documentation**
+  - Merged troubleshooting content from `networking.md` into centralized `docs/troubleshooting.md`
+  - Removed redundant troubleshooting sections from `networking.md`
+  - Added disclaimer about interface name alignment for diagnostics scripts
+- **Removed Obsolete Installation Guide**
+  - Deleted `docs/installation-guide.md` (content migrated to README.md and troubleshooting.md)
+  - Updated all documentation references to point to current resources
+- **Simplified API Documentation**
+  - Removed hardcoded API endpoint examples from `docs/swagger.md`
+  - Directed users to Swagger UI at `http://localhost:8080/docs` as single source of truth
+- **Updated Development Guide**
+  - `docs/readme-dev.md` now prioritizes Makefile targets over manual commands
+  - Added `make venv` and `make test-local*` examples
+  - Removed references to old setup patterns
+
+### 🔧 Tool Integration
+
+- **Added Ruff Linter to Build System**
+  - Integrated `ruff>=0.3.0` as primary code quality tool
+  - Added `make lint` target to check code style
+  - Added `make lint-fix` target to auto-fix code style issues
+  - Updated development workflow to include linting step in pre-commit checklist
+  - Documented ruff usage in `docs/readme-dev.md`
+
+### 🛠️ Diagnostic Scripts
+
+- **Created Troubleshooting Script Suite** - 16 new operational scripts in `diagnostics/troubleshooting/`:
+  - **Service Diagnostics**: `check_service_status.sh`, `view_service_logs.sh`, `post_installation_sanity.sh`
+  - **Service Management**: `service_management.sh`, `autostart_management.sh`
+  - **Issue Resolution**: 
+    - `issue_service_fails_start.sh` - Diagnose service startup failures
+    - `issue_network_creation_fails.sh` - Debug network creation issues
+    - `issue_clients_cannot_connect.sh` - Troubleshoot client connectivity
+    - `issue_ssh_lost_recovery.sh` - Recover from SSH connection loss
+    - `issue_iptables_ssh_interference.sh` - Diagnose iptables conflicts
+    - `issue_manual_network_recovery.sh` - Perform manual network recovery
+  - **Performance & Debug**: `performance_diagnosis.sh`, `debug_verbose.sh`, `debug_manual_foreground.sh`
+  - **Comprehensive Validation**: `complete_health_check.sh`
+- Extracted all scripts from markdown documentation for easier execution
+- All scripts properly linked from `docs/troubleshooting.md`
+
+### 🧹 Code Quality
+
+- **Applied Ruff Fixes Across Codebase**
+  - Removed 14 unused imports: `AppConfig`, `tempfile` (3x), `pytest`, `MagicMock`, `Body`, `Optional`, `datetime`, `execute_iptables`
+  - Removed unused exception variables in except clauses
+  - Fixed 3 f-strings without placeholders (unnecessary `f` prefix)
+  - Files improved: 12 files across tests/, wilab/api/routes/, wilab/network/, wilab/wifi/
+  - All 151 tests pass successfully
+
+---
+
 ## [1.4.0] - 2026-03-23
 
 ### 🔒 Security
