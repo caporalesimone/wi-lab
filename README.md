@@ -20,11 +20,7 @@ nano config.yaml
 # 3. Run automated setup (installs everything!)
 sudo bash install.sh
 
-# 4. Verify installation
-curl http://localhost:8080/api/v1/health
-# Output: {"status":"ok"}
-
-# 5. Access API documentation
+# 4. Verify installation and access API
 # Open in browser: http://localhost:8080/docs
 ```
 
@@ -112,45 +108,6 @@ Comprehensive guides available in `docs/` directory:
 | [unit-testing.md](docs/unit-testing.md) | Running tests, test structure, pytest usage |
 | [networking.md](docs/networking.md) | Networking details, iptables rules, diagnostics |
 | [troubleshooting.md](docs/troubleshooting.md) | Common issues, service management, debugging |
-
----
-
-## API Example
-
-### Create a WiFi Network
-
-```bash
-TOKEN="your-auth-token"
-INTERFACE="wlx782051245264"
-
-curl -X POST "http://localhost:8080/api/v1/interface/$INTERFACE/network" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ssid": "TestAP",
-    "channel": 6,
-    "band": "2.4ghz",
-    "encryption": "wpa2",
-    "password": "test1234",
-    "tx_power_level": 4
-  }'
-```
-
-### Get Connected Clients
-
-```bash
-curl "http://localhost:8080/api/v1/interface/$INTERFACE/clients" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-### Disable Internet Access
-
-```bash
-curl -X POST "http://localhost:8080/api/v1/interface/$INTERFACE/internet/disable" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-See [docs/swagger.md](docs/swagger.md) for complete API reference and examples.
 
 ---
 
@@ -266,9 +223,8 @@ Using the same subnet will **block your host networking** and require a reboot!
 
 All API requests require Bearer token authentication in the `Authorization: Bearer <token>` header.
 
-### Core Operations
+### Example: Create WiFi Network
 
-**Create WiFi Network:**
 ```bash
 curl -X POST http://localhost:8080/api/v1/interface/ap-01/network \
   -H "Authorization: Bearer secret-token-12345" \
@@ -276,23 +232,7 @@ curl -X POST http://localhost:8080/api/v1/interface/ap-01/network \
   -d '{"ssid": "TestAP", "channel": 6, "band": "2.4ghz", "encryption": "wpa2", "password": "pass123"}'
 ```
 
-**Stop Network:**
-```bash
-curl -X DELETE http://localhost:8080/api/v1/interface/ap-01/network \
-  -H "Authorization: Bearer secret-token-12345"
-```
-
-**Enable/Disable Internet:**
-```bash
-curl -X POST http://localhost:8080/api/v1/interface/ap-01/internet/enable \
-  -H "Authorization: Bearer secret-token-12345"
-```
-
-**Get Network Status:**
-```bash
-curl http://localhost:8080/api/v1/interface/ap-01/network \
-  -H "Authorization: Bearer secret-token-12345"
-```
+For all other operations (stop network, enable/disable internet, get status, list clients, etc.), use the interactive **Swagger UI** at http://localhost:8080/docs.
 
 ### API Documentation
 
