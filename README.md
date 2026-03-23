@@ -261,61 +261,43 @@ Using the same subnet will **block your host networking** and require a reboot!
 
 ## API Usage
 
-### Authentication
+> 💡 **Quick Tip:** For interactive API exploration, use the **Swagger UI** at http://localhost:8080/docs  
+> You can test all endpoints directly without writing curl commands.
 
-All API requests require Bearer token authentication:
+All API requests require Bearer token authentication in the `Authorization: Bearer <token>` header.
 
+### Core Operations
+
+**Create WiFi Network:**
 ```bash
-curl -H "Authorization: Bearer your-token" http://localhost:8080/api/v1/health
-```
-
-### Create WiFi Network
-
-```bash
-curl -X POST http://localhost:8080/api/v1/network/ap-01/network \
+curl -X POST http://localhost:8080/api/v1/interface/ap-01/network \
   -H "Authorization: Bearer secret-token-12345" \
   -H "Content-Type: application/json" \
-  -d '{
-    "ssid": "TestAP",
-    "channel": 6,
-    "band": "2.4ghz",
-    "encryption": "wpa2",
-    "password": "secure-password-123",
-    "internet_enabled": true,
-    "timeout": 3600
-  }'
+  -d '{"ssid": "TestAP", "channel": 6, "band": "2.4ghz", "encryption": "wpa2", "password": "pass123"}'
 ```
 
-### Control Internet Access
-
+**Stop Network:**
 ```bash
-# Disable Internet
-curl -X POST http://localhost:8080/api/v1/network/ap-01/internet/disable \
-  -H "Authorization: Bearer secret-token-12345"
-
-# Enable Internet
-curl -X POST http://localhost:8080/api/v1/network/ap-01/internet/enable \
+curl -X DELETE http://localhost:8080/api/v1/interface/ap-01/network \
   -H "Authorization: Bearer secret-token-12345"
 ```
 
-### List Connected Clients
-
+**Enable/Disable Internet:**
 ```bash
-curl http://localhost:8080/api/v1/network/ap-01/clients \
+curl -X POST http://localhost:8080/api/v1/interface/ap-01/internet/enable \
   -H "Authorization: Bearer secret-token-12345"
 ```
 
-### Stop Network
-
+**Get Network Status:**
 ```bash
-curl -X DELETE http://localhost:8080/api/v1/network/ap-01/network \
+curl http://localhost:8080/api/v1/interface/ap-01/network \
   -H "Authorization: Bearer secret-token-12345"
 ```
 
 ### API Documentation
 
-**Swagger UI:** http://localhost:8080/docs  
-**ReDoc:** http://localhost:8080/redoc
+- **Interactive API:** http://localhost:8080/docs (Swagger UI)
+- **Alternative docs:** http://localhost:8080/redoc (ReDoc)
 
 ---
 
