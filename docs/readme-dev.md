@@ -63,6 +63,7 @@ make test-local-quick
 - `pytest-asyncio` - Async test support
 - `pytest-mock` - Mocking utilities
 - `ruff` - Fast Python linter and code formatter (replaces flake8, isort, black)
+- `mypy` - Static type checker for Python
 
 ### 4. Create Configuration File
 
@@ -168,6 +169,9 @@ make lint
 # Fix code style issues automatically
 make lint-fix
 
+# Type check with mypy
+make type-check
+
 # Clean up (remove venv)
 make clean-venv
 ```
@@ -196,14 +200,23 @@ Edit code in `wilab/` directory:
 ### 3. Check Code Style
 
 ```bash
-# Check linting issues
+# Check linting issues with ruff
 make lint
 
 # Auto-fix style issues
 make lint-fix
 ```
 
-### 4. Test Your Changes
+### 4. Type Check Your Changes
+
+```bash
+# Run mypy static type checker
+make type-check
+```
+
+This checks for type inconsistencies. Note: Wi-Lab is incrementally adding type hints. Some warnings are expected.
+
+### 5. Test Your Changes
 
 ```bash
 # Run tests (preferred)
@@ -214,7 +227,7 @@ make test-local-cov
 .venv/bin/pytest tests/test_api.py -v
 ```
 
-### 5. Verify Manually
+### 6. Verify Manually
 
 ```bash
 # Run the service
@@ -224,7 +237,7 @@ python main.py
 # Open: http://localhost:8080/docs
 ```
 
-### 6. Commit and Push
+### 7. Commit and Push
 
 ```bash
 git add -A
@@ -232,7 +245,7 @@ git commit -m "Add my-new-feature"
 git push origin feature/my-new-feature
 ```
 
-### 7. Create Pull Request
+### 8. Create Pull Request
 
 Push branch and create PR on GitHub for review.
 
@@ -323,6 +336,7 @@ See `docs/` directory for all user-facing documentation.
 ### Before Committing
 
 - ✅ Code style passes: `make lint` (or auto-fix with `make lint-fix`)
+- ✅ Type checking passes: `make type-check` (warnings expected during transition)
 - ✅ All tests pass: `make test-local`
 - ✅ Coverage maintained: `make test-local-cov`
 - ✅ Optional targeted validation: `.venv/bin/pytest tests/test_api.py -v`

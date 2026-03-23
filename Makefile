@@ -5,7 +5,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help build-dev up down logs test test-verbose test-cov shell build-release run-release venv test-local test-local-quick test-local-cov clean-venv lint lint-fix
+.PHONY: help build-dev up down logs test test-verbose test-cov shell build-release run-release venv test-local test-local-quick test-local-cov clean-venv lint lint-fix type-check
 
 # Default target: show help
 help:
@@ -23,6 +23,7 @@ help:
 	@echo "Code Quality:"
 	@echo "  make lint              Run ruff linter"
 	@echo "  make lint-fix          Fix code style issues with ruff"
+	@echo "  make type-check        Run mypy type checker"
 	@echo ""
 	@echo "Docker:"
 	@echo "  make build-dev         Build Docker development image"
@@ -71,6 +72,11 @@ lint-fix: venv
 	$(VENV)/bin/ruff check wilab/ tests/ --fix --color=always
 	$(VENV)/bin/ruff format wilab/ tests/
 	@echo "✓ Code formatted and issues fixed"
+
+type-check: venv
+	@echo "Running mypy type checker..."
+	$(VENV)/bin/mypy wilab/ tests/ --color-output
+	@echo "✓ Type check completed"
 
 # Cleanup
 clean-venv:
