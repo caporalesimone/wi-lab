@@ -5,7 +5,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help build-dev up down logs test test-verbose test-cov shell build-release run-release venv test-local test-local-quick clean-venv
+.PHONY: help build-dev up down logs test test-verbose test-cov shell build-release run-release venv test-local test-local-quick test-local-cov clean-venv lint lint-fix
 
 # Default target: show help
 help:
@@ -19,6 +19,10 @@ help:
 	@echo "  make test-local        Run all tests with verbose output"
 	@echo "  make test-local-quick  Run tests with minimal output"
 	@echo "  make test-local-cov    Run tests with coverage report (HTML)"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  make lint              Run ruff linter"
+	@echo "  make lint-fix          Fix code style issues with ruff"
 	@echo ""
 	@echo "Docker:"
 	@echo "  make build-dev         Build Docker development image"
@@ -55,6 +59,18 @@ test-local-cov: venv
 	$(PYTEST) tests/ --cov=wilab --cov-report=html --cov-report=term
 	@echo ""
 	@echo "✓ Coverage report generated in htmlcov/index.html"
+
+# Code quality targets
+lint: venv
+	@echo "Running ruff linter..."
+	$(VENV)/bin/ruff check wilab/ tests/ --color=always
+	@echo "✓ Lint check completed"
+
+lint-fix: venv
+	@echo "Running ruff formatter and fixer..."
+	$(VENV)/bin/ruff check wilab/ tests/ --fix --color=always
+	$(VENV)/bin/ruff format wilab/ tests/
+	@echo "✓ Code formatted and issues fixed"
 
 # Cleanup
 clean-venv:

@@ -34,28 +34,27 @@ git clone https://github.com/your-org/wi-lab.git
 cd wi-lab
 ```
 
-### 2. Create Virtual Environment
+### 2. Create Local Dev Environment
 
 ```bash
-# Create venv
-python3 -m venv venv
+# Create local virtual environment and runtime dependencies
+make venv
 
-# Activate it
-source venv/bin/activate
+# Install development/test dependencies (required once)
+.venv/bin/pip install -r requirements-dev.txt
 
-# Verify activation (should show (venv) in prompt)
-python --version  # Should show Python 3.9+
+# Activate it (optional but recommended for manual tools)
+source .venv/bin/activate
 ```
 
-### 3. Install Development Dependencies
+### 3. Verify Tooling
 
 ```bash
-# Install all dependencies including dev tools
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+# Show all development targets
+make help
 
-# Verify pytest installed
-pytest --version
+# Quick validation that test tooling is ready
+make test-local-quick
 ```
 
 **What's in requirements-dev.txt:**
@@ -63,9 +62,7 @@ pytest --version
 - `pytest-cov` - Coverage reporting
 - `pytest-asyncio` - Async test support
 - `pytest-mock` - Mocking utilities
-- `black` - Code formatter
-- `flake8` - Code linter
-- `mypy` - Type checker
+- `ruff` - Fast Python linter and code formatter (replaces flake8, isort, black)
 
 ### 4. Create Configuration File
 
@@ -97,8 +94,9 @@ networks:
 ### Development Server
 
 ```bash
-# Make sure venv is activated
-source venv/bin/activate
+# Make sure local environment exists
+make venv
+source .venv/bin/activate
 
 # Run directly (simple)
 python main.py
@@ -112,7 +110,6 @@ uvicorn wilab.api:app --reload --host 0.0.0.0 --port 8080
 Once running:
 - **API Docs:** `http://localhost:8080/docs`
 - **Alternative Docs:** `http://localhost:8080/redoc`
-- **Health Check:** `http://localhost:8080/api/v1/health`
 
 See [docs/swagger.md](docs/swagger.md) for complete API testing guide.
 
@@ -124,20 +121,27 @@ See [docs/swagger.md](docs/swagger.md) for complete API testing guide.
 
 For complete testing documentation, see [docs/unit-testing.md](docs/unit-testing.md).
 
-Quick commands:
+Preferred commands (via Makefile):
 
 ```bash
-# Run all tests
-pytest tests/ -v
+# Run full test suite
+make test-local
+
+# Run quick test suite
+make test-local-quick
 
 # Run with coverage report
-pytest tests/ --cov=wilab --cov-report=term
+make test-local-cov
+```
 
+Advanced (targeted tests when needed):
+
+```bash
 # Run specific test file
-pytest tests/test_api.py -v
+.venv/bin/pytest tests/test_api.py -v
 
 # Run specific test
-pytest tests/test_api.py::TestHealthEndpoint::test_health_check -v
+.venv/bin/pytest tests/test_api.py::TestNetworkCreateEndpoint::test_network_response_structure -v
 ```
 
 ### Using the Makefile
@@ -145,6 +149,10 @@ pytest tests/test_api.py::TestHealthEndpoint::test_health_check -v
 The Makefile provides convenient shortcuts for development tasks:
 
 ```bash
+# One-time local bootstrap
+make venv
+.venv/bin/pip install -r requirements-dev.txt
+
 # Run tests locally
 make test-local
 
@@ -154,8 +162,11 @@ make test-local-quick
 # Generate coverage report
 make test-local-cov
 
-# Create virtual environment
-make venv
+# Check code style with ruff
+make lint
+
+# Fix code style issues automatically
+make lint-fix
 
 # Clean up (remove venv)
 make clean-venv
@@ -182,32 +193,38 @@ Edit code in `wilab/` directory:
 - `wilab/config.py` - Configuration
 - `wilab/models.py` - Data models
 
-### 3. Test Your Changes
+### 3. Check Code Style
 
 ```bash
-# Run tests
-pytest tests/ -v
+# Check linting issues
+make lint
 
-# Check code quality
-black wilab/ tests/  # Format code
-flake8 wilab/ tests/ # Check style
-mypy wilab/          # Type check
+# Auto-fix style issues
+make lint-fix
 ```
 
-### 4. Verify Manually
+### 4. Test Your Changes
+
+```bash
+# Run tests (preferred)
+make test-local
+make test-local-cov
+
+# Optional targeted run during development
+.venv/bin/pytest tests/test_api.py -v
+```
+
+### 5. Verify Manually
 
 ```bash
 # Run the service
 python main.py
 
-# In another terminal, test API
-curl http://localhost:8080/api/v1/health
-
-# Test with Swagger UI
+# Validate and test from Swagger UI
 # Open: http://localhost:8080/docs
 ```
 
-### 5. Commit and Push
+### 6. Commit and Push
 
 ```bash
 git add -A
@@ -215,7 +232,7 @@ git commit -m "Add my-new-feature"
 git push origin feature/my-new-feature
 ```
 
-### 6. Create Pull Request
+### 7. Create Pull Request
 
 Push branch and create PR on GitHub for review.
 
@@ -228,7 +245,7 @@ The project follows clean separation of concerns:
 - **`wilab/config.py`** - Loads and validates `config.yaml`
 - **`wilab/models.py`** - Pydantic models for API validation and data types
 - **`wilab/version.py`** - Version information
-- **`wilab/api/routes.py`** - All REST API endpoints
+- **`wilab/api/routes/`** - REST API endpoint modules
 - **`wilab/api/auth.py`** - Token authentication and security
 - **`wilab/api/__init__.py`** - FastAPI app creation and setup
 - **`wilab/wifi/interface.py`** - WiFi interface abstraction class
@@ -273,7 +290,7 @@ def my_function():
     return result
 
 # Run with pytest
-pytest tests/test_file.py -v -s
+.venv/bin/pytest tests/test_file.py -v -s
 ```
 
 ### Check Service Logs
@@ -292,7 +309,7 @@ sudo journalctl -u wi-lab.service | grep ERROR
 
 When adding new features, update documentation:
 
-- **API changes:** Update docstrings in `wilab/api/routes.py`
+- **API changes:** Update docstrings in `wilab/api/routes/` modules
 - **Configuration:** Add comments to `config.yaml`
 - **User guide:** Update files in `docs/`
 - **Development:** Update this file if procedures change
@@ -305,11 +322,10 @@ See `docs/` directory for all user-facing documentation.
 
 ### Before Committing
 
-- ✅ All tests pass: `pytest tests/ -v`
-- ✅ Code formatted: `black wilab/ tests/`
-- ✅ No linting errors: `flake8 wilab/ tests/`
-- ✅ Type hints valid: `mypy wilab/`
-- ✅ Coverage maintained: `pytest tests/ --cov=wilab`
+- ✅ Code style passes: `make lint` (or auto-fix with `make lint-fix`)
+- ✅ All tests pass: `make test-local`
+- ✅ Coverage maintained: `make test-local-cov`
+- ✅ Optional targeted validation: `.venv/bin/pytest tests/test_api.py -v`
 - ✅ Documentation updated: Add comments/update docs if needed
 
 ### Commit Messages
@@ -344,7 +360,6 @@ Include:
 
 ## Documentation Links
 
-- **Installation:** [docs/installation-guide.md](docs/installation-guide.md)
 - **Networking:** [docs/networking.md](docs/networking.md)
 - **API Testing:** [docs/swagger.md](docs/swagger.md)
 - **Unit Testing:** [docs/unit-testing.md](docs/unit-testing.md)
@@ -356,7 +371,8 @@ Include:
 
 Start developing:
 ```bash
-source venv/bin/activate
+make venv
+source .venv/bin/activate
 python main.py
 ```
 
