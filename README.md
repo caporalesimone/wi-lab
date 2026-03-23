@@ -115,23 +115,25 @@ Comprehensive guides available in `docs/` directory:
 
 For development setup and contribution guidelines, see [README-DEV.md](README-DEV.md).
 
-Quick development start:
+Quick development start using Makefile:
 
 ```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+# Create virtual environment with all dependencies
+make venv
 
-# Install dependencies
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+# Activate the virtual environment
+source .venv/bin/activate
+
+# Run tests
+make test-local           # Full test suite with verbose output
+make test-local-quick     # Quick test run with minimal output
+make test-local-cov       # Run tests with coverage report (HTML)
 
 # Run development server
 python main.py
-
-# Run tests
-pytest tests/ -v
 ```
+
+For all available development tasks, see [Makefile](Makefile) or run `make help`.
 
 ---
 
