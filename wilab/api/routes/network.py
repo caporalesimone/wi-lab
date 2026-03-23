@@ -12,12 +12,12 @@ router = APIRouter(prefix="/interface", tags=["Network"])
 
 @router.post(
     "/{net_id}/network",
-    response_model=NetworkStatus,
     responses={
         200: {"description": "Network created and started successfully"},
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "net_id not found in configuration"},
         409: {"description": "Network already active; stop it first"},
+        422: {"description": "Request body validation failed"},
         500: {"description": "Failed to start network due to runtime error"},
     },
 )
@@ -28,7 +28,7 @@ async def start_network(
         examples={
             "default": {
                 "summary": "Typical network configuration",
-                "description": "2.4GHz WPA2 network with 1-hour timeout and Internet enabled. Returns expires_at in yyyy-mm-dd HH:MM:SS format.",
+                "description": "2.4GHz WPA2 network with 1-hour timeout and Internet enabled.",
                 "value": {
                     "ssid": "TestNetwork",
                     "channel": 5,
@@ -57,15 +57,16 @@ async def start_network(
         req: Network configuration (SSID, channel, password, band, timeout, etc).
 
     Returns:
-        NetworkStatus: Complete network state including password hash, active flag,
-            and expiration time (expires_at, expires_in).
+        dict: Simple confirmation message. Use GET /interface/{net_id}/network
+            to retrieve full network details.
 
     Raises:
         HTTPException 404: net_id not found in configuration.
         HTTPException 409: Network already active; stop it first.
     """
     try:
-        return manager.start_network(net_id, req)
+        manager.start_network(net_id, req)
+        return {"detail": "Network created successfully"}
     except ValueError as e:
         error_msg = str(e)
         error_msg_lower = error_msg.lower()
@@ -81,6 +82,8 @@ async def start_network(
     responses={
         200: {"description": "Network stopped successfully"},
         401: {"description": "Unauthorized (missing or invalid auth token)"},
+        404: {"description": "net_id not found"},
+        409: {"description": "Network already inactive"},
     },
 )
 async def stop_network(
@@ -100,8 +103,15 @@ async def stop_network(
         dict: Confirmation with stopped net_id.
 
     Raises:
+        HTTPException 409: Network is already inactive.
         HTTPException 404: net_id not found.
     """
+    st = manager.get_status(net_id)
+    if not st:
+        raise HTTPException(status_code=404, detail="Unknown net_id")
+    if not st.active:
+        raise HTTPException(status_code=409, detail=f"Network {net_id} is already inactive")
+
     manager.stop_network(net_id)
     return {"net_id": net_id}
 

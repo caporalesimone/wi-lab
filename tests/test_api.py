@@ -404,7 +404,7 @@ class TestNetworkCreateEndpoint:
         assert resp.status_code == 500
     
     def test_network_response_structure(self, client, valid_token, monkeypatch):
-        """Test that network response has correct structure."""
+        """Test POST returns a simple creation confirmation payload."""
         from wilab.api.dependencies import _manager
         if _manager:
             def mock_dhcp_start(*args, **kwargs):
@@ -424,11 +424,20 @@ class TestNetworkCreateEndpoint:
             
             if resp.status_code == 200:
                 data = resp.json()
-                assert 'net_id' in data
-                assert 'interface' in data
-                assert 'active' in data
-                assert 'ssid' in data
-                assert 'subnet' in data
+                assert data == {'detail': 'Network created successfully'}
+
+    def test_start_network_422_has_simple_detail(self, client, valid_token):
+        """Validation errors should return a simple string detail."""
+        resp = client.post(
+            '/api/v1/interface/ap-01/network',
+            headers={'Authorization': valid_token},
+            json={'invalid': 'payload'}
+        )
+        assert resp.status_code == 422
+        data = resp.json()
+        assert 'detail' in data
+        assert isinstance(data['detail'], str)
+        assert data['detail'].strip() != ''
 
 
 class TestNetworkGetEndpoint:
@@ -577,26 +586,68 @@ class TestNetworkGetEndpoint:
 
 class TestNetworkDeleteEndpoint:
     """Tests for network deletion."""
+
+    def test_stop_network_active(self, client, valid_token, monkeypatch):
+        """Test stopping an active network succeeds."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+
+        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
+        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
+        monkeypatch.setattr(manager.hostapd_manager, 'stop', lambda *a, **k: None)
+        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.nat_manager, 'disable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
+        monkeypatch.setattr(manager.isolation_manager, 'remove_network', lambda *a, **k: None)
+        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
+        start_resp = client.post(
+            '/api/v1/interface/ap-01/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestAP',
+                'channel': 6,
+                'encryption': 'wpa2',
+                'password': 'testpass123',
+                'band': '2.4ghz',
+                'tx_power_level': 4
+            }
+        )
+        assert start_resp.status_code == 200
+
+        stop_resp = client.delete(
+            '/api/v1/interface/ap-01/network',
+            headers={'Authorization': valid_token}
+        )
+        assert stop_resp.status_code == 200
+        assert stop_resp.json().get('net_id') == 'ap-01'
     
-    def test_stop_network_inactive(self, client, valid_token):
-        """Test stopping an inactive network."""
+    def test_stop_network_inactive(self, client, valid_token, monkeypatch):
+        """Test stopping an inactive network returns 409."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
         resp = client.delete(
             '/api/v1/interface/ap-01/network',
             headers={'Authorization': valid_token}
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 409
         data = resp.json()
-        # API now returns only the net_id for confirmation
-        assert data.get('net_id') == 'ap-01'
+        assert data['detail'] == 'Network ap-01 is already inactive'
     
-    def test_stop_network_unknown(self, client, valid_token):
-        """Test stopping unknown network doesn't error."""
+    def test_stop_network_unknown(self, client, valid_token, monkeypatch):
+        """Test stopping unknown network returns 404."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
         resp = client.delete(
             '/api/v1/interface/unknown-net/network',
             headers={'Authorization': valid_token}
         )
-        # Should succeed (no error on stopping non-existent)
-        assert resp.status_code == 200
+        assert resp.status_code == 404
 
 
 class TestTxPowerGetEndpoint:
@@ -766,8 +817,12 @@ class TestTxPowerPostEndpoint:
 class TestInternetControlEndpoints:
     """Tests for internet enable/disable endpoints."""
     
-    def test_enable_internet_inactive(self, client, valid_token):
+    def test_enable_internet_inactive(self, client, valid_token, monkeypatch):
         """Test enabling internet on inactive network fails."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
         resp = client.post(
             '/api/v1/interface/ap-01/internet/enable',
             headers={'Authorization': valid_token}
@@ -775,8 +830,12 @@ class TestInternetControlEndpoints:
         # Should fail with either 404 or 500 depending on implementation
         assert resp.status_code in [404, 422, 500]
     
-    def test_disable_internet_inactive(self, client, valid_token):
+    def test_disable_internet_inactive(self, client, valid_token, monkeypatch):
         """Test disabling internet on inactive network fails."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
         resp = client.post(
             '/api/v1/interface/ap-01/internet/disable',
             headers={'Authorization': valid_token}

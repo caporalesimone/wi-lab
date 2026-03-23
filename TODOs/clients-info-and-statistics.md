@@ -1,21 +1,19 @@
 # Feature: Clients Info and Statistics (Unified Proposal)
 
 **Priority:** HIGH  
-**Status:** PLANNED
+**Status:** IN PROGRESS
 
 ## Goal
 
 Unify client visibility and traffic telemetry into a single roadmap:
-- show connected clients in each AP card with IP and MAC,
 - extend client-level insights (identity, signal, traffic),
 - define whether to keep everything in `GET /api/v1/interface/{net_id}/network` or introduce dedicated client stats APIs.
 
 ## Scope Summary
 
-- Replace count-only UX with client details table.
 - Analyze and classify requested telemetry by acquisition complexity.
 - Implement backend data collection and APIs based on analysis outcome.
-- Implement frontend UX for summary + advanced telemetry.
+- Implement frontend UX for advanced telemetry.
 
 ---
 
@@ -61,33 +59,6 @@ Unify client visibility and traffic telemetry into a single roadmap:
 
 - Stable per-client traffic metrics across reconnects
 - Data merge consistency across multiple sources (`hostapd_cli`, `iw`, DHCP leases, `/proc/net/dev`)
-
----
-
-## Phase 1 - UI Table With Existing `GET /network` Data
-
-### Phase checklist
-
-- ✔️ Keep existing `clients_connected` summary in AP card
-- ✔️ Add always-visible client table in card
-- ✔️ Render columns: `IP Address`, `MAC Address`
-- ✔️ Add empty-state message for active network with no clients
-- ✔️ Ensure responsive layout for mobile widths
-- ✔️ Keep polling behavior unchanged
-
-### Backend actions
-
-- ✔️ Confirm `GET /api/v1/interface/{net_id}/network` always returns stable `clients[]` structure
-- ✔️ Add/adjust API tests validating `clients[]` schema (`ip`, `mac`)
-- [ ] Ensure no regression in endpoint latency
-
-### Frontend actions
-
-- ✔️ Update network card template to render clients table
-- ✔️ Handle optional/empty `clients[]` safely
-- ✔️ Reuse existing card visual language (no new heavy component required)
-- ✔️ Add responsive CSS for table readability
-- Deferred for now: UI test coverage for populated, empty, and inactive card states
 
 ---
 

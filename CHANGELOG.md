@@ -4,7 +4,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
-## [1.3.1] - 2026-03-23
+## [1.4.0] - 2026-03-23
 
 ### 🔒 Security
 
@@ -17,6 +17,29 @@ All notable changes to Wi-Lab are documented in this file.
 - Added `test_debug_requires_auth`: verifies `GET /api/v1/debug` returns `401` without a token
 - Added `test_debug_with_invalid_token`: verifies `GET /api/v1/debug` returns `401` with an invalid token
 - Updated existing `TestDebugEndpoint` tests to supply the valid Bearer token header
+
+### 🔧 Refactoring & Infrastructure
+
+- **Network Lifecycle API Response Simplification**
+  - `POST /api/v1/interface/{net_id}/network` now returns a compact success payload: `{"detail": "Network created successfully"}`
+  - Full network details are now retrieved only via `GET /api/v1/interface/{net_id}/network`
+- **Validation Error Payload Simplification**
+  - Request validation errors are exposed with a simple string payload: `{"detail": "..."}`
+  - Removed dependency on verbose Pydantic-style validation lists for API clients
+- **DELETE Network State Semantics**
+  - `DELETE /api/v1/interface/{net_id}/network` now returns:
+    - `404` for unknown `net_id`
+    - `409` when the network is already inactive
+
+### 🧪 Testing
+
+- Added coverage for simplified POST network success response payload
+- Added coverage that `422` validation responses expose a string `detail`
+- Added deterministic coverage for DELETE network behavior:
+  - stop active network succeeds (`200`)
+  - stop inactive network returns `409`
+  - stop unknown network returns `404`
+- Hardened internet-control inactive tests by isolating manager state per test
 
 ---
 

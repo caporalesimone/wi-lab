@@ -2,9 +2,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.openapi.utils import get_openapi
 
 from .dependencies import get_config, get_manager
@@ -56,6 +57,18 @@ def create_app() -> FastAPI:
         logger.info(f"CORS enabled for origins: {config.cors_origins}")
     else:
         logger.info("CORS disabled (no cors_origins configured)")
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        errors = exc.errors()
+        if errors:
+            first = errors[0]
+            loc_parts = [str(part) for part in first.get("loc", []) if part not in ("body", "query", "path")]
+            msg = first.get("msg", "Request validation failed")
+            detail = f"{': '.join(loc_parts)}: {msg}" if loc_parts else msg
+        else:
+            detail = "Request validation failed"
+        return JSONResponse(status_code=422, content={"detail": detail})
 
     # Include API router
     app.include_router(api_router)
