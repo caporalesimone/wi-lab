@@ -101,10 +101,10 @@ source .venv/bin/activate
 
 # Start the application with your preferred entry point
 # (for example, your standard run command or ASGI server)
-<your-run-command>
+python main.py
 
 # Example with hot reload (adapt module path as needed)
-uvicorn <app_module>:app --reload --host 0.0.0.0 --port 8080
+uvicorn wilab.api:app --reload --host 0.0.0.0 --port 8080
 ```
 
 ### Accessing the API
@@ -113,7 +113,7 @@ Once running:
 - **API Docs:** `http://localhost:8080/docs`
 - **Alternative Docs:** `http://localhost:8080/redoc`
 
-Use your API documentation endpoint as the source of truth for request/response testing.
+See [docs/swagger.md](docs/swagger.md) for complete API testing guide.
 
 ---
 
@@ -121,9 +121,9 @@ Use your API documentation endpoint as the source of truth for request/response 
 
 ### Running Tests
 
-Use the project's automated test targets for full coverage.
+For complete testing documentation, see [docs/unit-testing.md](docs/unit-testing.md).
 
-Preferred commands (via project automation targets):
+Preferred commands (via Makefile):
 
 ```bash
 # Run full test suite
@@ -139,11 +139,11 @@ make test-local-cov
 Advanced (targeted tests when needed):
 
 ```bash
-# Run a subset of tests by keyword
-.venv/bin/pytest -k "keyword" -v
+ Run specific test file
+.venv/bin/pytest tests/test_api.py -v
 
 # Run a specific test node
-.venv/bin/pytest <test-node-id> -v
+.venv/bin/pytest tests/test_api.py::TestNetworkCreateEndpoint::test_network_response_structure -v
 ```
 
 ### Using Project Automation Targets
@@ -153,7 +153,7 @@ Automation targets provide convenient shortcuts for development tasks:
 ```bash
 # One-time local bootstrap
 make venv
-<install-dev-dependencies-command>
+.venv/bin/pip install -r requirements-dev.txt
 
 # Run tests locally
 make test-local
@@ -178,6 +178,7 @@ make clean-venv
 ```
 
 Use `make help` to view the complete and always-updated list of available targets.
+See [Makefile](Makefile)
 
 ---
 
@@ -224,14 +225,14 @@ make test-local
 make test-local-cov
 
 # Optional targeted run during development
-.venv/bin/pytest -k "keyword" -v
+.venv/bin/pytest tests/test_api.py -v
 ```
 
 ### 6. Verify Manually
 
 ```bash
 # Run the service
-<your-run-command>
+python main.py
 
 # Validate and test from Swagger UI
 # Open: http://localhost:8080/docs
@@ -277,7 +278,7 @@ The project follows clean separation of concerns:
 
 ```bash
 # Set Python verbosity
-PYTHONVERBOSE=2 <your-run-command>
+PYTHONVERBOSE=2 python main.py
 
 # Or add logging in code
 import logging
@@ -294,7 +295,7 @@ def my_function():
     return result
 
 # Run with pytest
-.venv/bin/pytest -v -s
+.venv/bin/pytest tests/test_file.py -v -s
 ```
 
 ### Check Service Logs
@@ -330,7 +331,7 @@ Keep documentation focused on workflows and behavior rather than internal file p
 - ✅ Type checking passes: `make type-check` (warnings expected during transition)
 - ✅ All tests pass: `make test-local`
 - ✅ Coverage maintained: `make test-local-cov`
-- ✅ Optional targeted validation: `.venv/bin/pytest -k "keyword" -v`
+- ✅ Optional targeted validation: `.venv/bin/pytest tests/test_api.py -v`
 - ✅ Documentation updated: Add comments/update docs if needed
 
 ### Commit Messages
