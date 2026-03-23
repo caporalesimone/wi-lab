@@ -1,6 +1,6 @@
 """TX power (transmit power) management endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, Body, Path
+from fastapi import APIRouter, Depends, HTTPException, Path
 
 from ...models import TxPowerRequest, TxPowerInfo
 from ...wifi.manager import NetworkManager, TxPowerMismatchError

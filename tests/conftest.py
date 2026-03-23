@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
-from wilab.config import load_config, AppConfig
+from wilab.config import load_config
 
 
 @pytest.fixture(scope="session")
@@ -37,7 +37,7 @@ def mock_network_operations(monkeypatch):
         cmd = args[0] if args else ""
         if cmd == "addr" and "show" in args:
             # Simulate interface exists
-            return f"inet 192.168.120.1/24\nstate UP"
+            return "inet 192.168.120.1/24\nstate UP"
         return ""
     
     # Mock execute_iw to avoid needing real WiFi hardware

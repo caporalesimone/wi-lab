@@ -1,7 +1,7 @@
 """Safety utilities for checking host network impact."""
 
 import logging
-from .commands import execute_command, execute_iptables
+from .commands import execute_command
 
 logger = logging.getLogger(__name__)
 

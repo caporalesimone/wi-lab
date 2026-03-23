@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 from ..network.commands import execute_command, execute_iw, CommandError
 
 logger = logging.getLogger(__name__)

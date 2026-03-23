@@ -1,6 +1,5 @@
 import logging
 import os
-import tempfile
 from typing import Optional, List, Tuple
 from ipaddress import IPv4Network
 from .commands import execute_command, CommandError
@@ -87,7 +86,7 @@ class DhcpServer:
         config_lines = [
             f"# Wi-Lab dnsmasq config for {interface}",
             f"interface={interface}",
-            f"bind-interfaces",
+            "bind-interfaces",
             f"listen-address={gateway}",
             f"dhcp-range={dhcp_range},255.255.255.0,12h",
             f"dhcp-option=option:router,{gateway}",

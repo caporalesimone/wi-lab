@@ -398,7 +398,6 @@ class TestClientList:
     
     def test_list_clients_with_leases(self, monkeypatch, tmp_path):
         """Test listing clients from dnsmasq lease file."""
-        import tempfile
         
         cfg = load_config()
         mgr = NetworkManager(cfg)

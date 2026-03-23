@@ -1,9 +1,8 @@
 """Tests for network isolation functionality."""
 
-import pytest
 from wilab.network.isolation import IsolationManager
 from wilab.network.commands import CommandError
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 class TestIsolationManagerInit:

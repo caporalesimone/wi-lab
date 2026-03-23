@@ -161,12 +161,12 @@ async def debug_info(
         upstream_has_ip = "inet " in ip_output
         upstream_reachable = upstream_up and upstream_has_ip
         upstream_name = upstream
-    except CommandError as e:
+    except CommandError:
         upstream_reachable = False
         upstream_name = config.upstream_interface
         upstream_up = False
         upstream_has_ip = False
-    except Exception as e:
+    except Exception:
         upstream_reachable = False
         upstream_name = None
         upstream_up = False

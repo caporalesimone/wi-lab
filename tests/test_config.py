@@ -1,5 +1,4 @@
 import os
-import tempfile
 import pytest
 from wilab.config import load_config, AppConfig, NetworkEntry, NET_ID_REGEX
 

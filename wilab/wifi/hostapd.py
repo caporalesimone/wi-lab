@@ -2,7 +2,6 @@
 
 import os
 import logging
-import tempfile
 import time
 from typing import Optional, Dict
 from ..network.commands import execute_command, execute_iw, CommandError
@@ -62,7 +61,7 @@ class HostapdManager:
         config_lines = [
             f"# Wi-Lab hostapd config for {interface}",
             f"interface={interface}",
-            f"driver=nl80211",
+            "driver=nl80211",
             f"ssid={ssid}",
             f"channel={channel}",
         ]

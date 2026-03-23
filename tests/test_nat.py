@@ -1,7 +1,6 @@
 """Tests for NAT and Internet forwarding management."""
 
 import pytest
-from unittest.mock import Mock, patch
 from wilab.network.nat import NatManager
 from wilab.network.commands import CommandError
 
