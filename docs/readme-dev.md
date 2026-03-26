@@ -258,6 +258,53 @@ The project follows clean separation of concerns:
 
 - **Configuration Layer** - Loads and validates runtime settings
 - **Models Layer** - Request/response schemas and domain data types
+
+---
+
+## Setup State Contract (Phase 1)
+
+The installer now initializes a shared machine-readable state file for all setup
+stages.
+
+### File Path
+
+- Default: `/tmp/wilab-setup-state.env`
+- Override: set `WILAB_SETUP_STATE_FILE` before running `install.sh`
+
+### Format
+
+- Bash `KEY=VALUE` lines (sourceable)
+- Keys must match: `^[A-Z][A-Z0-9_]*$`
+- Values are shell-escaped before write
+
+### Namespace Convention
+
+- `SYSTEM_*`
+- `DOCKER_*`
+- `CONFIG_*`
+- `TOOLS_*`
+- `NETWORK_*`
+- `INSTALL_*`
+- `TEST_*`
+
+### Available Helpers
+
+Defined in [install/common.sh](install/common.sh):
+
+- `state_init`
+- `state_set KEY VALUE`
+- `state_get KEY`
+- `state_has KEY`
+
+### Current Bootstrap Behavior
+
+At installer start, [install.sh](install.sh) initializes the state file and sets:
+
+- `INSTALL_RUN_STARTED=1`
+- `INSTALL_RUN_STARTED_AT=<UTC ISO timestamp>`
+
+Writers/readers for individual setup stages are intentionally deferred to the
+next phase.
 - **API Layer** - HTTP routes, auth checks, and handlers
 - **Network Layer** - WiFi, DHCP, NAT, and isolation orchestration
 - **System Commands Layer** - Controlled wrappers around host networking commands
