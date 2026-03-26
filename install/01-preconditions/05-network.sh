@@ -21,10 +21,13 @@ install_common_vars
 WIFI_IFACE=$(grep -E "^\s+interface:" "$WILAB_DIR/config.yaml" 2>/dev/null | head -1 | sed -E 's/.*interface:\s*"?([^"]+)"?.*/\1/' | xargs)
 
 if [ -z "$WIFI_IFACE" ]; then
+    state_set NETWORK_AP_INTERFACE ""
+    state_set NETWORK_AP_INTERFACE_EXISTS "0"
     log_error "No WiFi interface found in config.yaml"
     exit 1
 fi
 
+state_set NETWORK_AP_INTERFACE "$WIFI_IFACE"
 log_info "WiFi interface configured: $WIFI_IFACE"
 
 ################################################################################
@@ -32,9 +35,11 @@ log_info "WiFi interface configured: $WIFI_IFACE"
 ################################################################################
 
 if ! ip link show "$WIFI_IFACE" &>/dev/null; then
+    state_set NETWORK_AP_INTERFACE_EXISTS "0"
     log_warning "WiFi interface $WIFI_IFACE not found on host"
     log_info "  (This is OK if it's in a namespace already)"
 else
+    state_set NETWORK_AP_INTERFACE_EXISTS "1"
     log_success "WiFi interface $WIFI_IFACE is available"
 fi
 

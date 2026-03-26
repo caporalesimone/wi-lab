@@ -15,6 +15,8 @@ install_common_vars
 # Extract API port for test URLs
 API_PORT=$(get_api_port)
 BASE_URL="http://localhost:${API_PORT}"
+state_set TEST_API_PORT "$API_PORT"
+state_set TEST_BASE_URL "$BASE_URL"
 
 log_info "Testing health endpoint..."
 HEALTH_URL="${BASE_URL}/api/v1/health"
@@ -54,8 +56,17 @@ while [ $ATTEMPT -lt $MAX_RETRIES ]; do
 done
 
 if [ "$HEALTH_OK" = false ]; then
+    state_set TEST_HEALTH_OK "0"
+    state_set TEST_HEALTH_LAST_HTTP_CODE "$HTTP_CODE"
+    state_set TEST_HEALTH_LAST_CURL_EXIT "$CURL_EXIT"
     log_warning "Health endpoint not responding after $MAX_RETRIES attempts (~$((MAX_RETRIES * RETRY_DELAY))s total)"
     log_warning "Last response: HTTP $HTTP_CODE, curl exit: $CURL_EXIT"
+else
+    state_set TEST_HEALTH_OK "1"
+    state_set TEST_HEALTH_LAST_HTTP_CODE "200"
+    state_set TEST_HEALTH_LAST_CURL_EXIT "0"
 fi
+
+state_set TEST_STAGE_03_DONE "1"
 
 log_success "API health test completed"

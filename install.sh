@@ -18,11 +18,19 @@ INSTALL_DIR="$SCRIPT_DIR/install"
 source "$INSTALL_DIR/common.sh"
 export ROOT_HINT_SCRIPT="install.sh"
 
+# Initialize shared setup state for all stages.
+install_common_vars
+export WILAB_SETUP_STATE_FILE
+state_init
+state_set INSTALL_RUN_STARTED "1"
+state_set INSTALL_RUN_STARTED_AT "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 ################################################################################
 # Installation execution
 ################################################################################
 
 log_info "Wi-Lab Installation - Starting..."
+log_info "Setup state file: $WILAB_SETUP_STATE_FILE"
 echo ""
 
 ################################################################################

@@ -19,9 +19,11 @@ source "$SCRIPT_DIR/../common.sh"
 ################################################################################
 
 if ! command -v docker &> /dev/null; then
+    state_set DOCKER_PRESENT "0"
     log_error "Docker is not installed. Please install Docker to continue."
     exit 1
 fi
+state_set DOCKER_PRESENT "1"
 log_success "Docker is installed"
 
 ################################################################################
@@ -29,9 +31,11 @@ log_success "Docker is installed"
 ################################################################################
 
 if ! docker ps &> /dev/null; then
+    state_set DOCKER_DAEMON_OK "0"
     log_error "Docker daemon is not running or user does not have permission. Please start Docker and ensure your user is in the 'docker' group."
     exit 1
 fi
+state_set DOCKER_DAEMON_OK "1"
 log_success "Docker daemon is running and accessible"
 
 log_success "Docker requirements satisfied"

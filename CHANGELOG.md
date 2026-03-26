@@ -4,6 +4,30 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [1.6.0] - 2026-03-26
+
+> Work in progress: this section tracks changes prepared for the upcoming 1.6.0 release.
+
+### ✨ Features
+
+- **Shared Installation State Contract Across Stages**
+  - Added bootstrap support for a shared setup state contract in installer orchestration
+  - Persisted state in install stages (`01-venv`, `02-systemd`, `03-enable`, `04-verify`, `05-deploy-frontend`)
+  - Persisted state in post-install test stages (`01-service-start` to `05-docs`) for consistent cross-stage behavior
+
+### 🔧 Refactoring & Infrastructure
+
+- **Preconditions State Persistence Hardening**
+  - System precondition state keys are now persisted explicitly
+  - Shared precondition state propagation added to Docker, config, tools, and network precheck scripts
+  - Improved resilience of tools precheck flow when required packages are missing
+
+### 📝 Documentation
+
+- Updated installation and developer documentation to reflect the shared state contract and stage-to-stage persistence behavior
+
+---
+
 ## [1.5.0] - 2026-03-24
 
 ### 📚 Documentation
