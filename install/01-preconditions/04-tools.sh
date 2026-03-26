@@ -114,23 +114,8 @@ for cmd in $missing_tools; do
 done
 echo ""
 
-# Prepare list of packages to install
-local_install_pkgs=()
-for pkg in $missing_packages; do
-    if apt-cache show "$pkg" >/dev/null 2>&1; then
-        local_install_pkgs+=("$pkg")
-    else
-        log_warning "Package not available: $pkg"
-    fi
-done
-
-if [ ${#local_install_pkgs[@]} -eq 0 ]; then
-    log_error "No installable packages found for missing commands"
-    exit 1
-fi
-
 echo "Will install the following packages:"
-for pkg in "${local_install_pkgs[@]}"; do
+for pkg in $missing_packages; do
     echo "   - $pkg"
 done
 echo ""
@@ -147,7 +132,7 @@ echo ""
 log_info "Installing required packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y "${local_install_pkgs[@]}"
+apt-get install -y $missing_packages
 echo ""
 
 ################################################################################
