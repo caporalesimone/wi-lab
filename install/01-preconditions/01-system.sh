@@ -19,6 +19,7 @@ source "$SCRIPT_DIR/../common.sh"
 ################################################################################
 
 require_root
+state_set SYSTEM_ROOT_OK "1"
 
 ################################################################################
 # Check OS version
@@ -27,6 +28,8 @@ require_root
 if [ -r /etc/os-release ]; then
     # shellcheck disable=SC1091
     source /etc/os-release
+    state_set SYSTEM_OS_ID "${ID:-unknown}"
+    state_set SYSTEM_OS_VERSION_ID "${VERSION_ID:-unknown}"
     if [[ "${ID}" != "ubuntu" ]]; then
         log_error "Unsupported OS: ${ID:-unknown}. Ubuntu 25 or newer is required."
         exit 1
@@ -40,6 +43,8 @@ if [ -r /etc/os-release ]; then
         log_error "Ubuntu 25 or newer is required (detected ${VERSION_ID})."
         exit 1
     fi
+    state_set SYSTEM_UBUNTU_VERSION "${VERSION_ID}"
+    state_set SYSTEM_UBUNTU_SUPPORTED "1"
     log_success "Ubuntu version OK: ${VERSION_ID}"
 else
     log_error "/etc/os-release not found; unable to verify OS version."
@@ -54,6 +59,7 @@ if ! command -v apt-get >/dev/null 2>&1; then
     log_error "apt-get is not available; system package management required."
     exit 1
 fi
+state_set SYSTEM_APT_AVAILABLE "1"
 log_success "System package manager available (apt-get)"
 
 log_success "System requirements satisfied"
