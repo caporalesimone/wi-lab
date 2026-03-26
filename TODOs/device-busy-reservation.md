@@ -4,6 +4,22 @@
 
 Redesign Wi-Lab reservation and network lifecycle so device ownership is controlled by a reservation token and not by static config `net_id`.
 
+### User Experience Overview
+
+From the user's perspective, the system will work as follows:
+
+1. **Reservation First**: User opens the app and sees no networks. Only a prominent "Reserve Device" button is available.
+2. **Claim Time Window**: User clicks reserve, specifies how long they need the device (in seconds), and submits. The API allocates the first free antenna and returns a unique reservation token.
+3. **Network Card Appears**: Once reservation succeeds, a network card appears displaying the reserved device with WiFi controls (SSID, password, channel, etc.).
+4. **Always-Visible Countdown**: A live countdown shows remaining reservation time as a progress bar (100% → 0%) with `hh:mm:ss` label. This stays visible whether the WiFi is on or off.
+5. **Release & Cleanup**: When done, user clicks "Release Network" to free the device for others. The card vanishes. If the reservation expires naturally, the WiFi shuts down and the card also disappears.
+6. **Full Capacity**: If all devices are reserved, the API returns a "no device available" error with the next-available timestamp, displayed in the UI.
+
+The implementation is split into two phases:
+
+- **Phase 1**: Backend API changes — introduce reservation endpoints, remove static `net_id`, bind network lifetime to reservation timeout only.
+- **Phase 2**: Frontend UI changes — remove pre-loaded cards, add reservation dialog, show dynamic card post-reservation, implement always-on countdown + progress bar.
+
 This document is the execution plan split into:
 - Phase 1: API review
 - Phase 2: Frontend refactor
