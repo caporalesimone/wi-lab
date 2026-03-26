@@ -1,263 +1,336 @@
-# Feature: Device Busy Tag & WiFi Network Reservation
+# Device Reservation Refactor (Full Rewrite)
 
-## Overview
+## Objective
 
-Implement logical network reservation system that marks WiFi networks as exclusively busy during active usage or testing sessions. Once reserved, a network cannot be modified or re-initialized until the reservation expires.
+Redesign Wi-Lab reservation and network lifecycle so device ownership is controlled by a reservation token and not by static config `net_id`.
 
-## Purpose
-
-Allow users to reserve a WiFi network for a specific duration, preventing accidental modifications or concurrent access conflicts. The system uses a timer-based approach that automatically releases the network once the reservation timeout expires.
-
----
-
-## Device Busy Tag Structure
-
-The Device Busy Tag consists of two primary pieces of information:
-
-- **`is_busy`** (Boolean): Indicates whether the network is currently reserved/busy
-- **`available_at`** (Timestamp): When the network will become available again
-  - Unix epoch timestamp (numeric)
-  - Human-readable format (ISO 8601)
-
-### Timeout Behavior
-
-1. **Reservation Timer**: When a user requests a network reservation, a timer is set for the requested duration
-2. **Expiration Logic**:
-   - If network is deactivated before timer expires: Network becomes free immediately when timer expires
-   - If network remains active: Network is automatically released when timer expires
-3. **Timer State**: The timer runs independently and is persisted across API calls
+This document is the execution plan split into:
+- Phase 1: API review
+- Phase 2: Frontend refactor
 
 ---
 
-## Frontend Implementation
+## Functional Directives (Consolidated)
 
-### UI Components
+1. Remove `net_id` from configuration.
+2. Wi-Lab manages devices internally with its own stable identifier (simple choice: physical interface name).
+3. First API call by user must be reservation API.
+4. Reservation checks if at least one antenna/device is free for use (free does not mean network off; it means not reserved).
+5. If available, API returns random code used as `net_id` in subsequent APIs (reservation token).
+6. Token becomes invalid immediately after release (`DELETE device reservation/{net_id}`).
+7. If all devices are reserved, return 4xx with nearest availability information.
+8. Reservation requires duration in seconds; this drives the next-availability estimate.
+9. At reservation expiry, device is turned off and token becomes invalid.
+10. Resolve naming conflict between old `net_id` and new random token.
+11. Remove current WiFi create-time timeout; reservation timeout becomes the only lifetime driver.
+12. Status API must report physical device name + reservation remaining seconds.
+13. Get Network API must always expose `expires_at` and `expires_in`, even when network is off.
 
-- [ ] **Device Busy Badge**: Visual indicator showing network reservation status
-  - Display near network name/status
-  - Color-coded: Green (available) / Red (busy)
+Frontend alignment:
+- At time 0, no network cards shown; only reservation button.
+- On successful reservation, network card appears.
+- Card has release button; card disappears when token is no longer accepted.
+- `GET network` provides remaining time in any state.
+- Remaining time is always visible (seconds + progress bar 100% to 0%) with `hh:mm:ss` text.
+
+---
+
+## Core Design Decisions
+
+### 1. Identifier Model (Conflict Resolution)
+
+To avoid ambiguity between legacy static `net_id` and new random token:
+- Use `device_id` for internal stable identifier (mapped to interface name, e.g. `wls16`).
+- Use `reservation_id` for random external token returned by reservation API.
+- Keep backward compatibility for a short transition only if necessary, but target model is:
+  - Config/API internals never rely on static `net_id` from config.
+  - Client-facing operations are keyed by `reservation_id`.
+
+### 2. Config Model
+
+Replace networks section from:
+- `net_id` + `interface`
+
+to:
+- `interface` (required)
+- optional human label (non-key), e.g. `display_name`
+
+Example target:
+```yaml
+networks:
+  - interface: "wls16"
+    display_name: "bench-antenna-1"
+```
+
+### 3. Reservation-Led Lifecycle
+
+- Reservation creates exclusive ownership window (`duration_seconds`).
+- Network lifetime is bounded by reservation expiry only.
+- At expiry:
+  - force network stop if active,
+  - invalidate reservation token.
+  - release device,
   
-- [ ] **Countdown Timer**: Real-time countdown display
-  - Shows remaining time in MM:SS format
-  - Updates every second during active reservation
-  - Hides when network is available
+---
 
-- [ ] **Reserve Button**: New action button in network control panel
-  - Opens modal/dialog for reservation
-  - Input field for duration (minutes)
-  - Validation: Prevent invalid durations (0, negative, excessive values)
-  - Disabled during ongoing reservation
+## Phase 1: API Review
 
-### Reservation Dialog
+- [ ] Task 1 - Replace Static Config Identity with Internal Device Identity
+- [ ] Task 2 - Introduce Reservation APIs as Mandatory Entry Point
+- [ ] Task 3 - Enforce Reservation Availability Semantics and 4xx with ETA
+- [ ] Task 4 - Make Reservation Timeout the Single Lifetime Source
+- [ ] Task 5 - Propagate Reservation Context to Existing Network APIs
+- [ ] Task 6 - Update Status and Get Network Contracts
+- [ ] Task 7 - Migration and Naming Cleanup
 
-- [ ] Duration input field with validation
-- [ ] Confirm/Cancel buttons
-- [ ] Display current network status
-- [ ] Show estimated release time in human-readable format
+### Task 1 - Replace Static Config Identity with Internal Device Identity
 
-### Status Display
+Subtasks:
+- Remove `net_id` from config schema and validation.
+- Introduce internal `device_id = interface` mapping in runtime state.
+- Ensure all internal lookups use `device_id`.
 
-- [ ] Update network status card to show Device Busy Tag information
-- [ ] Integrate countdown into existing status display
-- [ ] Show "Reserved until: HH:MM:SS on YYYY-MM-DD" format
+Test logic to add:
+- Config parsing test: configuration without `net_id` is valid.
+- Config rejection test: configuration with `net_id` (legacy) returns explicit validation error (or warning during transition if chosen).
+- Runtime mapping test: each configured interface has unique `device_id` and deterministic loading order.
+
+### Task 2 - Introduce Reservation APIs as Mandatory Entry Point
+
+Target endpoints:
+- `POST /api/v1/device-reservation`
+- `GET /api/v1/device-reservation/{reservation_id}`
+- `DELETE /api/v1/device-reservation/{reservation_id}`
+
+Subtasks:
+- Implement `POST` with payload `{ "duration_seconds": <int> }`.
+- Allocate first available non-reserved device.
+- Generate cryptographically secure random `reservation_id`.
+- Return reservation metadata: `reservation_id`, `device_id`, `expires_at`, `expires_in`.
+- Implement `GET` to fetch reservation status by token.
+- Implement `DELETE` to release reservation and invalidate token.
+
+Test logic to add:
+- Happy path: reservation is created and token is returned.
+- Randomness/uniqueness test: repeated reservations do not collide.
+- `GET` valid token test: returns current state and remaining time.
+- `DELETE` valid token test: releases device and invalidates token.
+- Post-release invalidation test: subsequent `GET`/network operations with same token return 4xx.
+
+### Task 3 - Enforce Reservation Availability Semantics and 4xx with ETA
+
+Subtasks:
+- Define “available” = not currently reserved.
+- If all devices reserved, return 4xx (recommended `409 Conflict`) with fields:
+  - `next_available_in`
+  - `next_available_at`
+- Compute ETA from soonest reservation expiry.
+
+Test logic to add:
+- Full-capacity test: all devices reserved returns 4xx.
+- ETA correctness test: response uses nearest expiry among active reservations.
+- Edge test: simultaneous expiries choose non-negative minimal ETA.
+
+### Task 4 - Make Reservation Timeout the Single Lifetime Source
+
+Subtasks:
+- Remove timeout parameter/effective use from create network API logic.
+- Bind network shutdown scheduler to reservation expiry only.
+- On expiry: stop WiFi network, free device, invalidate token.
+
+Test logic to add:
+- Create network ignores/removes old timeout behavior.
+- Reservation expiry triggers automatic network stop.
+- Expired token test: any follow-up operation returns 4xx invalid reservation.
+- Regression test: no duplicate timers remain active from legacy network timeout.
+
+### Task 5 - Propagate Reservation Context to Existing Network APIs
+
+Subtasks:
+- Require valid `reservation_id` (legacy field name `net_id` can temporarily carry the token in path/query while API evolves).
+- Resolve token -> device association before network operations.
+- Reject operations when token is invalid/expired/released.
+
+Test logic to add:
+- Protected operation without reservation token returns 4xx (recommended `401/403/404` based on chosen policy).
+- Protected operation with invalid token returns 4xx.
+- Protected operation with valid token reaches correct device.
+
+### Task 6 - Update Status and Get Network Contracts
+
+Subtasks:
+- Status API includes, for each physical device:
+  - `device_id` (or physical interface field)
+  - `reservation_remaining_seconds`
+- Get Network API always includes:
+  - `expires_at`
+  - `expires_in`
+  even when network is off.
+
+Test logic to add:
+- Status payload test: remaining seconds present and monotonic decreasing.
+- Status payload test: includes physical device identifier.
+- Get network (active) test: `expires_at`/`expires_in` present.
+- Get network (off) test: same fields still present with coherent values.
+
+### Task 7 - Migration and Naming Cleanup
+
+Subtasks:
+- Replace documentation and code references from old `net_id` meaning to new model:
+  - `device_id` internal
+  - `reservation_id` external token
+- Optionally support transition alias with deprecation warning.
+- Remove obsolete docs about create-network timeout ownership.
+
+Test logic to add:
+- Contract test: OpenAPI examples reflect new reservation model.
+- Deprecation test (if alias enabled): legacy path accepted but warns.
+- Negative test: static config `net_id` is not used as operational key.
 
 ---
 
-## API Implementation
+## Phase 2: Frontend Refactor
 
-### Reservation Endpoint
+- [ ] Task 1 - Initial Empty State with Reservation-First UX
+- [ ] Task 2 - Show Card Only After Successful Reservation
+- [ ] Task 3 - Add Release Network Action and Card Removal
+- [ ] Task 4 - Always Display Remaining Time
+- [ ] Task 5 - Add Reservation Progress Bar with hh:mm:ss Label
+- [ ] Task 6 - Error UX for No Available Devices
 
-**POST** `/api/networks/{network_name}/reserve`
+### Task 1 - Initial Empty State with Reservation-First UX
 
-Request Body:
+Subtasks:
+- At app start show no network cards.
+- Show primary action button: “Reserve device”.
+- Reservation dialog asks for duration in seconds.
+
+Test logic to add:
+- Initial render test: zero cards shown, reservation CTA visible.
+- Validation test: duration must be positive and within allowed bounds.
+- Submit test: sends `POST /device-reservation` with seconds payload.
+
+### Task 2 - Show Card Only After Successful Reservation
+
+Subtasks:
+- On successful reservation, render network card bound to `reservation_id`.
+- Store reservation metadata (`reservation_id`, `expires_at`, `expires_in`, `device_id`).
+
+Test logic to add:
+- Success flow test: card appears only after 2xx reservation response.
+- Failure flow test: card does not appear on 4xx/5xx reservation response.
+- State binding test: card uses returned reservation token for subsequent calls.
+
+### Task 3 - Add Release Network Action and Card Removal
+
+Subtasks:
+- Add `Release Network` button on card.
+- Call `DELETE /device-reservation/{reservation_id}`.
+- On success, remove card and clear local reservation state.
+- If backend reports token invalid, force card removal and reset UI.
+
+Test logic to add:
+- Release success test: delete call made, card disappears.
+- Release invalid-token test: UI handles 4xx by removing stale card.
+- Idempotency UX test: repeated clicks cannot keep stale active UI.
+
+### Task 4 - Always Display Remaining Time
+
+Subtasks:
+- Poll `GET network` (or reservation status endpoint) to refresh remaining time.
+- Show remaining seconds in all states (active/off).
+- Keep display consistent with backend `expires_at` and `expires_in`.
+
+Test logic to add:
+- Polling test: countdown updates over time.
+- Off-state test: remaining time still displayed when network is off.
+- Drift test: frontend countdown remains aligned with server values.
+
+### Task 5 - Add Reservation Progress Bar with hh:mm:ss Label
+
+Subtasks:
+- Implement progress from 100% to 0% over reservation lifetime.
+- Render formatted `hh:mm:ss` inside progress bar.
+- Clamp at 0% when expired.
+
+Test logic to add:
+- Progress computation test: percentage decreases linearly with `expires_in`.
+- Formatting test: `hh:mm:ss` formatting for multi-hour and sub-minute cases.
+- Expiry boundary test: exactly at 0 seconds bar shows `00:00:00` and 0%.
+
+### Task 6 - Error UX for No Available Devices
+
+Subtasks:
+- Show backend 4xx full-capacity message.
+- Surface “next available in” hint in UI.
+- Allow retry from same dialog/view.
+
+Test logic to add:
+- Full-capacity response test: UI displays ETA message.
+- Retry test: new reservation attempt works once capacity returns.
+- Accessibility test: error is visible and readable in keyboard flow.
+
+---
+
+## API Contract Sketch (Proposed)
+
+### POST /api/v1/device-reservation
+Request:
 ```json
 {
   "duration_seconds": 3600
 }
 ```
 
-Response:
+Success:
 ```json
 {
-  "success": true,
-  "network_name": "wifi-network-1",
-  "reserved_until": "2026-01-29T14:30:45Z",
-  "available_at_epoch": 1743397845
+  "reservation_id": "rsv_7f4a2c91",
+  "device_id": "wls16",
+  "expires_at": "2026-03-26T15:00:00Z",
+  "expires_in": 3600
 }
 ```
 
-Error Cases:
-- [ ] Network already busy: Return 409 Conflict
-- [ ] Invalid duration: Return 400 Bad Request
-- [ ] Network not found: Return 404 Not Found
-
-### Network Status Endpoints
-
-Update existing status endpoints to include Device Busy Tag:
-
-**GET** `/api/networks/{network_name}/status`
-**GET** `/api/networks/status` (all networks)
-
-Add to response:
+All devices reserved (4xx example):
 ```json
 {
-  "network_name": "wifi-network-1",
-  "status": "active",
-  "device_busy_status": {
-    "is_busy": true,
-    "available_at": "2026-01-29T14:30:45Z",
-    "available_at_epoch": 1743397845
-  },
-  ...
+  "detail": "No device available",
+  "next_available_at": "2026-03-26T14:22:04Z",
+  "next_available_in": 124
 }
 ```
 
-### Release Endpoint (Optional for v1.4.0)
-
-**POST** `/api/networks/{network_name}/release`
-
-Allows early manual release of reservation:
+### GET /api/v1/device-reservation/{reservation_id}
+Success:
 ```json
 {
-  "success": true,
-  "released_at": "2026-01-29T13:45:00Z"
+  "reservation_id": "rsv_7f4a2c91",
+  "device_id": "wls16",
+  "state": "reserved",
+  "expires_at": "2026-03-26T15:00:00Z",
+  "expires_in": 3510
 }
 ```
 
----
-
-## Backend Implementation
-
-### Database/State Storage
-
-- [ ] Add `device_busy_tag` field to network state persistence
-- [ ] Store: `is_busy` (boolean), `available_at` (epoch timestamp)
-- [ ] Implement timer mechanism for automatic expiration
-
-### Timer Management
-
-- [ ] Create background task to check expiration timers
-- [ ] Update network state when timer expires
-- [ ] Handle edge cases:
-  - [ ] Server restart with active timers
-  - [ ] Network deactivation during reservation
-  - [ ] Concurrent reservation requests
-
-### Validation & Safety
-
-- [ ] Prevent operations on busy networks (modify, reinit, etc.)
-- [ ] Duration limits: Min 60 seconds, Max 24 hours
-- [ ] Return descriptive error when operation blocked due to busy state
-
----
-
-## Testing
-
-### Unit Tests
-
-- [ ] Test reservation creation with valid durations
-- [ ] Test error handling for invalid durations
-- [ ] Test timer expiration logic
-- [ ] Test network state updates after expiration
-
-### Integration Tests
-
-- [ ] Reservation through API endpoint
-- [ ] Status endpoint returns correct Device Busy Tag info
-- [ ] Timer countdown accuracy
-- [ ] Early release functionality (if implemented)
-- [ ] Network operations blocked during reservation
-- [ ] State persistence across server restart
-
-### Frontend Tests
-
-- [ ] Countdown timer updates correctly
-- [ ] Reservation dialog validates input
-- [ ] UI reflects busy state appropriately
-- [ ] Badge displays during and after reservation
-
----
-
-## Documentation
-
-- [ ] Update API documentation with new endpoints
-- [ ] Add reservation flow to user guide
-- [ ] Document timeout behavior and edge cases
-- [ ] Provide example use cases
+### DELETE /api/v1/device-reservation/{reservation_id}
+Success:
+```json
+{
+  "detail": "Reservation released"
+}
+```
 
 ---
 
 ## Acceptance Criteria
 
-- ✅ Network can be reserved via API with specified duration
-- ✅ Device Busy Tag shows correct status and countdown
-- ✅ Frontend displays countdown timer and reserve button
-- ✅ Reservation automatically expires after timeout
-- ✅ Network state reflects busy status in all endpoints
-- ✅ Operations blocked on busy networks with appropriate error messages
-- ✅ All tests pass (unit, integration, frontend)
-- ✅ API documentation updated
-
----
-
-## 🔶 To Be Confirmed
-
-### Frontend Enhancements (TBD)
-
-#### Active Reservations Status Panel
-- [ ] Display all active network reservations in a dedicated UI panel
-- [ ] Show real-time countdown timer for each reservation
-- [ ] Add visual progress bar showing reservation time remaining
-  - Linear progress bar: 0-100% representing elapsed time
-  - Color transition: Green → Yellow → Red as time runs out
-- [ ] Allow sorting/filtering of active reservations
-
-#### Reservation History Log (TBD)
-- [ ] Display log of recent reservations (in-memory, no DB persistence)
-  - Network name
-  - Reservation duration (requested vs actual)
-  - Start time and end time
-  - Status (Active / Expired / Released)
-- [ ] Configurable log size (e.g., last 50 reservations)
-- [ ] Clear history option
-- [ ] **Decision needed:** Persistence scope
-  - Current proposal: In-memory only (cleared on service restart)
-  - Alternative: Session-based persistence
-  - Alternative: Full database persistence
-
-### Security Enhancement (TBD)
-
-#### Reservation Code / Token System
-- [ ] Reservation endpoint returns a random security code/token
-  - Format: Random alphanumeric string (e.g., 12-16 chars)
-  - Example: `aBcD9eF2gH1jKl3m`
-- [ ] All subsequent API calls on the reserved device MUST include this code
-  - Add `Authorization` header or query parameter: `reservation_code`
-  - Example: `POST /api/networks/wifi-1/activate?reservation_code=aBcD9eF2gH1jKl3m`
-- [ ] Prevent operations without valid code during active reservation
-  - Return 403 Forbidden with message: "Reservation code required or invalid"
-- [ ] Code expires when reservation expires or is manually released
-
-#### Benefits
-- Prevents accidental/unauthorized modifications during active reservation
-- Ensures only the entity that made the reservation can operate on it
-- Defense-in-depth security layer
-- Useful in multi-user or automated testing scenarios
-
-#### Implementation Considerations
-- [ ] Include code in all network operation endpoints
-- [ ] Validate code on every request targeting busy network
-- [ ] Log all requests with/without valid code
-- [ ] Clear code when reservation expires
-
----
-
-## Implementation Notes
-
-- This v1.4.0 implementation focuses on core reservation logic
-- Future versions may add:
-  - Reservation priority queue
-  - Reservation history/audit log
-  - Reservation conflicts detection
-  - Reservation extension API
-  - User-specific reservations with auth
+- Config no longer requires or supports static operational `net_id`.
+- Reservation is mandatory before network operations.
+- Random reservation token is the only client key for reserved operations.
+- Token invalidation works on release and timeout expiry.
+- Full-capacity reservation returns 4xx with nearest ETA.
+- Reservation timeout is the only network lifetime timer.
+- Status and Get Network always expose reservation remaining time.
+- Frontend starts with reservation-only UX and then renders card post-reservation.
+- Frontend shows always-on remaining time and progress bar with `hh:mm:ss`.
