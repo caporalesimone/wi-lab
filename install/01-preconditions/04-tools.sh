@@ -95,13 +95,27 @@ log_info "Checking for required system tools..."
 echo ""
 
 # Get missing tools and packages
-read -r missing_tools missing_packages <<< "$(check_tools)"
+mapfile -t tool_state <<< "$(check_tools)"
+missing_tools="${tool_state[0]}"
+missing_packages="${tool_state[1]}"
+
+state_set TOOLS_MISSING_COMMANDS "$missing_tools"
+state_set TOOLS_MISSING_PACKAGES "$missing_packages"
 
 if [ -z "$missing_tools" ]; then
+    state_set TOOLS_ALL_PRESENT "1"
+    state_set TOOLS_POSTCHECK_OK "1"
     log_success "All required system commands are already installed"
     echo ""
     log_success "System tools requirements satisfied"
     exit 0
+fi
+
+state_set TOOLS_ALL_PRESENT "0"
+
+if [ -z "$missing_packages" ]; then
+    log_error "Missing commands detected but no packages were resolved"
+    exit 1
 fi
 
 ################################################################################
@@ -124,15 +138,18 @@ echo ""
 echo -n "Install missing packages? (y/N) "
 read -r REPLY
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    state_set TOOLS_INSTALL_REQUESTED "0"
     log_error "Missing tools required but installation declined"
     exit 1
 fi
+state_set TOOLS_INSTALL_REQUESTED "1"
 
 echo ""
 log_info "Installing required packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y $missing_packages
+state_set TOOLS_INSTALLED_PACKAGES "$missing_packages"
 echo ""
 
 ################################################################################
@@ -140,17 +157,22 @@ echo ""
 ################################################################################
 
 log_info "Verifying installation..."
-local still_missing=()
+still_missing=()
 for cmd in $missing_tools; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         still_missing+=("$cmd")
     fi
 done
 
+state_set TOOLS_POSTCHECK_MISSING "${still_missing[*]}"
+
 if [ ${#still_missing[@]} -ne 0 ]; then
+    state_set TOOLS_POSTCHECK_OK "0"
     log_error "Some commands are still missing after install: ${still_missing[*]}"
     exit 1
 fi
+
+state_set TOOLS_POSTCHECK_OK "1"
 
 log_success "All required system commands are now available"
 echo ""
