@@ -104,7 +104,7 @@ Wi-Lab simplifies WiFi Access Point management for testing:
 - WiFi interface with AP mode support
 - Ethernet interface for Internet uplink
 - 2GB+ RAM
-- Ubuntu 20.04+ or Debian 11+
+- Ubuntu 25
 
 ### System Packages
 The setup script automatically installs:

@@ -15,6 +15,8 @@ install_common_vars
 # Extract API port for test URLs
 API_PORT=$(get_api_port)
 BASE_URL="http://localhost:${API_PORT}"
+state_set TEST_API_PORT "$API_PORT"
+state_set TEST_BASE_URL "$BASE_URL"
 
 log_info "Testing homepage..."
 HOMEPAGE_URL="${BASE_URL}/"
@@ -25,6 +27,8 @@ RETRY_DELAY=2
 for ((i=1; i<=RETRY_COUNT; i++)); do
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -L "$HOMEPAGE_URL" 2>&1)
     if [[ "$HTTP_CODE" =~ ^(200|301|302|304)$ ]]; then
+        state_set TEST_HOMEPAGE_OK "1"
+        state_set TEST_HOMEPAGE_HTTP_CODE "$HTTP_CODE"
         log_success "Homepage is responding (HTTP $HTTP_CODE)"
         break
     else
@@ -33,9 +37,13 @@ for ((i=1; i<=RETRY_COUNT; i++)); do
             sleep $RETRY_DELAY
             RETRY_DELAY=$((RETRY_DELAY + 1))
         else
+            state_set TEST_HOMEPAGE_OK "0"
+            state_set TEST_HOMEPAGE_HTTP_CODE "$HTTP_CODE"
             log_warning "Homepage may not be available (HTTP $HTTP_CODE)"
         fi
     fi
 done
+
+state_set TEST_STAGE_04_DONE "1"
 
 log_success "Homepage test completed"
