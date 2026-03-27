@@ -5,11 +5,13 @@
   </mat-toolbar>
 
   <div class="content">
+    <!-- Loading spinner -->
     <div *ngIf="loading" class="loading-container">
       <mat-spinner></mat-spinner>
-      <p>Loading status...</p>
+      <p>Loading...</p>
     </div>
 
+    <!-- Connection error -->
     <div *ngIf="error" class="error-container">
       <mat-icon color="warn">error</mat-icon>
       <p>{{ error }}</p>
@@ -19,12 +21,37 @@
       </button>
     </div>
 
-    <div *ngIf="!loading && !error" class="networks-container">
-      <app-network-card
-        *ngFor="let iface of interfaces"
-        [netId]="iface.net_id"
-        [interface]="iface.interface">
-      </app-network-card>
+    <!-- Main content (not loading, no error) -->
+    <div *ngIf="!loading && !error">
+
+      <!-- Empty state: no reservation active -->
+      <div *ngIf="!reservation" class="empty-state">
+        <mat-icon class="empty-icon">devices</mat-icon>
+        <h2>No device reserved</h2>
+        <p>Reserve a device to start using Wi-Lab.</p>
+
+        <!-- Capacity error message -->
+        <div *ngIf="capacityError" class="capacity-error">
+          <mat-icon color="warn">schedule</mat-icon>
+          <p>All devices are currently reserved.</p>
+          <p class="eta">Next available in <strong>{{ capacityError.next_available_in }}</strong> seconds</p>
+        </div>
+
+        <button mat-raised-button color="primary" class="reserve-button" (click)="openReservationDialog()">
+          <mat-icon>lock_clock</mat-icon>
+          Reserve Device
+        </button>
+      </div>
+
+      <!-- Network card: visible only when reservation is active -->
+      <div *ngIf="reservation" class="networks-container">
+        <app-network-card
+          [reservationId]="reservation.reservation_id"
+          [reservation]="reservation"
+          (released)="onReservationReleased()">
+        </app-network-card>
+      </div>
+
     </div>
   </div>
 </div>

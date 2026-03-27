@@ -48,7 +48,6 @@ export class NetworkFormDialogComponent {
       encryption: ['wpa2', Validators.required],
       password: ['12345678', [Validators.minLength(8), Validators.maxLength(63)]],
       hidden: [false],
-      timeout: [3600, [Validators.min(60), Validators.max(86400)]],
       internet_enabled: [true],
       tx_power_level: [4, [Validators.required, Validators.min(1), Validators.max(4)]]
     });
@@ -94,7 +93,6 @@ export class NetworkFormDialogComponent {
         encryption: value.encryption,
         password: value.encryption !== 'open' ? value.password : undefined,
         hidden: value.hidden,
-        timeout: value.timeout,
         internet_enabled: value.internet_enabled,
         tx_power_level: value.tx_power_level
       };

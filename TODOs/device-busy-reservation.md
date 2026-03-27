@@ -303,7 +303,7 @@ Success:
 {
   "reservation_id": "rsv_7f4a2c91",
   "device_id": "wls16",
-  "expires_at": "2026-03-26T15:00:00Z",
+  "expires_at": "2026-03-27T23:26:42.344702+00:00",
   "expires_in": 3600
 }
 ```

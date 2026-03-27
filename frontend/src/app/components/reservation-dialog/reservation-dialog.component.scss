@@ -1,0 +1,10 @@
+.reservation-form {
+  display: flex;
+  flex-direction: column;
+  min-width: 350px;
+  padding: 16px 0;
+}
+
+mat-form-field {
+  width: 100%;
+}

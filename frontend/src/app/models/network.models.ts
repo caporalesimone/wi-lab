@@ -1,6 +1,7 @@
 export interface InterfaceInfo {
-  net_id: string;
+  display_name: string;
   interface: string;
+  reservation_remaining_seconds: number | null;
 }
 
 export interface StatusResponse {
@@ -15,8 +16,20 @@ export interface StatusResponse {
   };
 }
 
+export interface ReservationRequest {
+  duration_seconds: number;
+}
+
+export interface ReservationResponse {
+  reservation_id: string;
+  device_id: string;
+  display_name: string;
+  interface: string;
+  expires_at: string;
+  expires_in: number;
+}
+
 export interface NetworkStatus {
-  net_id: string;
   interface: string;
   active: boolean;
   ssid?: string;
@@ -55,7 +68,6 @@ export interface NetworkCreateRequest {
   encryption: string;
   band: string;
   hidden?: boolean;
-  timeout?: number;
   internet_enabled?: boolean;
   tx_power_level: number;
 }
@@ -63,4 +75,10 @@ export interface NetworkCreateRequest {
 export interface ClientInfo {
   mac: string;
   ip: string;
+}
+
+export interface NoDeviceAvailableError {
+  detail: string;
+  next_available_at: string;
+  next_available_in: number;
 }

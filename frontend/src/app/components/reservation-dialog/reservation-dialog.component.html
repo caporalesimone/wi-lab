@@ -1,0 +1,20 @@
+<h2 mat-dialog-title>Reserve Device</h2>
+<mat-dialog-content>
+  <form [formGroup]="form" class="reservation-form">
+    <mat-form-field appearance="outline">
+      <mat-label>Duration (seconds)</mat-label>
+      <input matInput type="number" formControlName="duration_seconds" />
+      <mat-hint>Min 60s, Max 86400s (24h) — {{ durationMinutes }} minutes</mat-hint>
+      <mat-error *ngIf="form.get('duration_seconds')?.hasError('required')">Duration is required</mat-error>
+      <mat-error *ngIf="form.get('duration_seconds')?.hasError('min')">Minimum 60 seconds</mat-error>
+      <mat-error *ngIf="form.get('duration_seconds')?.hasError('max')">Maximum 86400 seconds (24h)</mat-error>
+    </mat-form-field>
+  </form>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button (click)="onCancel()">Cancel</button>
+  <button mat-raised-button color="primary" (click)="onSubmit()" [disabled]="!form.valid">
+    <mat-icon>lock_clock</mat-icon>
+    Reserve
+  </button>
+</mat-dialog-actions>

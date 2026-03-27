@@ -141,6 +141,42 @@ mat-card-title {
   text-align: center;
 }
 
+.reservation-timer {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+
+  .timer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+
+    .label {
+      font-weight: 500;
+      color: rgba(0, 0, 0, 0.6);
+    }
+
+    .countdown {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: rgba(0, 0, 0, 0.87);
+
+      &.expiring {
+        color: #f44336;
+        animation: pulse 1s ease-in-out infinite;
+      }
+    }
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .inactive-message {
   display: flex;
   flex-direction: column;
@@ -155,6 +191,16 @@ mat-card-title {
     height: 48px;
     margin-bottom: 8px;
   }
+}
+
+.release-row {
+  margin-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: 8px;
+}
+
+.release-button {
+  width: 100%;
 }
 
 .actions-container {

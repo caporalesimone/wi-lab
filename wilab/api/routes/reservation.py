@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
 from ...api.auth import require_token
-from ...api.dependencies import get_reservation_manager
+from ...api.dependencies import get_config, get_reservation_manager
+from ...config import AppConfig
 from ...reservation import ReservationManager, NoDeviceAvailableError
 
 router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
@@ -24,8 +25,18 @@ class ReservationCreateRequest(BaseModel):
 class ReservationResponse(BaseModel):
     reservation_id: str
     device_id: str
+    display_name: str
+    interface: str
     expires_at: str = Field(description="Expiration datetime (yyyy-mm-dd HH:MM:SS)")
     expires_in: int = Field(description="Seconds remaining until expiry")
+
+
+def _display_name_for(device_id: str, config: AppConfig) -> str:
+    """Look up user-facing display name from config."""
+    for n in config.networks:
+        if n.device_id == device_id:
+            return n.display_name
+    return device_id
 
 
 # ---- Endpoints ----
@@ -41,6 +52,7 @@ class ReservationResponse(BaseModel):
 )
 async def create_reservation(
     req: ReservationCreateRequest,
+    config: AppConfig = Depends(get_config),
     mgr: ReservationManager = Depends(get_reservation_manager),
     _auth: bool = Depends(require_token),
 ):
@@ -62,6 +74,8 @@ async def create_reservation(
     return ReservationResponse(
         reservation_id=r.reservation_id,
         device_id=r.device_id,
+        display_name=_display_name_for(r.device_id, config),
+        interface=r.device_id,
         expires_at=datetime.fromtimestamp(r.expires_at, tz=timezone.utc).isoformat(),
         expires_in=r.expires_in,
     )
@@ -78,6 +92,7 @@ async def create_reservation(
 )
 async def get_reservation(
     reservation_id: str = Path(...),
+    config: AppConfig = Depends(get_config),
     mgr: ReservationManager = Depends(get_reservation_manager),
     _auth: bool = Depends(require_token),
 ):
@@ -89,6 +104,8 @@ async def get_reservation(
     return ReservationResponse(
         reservation_id=r.reservation_id,
         device_id=r.device_id,
+        display_name=_display_name_for(r.device_id, config),
+        interface=r.device_id,
         expires_at=datetime.fromtimestamp(r.expires_at, tz=timezone.utc).isoformat(),
         expires_in=r.expires_in,
     )

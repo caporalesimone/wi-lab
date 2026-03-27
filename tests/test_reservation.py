@@ -207,9 +207,13 @@ class TestReservationAPICreate:
         data = resp.json()
         assert "reservation_id" in data
         assert "device_id" in data
+        assert "display_name" in data
+        assert "interface" in data
         assert "expires_at" in data
         assert "expires_in" in data
         assert data["expires_in"] > 0
+        # interface should match device_id
+        assert data["interface"] == data["device_id"]
 
     def test_create_reservation_requires_auth(self, client):
         resp = client.post(
@@ -276,6 +280,8 @@ class TestReservationAPIGet:
         data = resp.json()
         assert data["reservation_id"] == rid
         assert data["expires_in"] > 0
+        assert "display_name" in data
+        assert "interface" in data
 
     def test_get_reservation_not_found(self, client, valid_token):
         resp = client.get(

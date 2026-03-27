@@ -6,9 +6,9 @@
     <div class="header-main">
       <mat-card-title>
         <mat-icon>{{ status?.active ? 'wifi' : 'wifi_off' }}</mat-icon>
-        {{ netId }}
+        {{ reservation.display_name }}
       </mat-card-title>
-      <mat-card-subtitle>{{ interface }}</mat-card-subtitle>
+      <mat-card-subtitle>{{ reservation.interface }}</mat-card-subtitle>
     </div>
     <div
       class="internet-status-badge"
@@ -22,6 +22,21 @@
   </mat-card-header>
 
   <mat-card-content>
+    <!-- Reservation countdown + progress bar (always visible) -->
+    <div class="reservation-timer">
+      <div class="timer-header">
+        <span class="label">Reservation</span>
+        <span class="countdown" [class.expiring]="remainingSeconds < 300">
+          {{ formatCountdown(remainingSeconds) }}
+        </span>
+      </div>
+      <mat-progress-bar
+        mode="determinate"
+        [value]="progressPercent"
+        [color]="remainingSeconds < 300 ? 'warn' : 'primary'">
+      </mat-progress-bar>
+    </div>
+
     <div *ngIf="status?.active" class="network-info">
       <div class="info-row">
         <span class="label">SSID:</span>
@@ -42,10 +57,6 @@
       <div class="info-row" *ngIf="status?.tx_power?.requested_level !== undefined && status?.tx_power?.requested_level !== null">
         <span class="label">TX Power requested/reported:</span>
         <span class="value">{{ status?.tx_power?.requested_level }}/{{ status?.tx_power?.reported_level ?? '-' }}</span>
-      </div>
-      <div class="info-row" *ngIf="status?.expires_in !== undefined && status?.expires_in !== null">
-        <span class="label">Expires in:</span>
-        <span class="value">{{ formatExpiresIn(status?.expires_in) }}</span>
       </div>
       <div class="clients-section">
         <div class="clients-header">
@@ -75,7 +86,7 @@
     </div>
     <div *ngIf="!status?.active" class="inactive-message">
       <mat-icon>wifi_off</mat-icon>
-      <p>Access point <strong>{{ netId }}</strong> disabled</p>
+      <p>Access point not active — start WiFi to begin</p>
     </div>
   </mat-card-content>
 
@@ -115,6 +126,17 @@
           [disabled]="loading || !status?.active || !status?.internet_enabled">
           <mat-icon>cloud_off</mat-icon>
           Disable Internet
+        </button>
+      </div>
+      <div class="button-row release-row">
+        <button
+          mat-raised-button
+          color="warn"
+          (click)="releaseReservation()"
+          [disabled]="loading"
+          class="release-button">
+          <mat-icon>exit_to_app</mat-icon>
+          Release Device
         </button>
       </div>
     </div>

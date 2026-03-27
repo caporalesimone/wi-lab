@@ -4,10 +4,11 @@ import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import {
-  InterfaceInfo,
   StatusResponse,
   NetworkStatus,
-  NetworkCreateRequest
+  NetworkCreateRequest,
+  ReservationRequest,
+  ReservationResponse
 } from '../models/network.models';
 
 @Injectable({
@@ -26,6 +27,8 @@ export class WilabApiService {
 
   constructor(private http: HttpClient) {}
 
+  // ---- Status ----
+
   public getStatus(): Observable<StatusResponse> {
     return this.http.get<StatusResponse>(`${this.apiUrl}/status`, {
       headers: this.getHeaders()
@@ -34,17 +37,49 @@ export class WilabApiService {
     );
   }
 
-  public getNetworkStatus(netId: string): Observable<NetworkStatus> {
-    return this.http.get<NetworkStatus>(`${this.apiUrl}/interface/${netId}/network`, {
+  // ---- Reservation ----
+
+  public createReservation(req: ReservationRequest): Observable<ReservationResponse> {
+    return this.http.post<ReservationResponse>(
+      `${this.apiUrl}/device-reservation`,
+      req,
+      { headers: this.getHeaders() }
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  public getReservation(reservationId: string): Observable<ReservationResponse> {
+    return this.http.get<ReservationResponse>(
+      `${this.apiUrl}/device-reservation/${reservationId}`,
+      { headers: this.getHeaders() }
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  public deleteReservation(reservationId: string): Observable<object> {
+    return this.http.delete(
+      `${this.apiUrl}/device-reservation/${reservationId}`,
+      { headers: this.getHeaders() }
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  // ---- Network (keyed by reservation_id) ----
+
+  public getNetworkStatus(reservationId: string): Observable<NetworkStatus> {
+    return this.http.get<NetworkStatus>(`${this.apiUrl}/interface/${reservationId}/network`, {
       headers: this.getHeaders()
     }).pipe(
       catchError(this.handleError)
     );
   }
 
-  public startNetwork(netId: string, config: NetworkCreateRequest): Observable<NetworkStatus> {
+  public startNetwork(reservationId: string, config: NetworkCreateRequest): Observable<NetworkStatus> {
     return this.http.post<NetworkStatus>(
-      `${this.apiUrl}/interface/${netId}/network`,
+      `${this.apiUrl}/interface/${reservationId}/network`,
       config,
       { headers: this.getHeaders() }
     ).pipe(
@@ -52,18 +87,20 @@ export class WilabApiService {
     );
   }
 
-  public stopNetwork(netId: string): Observable<{ net_id: string }> {
-    return this.http.delete<{ net_id: string }>(
-      `${this.apiUrl}/interface/${netId}/network`,
+  public stopNetwork(reservationId: string): Observable<object> {
+    return this.http.delete(
+      `${this.apiUrl}/interface/${reservationId}/network`,
       { headers: this.getHeaders() }
     ).pipe(
       catchError(this.handleError)
     );
   }
 
-  public enableInternet(netId: string): Observable<{ net_id: string; internet_enabled: boolean }> {
-    return this.http.post<{ net_id: string; internet_enabled: boolean }>(
-      `${this.apiUrl}/interface/${netId}/internet/enable`,
+  // ---- Internet (keyed by reservation_id) ----
+
+  public enableInternet(reservationId: string): Observable<object> {
+    return this.http.post(
+      `${this.apiUrl}/interface/${reservationId}/internet/enable`,
       {},
       { headers: this.getHeaders() }
     ).pipe(
@@ -71,9 +108,9 @@ export class WilabApiService {
     );
   }
 
-  public disableInternet(netId: string): Observable<{ net_id: string; internet_enabled: boolean }> {
-    return this.http.post<{ net_id: string; internet_enabled: boolean }>(
-      `${this.apiUrl}/interface/${netId}/internet/disable`,
+  public disableInternet(reservationId: string): Observable<object> {
+    return this.http.post(
+      `${this.apiUrl}/interface/${reservationId}/internet/disable`,
       {},
       { headers: this.getHeaders() }
     ).pipe(
@@ -110,6 +147,8 @@ export class WilabApiService {
       message: error.message
     });
     
-    return throwError(() => new Error(errorMessage));
+    const err = new Error(errorMessage);
+    (err as Error & { originalError: HttpErrorResponse }).originalError = error;
+    return throwError(() => err);
   };
 }
