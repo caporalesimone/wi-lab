@@ -3,7 +3,8 @@
 from fastapi import APIRouter, Depends
 
 from ...wifi.manager import NetworkManager
-from ...api.dependencies import get_config, get_manager
+from ...reservation import ReservationManager
+from ...api.dependencies import get_config, get_manager, get_reservation_manager
 from ...api.auth import require_token
 from ...network.commands import execute_command, CommandError
 from ...version import __version__
@@ -21,6 +22,7 @@ router = APIRouter(tags=["System"])
 async def system_status(
     manager: NetworkManager = Depends(get_manager), 
     config=Depends(get_config),
+    reservation_mgr: ReservationManager = Depends(get_reservation_manager),
     _: bool = Depends(require_token)
 ):
     """
@@ -105,8 +107,20 @@ async def system_status(
         status_data["status"] = "ok" if all_ok else "degraded"
         status_data["active_networks"] = len(manager.active)
 
-    # Add networks, checks, and rest of data
-    status_data["networks"] = [{"device_id": n.device_id, "interface": n.interface} for n in config.networks]
+    # Add networks with reservation info, checks, and rest of data
+    networks_info = []
+    for n in config.networks:
+        entry: dict = {"device_id": n.device_id, "interface": n.interface}
+        if reservation_mgr.is_device_reserved(n.device_id):
+            # Find the reservation for this device to report remaining time
+            for r in reservation_mgr.all_active():
+                if r.device_id == n.device_id:
+                    entry["reservation_remaining_seconds"] = r.expires_in
+                    break
+        else:
+            entry["reservation_remaining_seconds"] = None
+        networks_info.append(entry)
+    status_data["networks"] = networks_info
     status_data.update(health_data)
     return status_data
 

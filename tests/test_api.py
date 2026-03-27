@@ -1015,3 +1015,86 @@ class TestReservationRequiredForOperations:
         )
         assert resp.status_code == 404
 
+
+class TestStatusReservationInfo:
+    """Tests for reservation info in status endpoint (Task 6)."""
+
+    def test_status_networks_include_reservation_remaining(self, client, valid_token, monkeypatch):
+        """Status API includes reservation_remaining_seconds for each device."""
+        cfg = load_config()
+        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+
+        # Before reservation: remaining should be None
+        resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
+        data = resp.json()
+        net_entry = data['networks'][0]
+        assert 'device_id' in net_entry
+        assert net_entry['reservation_remaining_seconds'] is None
+
+    def test_status_reservation_remaining_after_reservation(self, client, valid_token, reservation_id):
+        """After reservation, remaining seconds are positive and decrease."""
+        resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
+        data = resp.json()
+        net_entry = data['networks'][0]
+        assert net_entry['device_id'] == 'wls16'
+        remaining = net_entry['reservation_remaining_seconds']
+        assert isinstance(remaining, int)
+        assert remaining > 3500  # 3600s reservation, allow small margin
+
+
+class TestGetNetworkExpiryAlwaysPresent:
+    """Tests that Get Network always exposes expires_at/expires_in (Task 6)."""
+
+    def test_get_network_off_still_has_expiry(self, client, valid_token, reservation_id, monkeypatch):
+        """When network is off, expires_at and expires_in from reservation are present."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
+        resp = client.get(
+            f'/api/v1/interface/{reservation_id}/network',
+            headers={'Authorization': valid_token}
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data['active'] is False
+        assert data['expires_at'] is not None
+        assert isinstance(data['expires_at'], str)
+        assert len(data['expires_at']) == 19  # "yyyy-mm-dd HH:MM:SS"
+        assert data['expires_in'] is not None
+        assert data['expires_in'] > 3500
+
+    def test_get_network_active_has_expiry(self, client, valid_token, reservation_id, monkeypatch):
+        """When network is active, expires_at and expires_in are present."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+
+        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
+        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
+        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
+        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
+        client.post(
+            f'/api/v1/interface/{reservation_id}/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestAP', 'channel': 6,
+                'encryption': 'wpa2', 'password': 'testpass123',
+                'band': '2.4ghz', 'tx_power_level': 4
+            }
+        )
+
+        resp = client.get(
+            f'/api/v1/interface/{reservation_id}/network',
+            headers={'Authorization': valid_token}
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data['active'] is True
+        assert data['expires_at'] is not None
+        assert data['expires_in'] is not None
+        assert data['expires_in'] > 3500
+
