@@ -133,7 +133,6 @@ def create_app() -> FastAPI:
                     "encryption": "wpa2",
                     "band": "2.4ghz",
                     "tx_power_level": 4,
-                    "timeout": 3600,
                     "internet_enabled": True,
                 }
             

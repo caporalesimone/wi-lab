@@ -77,13 +77,16 @@ class NetworkManager:
         octets[2] = str(third_octet)
         return '.'.join(octets) + '/24'
 
-    def start_network(self, device_id: str, req: NetworkCreateRequest) -> NetworkStatus:
+    def start_network(
+        self, device_id: str, req: NetworkCreateRequest, expires_at_timestamp: float | None = None
+    ) -> NetworkStatus:
         """
         Start an AP network with DHCP server.
         
         Args:
             device_id: Device identifier (interface name)
             req: Network creation parameters (SSID, channel, encryption, etc.)
+            expires_at_timestamp: Expiration epoch (from reservation). If None, use default_timeout.
             
         Returns:
             NetworkStatus with active network details
@@ -104,17 +107,11 @@ class NetworkManager:
             logger.warning(f"hostapd is running for {device_id} but network not in active dict, cleaning up")
             self.stop_network(device_id)
         
-        # Calculate timeout
+        # Expiration: use reservation timestamp if provided, otherwise fallback to default_timeout
         now = time.time()
-        timeout = req.timeout or self.config.default_timeout
+        if expires_at_timestamp is None:
+            expires_at_timestamp = now + self.config.default_timeout
         
-        # Enforce min/max timeout bounds
-        if timeout < self.config.min_timeout:
-            timeout = self.config.min_timeout
-        if timeout > self.config.max_timeout:
-            timeout = self.config.max_timeout
-        
-        expires_at_timestamp = now + timeout
         expires_at_str = datetime.fromtimestamp(expires_at_timestamp).strftime('%Y-%m-%d %H:%M:%S')
         
         # Get subnet (from config or calculated)

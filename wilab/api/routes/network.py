@@ -35,14 +35,13 @@ async def start_network(
         examples={
             "default": {
                 "summary": "Typical network configuration",
-                "description": "2.4GHz WPA2 network with 1-hour timeout and Internet enabled.",
+                "description": "2.4GHz WPA2 network with Internet enabled.",
                 "value": {
                     "ssid": "TestNetwork",
                     "channel": 5,
                     "password": "testpass123",
                     "encryption": "wpa2",
                     "band": "2.4ghz",
-                    "timeout": 3600,
                     "internet_enabled": True,
                 },
             }

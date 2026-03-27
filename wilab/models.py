@@ -8,7 +8,6 @@ class NetworkCreateRequest(BaseModel):
     encryption: str = Field(pattern=r"^(open|wpa|wpa2|wpa3|wpa2-wpa3)$")
     band: str = Field(pattern=r"^(2\.4ghz|5ghz|dual)$")
     hidden: bool = False
-    timeout: Optional[int] = None
     internet_enabled: Optional[bool] = None
     tx_power_level: int = Field(..., ge=1, le=4, description="TX power level (1=low, 4=max)")
 
@@ -22,7 +21,6 @@ class NetworkCreateRequest(BaseModel):
                     "password": "testpass123",
                     "encryption": "wpa2",
                     "band": "2.4ghz",
-                    "timeout": 3600,
                     "internet_enabled": True,
                     "tx_power_level": 4
                 }
