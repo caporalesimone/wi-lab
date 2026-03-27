@@ -1029,7 +1029,8 @@ class TestStatusReservationInfo:
         resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         data = resp.json()
         net_entry = data['networks'][0]
-        assert 'device_id' in net_entry
+        assert 'display_name' in net_entry
+        assert 'interface' in net_entry
         assert net_entry['reservation_remaining_seconds'] is None
 
     def test_status_reservation_remaining_after_reservation(self, client, valid_token, reservation_id):
@@ -1037,7 +1038,8 @@ class TestStatusReservationInfo:
         resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         data = resp.json()
         net_entry = data['networks'][0]
-        assert net_entry['device_id'] == 'wls16'
+        assert net_entry['display_name'] == 'bench-antenna-1'
+        assert net_entry['interface'] == 'wls16'
         remaining = net_entry['reservation_remaining_seconds']
         assert isinstance(remaining, int)
         assert remaining > 3500  # 3600s reservation, allow small margin

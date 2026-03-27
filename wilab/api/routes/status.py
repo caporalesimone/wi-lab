@@ -110,7 +110,7 @@ async def system_status(
     # Add networks with reservation info, checks, and rest of data
     networks_info = []
     for n in config.networks:
-        entry: dict = {"device_id": n.device_id, "interface": n.interface}
+        entry: dict = {"display_name": n.display_name, "interface": n.interface}
         if reservation_mgr.is_device_reserved(n.device_id):
             # Find the reservation for this device to report remaining time
             for r in reservation_mgr.all_active():
