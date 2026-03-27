@@ -91,13 +91,13 @@ networks:
 
 ## Phase 1: API Review
 
-- [ ] Task 1 - Replace Static Config Identity with Internal Device Identity
-- [ ] Task 2 - Introduce Reservation APIs as Mandatory Entry Point
-- [ ] Task 3 - Enforce Reservation Availability Semantics and 4xx with ETA
-- [ ] Task 4 - Make Reservation Timeout the Single Lifetime Source
-- [ ] Task 5 - Propagate Reservation Context to Existing Network APIs
-- [ ] Task 6 - Update Status and Get Network Contracts
-- [ ] Task 7 - Migration and Naming Cleanup
+- [x] Task 1 - Replace Static Config Identity with Internal Device Identity
+- [x] Task 2 - Introduce Reservation APIs as Mandatory Entry Point
+- [x] Task 3 - Enforce Reservation Availability Semantics and 4xx with ETA
+- [x] Task 4 - Make Reservation Timeout the Single Lifetime Source
+- [x] Task 5 - Propagate Reservation Context to Existing Network APIs
+- [x] Task 6 - Update Status and Get Network Contracts
+- [x] Task 7 - Migration and Naming Cleanup
 
 ### Task 1 - Replace Static Config Identity with Internal Device Identity
 
