@@ -61,6 +61,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private capacityTimer: ReturnType<typeof setInterval> | null = null;
   private statusTimer: ReturnType<typeof setInterval> | null = null;
 
+  private static readonly STORAGE_KEY = 'wilab_my_reservations';
+
   /** Keep track of my reservations by interface name */
   private myReservations = new Map<string, ReservationResponse>();
 
@@ -71,9 +73,7 @@ export class AppComponent implements OnInit, OnDestroy {
   ) {}
 
   public ngOnInit(): void {
-    this.loadStatus();
-    // Poll status every 10 seconds
-    this.statusTimer = setInterval(() => this.refreshStatus(), 10000);
+    this.restoreReservations();
   }
 
   public ngOnDestroy(): void {
@@ -94,6 +94,63 @@ export class AppComponent implements OnInit, OnDestroy {
 
   public get hasAnyReservation(): boolean {
     return this.myReservations.size > 0;
+  }
+
+  /** Restore saved reservations from localStorage, validate each against API. */
+  private restoreReservations(): void {
+    const saved = localStorage.getItem(AppComponent.STORAGE_KEY);
+    if (!saved) {
+      this.finishRestore();
+      return;
+    }
+
+    let entries: Array<{ key: string; value: ReservationResponse }> = [];
+    try {
+      entries = JSON.parse(saved);
+    } catch {
+      localStorage.removeItem(AppComponent.STORAGE_KEY);
+      this.finishRestore();
+      return;
+    }
+
+    if (entries.length === 0) {
+      this.finishRestore();
+      return;
+    }
+
+    // Validate each saved reservation against the API
+    let pending = entries.length;
+    for (const entry of entries) {
+      this.apiService.getReservation(entry.value.reservation_id).subscribe({
+        next: (res: ReservationResponse) => {
+          this.myReservations.set(res.interface, res);
+          pending--;
+          if (pending === 0) this.finishRestore();
+        },
+        error: () => {
+          // Expired or invalid — skip
+          pending--;
+          if (pending === 0) this.finishRestore();
+        }
+      });
+    }
+  }
+
+  private finishRestore(): void {
+    this.persistReservations();
+    this.loadStatus();
+    this.statusTimer = setInterval(() => this.refreshStatus(), 10000);
+  }
+
+  private persistReservations(): void {
+    const entries = Array.from(this.myReservations.entries()).map(
+      ([key, value]) => ({ key, value })
+    );
+    if (entries.length > 0) {
+      localStorage.setItem(AppComponent.STORAGE_KEY, JSON.stringify(entries));
+    } else {
+      localStorage.removeItem(AppComponent.STORAGE_KEY);
+    }
   }
 
   public loadStatus(): void {
@@ -155,6 +212,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.apiService.createReservation(req).subscribe({
       next: (res: ReservationResponse) => {
         this.myReservations.set(res.interface, res);
+        this.persistReservations();
         this.refreshStatus();
         this.loading = false;
         this.snackBar.open('Device reserved successfully', 'Close', { duration: 3000 });
@@ -178,6 +236,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   public onReservationReleased(interfaceName: string): void {
     this.myReservations.delete(interfaceName);
+    this.persistReservations();
     this.capacityError = null;
     this.clearCapacityTimer();
     this.refreshStatus();
@@ -213,6 +272,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.apiService.deleteAllReservations().subscribe({
         next: () => {
           this.myReservations.clear();
+          this.persistReservations();
           this.capacityError = null;
           this.clearCapacityTimer();
           this.refreshStatus();
