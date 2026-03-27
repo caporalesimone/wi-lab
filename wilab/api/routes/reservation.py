@@ -24,7 +24,6 @@ class ReservationCreateRequest(BaseModel):
 
 class ReservationResponse(BaseModel):
     reservation_id: str
-    device_id: str
     display_name: str
     interface: str
     expires_at: str = Field(description="Expiration datetime (yyyy-mm-dd HH:MM:SS)")
@@ -73,7 +72,6 @@ async def create_reservation(
 
     return ReservationResponse(
         reservation_id=r.reservation_id,
-        device_id=r.device_id,
         display_name=_display_name_for(r.device_id, config),
         interface=r.device_id,
         expires_at=datetime.fromtimestamp(r.expires_at, tz=timezone.utc).isoformat(),
@@ -103,7 +101,6 @@ async def get_reservation(
 
     return ReservationResponse(
         reservation_id=r.reservation_id,
-        device_id=r.device_id,
         display_name=_display_name_for(r.device_id, config),
         interface=r.device_id,
         expires_at=datetime.fromtimestamp(r.expires_at, tz=timezone.utc).isoformat(),

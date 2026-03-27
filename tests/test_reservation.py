@@ -206,14 +206,12 @@ class TestReservationAPICreate:
         assert resp.status_code == 200
         data = resp.json()
         assert "reservation_id" in data
-        assert "device_id" in data
         assert "display_name" in data
         assert "interface" in data
         assert "expires_at" in data
         assert "expires_in" in data
         assert data["expires_in"] > 0
-        # interface should match device_id
-        assert data["interface"] == data["device_id"]
+        assert "device_id" not in data
 
     def test_create_reservation_requires_auth(self, client):
         resp = client.post(

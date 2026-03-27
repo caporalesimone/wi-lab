@@ -22,7 +22,6 @@ export interface ReservationRequest {
 
 export interface ReservationResponse {
   reservation_id: string;
-  device_id: string;
   display_name: string;
   interface: string;
   expires_at: string;
