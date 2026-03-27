@@ -27,7 +27,7 @@ def main():
     # Load configuration (exits with descriptive error on failure)
     config = load_config(os.environ.get('CONFIG_PATH'))
     logger.info(f"Configuration loaded from {os.environ.get('CONFIG_PATH', 'default')}")
-    logger.info(f"Managed networks: {[n.net_id for n in config.networks]}")
+    logger.info(f"Managed networks: {[n.device_id for n in config.networks]}")
 
     # Log resolved subnets for each network (sequential /24 from dhcp_base_network)
     try:
@@ -37,10 +37,10 @@ def main():
             octets = octet2.copy()
             third = int(octets[2]) + idx
             if third > 255:
-                raise SystemExit(f"Cannot allocate subnet for {net.net_id}: octet overflow")
+                raise SystemExit(f"Cannot allocate subnet for {net.device_id}: octet overflow")
             octets[2] = str(third)
             subnet = '.'.join(octets) + '/24'
-            logger.info(f"Network {net.net_id} on {net.interface} -> subnet {subnet}")
+            logger.info(f"Network {net.device_id} on {net.interface} -> subnet {subnet}")
     except Exception as exc:
         raise SystemExit(f"Failed to compute subnets: {exc}") from exc
     
