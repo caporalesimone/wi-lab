@@ -4,7 +4,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from wilab.reservation import ReservationManager, Reservation
+from wilab.reservation import ReservationManager, Reservation, NoDeviceAvailableError
 from wilab.api import create_app
 from wilab.config import load_config
 from wilab.api import dependencies
@@ -42,8 +42,38 @@ class TestReservationManagerCreate:
     def test_create_reservation_no_device_available(self):
         mgr = ReservationManager(["dev0"])
         mgr.create(3600)
-        with pytest.raises(ValueError, match="No device available"):
+        with pytest.raises(NoDeviceAvailableError, match="No device available"):
             mgr.create(3600)
+
+    def test_no_device_available_has_eta(self):
+        mgr = ReservationManager(["dev0"])
+        mgr.create(120)
+        try:
+            mgr.create(3600)
+            assert False, "Should have raised"
+        except NoDeviceAvailableError as exc:
+            assert exc.next_available_in > 0
+            assert exc.next_available_at > time.time()
+
+    def test_eta_uses_soonest_expiry(self):
+        mgr = ReservationManager(["dev0", "dev1"])
+        mgr.create(600)   # expires in 600s
+        mgr.create(60)    # expires in 60s — soonest
+        try:
+            mgr.create(3600)
+            assert False, "Should have raised"
+        except NoDeviceAvailableError as exc:
+            # ETA should be closest to r2's expiry (60s), not r1 (600s)
+            assert exc.next_available_in <= 65
+
+    def test_simultaneous_expiries_non_negative(self):
+        mgr = ReservationManager(["dev0"])
+        r = mgr.create(1)
+        r.expires_at = time.time()  # about to expire
+        try:
+            mgr.create(3600)
+        except NoDeviceAvailableError as exc:
+            assert exc.next_available_in >= 0
 
     def test_create_reservation_sets_expiry(self):
         mgr = ReservationManager(["dev0"])
@@ -203,6 +233,27 @@ class TestReservationAPICreate:
             json={"duration_seconds": -10},
         )
         assert resp.status_code == 422
+
+    def test_full_capacity_returns_409_with_eta(self, client, valid_token):
+        """All devices reserved returns 409 with next_available_at/in."""
+        # Config has 1 device (wls16), reserve it
+        client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 120},
+        )
+        # Try again — should get 409
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        )
+        assert resp.status_code == 409
+        data = resp.json()["detail"]
+        assert data["error"] == "No device available"
+        assert "next_available_at" in data
+        assert "next_available_in" in data
+        assert data["next_available_in"] > 0
 
 
 class TestReservationAPIGet:

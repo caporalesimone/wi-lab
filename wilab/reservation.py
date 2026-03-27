@@ -17,6 +17,18 @@ logger = logging.getLogger(__name__)
 RESERVATION_TOKEN_BYTES = 16  # 32 hex chars
 
 
+class NoDeviceAvailableError(Exception):
+    """All devices are currently reserved."""
+
+    def __init__(self, next_available_at: float) -> None:
+        self.next_available_at = next_available_at
+        super().__init__("No device available")
+
+    @property
+    def next_available_in(self) -> int:
+        return max(0, int(self.next_available_at - time.time()))
+
+
 @dataclass
 class Reservation:
     """Active device reservation."""
@@ -66,7 +78,8 @@ class ReservationManager:
 
             device_id = self._first_available()
             if device_id is None:
-                raise ValueError("No device available")
+                soonest = self._soonest_expiry()
+                raise NoDeviceAvailableError(soonest)
 
             reservation_id = secrets.token_hex(RESERVATION_TOKEN_BYTES)
             now = time.time()
@@ -142,3 +155,9 @@ class ReservationManager:
         for rid in expired:
             logger.info("Reservation %s expired, purging", rid)
             self._remove(rid)
+
+    def _soonest_expiry(self) -> float:
+        """Return the earliest expires_at among active reservations."""
+        if not self._reservations:
+            return time.time()
+        return min(r.expires_at for r in self._reservations.values())

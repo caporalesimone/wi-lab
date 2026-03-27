@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from ...api.auth import require_token
 from ...api.dependencies import get_reservation_manager
-from ...reservation import ReservationManager
+from ...reservation import ReservationManager, NoDeviceAvailableError
 
 router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
 
@@ -46,8 +46,17 @@ async def create_reservation(
     """Reserve the first available device for the given duration."""
     try:
         r = mgr.create(req.duration_seconds)
-    except ValueError:
-        raise HTTPException(status_code=409, detail="No device available")
+    except NoDeviceAvailableError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "No device available",
+                "next_available_at": datetime.fromtimestamp(
+                    exc.next_available_at
+                ).strftime("%Y-%m-%d %H:%M:%S"),
+                "next_available_in": exc.next_available_in,
+            },
+        )
 
     return ReservationResponse(
         reservation_id=r.reservation_id,
