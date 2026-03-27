@@ -10,6 +10,17 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### ✨ Features
 
+- **Device Reservation System (Phase 1 — Backend)**
+  - Introduced reservation-first workflow: users must acquire a reservation token before any network operation
+  - New endpoints: `POST /api/v1/device-reservation`, `GET /api/v1/device-reservation/{reservation_id}`, `DELETE /api/v1/device-reservation/{reservation_id}`
+  - Reservation allocates the first available device and returns a cryptographically secure `reservation_id` token
+  - When all devices are reserved, `POST` returns `409 Conflict` with `next_available_at` / `next_available_in` ETA fields
+  - Reservation `duration_seconds` is now the single lifetime source — the old per-network `timeout` field has been removed
+  - Network auto-stops and token is invalidated when reservation expires
+  - All network, internet, and txpower routes now require `{reservation_id}` path parameter instead of `{device_id}`
+  - Status API includes `reservation_remaining_seconds` per device (null when unreserved)
+  - `GET /api/v1/network/{reservation_id}` always exposes `expires_at` / `expires_in` from reservation, even when WiFi is off
+
 - **Shared Installation State Contract Across Stages**
   - Added bootstrap support for a shared setup state contract in installer orchestration
   - Persisted state in install stages (`01-venv`, `02-systemd`, `03-enable`, `04-verify`, `05-deploy-frontend`)
@@ -17,13 +28,28 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🔧 Refactoring & Infrastructure
 
+- **Device Identity Redesign**
+  - Removed static `net_id` from configuration; replaced with `device_id` derived from the physical interface name
+  - `display_name` is now a required field in network configuration
+  - Added duplicate-interface validation at config load time
+  - Internal lookups use `device_id` consistently; client-facing operations are keyed by `reservation_id`
+
 - **Preconditions State Persistence Hardening**
   - System precondition state keys are now persisted explicitly
   - Shared precondition state propagation added to Docker, config, tools, and network precheck scripts
   - Improved resilience of tools precheck flow when required packages are missing
 
+### 🧪 Tests
+
+- Added `tests/test_reservation.py` with 33 tests covering reservation lifecycle, concurrency, expiry, ETA computation, and API integration
+- Extended `tests/test_api.py` with reservation-required operation tests, status reservation info, get-network expiry assertions, and OpenAPI naming contract tests
+- Updated `tests/test_wifi.py` and `tests/test_config.py` for new config schema and reservation-driven timeout
+- Total test count increased from 151 to 196
+
 ### 📝 Documentation
 
+- Updated `docs/readme-dev.md` with new config example (`interface` + `display_name`, no `net_id`)
+- Updated `docs/networking.md`: replaced "Secure Timeout Configuration" with "Reservation-Driven Timeout" section
 - Updated installation and developer documentation to reflect the shared state contract and stage-to-stage persistence behavior
 
 ---
