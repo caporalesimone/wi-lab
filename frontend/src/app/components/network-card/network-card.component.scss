@@ -9,6 +9,16 @@
   &.active-offline {
     border-left: 4px solid #fbc02d;
   }
+
+  &.card-available {
+    border-left: 4px solid #90caf9;
+    opacity: 0.8;
+  }
+
+  &.card-occupied {
+    border-left: 4px solid #bdbdbd;
+    opacity: 0.55;
+  }
 }
 
 mat-card-header {
@@ -235,6 +245,49 @@ button {
 
   mat-icon {
     margin-right: 4px;
+  }
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 12px;
+  white-space: nowrap;
+
+  &.available-chip {
+    background-color: #e3f2fd;
+    color: #1565c0;
+  }
+
+  &.occupied-chip {
+    background-color: #f5f5f5;
+    color: #757575;
+    font-family: 'Roboto Mono', monospace;
+  }
+}
+
+.placeholder-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  color: #1565c0;
+
+  mat-icon {
+    font-size: 40px;
+    width: 40px;
+    height: 40px;
+    margin-bottom: 8px;
+  }
+
+  p { margin: 0; }
+
+  &.occupied {
+    color: #757575;
   }
 }
 

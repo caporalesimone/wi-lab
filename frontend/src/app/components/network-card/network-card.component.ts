@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -10,9 +10,10 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { interval, Subscription } from 'rxjs';
 import { WilabApiService } from '../../services/wilab-api.service';
-import { ClientInfo, NetworkStatus, ReservationResponse } from '../../models/network.models';
+import { ClientInfo, NetworkStatus } from '../../models/network.models';
 import { environment } from '../../../environments/environment';
 import { NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
+import { InterfaceSlot } from '../../app.component';
 
 @Component({
   selector: 'app-network-card',
@@ -30,9 +31,8 @@ import { NetworkFormDialogComponent } from '../network-form-dialog/network-form-
   templateUrl: './network-card.component.html',
   styleUrl: './network-card.component.scss'
 })
-export class NetworkCardComponent implements OnInit, OnDestroy {
-  @Input() reservationId!: string;
-  @Input() reservation!: ReservationResponse;
+export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
+  @Input() slot!: InterfaceSlot;
   @Output() released = new EventEmitter<void>();
 
   status: NetworkStatus | null = null;
@@ -41,10 +41,26 @@ export class NetworkCardComponent implements OnInit, OnDestroy {
   countdownSubscription?: Subscription;
   clientsCount = 0;
 
-  /** Remaining seconds from reservation (always visible) */
+  /** Remaining seconds from reservation (always visible when mine) */
   remainingSeconds = 0;
   /** Total reservation duration for progress calculation */
   totalDuration = 0;
+
+  public get isMine(): boolean {
+    return this.slot.myReservation !== null;
+  }
+
+  public get isOccupied(): boolean {
+    return !this.isMine && this.slot.otherReservationSeconds !== null;
+  }
+
+  public get isAvailable(): boolean {
+    return !this.isMine && this.slot.otherReservationSeconds === null;
+  }
+
+  public get reservationId(): string {
+    return this.slot.myReservation?.reservation_id ?? '';
+  }
 
   public get clients(): ClientInfo[] {
     return this.status?.clients ?? [];
@@ -63,13 +79,6 @@ export class NetworkCardComponent implements OnInit, OnDestroy {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   }
 
-  public getTxPowerLabel(level?: number): string {
-    if (level === undefined || level === null) return 'Unknown';
-    if (level === 1) return 'Level 1 (Min)';
-    if (level === 4) return 'Level 4 (Max)';
-    return `Level ${level}`;
-  }
-
   constructor(
     private wilabApiService: WilabApiService,
     private dialog: MatDialog,
@@ -77,19 +86,47 @@ export class NetworkCardComponent implements OnInit, OnDestroy {
   ) {}
 
   public ngOnInit(): void {
-    this.totalDuration = this.reservation.expires_in;
-    this.remainingSeconds = this.reservation.expires_in;
+    if (this.isMine) {
+      this.startOwned();
+    }
+  }
+
+  public ngOnChanges(changes: SimpleChanges): void {
+    if (changes['slot'] && !changes['slot'].firstChange) {
+      const wasMine = changes['slot'].previousValue?.myReservation !== null;
+      if (this.isMine && !wasMine) {
+        // Slot just became mine
+        this.startOwned();
+      } else if (!this.isMine && wasMine) {
+        // Slot stopped being mine
+        this.stopOwned();
+      }
+    }
+  }
+
+  public ngOnDestroy(): void {
+    this.stopOwned();
+  }
+
+  private startOwned(): void {
+    if (!this.slot.myReservation) return;
+    this.totalDuration = this.slot.myReservation.expires_in;
+    this.remainingSeconds = this.slot.myReservation.expires_in;
     this.checkStatus(false);
     this.startPolling();
     this.startCountdown();
   }
 
-  public ngOnDestroy(): void {
+  private stopOwned(): void {
     this.stopPolling();
     this.stopCountdown();
+    this.status = null;
+    this.remainingSeconds = 0;
+    this.totalDuration = 0;
   }
 
   private startPolling(): void {
+    this.stopPolling();
     this.pollingSubscription = interval(environment.pollingInterval).subscribe(() => {
       this.checkStatus(false);
     });
@@ -100,12 +137,12 @@ export class NetworkCardComponent implements OnInit, OnDestroy {
   }
 
   private startCountdown(): void {
+    this.stopCountdown();
     this.countdownSubscription = interval(1000).subscribe(() => {
       if (this.remainingSeconds > 0) {
         this.remainingSeconds--;
       }
       if (this.remainingSeconds <= 0) {
-        // Reservation expired — auto-release
         this.released.emit();
       }
     });
@@ -116,13 +153,13 @@ export class NetworkCardComponent implements OnInit, OnDestroy {
   }
 
   public checkStatus(showNotification: boolean = true): void {
+    if (!this.isMine) return;
     if (showNotification) this.loading = true;
 
     this.wilabApiService.getNetworkStatus(this.reservationId).subscribe({
       next: (networkStatus) => {
         this.status = networkStatus;
         this.clientsCount = networkStatus.clients_connected || 0;
-        // Resync countdown with server value
         if (networkStatus.expires_in !== undefined && networkStatus.expires_in !== null) {
           this.remainingSeconds = networkStatus.expires_in;
         }
@@ -134,7 +171,6 @@ export class NetworkCardComponent implements OnInit, OnDestroy {
       error: (err) => {
         if (showNotification) this.loading = false;
         if (err.message?.includes('404')) {
-          // Reservation expired or deleted on backend
           this.released.emit();
         } else if (showNotification) {
           this.snackBar.open(`Error: ${err.message}`, 'Close', {
@@ -233,7 +269,6 @@ export class NetworkCardComponent implements OnInit, OnDestroy {
         this.released.emit();
       },
       error: (err) => {
-        // Even if backend returns 404 (already expired), remove card
         if (err.message?.includes('404')) {
           this.released.emit();
         } else {

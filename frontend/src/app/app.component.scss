@@ -28,57 +28,38 @@
   color: #d32f2f;
 }
 
-.empty-state {
+.summary-bar {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  min-height: 400px;
-  gap: 12px;
-  text-align: center;
-  color: rgba(0, 0, 0, 0.6);
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  flex-wrap: wrap;
 
-  .empty-icon {
-    font-size: 64px;
-    width: 64px;
-    height: 64px;
-    color: rgba(0, 0, 0, 0.25);
-  }
-
-  h2 {
-    margin: 0;
+  .summary-label {
+    font-size: 1rem;
+    font-weight: 500;
     color: rgba(0, 0, 0, 0.7);
-  }
-
-  p {
-    margin: 0;
   }
 }
 
 .reserve-button {
-  margin-top: 16px;
+  margin-left: auto;
   font-size: 1rem;
   padding: 8px 24px;
 }
 
 .capacity-error {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  margin-top: 8px;
-  padding: 16px;
+  gap: 8px;
+  padding: 8px 16px;
   border-radius: 8px;
   background-color: #fff3e0;
   color: #e65100;
-
-  p {
-    margin: 0;
-  }
-
-  .eta {
-    font-size: 0.9rem;
-  }
+  font-size: 0.9rem;
 }
 
 .networks-container {

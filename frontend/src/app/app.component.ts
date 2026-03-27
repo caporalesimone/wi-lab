@@ -10,8 +10,23 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { NetworkCardComponent } from './components/network-card/network-card.component';
 import { ReservationDialogComponent } from './components/reservation-dialog/reservation-dialog.component';
 import { WilabApiService } from './services/wilab-api.service';
-import { ReservationRequest, ReservationResponse, NoDeviceAvailableError } from './models/network.models';
+import {
+  InterfaceInfo,
+  ReservationRequest,
+  ReservationResponse,
+  NoDeviceAvailableError
+} from './models/network.models';
 import { HttpErrorResponse } from '@angular/common/http';
+
+/** Unified view-model for each interface card. */
+export interface InterfaceSlot {
+  display_name: string;
+  interface: string;
+  /** null = available, number = reserved by someone else */
+  otherReservationSeconds: number | null;
+  /** Set when this client owns the reservation */
+  myReservation: ReservationResponse | null;
+}
 
 @Component({
   selector: 'app-root',
@@ -36,15 +51,17 @@ export class AppComponent implements OnInit, OnDestroy {
   loading = true;
   error: string | null = null;
 
-  /** Active reservations (empty = show empty state) */
-  reservations: ReservationResponse[] = [];
+  /** All interface slots (one per system interface) */
+  slots: InterfaceSlot[] = [];
 
   /** Error info when all devices are busy */
   capacityError: NoDeviceAvailableError | null = null;
-
-  /** Live countdown seconds for capacity error */
   capacityCountdown = 0;
   private capacityTimer: ReturnType<typeof setInterval> | null = null;
+  private statusTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Keep track of my reservations by interface name */
+  private myReservations = new Map<string, ReservationResponse>();
 
   constructor(
     private apiService: WilabApiService,
@@ -54,10 +71,111 @@ export class AppComponent implements OnInit, OnDestroy {
 
   public ngOnInit(): void {
     this.loadStatus();
+    // Poll status every 10 seconds
+    this.statusTimer = setInterval(() => this.refreshStatus(), 10000);
   }
 
   public ngOnDestroy(): void {
     this.clearCapacityTimer();
+    if (this.statusTimer !== null) {
+      clearInterval(this.statusTimer);
+      this.statusTimer = null;
+    }
+  }
+
+  public get availableCount(): number {
+    return this.slots.filter(s => s.myReservation === null && s.otherReservationSeconds === null).length;
+  }
+
+  public get hasAnyReservation(): boolean {
+    return this.myReservations.size > 0;
+  }
+
+  public loadStatus(): void {
+    this.loading = true;
+    this.error = null;
+    this.apiService.getStatus().subscribe({
+      next: (response) => {
+        this.version = response.version;
+        this.title = `Wi-Lab Network Management - ${this.version}`;
+        this.buildSlots(response.networks);
+        this.loading = false;
+      },
+      error: (err) => {
+        this.error = `Failed to load status: ${err.message}`;
+        this.loading = false;
+      }
+    });
+  }
+
+  /** Silent refresh (no loading spinner). */
+  private refreshStatus(): void {
+    this.apiService.getStatus().subscribe({
+      next: (response) => {
+        this.buildSlots(response.networks);
+      }
+    });
+  }
+
+  private buildSlots(networks: InterfaceInfo[]): void {
+    this.slots = networks.map(n => {
+      const myRes = this.myReservations.get(n.interface) ?? null;
+      return {
+        display_name: n.display_name,
+        interface: n.interface,
+        otherReservationSeconds: myRes ? null : n.reservation_remaining_seconds,
+        myReservation: myRes,
+      };
+    });
+  }
+
+  public openReservationDialog(): void {
+    this.capacityError = null;
+    this.clearCapacityTimer();
+    const dialogRef = this.dialog.open(ReservationDialogComponent, {
+      width: '450px'
+    });
+
+    dialogRef.afterClosed().subscribe((result: ReservationRequest | undefined) => {
+      if (result) {
+        this.createReservation(result);
+      }
+    });
+  }
+
+  private createReservation(req: ReservationRequest): void {
+    this.loading = true;
+    this.capacityError = null;
+    this.clearCapacityTimer();
+    this.apiService.createReservation(req).subscribe({
+      next: (res: ReservationResponse) => {
+        this.myReservations.set(res.interface, res);
+        this.refreshStatus();
+        this.loading = false;
+        this.snackBar.open('Device reserved successfully', 'Close', { duration: 3000 });
+      },
+      error: (err) => {
+        this.loading = false;
+        const raw = (err as { originalError?: HttpErrorResponse }).originalError;
+        const detail = raw?.error?.detail;
+        if (raw && raw.status === 409 && detail?.next_available_in !== undefined) {
+          this.capacityError = detail as NoDeviceAvailableError;
+          this.startCapacityTimer(detail.next_available_in);
+        } else {
+          this.snackBar.open(`Reservation failed: ${err.message}`, 'Close', {
+            duration: 5000,
+            panelClass: ['error-snackbar']
+          });
+        }
+      }
+    });
+  }
+
+  public onReservationReleased(interfaceName: string): void {
+    this.myReservations.delete(interfaceName);
+    this.capacityError = null;
+    this.clearCapacityTimer();
+    this.refreshStatus();
   }
 
   private startCapacityTimer(seconds: number): void {
@@ -77,67 +195,5 @@ export class AppComponent implements OnInit, OnDestroy {
       clearInterval(this.capacityTimer);
       this.capacityTimer = null;
     }
-  }
-
-  public loadStatus(): void {
-    this.loading = true;
-    this.error = null;
-    this.apiService.getStatus().subscribe({
-      next: (response) => {
-        this.version = response.version;
-        this.title = `Wi-Lab Network Management - ${this.version}`;
-        this.loading = false;
-      },
-      error: (err) => {
-        this.error = `Failed to load status: ${err.message}`;
-        this.loading = false;
-      }
-    });
-  }
-
-  public openReservationDialog(): void {
-    this.capacityError = null;
-    const dialogRef = this.dialog.open(ReservationDialogComponent, {
-      width: '450px'
-    });
-
-    dialogRef.afterClosed().subscribe((result: ReservationRequest | undefined) => {
-      if (result) {
-        this.createReservation(result);
-      }
-    });
-  }
-
-  private createReservation(req: ReservationRequest): void {
-    this.loading = true;
-    this.capacityError = null;
-    this.apiService.createReservation(req).subscribe({
-      next: (res: ReservationResponse) => {
-        this.reservations = [...this.reservations, res];
-        this.loading = false;
-        this.snackBar.open('Device reserved successfully', 'Close', { duration: 3000 });
-      },
-      error: (err) => {
-        this.loading = false;
-        // Check for 409 capacity error
-        const raw = (err as { originalError?: HttpErrorResponse }).originalError;
-        const detail = raw?.error?.detail;
-        if (raw && raw.status === 409 && detail?.next_available_in !== undefined) {
-          this.capacityError = detail as NoDeviceAvailableError;
-          this.startCapacityTimer(detail.next_available_in);
-        } else {
-          this.snackBar.open(`Reservation failed: ${err.message}`, 'Close', {
-            duration: 5000,
-            panelClass: ['error-snackbar']
-          });
-        }
-      }
-    });
-  }
-
-  public onReservationReleased(reservationId: string): void {
-    this.reservations = this.reservations.filter(r => r.reservation_id !== reservationId);
-    this.capacityError = null;
-    this.clearCapacityTimer();
   }
 }

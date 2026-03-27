@@ -24,45 +24,33 @@
     <!-- Main content (not loading, no error) -->
     <div *ngIf="!loading && !error">
 
-      <!-- Empty state: no reservations active -->
-      <div *ngIf="reservations.length === 0" class="empty-state">
-        <mat-icon class="empty-icon">devices</mat-icon>
-        <h2>No device reserved</h2>
-        <p>Reserve a device to start using Wi-Lab.</p>
+      <!-- Summary bar -->
+      <div class="summary-bar">
+        <span class="summary-label">
+          {{ slots.length }} interface{{ slots.length !== 1 ? 's' : '' }} &mdash;
+          {{ availableCount }} available
+        </span>
 
         <!-- Capacity error message -->
         <div *ngIf="capacityError" class="capacity-error">
           <mat-icon color="warn">schedule</mat-icon>
-          <p>All devices are currently reserved.</p>
-          <p class="eta">Next available in <strong>{{ capacityCountdown }}</strong> seconds</p>
+          <span>All devices busy. Next available in <strong>{{ capacityCountdown }}</strong>s</span>
         </div>
 
-        <button mat-raised-button color="primary" class="reserve-button" (click)="openReservationDialog()">
+        <button mat-raised-button color="primary" class="reserve-button" (click)="openReservationDialog()"
+          [disabled]="availableCount === 0">
           <mat-icon>lock_clock</mat-icon>
           Reserve Device
         </button>
       </div>
 
-      <!-- Network cards + reserve more button -->
-      <div *ngIf="reservations.length > 0" class="networks-container">
+      <!-- All interface cards -->
+      <div class="networks-container">
         <app-network-card
-          *ngFor="let res of reservations"
-          [reservationId]="res.reservation_id"
-          [reservation]="res"
-          (released)="onReservationReleased(res.reservation_id)">
+          *ngFor="let slot of slots"
+          [slot]="slot"
+          (released)="onReservationReleased(slot.interface)">
         </app-network-card>
-
-        <!-- Capacity error message (inline) -->
-        <div *ngIf="capacityError" class="capacity-error">
-          <mat-icon color="warn">schedule</mat-icon>
-          <p>All devices are currently reserved.</p>
-          <p class="eta">Next available in <strong>{{ capacityCountdown }}</strong> seconds</p>
-        </div>
-
-        <button mat-raised-button color="primary" class="reserve-button" (click)="openReservationDialog()">
-          <mat-icon>lock_clock</mat-icon>
-          Reserve Another Device
-        </button>
       </div>
 
     </div>
