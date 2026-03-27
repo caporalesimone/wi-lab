@@ -24,7 +24,7 @@ class TestReservationManagerCreate:
         assert isinstance(r, Reservation)
         assert r.device_id == "dev0"
         assert r.duration_seconds == 3600
-        assert len(r.reservation_id) == 32  # 16 bytes hex
+        assert len(r.reservation_id) == 8  # 4 bytes hex
 
     def test_create_reservation_assigns_first_available(self):
         mgr = ReservationManager(["dev0", "dev1"])

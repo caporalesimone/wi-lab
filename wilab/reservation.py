@@ -14,7 +14,7 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-RESERVATION_TOKEN_BYTES = 16  # 32 hex chars
+RESERVATION_TOKEN_BYTES = 4  # 8 hex chars
 
 
 class NoDeviceAvailableError(Exception):
