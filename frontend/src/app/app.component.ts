@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatCardModule } from '@angular/material/card';
@@ -30,7 +30,7 @@ import { HttpErrorResponse } from '@angular/common/http';
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
   title = 'Wi-Lab Network Management';
   version: string | null = null;
   loading = true;
@@ -42,6 +42,10 @@ export class AppComponent implements OnInit {
   /** Error info when all devices are busy */
   capacityError: NoDeviceAvailableError | null = null;
 
+  /** Live countdown seconds for capacity error */
+  capacityCountdown = 0;
+  private capacityTimer: ReturnType<typeof setInterval> | null = null;
+
   constructor(
     private apiService: WilabApiService,
     private dialog: MatDialog,
@@ -50,6 +54,29 @@ export class AppComponent implements OnInit {
 
   public ngOnInit(): void {
     this.loadStatus();
+  }
+
+  public ngOnDestroy(): void {
+    this.clearCapacityTimer();
+  }
+
+  private startCapacityTimer(seconds: number): void {
+    this.clearCapacityTimer();
+    this.capacityCountdown = Math.max(0, Math.round(seconds));
+    this.capacityTimer = setInterval(() => {
+      this.capacityCountdown--;
+      if (this.capacityCountdown <= 0) {
+        this.clearCapacityTimer();
+        this.capacityError = null;
+      }
+    }, 1000);
+  }
+
+  private clearCapacityTimer(): void {
+    if (this.capacityTimer !== null) {
+      clearInterval(this.capacityTimer);
+      this.capacityTimer = null;
+    }
   }
 
   public loadStatus(): void {
@@ -97,6 +124,7 @@ export class AppComponent implements OnInit {
         const detail = raw?.error?.detail;
         if (raw && raw.status === 409 && detail?.next_available_in !== undefined) {
           this.capacityError = detail as NoDeviceAvailableError;
+          this.startCapacityTimer(detail.next_available_in);
         } else {
           this.snackBar.open(`Reservation failed: ${err.message}`, 'Close', {
             duration: 5000,
@@ -110,5 +138,6 @@ export class AppComponent implements OnInit {
   public onReservationReleased(reservationId: string): void {
     this.reservations = this.reservations.filter(r => r.reservation_id !== reservationId);
     this.capacityError = null;
+    this.clearCapacityTimer();
   }
 }

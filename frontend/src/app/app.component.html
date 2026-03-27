@@ -34,7 +34,7 @@
         <div *ngIf="capacityError" class="capacity-error">
           <mat-icon color="warn">schedule</mat-icon>
           <p>All devices are currently reserved.</p>
-          <p class="eta">Next available in <strong>{{ capacityError.next_available_in }}</strong> seconds</p>
+          <p class="eta">Next available in <strong>{{ capacityCountdown }}</strong> seconds</p>
         </div>
 
         <button mat-raised-button color="primary" class="reserve-button" (click)="openReservationDialog()">
@@ -56,7 +56,7 @@
         <div *ngIf="capacityError" class="capacity-error">
           <mat-icon color="warn">schedule</mat-icon>
           <p>All devices are currently reserved.</p>
-          <p class="eta">Next available in <strong>{{ capacityError.next_available_in }}</strong> seconds</p>
+          <p class="eta">Next available in <strong>{{ capacityCountdown }}</strong> seconds</p>
         </div>
 
         <button mat-raised-button color="primary" class="reserve-button" (click)="openReservationDialog()">
