@@ -135,6 +135,7 @@ async def system_status(
 async def debug_info(
     manager: NetworkManager = Depends(get_manager),
     config=Depends(get_config),
+    reservation_mgr: ReservationManager = Depends(get_reservation_manager),
     _: bool = Depends(require_token),
 ):
     """
@@ -229,7 +230,15 @@ async def debug_info(
                 "reachable": upstream_reachable,
             },
             "managed": [
-                {"display_name": n.display_name, "interface": n.interface}
+                {
+                    "display_name": n.display_name,
+                    "interface": n.interface,
+                    "reservation_id": next(
+                        (r.reservation_id for r in reservation_mgr.all_active()
+                         if r.device_id == n.device_id),
+                        None,
+                    ),
+                }
                 for n in config.networks
             ],
         },
