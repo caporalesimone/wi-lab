@@ -15,6 +15,7 @@ from .status import router as health_router
 from .network import router as network_router
 from .internet import router as internet_router
 from .txpower import router as txpower_router
+from .reservation import router as reservation_router
 
 # Root router at /api/v1 prefix
 router = APIRouter(prefix="/api/v1")
@@ -24,3 +25,4 @@ router.include_router(health_router)
 router.include_router(network_router)
 router.include_router(internet_router)
 router.include_router(txpower_router)
+router.include_router(reservation_router)

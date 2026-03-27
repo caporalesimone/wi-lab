@@ -54,11 +54,12 @@ class TestNetworkEntryValidation:
     def test_valid_network_entry(self):
         """Test creating a valid NetworkEntry."""
         entry = NetworkEntry(
-            interface='wlan0'
+            interface='wlan0',
+            display_name='test-device'
         )
         assert entry.interface == 'wlan0'
         assert entry.device_id == 'wlan0'
-        assert entry.display_name is None
+        assert entry.display_name == 'test-device'
     
     def test_network_entry_with_display_name(self):
         """Test creating a NetworkEntry with display_name."""
@@ -69,14 +70,19 @@ class TestNetworkEntryValidation:
         assert entry.device_id == 'wlan0'
         assert entry.display_name == 'bench-antenna-1'
     
+    def test_network_entry_missing_display_name(self):
+        """Test that missing display_name raises validation error."""
+        with pytest.raises(ValueError):
+            NetworkEntry(interface='wlan0')
+    
     def test_device_id_equals_interface(self):
         """Test that device_id is always equal to interface name."""
-        entry = NetworkEntry(interface='wlx782051245264')
+        entry = NetworkEntry(interface='wlx782051245264', display_name='antenna')
         assert entry.device_id == 'wlx782051245264'
     
     def test_config_without_net_id_is_valid(self):
         """Test that configuration without net_id is valid (new format)."""
-        entry = NetworkEntry(interface='wlan0')
+        entry = NetworkEntry(interface='wlan0', display_name='test')
         assert entry.interface == 'wlan0'
     
     def test_each_interface_has_unique_device_id(self):

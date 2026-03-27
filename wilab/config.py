@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 class NetworkEntry(BaseModel):
     interface: str
-    display_name: Optional[str] = None
+    display_name: str
 
     @property
     def device_id(self) -> str:

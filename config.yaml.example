@@ -114,7 +114,7 @@ internet_enabled_by_default: true
 #                Names: wlan0, wlx782051245264, etc.
 #                The interface name is also used as the internal device_id.
 #
-#   - display_name: (optional) Human-readable label for the device
+#   - display_name: Human-readable label for the device (required)
 #                  Example: "bench-antenna-1"
 #
 # At runtime, WiFi parameters (SSID, channel, band, encryption, password, hidden, 
