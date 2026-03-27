@@ -558,7 +558,7 @@ class TestNetworkGetEndpoint:
         monkeypatch.setattr(
             manager,
             'list_clients',
-            lambda _net_id: [
+            lambda _device_id: [
                 ClientInfo(mac='aa:bb:cc:dd:ee:01', ip='192.168.10.10'),
                 ClientInfo(mac='aa:bb:cc:dd:ee:02', ip='192.168.10.11'),
             ]
@@ -744,8 +744,8 @@ class TestTxPowerPostEndpoint:
         monkeypatch.setattr(
             manager,
             'set_tx_power_level',
-            lambda net_id, level: {
-                'device_id': net_id,
+            lambda device_id, level: {
+                'device_id': device_id,
                 'interface': 'wlx-test0',
                 'max_dbm': 20.0,
                 'levels_dbm': {'1': 5.0, '2': 10.0, '3': 15.0, '4': 20.0},
@@ -776,7 +776,7 @@ class TestTxPowerPostEndpoint:
         cfg = load_config()
         manager = NetworkManager(cfg)
 
-        def fake_set_tx_power_level(_net_id, _level):
+        def fake_set_tx_power_level(_device_id, _level):
             raise TxPowerMismatchError('Interface does not support dynamic power change.')
 
         monkeypatch.setattr(manager, 'set_tx_power_level', fake_set_tx_power_level)
@@ -1098,3 +1098,23 @@ class TestGetNetworkExpiryAlwaysPresent:
         assert data['expires_in'] is not None
         assert data['expires_in'] > 3500
 
+
+class TestNamingCleanup:
+    """Tests for Task 7 naming conventions and OpenAPI contract."""
+
+    def test_openapi_paths_use_reservation_id(self, client, valid_token):
+        """OpenAPI paths use {reservation_id}, not {device_id}."""
+        resp = client.get('/openapi.json', headers={'Authorization': valid_token})
+        schema = resp.json()
+        paths = list(schema['paths'].keys())
+        for p in paths:
+            if '/interface/' in p:
+                assert '{reservation_id}' in p, f"Path {p} should use {{reservation_id}}"
+                assert '{device_id}' not in p, f"Path {p} should not use {{device_id}}"
+
+    def test_static_config_net_id_not_used_as_key(self):
+        """Config does not expose net_id as operational key."""
+        cfg = load_config()
+        for net in cfg.networks:
+            assert not hasattr(net, 'net_id') or net.device_id == net.interface
+            assert net.device_id == net.interface

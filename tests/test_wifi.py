@@ -65,8 +65,8 @@ class TestSubnetResolution:
         subnet = mgr._get_subnet('wls16')
         assert subnet == '192.168.120.0/24'
     
-    def test_get_subnet_unknown_net_id(self):
-        """Test that unknown net_id raises ValueError."""
+    def test_get_subnet_unknown_device_id(self):
+        """Test that unknown device_id raises ValueError."""
         cfg = load_config()
         mgr = NetworkManager(cfg)
         with pytest.raises(ValueError, match="Unknown device_id"):
@@ -298,7 +298,7 @@ class TestInternetControl:
             return {'gateway': '192.168.10.1'}
         
         def mock_nat_enable(interface, device_id):
-            pass  # Mock NAT enable - now requires net_id parameter
+            pass  # Mock NAT enable
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
         monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: {})
@@ -327,10 +327,10 @@ class TestInternetControl:
             return {'gateway': '192.168.10.1'}
         
         def mock_nat_enable(interface, device_id):
-            pass  # Mock NAT enable - now requires net_id parameter
+            pass  # Mock NAT enable
         
         def mock_nat_disable(interface, device_id):
-            pass  # Mock NAT disable - now requires net_id parameter
+            pass  # Mock NAT disable
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
         monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: {})

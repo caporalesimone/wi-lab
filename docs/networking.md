@@ -220,16 +220,19 @@ cp config.yaml config.yaml.backup
 sudo cp /etc/systemd/system/wi-lab.service /etc/systemd/system/wi-lab.service.backup
 ```
 
-### Secure Timeout Configuration
+### Reservation-Driven Timeout
 
-Networks auto-expire and clean up after their configured timeout:
+Network lifetime is controlled by device reservations. When a reservation
+expires, the associated network is automatically stopped and cleaned up:
 
 ```yaml
 # In config.yaml
-default_timeout: 3600  # 1 hour - network auto-stops
-max_timeout: 86400     # 24 hours - maximum limit
-min_timeout: 60        # 1 minute - minimum limit
+default_timeout: 3600  # 1 hour - fallback if no reservation expiry is set
 ```
+
+Users must first reserve a device via the reservation API which specifies
+`duration_seconds`. The reservation expiry becomes the authoritative
+network lifetime.
 
 This ensures networks don't run indefinitely and prevents orphaned rules.
 

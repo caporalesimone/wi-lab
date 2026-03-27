@@ -84,8 +84,8 @@ dns_server: "192.168.10.1"
 internet_enabled_by_default: true
 
 networks:
-  - net_id: "ap-01"
-    interface: "wlx782051245264"  # Your WiFi interface
+  - interface: "wlx782051245264"  # Your WiFi interface
+    display_name: "bench-antenna-1"
 ```
 
 ---
