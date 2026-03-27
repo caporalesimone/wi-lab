@@ -9,6 +9,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { NetworkCardComponent } from './components/network-card/network-card.component';
 import { ReservationDialogComponent } from './components/reservation-dialog/reservation-dialog.component';
+import { ConfirmReleaseAllDialogComponent } from './components/confirm-release-all-dialog/confirm-release-all-dialog.component';
 import { WilabApiService } from './services/wilab-api.service';
 import {
   InterfaceInfo,
@@ -85,6 +86,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   public get availableCount(): number {
     return this.slots.filter(s => s.myReservation === null && s.otherReservationSeconds === null).length;
+  }
+
+  public get reservedCount(): number {
+    return this.slots.length - this.availableCount;
   }
 
   public get hasAnyReservation(): boolean {
@@ -195,5 +200,33 @@ export class AppComponent implements OnInit, OnDestroy {
       clearInterval(this.capacityTimer);
       this.capacityTimer = null;
     }
+  }
+
+  public releaseAll(): void {
+    const dialogRef = this.dialog.open(ConfirmReleaseAllDialogComponent, {
+      width: '450px'
+    });
+
+    dialogRef.afterClosed().subscribe((confirmed: boolean) => {
+      if (!confirmed) return;
+      this.loading = true;
+      this.apiService.deleteAllReservations().subscribe({
+        next: () => {
+          this.myReservations.clear();
+          this.capacityError = null;
+          this.clearCapacityTimer();
+          this.refreshStatus();
+          this.loading = false;
+          this.snackBar.open('All reservations released', 'Close', { duration: 3000 });
+        },
+        error: (err) => {
+          this.loading = false;
+          this.snackBar.open(`Failed to release all: ${err.message}`, 'Close', {
+            duration: 5000,
+            panelClass: ['error-snackbar']
+          });
+        }
+      });
+    });
   }
 }

@@ -42,6 +42,14 @@
           <mat-icon>lock_clock</mat-icon>
           Reserve Device
         </button>
+
+        <button mat-raised-button class="release-all-button"
+          [color]="reservedCount > 0 ? 'warn' : undefined"
+          [disabled]="reservedCount === 0"
+          (click)="releaseAll()">
+          <mat-icon>delete_sweep</mat-icon>
+          Release All
+        </button>
       </div>
 
       <!-- All interface cards -->

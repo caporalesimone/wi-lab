@@ -67,6 +67,15 @@ export class WilabApiService {
     );
   }
 
+  public deleteAllReservations(): Observable<object> {
+    return this.http.delete(
+      `${this.apiUrl}/device-reservation`,
+      { headers: this.getHeaders() }
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
   // ---- Network (keyed by reservation_id) ----
 
   public getNetworkStatus(reservationId: string): Observable<NetworkStatus> {
