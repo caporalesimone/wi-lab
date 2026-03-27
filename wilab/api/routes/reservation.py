@@ -16,7 +16,8 @@ router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
 
 class ReservationCreateRequest(BaseModel):
     duration_seconds: int = Field(
-        ..., gt=0, description="Reservation duration in seconds"
+        ..., gt=0, description="Reservation duration in seconds",
+        json_schema_extra={"example": 3600}
     )
 
 
