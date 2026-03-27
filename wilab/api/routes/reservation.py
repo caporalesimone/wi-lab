@@ -1,6 +1,6 @@
 """Device reservation endpoints (create, query, release)."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
@@ -62,7 +62,7 @@ async def create_reservation(
     return ReservationResponse(
         reservation_id=r.reservation_id,
         device_id=r.device_id,
-        expires_at=datetime.fromtimestamp(r.expires_at).strftime("%Y-%m-%d %H:%M:%S"),
+        expires_at=datetime.fromtimestamp(r.expires_at, tz=timezone.utc).isoformat(),
         expires_in=r.expires_in,
     )
 
@@ -89,7 +89,7 @@ async def get_reservation(
     return ReservationResponse(
         reservation_id=r.reservation_id,
         device_id=r.device_id,
-        expires_at=datetime.fromtimestamp(r.expires_at).strftime("%Y-%m-%d %H:%M:%S"),
+        expires_at=datetime.fromtimestamp(r.expires_at, tz=timezone.utc).isoformat(),
         expires_in=r.expires_in,
     )
 

@@ -1063,7 +1063,7 @@ class TestGetNetworkExpiryAlwaysPresent:
         assert data['active'] is False
         assert data['expires_at'] is not None
         assert isinstance(data['expires_at'], str)
-        assert len(data['expires_at']) == 19  # "yyyy-mm-dd HH:MM:SS"
+        assert '+00:00' in data['expires_at']  # ISO 8601 UTC
         assert data['expires_in'] is not None
         assert data['expires_in'] > 3500
 

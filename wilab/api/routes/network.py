@@ -1,6 +1,6 @@
 """WiFi network lifecycle endpoints (create, delete, query)."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Body
 
@@ -149,8 +149,6 @@ async def get_network(
         raise HTTPException(status_code=404, detail="Unknown device_id")
     # Always inject reservation-derived expiry so clients see countdown
     # even when the network is off.
-    st.expires_at = datetime.fromtimestamp(reservation.expires_at).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    st.expires_at = datetime.fromtimestamp(reservation.expires_at, tz=timezone.utc).isoformat()
     st.expires_in = reservation.expires_in
     return st

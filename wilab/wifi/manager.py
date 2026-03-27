@@ -3,7 +3,7 @@ import logging
 import os
 from typing import Dict, Optional, List
 from ipaddress import IPv4Network
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import threading
 from ..config import AppConfig
@@ -112,7 +112,7 @@ class NetworkManager:
         if expires_at_timestamp is None:
             expires_at_timestamp = now + self.config.default_timeout
         
-        expires_at_str = datetime.fromtimestamp(expires_at_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+        expires_at_str = datetime.fromtimestamp(expires_at_timestamp, tz=timezone.utc).isoformat()
         
         # Get subnet (from config or calculated)
         subnet = self._get_subnet(device_id)

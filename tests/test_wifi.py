@@ -183,7 +183,7 @@ class TestNetworkLifecycle:
         status = mgr.start_network('wls16', req, expires_at_timestamp=expires_at)
         assert status.expires_at is not None
         assert isinstance(status.expires_at, str)
-        assert len(status.expires_at) == 19  # "2026-01-11 12:34:56" format
+        assert '+00:00' in status.expires_at  # ISO 8601 UTC
         # Check expires_in is within expected range (2 hours = 7200 seconds, allow 100s margin)
         assert status.expires_in > 7100
         assert status.expires_in < 7300
