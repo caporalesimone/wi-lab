@@ -36,8 +36,8 @@ export class AppComponent implements OnInit {
   loading = true;
   error: string | null = null;
 
-  /** Active reservation (null = no device reserved, show empty state) */
-  reservation: ReservationResponse | null = null;
+  /** Active reservations (empty = show empty state) */
+  reservations: ReservationResponse[] = [];
 
   /** Error info when all devices are busy */
   capacityError: NoDeviceAvailableError | null = null;
@@ -86,7 +86,7 @@ export class AppComponent implements OnInit {
     this.capacityError = null;
     this.apiService.createReservation(req).subscribe({
       next: (res: ReservationResponse) => {
-        this.reservation = res;
+        this.reservations = [...this.reservations, res];
         this.loading = false;
         this.snackBar.open('Device reserved successfully', 'Close', { duration: 3000 });
       },
@@ -106,8 +106,8 @@ export class AppComponent implements OnInit {
     });
   }
 
-  public onReservationReleased(): void {
-    this.reservation = null;
+  public onReservationReleased(reservationId: string): void {
+    this.reservations = this.reservations.filter(r => r.reservation_id !== reservationId);
     this.capacityError = null;
   }
 }
