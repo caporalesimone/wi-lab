@@ -25,7 +25,7 @@
     <!-- Status chip for non-owned cards -->
     <span *ngIf="isAvailable" class="status-chip available-chip">Available</span>
     <span *ngIf="isOccupied" class="status-chip occupied-chip">
-      Occupied &mdash; {{ formatCountdown(slot.otherReservationSeconds!) }}
+      Occupied &mdash; {{ formatCountdown(occupiedCountdown) }}
     </span>
   </mat-card-header>
 

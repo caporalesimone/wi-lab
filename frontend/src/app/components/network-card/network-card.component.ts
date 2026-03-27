@@ -45,6 +45,9 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   remainingSeconds = 0;
   /** Total reservation duration for progress calculation */
   totalDuration = 0;
+  /** Local countdown for occupied cards (ticks every second) */
+  occupiedCountdown = 0;
+  private occupiedTimer: ReturnType<typeof setInterval> | null = null;
 
   public get isMine(): boolean {
     return this.slot.myReservation !== null;
@@ -89,23 +92,52 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     if (this.isMine) {
       this.startOwned();
     }
+    if (this.isOccupied) {
+      this.startOccupiedCountdown(this.slot.otherReservationSeconds!);
+    }
   }
 
   public ngOnChanges(changes: SimpleChanges): void {
     if (changes['slot'] && !changes['slot'].firstChange) {
       const wasMine = changes['slot'].previousValue?.myReservation !== null;
       if (this.isMine && !wasMine) {
-        // Slot just became mine
+        this.stopOccupiedCountdown();
         this.startOwned();
       } else if (!this.isMine && wasMine) {
-        // Slot stopped being mine
         this.stopOwned();
+      }
+      // Sync occupied countdown from API without recreating timer
+      if (this.isOccupied && this.slot.otherReservationSeconds !== null) {
+        if (this.occupiedTimer === null) {
+          this.startOccupiedCountdown(this.slot.otherReservationSeconds);
+        } else {
+          this.occupiedCountdown = this.slot.otherReservationSeconds;
+        }
+      } else if (!this.isOccupied) {
+        this.stopOccupiedCountdown();
       }
     }
   }
 
   public ngOnDestroy(): void {
     this.stopOwned();
+    this.stopOccupiedCountdown();
+  }
+
+  private startOccupiedCountdown(seconds: number): void {
+    this.occupiedCountdown = Math.max(0, Math.round(seconds));
+    this.occupiedTimer = setInterval(() => {
+      if (this.occupiedCountdown > 0) {
+        this.occupiedCountdown--;
+      }
+    }, 1000);
+  }
+
+  private stopOccupiedCountdown(): void {
+    if (this.occupiedTimer !== null) {
+      clearInterval(this.occupiedTimer);
+      this.occupiedTimer = null;
+    }
   }
 
   private startOwned(): void {
