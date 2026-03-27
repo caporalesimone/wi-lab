@@ -1,16 +1,17 @@
 """Internet connectivity (NAT) management endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException
 
+from ...reservation import Reservation
 from ...wifi.manager import NetworkManager
 from ...api.auth import require_token
-from ...api.dependencies import get_manager
+from ...api.dependencies import get_manager, resolve_reservation
 
 router = APIRouter(prefix="/interface", tags=["Internet"])
 
 
 @router.post(
-    "/{device_id}/internet/enable",
+    "/{reservation_id}/internet/enable",
     responses={
         200: {
             "description": "Internet access enabled successfully",
@@ -21,21 +22,21 @@ router = APIRouter(prefix="/interface", tags=["Internet"])
             },
         },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
-        404: {"description": "device_id not found or network not active"},
+        404: {"description": "Reservation not found or expired"},
         500: {"description": "NAT configuration failed"},
     },
 )
 async def internet_enable(
-    device_id: str = Path(..., examples=["wls16"]),
-    manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
+    reservation: Reservation = Depends(resolve_reservation),
+    manager: NetworkManager = Depends(get_manager),
 ):
     """
     Enable Internet access for connected WiFi clients via NAT forwarding.
 
-    Args:
-        device_id: Device identifier (interface name).
+    Requires a valid reservation token.
     """
+    device_id = reservation.device_id
     try:
         manager.enable_internet(device_id)
         return {"detail": f"Network {device_id} internet enabled successfully"}
@@ -46,7 +47,7 @@ async def internet_enable(
 
 
 @router.post(
-    "/{device_id}/internet/disable",
+    "/{reservation_id}/internet/disable",
     responses={
         200: {
             "description": "Internet access disabled successfully",
@@ -57,20 +58,20 @@ async def internet_enable(
             },
         },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
-        404: {"description": "device_id not found or network not active"},
+        404: {"description": "Reservation not found or expired"},
     },
 )
 async def internet_disable(
-    device_id: str = Path(..., examples=["wls16"]),
-    manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
+    reservation: Reservation = Depends(resolve_reservation),
+    manager: NetworkManager = Depends(get_manager),
 ):
     """
     Disable Internet access for connected WiFi clients (remove NAT forwarding).
 
-    Args:
-        device_id: Device identifier (interface name).
+    Requires a valid reservation token.
     """
+    device_id = reservation.device_id
     try:
         manager.disable_internet(device_id)
         return {"detail": f"Network {device_id} internet disabled successfully"}

@@ -122,8 +122,8 @@ def create_app() -> FastAPI:
         try:
             paths = openapi_schema.get("paths", {})
             
-            # POST /interface/{device_id}/network example
-            post_route = paths.get("/api/v1/interface/{device_id}/network", {}).get("post", {})
+            # POST /interface/{reservation_id}/network example
+            post_route = paths.get("/api/v1/interface/{reservation_id}/network", {}).get("post", {})
             content = post_route.get("requestBody", {}).get("content", {})
             if "application/json" in content:
                 content["application/json"]["example"] = {
@@ -136,8 +136,8 @@ def create_app() -> FastAPI:
                     "internet_enabled": True,
                 }
             
-            # POST /interface/{device_id}/txpower example
-            txpower_post = paths.get("/api/v1/interface/{device_id}/txpower", {}).get("post", {})
+            # POST /interface/{reservation_id}/txpower example
+            txpower_post = paths.get("/api/v1/interface/{reservation_id}/txpower", {}).get("post", {})
             txpower_content = txpower_post.get("requestBody", {}).get("content", {})
             if "application/json" in txpower_content:
                 txpower_content["application/json"]["example"] = {
@@ -179,8 +179,8 @@ def create_app() -> FastAPI:
                 },
             }
 
-            # GET /interface/{device_id}/network response example
-            network_get = paths.get("/api/v1/interface/{device_id}/network", {}).get("get", {})
+            # GET /interface/{reservation_id}/network response example
+            network_get = paths.get("/api/v1/interface/{reservation_id}/network", {}).get("get", {})
             network_responses = network_get.get("responses", {})
             network_200 = network_responses.get("200", {})
             network_200_content = network_200.get("content", {})
@@ -221,8 +221,8 @@ def create_app() -> FastAPI:
                     ],
                 }
             
-            # GET /interface/{device_id}/txpower response example
-            txpower_get = paths.get("/api/v1/interface/{device_id}/txpower", {}).get("get", {})
+            # GET /interface/{reservation_id}/txpower response example
+            txpower_get = paths.get("/api/v1/interface/{reservation_id}/txpower", {}).get("get", {})
             txpower_responses = txpower_get.get("responses", {})
             txpower_200 = txpower_responses.get("200", {})
             txpower_200_content = txpower_200.get("content", {})

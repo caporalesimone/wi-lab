@@ -1,17 +1,18 @@
 """WiFi network lifecycle endpoints (create, delete, query)."""
 
-from fastapi import APIRouter, Depends, HTTPException, Body, Path
+from fastapi import APIRouter, Depends, HTTPException, Body
 
 from ...models import NetworkCreateRequest, NetworkStatus
+from ...reservation import Reservation
 from ...wifi.manager import NetworkManager
 from ...api.auth import require_token
-from ...api.dependencies import get_manager
+from ...api.dependencies import get_manager, resolve_reservation
 
 router = APIRouter(prefix="/interface", tags=["Network"])
 
 
 @router.post(
-    "/{device_id}/network",
+    "/{reservation_id}/network",
     responses={
         200: {
             "description": "Network created and started successfully",
@@ -22,14 +23,15 @@ router = APIRouter(prefix="/interface", tags=["Network"])
             },
         },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
-        404: {"description": "device_id not found in configuration"},
+        404: {"description": "Reservation not found or expired"},
         409: {"description": "Network already active; stop it first"},
         422: {"description": "Request body validation failed"},
         500: {"description": "Failed to start network due to runtime error"},
     },
 )
 async def start_network(
-    device_id: str = Path(..., examples=["wls16"]),
+    _auth: bool = Depends(require_token),
+    reservation: Reservation = Depends(resolve_reservation),
     req: NetworkCreateRequest = Body(
         ...,
         examples={
@@ -48,26 +50,23 @@ async def start_network(
         },
     ),
     manager: NetworkManager = Depends(get_manager),
-    _auth: bool = Depends(require_token),
 ):
     """
     Create and start a WiFi network in AP (access point) mode.
 
-    Validates network parameters, allocates a unique DHCP subnet, and starts:
-    - hostapd (WiFi access point)
-    - dnsmasq (DHCP server)
-    - iptables rules (isolation + optional NAT)
+    Requires a valid reservation token. The network lifetime is bounded
+    by the reservation expiry.
 
     Args:
-        device_id: Device identifier (interface name from config).
-        req: Network configuration (SSID, channel, password, band, timeout, etc).
+        reservation: Active reservation (resolved from path token).
+        req: Network configuration (SSID, channel, password, band, etc).
 
     Returns:
-        dict: Simple confirmation message. Use GET /interface/{device_id}/network
-            to retrieve full network details.
+        dict: Simple confirmation message.
     """
+    device_id = reservation.device_id
     try:
-        manager.start_network(device_id, req)
+        manager.start_network(device_id, req, expires_at_timestamp=reservation.expires_at)
         return {"detail": f"Network {device_id} created successfully"}
     except ValueError as e:
         error_msg = str(e)
@@ -80,7 +79,7 @@ async def start_network(
 
 
 @router.delete(
-    "/{device_id}/network",
+    "/{reservation_id}/network",
     responses={
         200: {
             "description": "Network stopped successfully",
@@ -91,26 +90,24 @@ async def start_network(
             },
         },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
-        404: {"description": "device_id not found"},
+        404: {"description": "Reservation not found or expired"},
         409: {"description": "Network already inactive"},
     },
 )
 async def stop_network(
-    device_id: str = Path(..., examples=["wls16"]),
-    manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
+    reservation: Reservation = Depends(resolve_reservation),
+    manager: NetworkManager = Depends(get_manager),
 ):
     """
     Stop an active WiFi network and clean up all resources.
 
-    Stops hostapd, dnsmasq, and removes iptables rules; disconnects all clients.
-
-    Args:
-        device_id: Device identifier (interface name).
+    Requires a valid reservation token.
 
     Returns:
         dict: Confirmation with stopped device_id.
     """
+    device_id = reservation.device_id
     st = manager.get_status(device_id)
     if not st:
         raise HTTPException(status_code=404, detail="Unknown device_id")
@@ -122,26 +119,29 @@ async def stop_network(
 
 
 @router.get(
-    "/{device_id}/network",
+    "/{reservation_id}/network",
     response_model=NetworkStatus,
     responses={
         200: {"description": "Network status retrieved successfully"},
         401: {"description": "Unauthorized (missing or invalid auth token)"},
-        404: {"description": "device_id not found"},
+        404: {"description": "Reservation not found or expired"},
     },
 )
 async def get_network(
-    device_id: str = Path(..., examples=["wls16"]),
-    manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
+    reservation: Reservation = Depends(resolve_reservation),
+    manager: NetworkManager = Depends(get_manager),
 ):
     """
     Get complete network configuration, status, DHCP info, and connected clients.
+
+    Requires a valid reservation token.
 
     Returns:
         NetworkStatus: Full details including SSID, channel, password, expiration time,
             DHCP configuration, and list of connected clients.
     """
+    device_id = reservation.device_id
     st = manager.get_status(device_id)
     if not st:
         raise HTTPException(status_code=404, detail="Unknown device_id")

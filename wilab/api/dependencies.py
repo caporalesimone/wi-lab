@@ -1,7 +1,7 @@
-from fastapi import Depends
+from fastapi import Depends, HTTPException, Path
 from ..config import AppConfig, load_config
 from ..wifi.manager import NetworkManager
-from ..reservation import ReservationManager
+from ..reservation import ReservationManager, Reservation
 
 _config: AppConfig | None = None
 _manager: NetworkManager | None = None
@@ -25,3 +25,17 @@ def get_reservation_manager(config: AppConfig = Depends(get_config)) -> Reservat
         device_ids = [n.device_id for n in config.networks]
         _reservation_manager = ReservationManager(device_ids)
     return _reservation_manager
+
+
+def resolve_reservation(
+    reservation_id: str = Path(..., description="Reservation token"),
+    mgr: ReservationManager = Depends(get_reservation_manager),
+) -> Reservation:
+    """Validate reservation_id and return the active Reservation.
+
+    Raises 404 if the token is unknown, expired, or already released.
+    """
+    r = mgr.get(reservation_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Reservation not found or expired")
+    return r

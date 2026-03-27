@@ -6,6 +6,7 @@ from wilab.version import __version__
 from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
 from wilab.api import dependencies
 from wilab.models import ClientInfo
+from wilab.reservation import ReservationManager
 
 
 @pytest.fixture
@@ -27,6 +28,26 @@ def valid_token():
 def invalid_token():
     """Get invalid auth token."""
     return "Bearer invalid-token-12345"
+
+
+@pytest.fixture
+def reservation_id(client, valid_token, monkeypatch):
+    """Create a reservation and return the reservation_id token.
+
+    Resets the reservation manager singleton to avoid cross-test state.
+    The resulting token maps to the first available device (wls16).
+    """
+    cfg = load_config()
+    rmgr = ReservationManager([n.device_id for n in cfg.networks])
+    monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+
+    resp = client.post(
+        '/api/v1/device-reservation',
+        headers={'Authorization': valid_token},
+        json={'duration_seconds': 3600},
+    )
+    assert resp.status_code == 200
+    return resp.json()['reservation_id']
 
 
 class TestStatusEndpoint:
@@ -263,10 +284,10 @@ class TestAuthentication:
         # GET /interfaces doesn't require auth, so should succeed
         assert resp.status_code == 200
     
-    def test_start_network_without_auth(self, client):
+    def test_start_network_without_auth(self, client, reservation_id):
         """Test that network creation without auth is rejected."""
         resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             json={
                 'ssid': 'TestAP',
                 'channel': 6,
@@ -276,10 +297,10 @@ class TestAuthentication:
         )
         assert resp.status_code == 401  # Unauthorized (no token)
     
-    def test_start_network_with_invalid_token(self, client, invalid_token):
+    def test_start_network_with_invalid_token(self, client, invalid_token, reservation_id):
         """Test that request with invalid token is rejected."""
         resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': invalid_token},
             json={
                 'ssid': 'TestAP',
@@ -290,9 +311,8 @@ class TestAuthentication:
         )
         assert resp.status_code == 401  # Unauthorized
     
-    def test_start_network_with_valid_token(self, client, valid_token, monkeypatch):
+    def test_start_network_with_valid_token(self, client, valid_token, reservation_id, monkeypatch):
         """Test that request with valid token succeeds (with mocked DHCP)."""
-        # Mock DHCP start to avoid system calls
         from wilab.api.dependencies import _manager
         if _manager:
             def mock_dhcp_start(*args, **kwargs):
@@ -301,7 +321,7 @@ class TestAuthentication:
             monkeypatch.setattr(_manager.hostapd_manager, 'start', lambda *a, **kw: {})
         
         resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -318,26 +338,19 @@ class TestAuthentication:
 class TestNetworkCreateEndpoint:
     """Tests for network creation endpoint."""
     
-    def test_start_network_invalid_json(self, client, valid_token):
+    def test_start_network_invalid_json(self, client, valid_token, reservation_id):
         """Test that invalid JSON is rejected."""
         resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={'invalid': 'payload'}
         )
         assert resp.status_code == 422  # Validation error
     
-    def test_start_network_unknown_network(self, client, valid_token, monkeypatch):
-        """Test starting a non-existent network."""
-        from wilab.api.dependencies import _manager
-        if _manager:
-            def mock_dhcp_start(*args, **kwargs):
-                return {'gateway': '192.168.10.1'}
-            monkeypatch.setattr(_manager.dhcp_server, 'start', mock_dhcp_start)
-            monkeypatch.setattr(_manager.hostapd_manager, 'start', lambda *a, **kw: {})
-        
+    def test_start_network_invalid_reservation(self, client, valid_token):
+        """Test starting with an invalid reservation token returns 404."""
         resp = client.post(
-            '/api/v1/interface/unknown-net/network',
+            '/api/v1/interface/invalid-token/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -347,12 +360,12 @@ class TestNetworkCreateEndpoint:
                 'band': '2.4ghz', 'tx_power_level': 4
             }
         )
-        assert resp.status_code == 404  # Not found
+        assert resp.status_code == 404  # Reservation not found
     
-    def test_start_network_invalid_encryption(self, client, valid_token):
+    def test_start_network_invalid_encryption(self, client, valid_token, reservation_id):
         """Test that invalid encryption is rejected."""
         resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -363,10 +376,10 @@ class TestNetworkCreateEndpoint:
         )
         assert resp.status_code == 422  # Validation error
     
-    def test_start_network_invalid_band(self, client, valid_token):
+    def test_start_network_invalid_band(self, client, valid_token, reservation_id):
         """Test that invalid band is rejected."""
         resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -377,7 +390,7 @@ class TestNetworkCreateEndpoint:
         )
         assert resp.status_code == 422  # Validation error
 
-    def test_start_network_runtime_failure_returns_500(self, client, valid_token, monkeypatch):
+    def test_start_network_runtime_failure_returns_500(self, client, valid_token, reservation_id, monkeypatch):
         """Operational failures during startup must map to 500, not 404."""
         from wilab.api.dependencies import _manager
         if _manager:
@@ -390,7 +403,7 @@ class TestNetworkCreateEndpoint:
             )
 
         resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -403,7 +416,7 @@ class TestNetworkCreateEndpoint:
         )
         assert resp.status_code == 500
     
-    def test_network_response_structure(self, client, valid_token, monkeypatch):
+    def test_network_response_structure(self, client, valid_token, reservation_id, monkeypatch):
         """Test POST returns a simple creation confirmation payload."""
         from wilab.api.dependencies import _manager
         if _manager:
@@ -412,7 +425,7 @@ class TestNetworkCreateEndpoint:
             monkeypatch.setattr(_manager.dhcp_server, 'start', mock_dhcp_start)
             
             resp = client.post(
-                '/api/v1/interface/wls16/network',
+                f'/api/v1/interface/{reservation_id}/network',
                 headers={'Authorization': valid_token},
                 json={
                     'ssid': 'TestAP',
@@ -426,10 +439,10 @@ class TestNetworkCreateEndpoint:
                 data = resp.json()
                 assert data == {'detail': 'Network wls16 created successfully'}
 
-    def test_start_network_422_has_simple_detail(self, client, valid_token):
+    def test_start_network_422_has_simple_detail(self, client, valid_token, reservation_id):
         """Validation errors should return a simple string detail."""
         resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={'invalid': 'payload'}
         )
@@ -443,10 +456,10 @@ class TestNetworkCreateEndpoint:
 class TestNetworkGetEndpoint:
     """Tests for getting network status."""
     
-    def test_get_network_status_inactive(self, client, valid_token):
-        """Test getting status of inactive network."""
+    def test_get_network_status_inactive(self, client, valid_token, reservation_id):
+        """Test getting status of inactive network via valid reservation."""
         resp = client.get(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 200
@@ -454,15 +467,15 @@ class TestNetworkGetEndpoint:
         # Network is initially inactive
         assert data['active'] in [True, False]  # Either state is valid
     
-    def test_get_network_status_unknown(self, client, valid_token):
-        """Test getting status of unknown network."""
+    def test_get_network_status_invalid_reservation(self, client, valid_token):
+        """Test getting status with invalid reservation returns 404."""
         resp = client.get(
-            '/api/v1/interface/unknown-net/network',
+            '/api/v1/interface/invalid-token/network',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 404
 
-    def test_get_network_active_with_dhcp_and_clients(self, client, valid_token, monkeypatch):
+    def test_get_network_active_with_dhcp_and_clients(self, client, valid_token, reservation_id, monkeypatch):
         """Test getting complete status of active network including DHCP and clients."""
         cfg = load_config()
         manager = NetworkManager(cfg)
@@ -483,9 +496,9 @@ class TestNetworkGetEndpoint:
         monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
-        # Start network
+        # Start network via reservation token
         start_resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -500,7 +513,7 @@ class TestNetworkGetEndpoint:
 
         # Get network status
         resp = client.get(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 200
@@ -524,7 +537,7 @@ class TestNetworkGetEndpoint:
         }
         assert 'tx_power_level' not in data
 
-    def test_get_network_status_returns_client_entries_with_ip_and_mac(self, client, valid_token, monkeypatch):
+    def test_get_network_status_returns_client_entries_with_ip_and_mac(self, client, valid_token, reservation_id, monkeypatch):
         """Test active network status returns stable clients[] entries with ip and mac."""
         cfg = load_config()
         manager = NetworkManager(cfg)
@@ -553,7 +566,7 @@ class TestNetworkGetEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         start_resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -567,7 +580,7 @@ class TestNetworkGetEndpoint:
         assert start_resp.status_code == 200
 
         resp = client.get(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 200
@@ -587,7 +600,7 @@ class TestNetworkGetEndpoint:
 class TestNetworkDeleteEndpoint:
     """Tests for network deletion."""
 
-    def test_stop_network_active(self, client, valid_token, monkeypatch):
+    def test_stop_network_active(self, client, valid_token, reservation_id, monkeypatch):
         """Test stopping an active network succeeds."""
         cfg = load_config()
         manager = NetworkManager(cfg)
@@ -603,7 +616,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         start_resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -617,34 +630,30 @@ class TestNetworkDeleteEndpoint:
         assert start_resp.status_code == 200
 
         stop_resp = client.delete(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token}
         )
         assert stop_resp.status_code == 200
         assert stop_resp.json() == {'detail': 'Network wls16 stopped successfully'}
     
-    def test_stop_network_inactive(self, client, valid_token, monkeypatch):
+    def test_stop_network_inactive(self, client, valid_token, reservation_id, monkeypatch):
         """Test stopping an inactive network returns 409."""
         cfg = load_config()
         manager = NetworkManager(cfg)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         resp = client.delete(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 409
         data = resp.json()
         assert data['detail'] == 'Network wls16 is already inactive'
     
-    def test_stop_network_unknown(self, client, valid_token, monkeypatch):
-        """Test stopping unknown network returns 404."""
-        cfg = load_config()
-        manager = NetworkManager(cfg)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
-
+    def test_stop_network_invalid_reservation(self, client, valid_token):
+        """Test stopping with invalid reservation returns 404."""
         resp = client.delete(
-            '/api/v1/interface/unknown-net/network',
+            '/api/v1/interface/invalid-token/network',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 404
@@ -653,7 +662,7 @@ class TestNetworkDeleteEndpoint:
 class TestTxPowerGetEndpoint:
     """Tests for txpower GET response shape."""
 
-    def test_get_txpower_nested_shape(self, client, valid_token, monkeypatch):
+    def test_get_txpower_nested_shape(self, client, valid_token, reservation_id, monkeypatch):
         cfg = load_config()
         manager = NetworkManager(cfg)
 
@@ -665,7 +674,7 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         start_resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -678,7 +687,7 @@ class TestTxPowerGetEndpoint:
         )
         assert start_resp.status_code == 200
 
-        resp = client.get('/api/v1/interface/wls16/txpower', headers={'Authorization': valid_token})
+        resp = client.get(f'/api/v1/interface/{reservation_id}/txpower', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
 
@@ -690,7 +699,7 @@ class TestTxPowerGetEndpoint:
         assert data['tx_power']['reported_level'] == 2
         assert data['tx_power']['reported_dbm'] == 10.0
 
-    def test_get_txpower_omits_legacy_warning_fields(self, client, valid_token, monkeypatch):
+    def test_get_txpower_omits_legacy_warning_fields(self, client, valid_token, reservation_id, monkeypatch):
         cfg = load_config()
         manager = NetworkManager(cfg)
 
@@ -702,7 +711,7 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         start_resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -715,7 +724,7 @@ class TestTxPowerGetEndpoint:
         )
         assert start_resp.status_code == 200
 
-        resp = client.get('/api/v1/interface/wls16/txpower', headers={'Authorization': valid_token})
+        resp = client.get(f'/api/v1/interface/{reservation_id}/txpower', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
 
@@ -728,7 +737,7 @@ class TestTxPowerGetEndpoint:
 class TestTxPowerPostEndpoint:
     """Tests for txpower POST behavior."""
 
-    def test_post_txpower_success_shape_without_warning(self, client, valid_token, monkeypatch):
+    def test_post_txpower_success_shape_without_warning(self, client, valid_token, reservation_id, monkeypatch):
         cfg = load_config()
         manager = NetworkManager(cfg)
 
@@ -750,7 +759,7 @@ class TestTxPowerPostEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         resp = client.post(
-            '/api/v1/interface/wls16/txpower',
+            f'/api/v1/interface/{reservation_id}/txpower',
             headers={'Authorization': valid_token},
             json={'level': 2},
         )
@@ -763,7 +772,7 @@ class TestTxPowerPostEndpoint:
         assert data['tx_power']['reported_dbm'] == 10.0
         assert 'warning' not in data
 
-    def test_post_txpower_mismatch_returns_422(self, client, valid_token, monkeypatch):
+    def test_post_txpower_mismatch_returns_422(self, client, valid_token, reservation_id, monkeypatch):
         cfg = load_config()
         manager = NetworkManager(cfg)
 
@@ -774,7 +783,7 @@ class TestTxPowerPostEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         resp = client.post(
-            '/api/v1/interface/wls16/txpower',
+            f'/api/v1/interface/{reservation_id}/txpower',
             headers={'Authorization': valid_token},
             json={'level': 2},
         )
@@ -783,9 +792,9 @@ class TestTxPowerPostEndpoint:
         data = resp.json()
         assert data['detail'] == 'Interface does not support dynamic power change.'
 
-    def test_post_txpower_out_of_range_returns_422_simple_message(self, client, valid_token):
+    def test_post_txpower_out_of_range_returns_422_simple_message(self, client, valid_token, reservation_id):
         resp = client.post(
-            '/api/v1/interface/wls16/txpower',
+            f'/api/v1/interface/{reservation_id}/txpower',
             headers={'Authorization': valid_token},
             json={'level': 9},
         )
@@ -801,7 +810,7 @@ class TestTxPowerPostEndpoint:
         assert resp.status_code == 200
         schema = resp.json()
 
-        txpower_post = schema['paths']['/api/v1/interface/{device_id}/txpower']['post']
+        txpower_post = schema['paths']['/api/v1/interface/{reservation_id}/txpower']['post']
         responses = txpower_post['responses']
         assert '422' in responses
 
@@ -818,7 +827,7 @@ class TestTxPowerPostEndpoint:
         assert resp.status_code == 200
         schema = resp.json()
 
-        network_get = schema['paths']['/api/v1/interface/{device_id}/network']['get']
+        network_get = schema['paths']['/api/v1/interface/{reservation_id}/network']['get']
         response_422 = network_get['responses']['422']
         json_schema = response_422['content']['application/json']['schema']
 
@@ -829,7 +838,7 @@ class TestTxPowerPostEndpoint:
 class TestInternetControlEndpoints:
     """Tests for internet enable/disable endpoints."""
     
-    def test_enable_internet_success(self, client, valid_token, monkeypatch):
+    def test_enable_internet_success(self, client, valid_token, reservation_id, monkeypatch):
         """Test enabling internet on active network succeeds and returns detail message."""
         cfg = load_config()
         manager = NetworkManager(cfg)
@@ -843,7 +852,7 @@ class TestInternetControlEndpoints:
 
         # Start network first
         start_resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -858,14 +867,14 @@ class TestInternetControlEndpoints:
 
         # Enable internet
         enable_resp = client.post(
-            '/api/v1/interface/wls16/internet/enable',
+            f'/api/v1/interface/{reservation_id}/internet/enable',
             headers={'Authorization': valid_token}
         )
         assert enable_resp.status_code == 200
         data = enable_resp.json()
         assert data == {'detail': 'Network wls16 internet enabled successfully'}
     
-    def test_disable_internet_success(self, client, valid_token, monkeypatch):
+    def test_disable_internet_success(self, client, valid_token, reservation_id, monkeypatch):
         """Test disabling internet on active network succeeds and returns detail message."""
         cfg = load_config()
         manager = NetworkManager(cfg)
@@ -880,7 +889,7 @@ class TestInternetControlEndpoints:
 
         # Start network first
         start_resp = client.post(
-            '/api/v1/interface/wls16/network',
+            f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -895,44 +904,114 @@ class TestInternetControlEndpoints:
 
         # Enable internet first
         enable_resp = client.post(
-            '/api/v1/interface/wls16/internet/enable',
+            f'/api/v1/interface/{reservation_id}/internet/enable',
             headers={'Authorization': valid_token}
         )
         assert enable_resp.status_code == 200
 
         # Then disable internet
         disable_resp = client.post(
-            '/api/v1/interface/wls16/internet/disable',
+            f'/api/v1/interface/{reservation_id}/internet/disable',
             headers={'Authorization': valid_token}
         )
         assert disable_resp.status_code == 200
         data = disable_resp.json()
         assert data == {'detail': 'Network wls16 internet disabled successfully'}
     
-    def test_enable_internet_inactive(self, client, valid_token, monkeypatch):
+    def test_enable_internet_inactive(self, client, valid_token, reservation_id, monkeypatch):
         """Test enabling internet on inactive network fails."""
         cfg = load_config()
         manager = NetworkManager(cfg)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         resp = client.post(
-            '/api/v1/interface/wls16/internet/enable',
+            f'/api/v1/interface/{reservation_id}/internet/enable',
             headers={'Authorization': valid_token}
         )
         # Should fail with either 404 or 500 depending on implementation
         assert resp.status_code in [404, 422, 500]
     
-    def test_disable_internet_inactive(self, client, valid_token, monkeypatch):
+    def test_disable_internet_inactive(self, client, valid_token, reservation_id, monkeypatch):
         """Test disabling internet on inactive network fails."""
         cfg = load_config()
         manager = NetworkManager(cfg)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         resp = client.post(
-            '/api/v1/interface/wls16/internet/disable',
+            f'/api/v1/interface/{reservation_id}/internet/disable',
             headers={'Authorization': valid_token}
         )
         # Should fail with either 404 or 500 depending on implementation
         assert resp.status_code in [404, 422, 500]
 
+
+class TestReservationRequiredForOperations:
+    """Tests that network operations require a valid reservation token."""
+
+    def test_network_op_without_reservation_returns_404(self, client, valid_token):
+        """Any network operation with invalid reservation returns 404."""
+        resp = client.get(
+            '/api/v1/interface/nonexistent-token/network',
+            headers={'Authorization': valid_token}
+        )
+        assert resp.status_code == 404
+        assert 'Reservation' in resp.json()['detail']
+
+    def test_internet_op_without_reservation_returns_404(self, client, valid_token):
+        """Internet enable with invalid reservation returns 404."""
+        resp = client.post(
+            '/api/v1/interface/nonexistent-token/internet/enable',
+            headers={'Authorization': valid_token}
+        )
+        assert resp.status_code == 404
+
+    def test_txpower_op_without_reservation_returns_404(self, client, valid_token):
+        """TX power GET with invalid reservation returns 404."""
+        resp = client.get(
+            '/api/v1/interface/nonexistent-token/txpower',
+            headers={'Authorization': valid_token}
+        )
+        assert resp.status_code == 404
+
+    def test_expired_reservation_returns_404(self, client, valid_token, monkeypatch):
+        """Expired reservation token is rejected with 404."""
+        import time
+        from wilab.api.dependencies import get_reservation_manager
+
+        rmgr = get_reservation_manager()
+        r = rmgr.create(3600)
+        # Force expiry
+        r.expires_at = time.time() - 1
+
+        resp = client.get(
+            f'/api/v1/interface/{r.reservation_id}/network',
+            headers={'Authorization': valid_token}
+        )
+        assert resp.status_code == 404
+
+    def test_released_reservation_returns_404(self, client, valid_token):
+        """Released reservation token is rejected with 404."""
+        # Create and immediately release
+        resp = client.post(
+            '/api/v1/device-reservation',
+            headers={'Authorization': valid_token},
+            json={'duration_seconds': 3600},
+        )
+        rid = resp.json()['reservation_id']
+        client.delete(
+            f'/api/v1/device-reservation/{rid}',
+            headers={'Authorization': valid_token}
+        )
+
+        # Try to use the released token
+        resp = client.post(
+            f'/api/v1/interface/{rid}/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestAP', 'channel': 6,
+                'encryption': 'wpa2', 'password': 'testpass123',
+                'band': '2.4ghz', 'tx_power_level': 4
+            }
+        )
+        assert resp.status_code == 404
 
