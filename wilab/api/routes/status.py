@@ -229,7 +229,7 @@ async def debug_info(
                 "reachable": upstream_reachable,
             },
             "managed": [
-                {"device_id": n.device_id, "interface": n.interface}
+                {"display_name": n.display_name, "interface": n.interface}
                 for n in config.networks
             ],
         },
