@@ -36,20 +36,16 @@ async def start_network(
     reservation: Reservation = Depends(resolve_reservation),
     req: NetworkCreateRequest = Body(
         ...,
-        examples={
-            "default": {
-                "summary": "Typical network configuration",
-                "description": "2.4GHz WPA2 network with Internet enabled.",
-                "value": {
-                    "ssid": "TestNetwork",
-                    "channel": 5,
-                    "password": "testpass123",
-                    "encryption": "wpa2",
-                    "band": "2.4ghz",
-                    "internet_enabled": True,
-                },
-            }
-        },
+        examples=[
+            {
+                "ssid": "TestNetwork",
+                "channel": 5,
+                "password": "testpass123",
+                "encryption": "wpa2",
+                "band": "2.4ghz",
+                "internet_enabled": True,
+            },
+        ],
     ),
     manager: NetworkManager = Depends(get_manager),
 ):

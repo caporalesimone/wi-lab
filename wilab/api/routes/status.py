@@ -1,5 +1,7 @@
 """System status endpoint."""
 
+from typing import Any
+
 from fastapi import APIRouter, Depends
 
 from ...wifi.manager import NetworkManager
@@ -36,13 +38,13 @@ async def system_status(
             - active_networks: Number of active networks
             - checks: Component health details
     """
-    status_data = {
+    status_data: dict[str, Any] = {
         "version": __version__,
         "status": "ok",
     }
 
     # === HEALTH CHECK ===
-    health_data = {"checks": {}}
+    health_data: dict[str, Any] = {"checks": {}}
 
     # Check dnsmasq instances
     dhcp_status = manager.dhcp_server.status()

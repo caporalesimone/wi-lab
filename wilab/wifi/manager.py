@@ -225,7 +225,7 @@ class NetworkManager:
             expires_in=expires_in,
         )
         # Store internal timestamp for expiration checking
-        status._expires_at_timestamp = expires_at_timestamp
+        object.__setattr__(status, '_expires_at_timestamp', expires_at_timestamp)  # type: ignore[attr-defined]
         
         self.active[device_id] = status
         
@@ -323,9 +323,9 @@ class NetworkManager:
             logger.info(f"Network {device_id} expired, stopping")
             self.stop_network(device_id)
             cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+            if not cfg_net:
+                return None
             return NetworkStatus(device_id=device_id, interface=cfg_net.interface, active=False)
-        
-        # Update expires_in dynamically
         if hasattr(st, '_expires_at_timestamp'):
             st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))
         
@@ -338,30 +338,26 @@ class NetworkManager:
             st.clients_connected = len(clients)
 
             if st.tx_power_level is not None:
-                tx_power_data = {
-                    "requested_level": st.tx_power_level,
-                    "reported_level": None,
-                    "reported_dbm": None,
-                }
+                reported_level: int | None = None
+                reported_dbm: float | None = None
                 if st.channel is not None:
                     try:
                         caps = self._get_channel_capabilities(st.interface, st.channel)
                         levels_dbm = self._compute_level_dbm(caps["max_dbm"])
                         reported_dbm = self._read_current_txpower(st.interface)
-                        reported_level = None
                         if reported_dbm is not None:
                             reported_level = min(
                                 levels_dbm,
-                                key=lambda lvl: abs(levels_dbm[lvl] - reported_dbm),
+                                key=lambda lvl: abs(levels_dbm[lvl] - reported_dbm),  # type: ignore[operator]
                             )
-                        tx_power_data.update({
-                            "reported_level": reported_level,
-                            "reported_dbm": reported_dbm,
-                        })
                     except Exception as exc:
                         logger.warning(f"Failed to build tx_power status for {device_id}: {exc}")
 
-                st.tx_power = NetworkTxPower(**tx_power_data)
+                st.tx_power = NetworkTxPower(
+                    requested_level=st.tx_power_level,
+                    reported_level=reported_level,
+                    reported_dbm=reported_dbm,
+                )
         
         return st
 
@@ -468,7 +464,7 @@ class NetworkManager:
         Returns:
             List of ClientInfo objects (MAC and IP address if known)
         """
-        clients = []
+        clients: list[ClientInfo] = []
         
         # Get interface for this network
         cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
@@ -524,9 +520,9 @@ class NetworkManager:
 
         # Build client list: only include clients with BOTH WiFi association AND valid DHCP lease
         for mac in connected_macs:
-            ip = mac_to_ip.get(mac)
-            if ip:  # Only count as connected if they have a valid IP lease
-                clients.append(ClientInfo(mac=mac, ip=ip))
+            client_ip = mac_to_ip.get(mac)
+            if client_ip:  # Only count as connected if they have a valid IP lease
+                clients.append(ClientInfo(mac=mac, ip=client_ip))
         
         return clients
 

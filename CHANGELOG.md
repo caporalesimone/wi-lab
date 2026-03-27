@@ -4,7 +4,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
-## [1.6.0] - 2026-03-26
+## [2.0.0] - 2026-03-27
 
 > Work in progress: this section tracks changes prepared for the upcoming 1.6.0 release.
 

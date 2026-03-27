@@ -28,7 +28,7 @@ def list_wilab_rules() -> dict:
     Returns:
         Dictionary with 'nat' and 'forward' lists of rules
     """
-    rules = {"nat": [], "forward": []}
+    rules: dict[str, list[str]] = {"nat": [], "forward": []}
     
     try:
         # Check NAT table
