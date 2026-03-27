@@ -65,7 +65,7 @@ class TestIptablesWrapper:
         # We can't actually run iptables in test, but we can mock it
         with patch('wilab.network.commands.execute_command') as mock:
             mock.return_value = ''
-            result = execute_iptables(['-L', '-n'])
+            execute_iptables(['-L', '-n'])
             mock.assert_called_once()
             # Check that 'iptables' was prepended
             assert mock.call_args[0][0][0] == 'iptables'
@@ -78,7 +78,7 @@ class TestIpWrapper:
         """Test ip command wrapper."""
         with patch('wilab.network.commands.execute_command') as mock:
             mock.return_value = ''
-            result = execute_ip(['addr', 'show'])
+            execute_ip(['addr', 'show'])
             mock.assert_called_once()
             assert mock.call_args[0][0][0] == 'ip'
     
@@ -100,7 +100,7 @@ class TestSysctlWrapper:
         """Test reading sysctl value."""
         with patch('wilab.network.commands.execute_command') as mock:
             mock.return_value = '1\n'
-            result = execute_sysctl('net.ipv4.ip_forward')
+            execute_sysctl('net.ipv4.ip_forward')
             mock.assert_called_once()
             call_args = mock.call_args[0][0]
             assert 'sysctl' in call_args
@@ -110,7 +110,7 @@ class TestSysctlWrapper:
         """Test writing sysctl value."""
         with patch('wilab.network.commands.execute_command') as mock:
             mock.return_value = 'net.ipv4.ip_forward = 1\n'
-            result = execute_sysctl('net.ipv4.ip_forward', '1')
+            execute_sysctl('net.ipv4.ip_forward', '1')
             mock.assert_called_once()
             call_args = mock.call_args[0][0]
             assert 'sysctl' in call_args

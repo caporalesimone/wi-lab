@@ -15,7 +15,7 @@ class TestDhcpServerInit:
     
     def test_dhcp_server_config_dir_created(self):
         """Test that config directory is created."""
-        dhcp = DhcpServer()
+        DhcpServer()
         # Directory should be created during init
         assert os.path.exists('/tmp/wilab-dnsmasq') or True  # Might fail without perms
 

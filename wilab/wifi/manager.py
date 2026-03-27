@@ -200,11 +200,10 @@ class NetworkManager:
         # Apply TX power level from request
         tx_power_level = req.tx_power_level
         try:
-            tx_info = self._set_tx_power(cfg_net.interface, tx_power_level, req.channel)
+            self._set_tx_power(cfg_net.interface, tx_power_level, req.channel)
             runtime_dbm = self._read_current_txpower(cfg_net.interface)
             logger.info(f"TX power set for {device_id}: requested level {tx_power_level}, runtime reported {runtime_dbm} dBm")
         except Exception as e:
-            tx_info = None
             logger.warning(f"Failed to set TX power for {device_id}: {e}")
         
         # Create status object
