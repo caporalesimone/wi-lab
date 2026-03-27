@@ -128,3 +128,19 @@ async def delete_reservation(
             status_code=404, detail="Reservation not found or already expired"
         )
     return {"detail": "Reservation released"}
+
+
+@router.delete(
+    "",
+    responses={
+        200: {"description": "All reservations released"},
+        401: {"description": "Unauthorized"},
+    },
+)
+async def delete_all_reservations(
+    mgr: ReservationManager = Depends(get_reservation_manager),
+    _auth: bool = Depends(require_token),
+):
+    """Release all active reservations at once."""
+    count = mgr.delete_all()
+    return {"detail": f"{count} reservation(s) released", "released": count}

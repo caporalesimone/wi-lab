@@ -118,6 +118,17 @@ class ReservationManager:
             logger.info("Reservation %s released", reservation_id)
             return True
 
+    def delete_all(self) -> int:
+        """Release all active reservations. Returns number removed."""
+        with self._lock:
+            self._purge_expired()
+            count = len(self._reservations)
+            self._reservations.clear()
+            self._device_to_rid.clear()
+            if count:
+                logger.info("All reservations released (%d)", count)
+            return count
+
     def device_for(self, reservation_id: str) -> Optional[str]:
         """Resolve reservation_id to device_id, or None if invalid/expired."""
         r = self.get(reservation_id)

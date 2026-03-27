@@ -339,3 +339,74 @@ class TestReservationAPIDelete:
             headers={"Authorization": valid_token},
         )
         assert resp.status_code == 404
+
+
+class TestReservationManagerDeleteAll:
+    """Tests for ReservationManager.delete_all()."""
+
+    def test_delete_all_returns_count(self):
+        mgr = ReservationManager(["dev0", "dev1"])
+        mgr.create(3600)
+        mgr.create(3600)
+        assert mgr.delete_all() == 2
+
+    def test_delete_all_frees_devices(self):
+        mgr = ReservationManager(["dev0"])
+        mgr.create(3600)
+        assert mgr.delete_all() == 1
+        # Device should be available again
+        r = mgr.create(3600)
+        assert r.device_id == "dev0"
+
+    def test_delete_all_empty_returns_zero(self):
+        mgr = ReservationManager(["dev0"])
+        assert mgr.delete_all() == 0
+
+
+class TestReservationAPIDeleteAll:
+    """Tests for DELETE /api/v1/device-reservation."""
+
+    def test_delete_all_success(self, client, valid_token):
+        # Create a reservation first
+        client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        )
+        resp = client.delete(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["released"] == 1
+
+    def test_delete_all_empty(self, client, valid_token):
+        resp = client.delete(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["released"] == 0
+
+    def test_delete_all_requires_auth(self, client):
+        resp = client.delete("/api/v1/device-reservation")
+        assert resp.status_code == 401
+
+    def test_delete_all_frees_for_new_reservation(self, client, valid_token):
+        """After delete-all, a new reservation should succeed."""
+        client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        )
+        client.delete(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+        )
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        )
+        assert resp.status_code == 200
