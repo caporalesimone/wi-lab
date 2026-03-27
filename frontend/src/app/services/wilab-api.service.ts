@@ -136,7 +136,11 @@ export class WilabApiService {
     } else {
       // Server-side error
       const detail = error.error?.detail || error.error?.message || error.message;
-      errorMessage = `Error Code: ${error.status}\nMessage: ${detail}`;
+      if (typeof detail === 'object' && detail !== null) {
+        errorMessage = detail.error || detail.message || JSON.stringify(detail);
+      } else {
+        errorMessage = String(detail);
+      }
     }
     
     console.error('API Error:', {

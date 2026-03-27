@@ -94,8 +94,9 @@ export class AppComponent implements OnInit {
         this.loading = false;
         // Check for 409 capacity error
         const raw = (err as { originalError?: HttpErrorResponse }).originalError;
-        if (raw && raw.status === 409 && raw.error?.next_available_in !== undefined) {
-          this.capacityError = raw.error as NoDeviceAvailableError;
+        const detail = raw?.error?.detail;
+        if (raw && raw.status === 409 && detail?.next_available_in !== undefined) {
+          this.capacityError = detail as NoDeviceAvailableError;
         } else {
           this.snackBar.open(`Reservation failed: ${err.message}`, 'Close', {
             duration: 5000,
