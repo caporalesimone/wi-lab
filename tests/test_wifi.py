@@ -93,7 +93,7 @@ class TestNetworkLifecycle:
         status = mgr.get_status('wls16')
         assert status is not None
         assert status.active is False
-        assert status.device_id == 'wls16'
+        assert status.interface == 'wls16'
     
     def test_get_status_unknown_network(self):
         """Test getting status of unknown network returns None."""

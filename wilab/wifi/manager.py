@@ -209,7 +209,6 @@ class NetworkManager:
         # Create status object
         expires_in = int(expires_at_timestamp - time.time())
         status = NetworkStatus(
-            device_id=device_id,
             interface=cfg_net.interface,
             active=True,
             ssid=req.ssid,
@@ -316,7 +315,7 @@ class NetworkManager:
             cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
             if not cfg_net:
                 return None
-            return NetworkStatus(device_id=device_id, interface=cfg_net.interface, active=False)
+            return NetworkStatus(interface=cfg_net.interface, active=False)
         
         # Check if network has expired (use internal timestamp)
         if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp < time.time():
@@ -325,7 +324,7 @@ class NetworkManager:
             cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
             if not cfg_net:
                 return None
-            return NetworkStatus(device_id=device_id, interface=cfg_net.interface, active=False)
+            return NetworkStatus(interface=cfg_net.interface, active=False)
         if hasattr(st, '_expires_at_timestamp'):
             st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))
         
@@ -369,7 +368,6 @@ class NetworkManager:
 
         clients = st.clients or []
         return {
-            "device_id": st.device_id,
             "interface": st.interface,
             "active": st.active,
             "dhcp": st.dhcp or {},
@@ -682,7 +680,7 @@ class NetworkManager:
         info = self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
         st.tx_power_level = level
         self.active[device_id] = st
-        return {"device_id": device_id, **info}
+        return info
 
     def get_tx_power_info(self, device_id: str) -> dict:
         """
@@ -716,7 +714,6 @@ class NetworkManager:
             logger.info(f"{device_id}: Power mismatch - expected {expected_dbm} dBm, reported {reported_dbm} dBm")
         
         result = {
-            "device_id": device_id,
             "interface": cfg_net.interface,
             "max_dbm": caps["max_dbm"],
             "levels_dbm": levels_dbm,

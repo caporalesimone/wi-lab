@@ -520,7 +520,7 @@ class TestNetworkGetEndpoint:
         data = resp.json()
         
         # Validate complete response structure
-        assert data['device_id'] == 'wls16'
+        assert data['interface'] == 'wls16'
         assert data['active'] is True
         assert data['ssid'] == 'TestAP'
         assert 'dhcp' in data
@@ -691,7 +691,7 @@ class TestTxPowerGetEndpoint:
         assert resp.status_code == 200
         data = resp.json()
 
-        assert data['device_id'] == 'wls16'
+        assert data['interface'] == 'wls16'
         assert 'max_dbm' in data
         assert 'levels_dbm' in data
         assert 'tx_power' in data
@@ -745,7 +745,6 @@ class TestTxPowerPostEndpoint:
             manager,
             'set_tx_power_level',
             lambda device_id, level: {
-                'device_id': device_id,
                 'interface': 'wlx-test0',
                 'max_dbm': 20.0,
                 'levels_dbm': {'1': 5.0, '2': 10.0, '3': 15.0, '4': 20.0},
@@ -766,7 +765,7 @@ class TestTxPowerPostEndpoint:
         assert resp.status_code == 200
         data = resp.json()
 
-        assert data['device_id'] == 'wls16'
+        assert data['interface'] == 'wlx-test0'
         assert data['tx_power']['requested_level'] == 2
         assert data['tx_power']['reported_level'] == 2
         assert data['tx_power']['reported_dbm'] == 10.0

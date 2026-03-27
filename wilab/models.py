@@ -92,7 +92,6 @@ class NetworkTxPower(BaseModel):
     reported_dbm: Optional[float] = Field(None, description="TX power currently reported by interface in dBm")
 
 class NetworkStatus(BaseModel):
-    device_id: str
     interface: str
     active: bool
     ssid: Optional[str] = None
@@ -112,7 +111,6 @@ class NetworkStatus(BaseModel):
     clients: Optional[List[ClientInfo]] = Field(None, description="List of connected clients")
 
 class InterfaceStatus(BaseModel):
-    device_id: str
     interface: str
     active: bool
 
@@ -121,7 +119,6 @@ class TxPowerRequest(BaseModel):
 
 
 class TxPowerInfo(BaseModel):
-    device_id: str
     interface: str
     max_dbm: float
     levels_dbm: dict
