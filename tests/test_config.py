@@ -1,6 +1,6 @@
 import os
 import pytest
-from wilab.config import load_config, AppConfig, NetworkEntry, NET_ID_REGEX
+from wilab.config import load_config, AppConfig, NetworkEntry
 
 
 class TestConfigLoading:
@@ -12,9 +12,8 @@ class TestConfigLoading:
         cfg = load_config(path)
         assert isinstance(cfg, AppConfig)
         assert cfg.api_port == 8080
-        assert cfg.networks[0].net_id == 'ap-01'
-        # Hardware-independent: verify interface exists, not specific name
-        assert cfg.networks[0].interface.startswith('wl')
+        assert cfg.networks[0].device_id == 'wls16'
+        assert cfg.networks[0].interface == 'wls16'
     
     def test_load_config_default_path(self):
         """Test loading config from default location."""
@@ -55,41 +54,36 @@ class TestNetworkEntryValidation:
     def test_valid_network_entry(self):
         """Test creating a valid NetworkEntry."""
         entry = NetworkEntry(
-            net_id='ap-01',
             interface='wlan0'
         )
-        assert entry.net_id == 'ap-01'
+        assert entry.interface == 'wlan0'
+        assert entry.device_id == 'wlan0'
+        assert entry.display_name is None
+    
+    def test_network_entry_with_display_name(self):
+        """Test creating a NetworkEntry with display_name."""
+        entry = NetworkEntry(
+            interface='wlan0',
+            display_name='bench-antenna-1'
+        )
+        assert entry.device_id == 'wlan0'
+        assert entry.display_name == 'bench-antenna-1'
+    
+    def test_device_id_equals_interface(self):
+        """Test that device_id is always equal to interface name."""
+        entry = NetworkEntry(interface='wlx782051245264')
+        assert entry.device_id == 'wlx782051245264'
+    
+    def test_config_without_net_id_is_valid(self):
+        """Test that configuration without net_id is valid (new format)."""
+        entry = NetworkEntry(interface='wlan0')
         assert entry.interface == 'wlan0'
     
-    def test_invalid_net_id_uppercase(self):
-        """Test that uppercase net_id is rejected."""
-        with pytest.raises(ValueError, match="must match"):
-            NetworkEntry(
-                net_id='AP-01',
-                interface='wlan0'
-            )
-    
-    def test_invalid_net_id_special_chars(self):
-        """Test that special characters in net_id are rejected."""
-        with pytest.raises(ValueError, match="must match"):
-            NetworkEntry(
-                net_id='ap_01',
-                interface='wlan0'
-            )
-    
-    def test_invalid_net_id_too_long(self):
-        """Test that net_id longer than 16 chars is rejected."""
-        with pytest.raises(ValueError, match="must match"):
-            NetworkEntry(
-                net_id='a' * 17,
-                interface='wlan0'
-            )
-    
-    def test_valid_net_id_regex(self):
-        """Test valid net_id patterns."""
-        valid_ids = ['ap-01', 'ap-1', 'a', '1', 'test-network-123']
-        for net_id in valid_ids:
-            assert NET_ID_REGEX.match(net_id)
+    def test_each_interface_has_unique_device_id(self):
+        """Test that each configured interface has unique device_id."""
+        cfg = load_config()
+        device_ids = [n.device_id for n in cfg.networks]
+        assert len(device_ids) == len(set(device_ids))
 
 
 class TestConfigIntegration:

@@ -109,19 +109,13 @@ internet_enabled_by_default: true
 # Each interface can run ONE WiFi network at a time
 # 
 # Parameters:
-#   - net_id: Unique network identifier (stable across restarts)
-#             Allowed: lowercase letters, digits, dashes
-#             Format: must match ^[a-z0-9-]{1,16}$
-#             Examples: "ap-01", "lab-1", "test-network"
-#
 #   - interface: WiFi interface name to use for this network
 #                Find available interfaces: iw dev
 #                Names: wlan0, wlx782051245264, etc.
+#                The interface name is also used as the internal device_id.
 #
-#   - subnet: (optional) Custom CIDR for DHCP allocation
-#             If omitted: auto-calculated from dhcp_base_network + index
-#             Example: "192.168.20.0/24"
-#             If specified: ensure it doesn't conflict with other networks or host
+#   - display_name: (optional) Human-readable label for the device
+#                  Example: "bench-antenna-1"
 #
 # At runtime, WiFi parameters (SSID, channel, band, encryption, password, hidden, 
 # timeout, tx_power_level) are provided via REST API when creating a network.
@@ -134,17 +128,14 @@ internet_enabled_by_default: true
 #   4 = Maximum power (~20 dBm)
 # Actual dBm values depend on WiFi interface capabilities.
 networks:
-  - net_id: "ap-01"
-    interface: "wlxbc071dc527d6"
-    # subnet: "192.168.120.0/24"  # Optional: uncomment to use custom subnet
+  - interface: "wlxbc071dc527d6"
+    display_name: "bench-antenna-1"
 
-  - net_id: "ap-02"
-    interface: "wlx7820512451b4"
-    # subnet: "192.168.121.0/24"  # Optional: uncomment to use custom subnet
+  - interface: "wlx7820512451b4"
+    display_name: "bench-antenna-2"
 
-  - net_id: "ap-03"
-    interface: "wlx782051245264"
-    # subnet: "192.168.122.0/24"  # Optional: uncomment to use custom subnet
+  - interface: "wlx782051245264"
+    display_name: "bench-antenna-3"
 
 # ==================================================================================================
 # DOCUMENTATION & REFERENCES

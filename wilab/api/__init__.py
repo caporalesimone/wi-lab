@@ -122,8 +122,8 @@ def create_app() -> FastAPI:
         try:
             paths = openapi_schema.get("paths", {})
             
-            # POST /interface/{net_id}/network example
-            post_route = paths.get("/api/v1/interface/{net_id}/network", {}).get("post", {})
+            # POST /interface/{device_id}/network example
+            post_route = paths.get("/api/v1/interface/{device_id}/network", {}).get("post", {})
             content = post_route.get("requestBody", {}).get("content", {})
             if "application/json" in content:
                 content["application/json"]["example"] = {
@@ -137,8 +137,8 @@ def create_app() -> FastAPI:
                     "internet_enabled": True,
                 }
             
-            # POST /interface/{net_id}/txpower example
-            txpower_post = paths.get("/api/v1/interface/{net_id}/txpower", {}).get("post", {})
+            # POST /interface/{device_id}/txpower example
+            txpower_post = paths.get("/api/v1/interface/{device_id}/txpower", {}).get("post", {})
             txpower_content = txpower_post.get("requestBody", {}).get("content", {})
             if "application/json" in txpower_content:
                 txpower_content["application/json"]["example"] = {
@@ -150,8 +150,8 @@ def create_app() -> FastAPI:
             txpower_post_200_content = txpower_post_200.get("content", {})
             if "application/json" in txpower_post_200_content:
                 txpower_post_200_content["application/json"]["example"] = {
-                    "net_id": "ap-01",
-                    "interface": "wlx782051245264",
+                    "device_id": "wls16",
+                    "interface": "wls16",
                     "max_dbm": 20.0,
                     "levels_dbm": {
                         "1": 5.0,
@@ -180,15 +180,15 @@ def create_app() -> FastAPI:
                 },
             }
 
-            # GET /interface/{net_id}/network response example
-            network_get = paths.get("/api/v1/interface/{net_id}/network", {}).get("get", {})
+            # GET /interface/{device_id}/network response example
+            network_get = paths.get("/api/v1/interface/{device_id}/network", {}).get("get", {})
             network_responses = network_get.get("responses", {})
             network_200 = network_responses.get("200", {})
             network_200_content = network_200.get("content", {})
             if "application/json" in network_200_content:
                 network_200_content["application/json"]["example"] = {
-                    "net_id": "ap-01",
-                    "interface": "wlxbc071dc527d6",
+                    "device_id": "wls16",
+                    "interface": "wls16",
                     "active": True,
                     "ssid": "test-network-ap-01",
                     "channel": 6,
@@ -222,15 +222,15 @@ def create_app() -> FastAPI:
                     ],
                 }
             
-            # GET /interface/{net_id}/txpower response example
-            txpower_get = paths.get("/api/v1/interface/{net_id}/txpower", {}).get("get", {})
+            # GET /interface/{device_id}/txpower response example
+            txpower_get = paths.get("/api/v1/interface/{device_id}/txpower", {}).get("get", {})
             txpower_responses = txpower_get.get("responses", {})
             txpower_200 = txpower_responses.get("200", {})
             txpower_200_content = txpower_200.get("content", {})
             if "application/json" in txpower_200_content:
                 txpower_200_content["application/json"]["example"] = {
-                    "net_id": "ap-01",
-                    "interface": "wlx782051245264",
+                    "device_id": "wls16",
+                    "interface": "wls16",
                     "max_dbm": 20.0,
                     "levels_dbm": {
                         "1": 5.0,

@@ -55,54 +55,54 @@ class NetworkManager:
         except CommandError as e:
             logger.warning(f"Could not configure NetworkManager unmanaged for {interface}: {e}")
 
-    def _get_subnet(self, net_id: str) -> str:
+    def _get_subnet(self, device_id: str) -> str:
         """Assign a /24 subnet by incrementing the third octet from dhcp_base_network."""
-        cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
+        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
         if not cfg_net:
-            raise ValueError("Unknown net_id")
+            raise ValueError("Unknown device_id")
 
         base_net = IPv4Network(self.config.dhcp_base_network, strict=False)
         if base_net.prefixlen != 24:
             raise ValueError("dhcp_base_network must be a /24 network")
 
         try:
-            idx = [n.net_id for n in self.config.networks].index(net_id)
+            idx = [n.device_id for n in self.config.networks].index(device_id)
         except ValueError as exc:
-            raise ValueError("Unknown net_id for subnet allocation") from exc
+            raise ValueError("Unknown device_id for subnet allocation") from exc
 
         octets = str(base_net.network_address).split('.')
         third_octet = int(octets[2]) + idx
         if third_octet > 255:
-            raise ValueError(f"Cannot allocate subnet for {net_id}: octet overflow")
+            raise ValueError(f"Cannot allocate subnet for {device_id}: octet overflow")
         octets[2] = str(third_octet)
         return '.'.join(octets) + '/24'
 
-    def start_network(self, net_id: str, req: NetworkCreateRequest) -> NetworkStatus:
+    def start_network(self, device_id: str, req: NetworkCreateRequest) -> NetworkStatus:
         """
         Start an AP network with DHCP server.
         
         Args:
-            net_id: Network identifier
+            device_id: Device identifier (interface name)
             req: Network creation parameters (SSID, channel, encryption, etc.)
             
         Returns:
             NetworkStatus with active network details
         """
-        logger.info(f"Starting network {net_id} with SSID '{req.ssid}'")
+        logger.info(f"Starting network {device_id} with SSID '{req.ssid}'")
         
-        # Validate net_id exists in config
-        cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
+        # Validate device_id exists in config
+        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
         if not cfg_net:
-            raise ValueError("Unknown net_id")
+            raise ValueError("Unknown device_id")
         
         # Check if network is already active (check both self.active and hostapd)
-        if net_id in self.active:
-            raise ValueError(f"Network {net_id} is already active. Stop it first before creating a new one.")
+        if device_id in self.active:
+            raise ValueError(f"Network {device_id} is already active. Stop it first before creating a new one.")
         
         # Also check if hostapd is running (in case network was marked inactive but processes still running)
-        if self.hostapd_manager.is_running(net_id):
-            logger.warning(f"hostapd is running for {net_id} but network not in active dict, cleaning up")
-            self.stop_network(net_id)
+        if self.hostapd_manager.is_running(device_id):
+            logger.warning(f"hostapd is running for {device_id} but network not in active dict, cleaning up")
+            self.stop_network(device_id)
         
         # Calculate timeout
         now = time.time()
@@ -118,7 +118,7 @@ class NetworkManager:
         expires_at_str = datetime.fromtimestamp(expires_at_timestamp).strftime('%Y-%m-%d %H:%M:%S')
         
         # Get subnet (from config or calculated)
-        subnet = self._get_subnet(net_id)
+        subnet = self._get_subnet(device_id)
         
         # Validate interface
         logger.info(f"Validating interface {cfg_net.interface}")
@@ -143,7 +143,7 @@ class NetworkManager:
         # Start DHCP server
         try:
             dhcp_info = self.dhcp_server.start(
-                net_id=net_id,
+                net_id=device_id,
                 interface=cfg_net.interface,
                 subnet=subnet,
                 dns_server=self.config.dns_server
@@ -156,7 +156,7 @@ class NetworkManager:
         # Start hostapd for AP mode
         try:
             hostapd_info = self.hostapd_manager.start(
-                net_id=net_id,
+                net_id=device_id,
                 interface=cfg_net.interface,
                 ssid=req.ssid,
                 channel=req.channel,
@@ -170,7 +170,7 @@ class NetworkManager:
             logger.error(f"Failed to start hostapd: {e}")
             # Rollback DHCP
             try:
-                self.dhcp_server.stop(net_id)
+                self.dhcp_server.stop(device_id)
             except Exception:
                 pass
             raise ValueError(f"Failed to start AP: {e}") from e
@@ -194,8 +194,8 @@ class NetworkManager:
             logger.error(f"Failed to assign gateway IP: {e}")
             # Rollback hostapd and DHCP
             try:
-                self.hostapd_manager.stop(net_id)
-                self.dhcp_server.stop(net_id)
+                self.hostapd_manager.stop(device_id)
+                self.dhcp_server.stop(device_id)
             except Exception:
                 pass
             raise ValueError(f"Failed to assign gateway IP: {e}")
@@ -205,15 +205,15 @@ class NetworkManager:
         try:
             tx_info = self._set_tx_power(cfg_net.interface, tx_power_level, req.channel)
             runtime_dbm = self._read_current_txpower(cfg_net.interface)
-            logger.info(f"TX power set for {net_id}: requested level {tx_power_level}, runtime reported {runtime_dbm} dBm")
+            logger.info(f"TX power set for {device_id}: requested level {tx_power_level}, runtime reported {runtime_dbm} dBm")
         except Exception as e:
             tx_info = None
-            logger.warning(f"Failed to set TX power for {net_id}: {e}")
+            logger.warning(f"Failed to set TX power for {device_id}: {e}")
         
         # Create status object
         expires_in = int(expires_at_timestamp - time.time())
         status = NetworkStatus(
-            net_id=net_id,
+            device_id=device_id,
             interface=cfg_net.interface,
             active=True,
             ssid=req.ssid,
@@ -231,53 +231,53 @@ class NetworkManager:
         # Store internal timestamp for expiration checking
         status._expires_at_timestamp = expires_at_timestamp
         
-        self.active[net_id] = status
+        self.active[device_id] = status
         
         # Enable NAT if internet access is enabled
         if internet_enabled:
             try:
-                self.nat_manager.enable_nat(cfg_net.interface, net_id)
-                logger.info(f"NAT enabled for {net_id}")
+                self.nat_manager.enable_nat(cfg_net.interface, device_id)
+                logger.info(f"NAT enabled for {device_id}")
             except Exception as e:
-                logger.error(f"Failed to enable NAT for {net_id}: {e}")
+                logger.error(f"Failed to enable NAT for {device_id}: {e}")
                 # Don't fail network creation if NAT fails, just log
         
         # Apply isolation rules to prevent inter-network traffic
         try:
             self.isolation_manager.add_network(subnet)
-            logger.info(f"Isolation rules applied for {net_id} ({subnet})")
+            logger.info(f"Isolation rules applied for {device_id} ({subnet})")
         except Exception as e:
-            logger.error(f"Failed to apply isolation rules for {net_id}: {e}")
+            logger.error(f"Failed to apply isolation rules for {device_id}: {e}")
         #     # Don't fail network creation if isolation fails
-        logger.info(f"Isolation disabled for testing (network {net_id})")
+        logger.info(f"Isolation disabled for testing (network {device_id})")
         
-        logger.info(f"Network {net_id} started successfully (expires at {expires_at_str})")
+        logger.info(f"Network {device_id} started successfully (expires at {expires_at_str})")
         
         return status
 
-    def stop_network(self, net_id: str) -> None:
+    def stop_network(self, device_id: str) -> None:
         """
         Stop an AP network and clean up DHCP and NAT.
         
         Args:
-            net_id: Network identifier
+            device_id: Device identifier (interface name)
         """
-        logger.info(f"Stopping network {net_id}")
+        logger.info(f"Stopping network {device_id}")
         
         # Get interface and subnet before removing from active dict
-        cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
-        subnet = self.active[net_id].subnet if net_id in self.active else None
+        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+        subnet = self.active[device_id].subnet if device_id in self.active else None
         
         # Stop hostapd
         try:
-            self.hostapd_manager.stop(net_id)
+            self.hostapd_manager.stop(device_id)
         except Exception as e:
             logger.error(f"Error stopping hostapd: {e}")
         
         # Disable NAT if it was enabled
-        if net_id in self.active and self.active[net_id].internet_enabled and cfg_net:
+        if device_id in self.active and self.active[device_id].internet_enabled and cfg_net:
             try:
-                self.nat_manager.disable_nat(cfg_net.interface, net_id)
+                self.nat_manager.disable_nat(cfg_net.interface, device_id)
             except Exception as e:
                 logger.error(f"Error disabling NAT: {e}")
         
@@ -285,49 +285,49 @@ class NetworkManager:
         if subnet:
             try:
                 self.isolation_manager.remove_network(subnet)
-                logger.info(f"Isolation rules removed for {net_id} ({subnet})")
+                logger.info(f"Isolation rules removed for {device_id} ({subnet})")
             except Exception as e:
                 logger.error(f"Error removing isolation rules: {e}")
         
         # Stop DHCP server
         try:
-            self.dhcp_server.stop(net_id)
+            self.dhcp_server.stop(device_id)
         except Exception as e:
             logger.error(f"Error stopping DHCP server: {e}")
         
         # Remove from active dict
-        if net_id in self.active:
+        if device_id in self.active:
             with self._lock:
-                if net_id in self.active:
-                    del self.active[net_id]
+                if device_id in self.active:
+                    del self.active[device_id]
         
-        logger.info(f"Network {net_id} stopped")
+        logger.info(f"Network {device_id} stopped")
 
-    def get_status(self, net_id: str) -> Optional[NetworkStatus]:
+    def get_status(self, device_id: str) -> Optional[NetworkStatus]:
         """
         Get current status of a network.
         Auto-expires networks past their timeout.
         
         Args:
-            net_id: Network identifier
+            device_id: Device identifier (interface name)
             
         Returns:
-            NetworkStatus object or None if unknown net_id
+            NetworkStatus object or None if unknown device_id
         """
-        st = self.active.get(net_id)
+        st = self.active.get(device_id)
         if not st:
-            # Return inactive status if known net_id
-            cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
+            # Return inactive status if known device_id
+            cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
             if not cfg_net:
                 return None
-            return NetworkStatus(net_id=net_id, interface=cfg_net.interface, active=False)
+            return NetworkStatus(device_id=device_id, interface=cfg_net.interface, active=False)
         
         # Check if network has expired (use internal timestamp)
         if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp < time.time():
-            logger.info(f"Network {net_id} expired, stopping")
-            self.stop_network(net_id)
-            cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
-            return NetworkStatus(net_id=net_id, interface=cfg_net.interface, active=False)
+            logger.info(f"Network {device_id} expired, stopping")
+            self.stop_network(device_id)
+            cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+            return NetworkStatus(device_id=device_id, interface=cfg_net.interface, active=False)
         
         # Update expires_in dynamically
         if hasattr(st, '_expires_at_timestamp'):
@@ -335,8 +335,8 @@ class NetworkManager:
         
         # Add DHCP info and clients if active
         if st.active:
-            dhcp_info = self.dhcp_server.get_subnet_info(net_id)
-            clients = self.list_clients(net_id)
+            dhcp_info = self.dhcp_server.get_subnet_info(device_id)
+            clients = self.list_clients(device_id)
             st.dhcp = dhcp_info if dhcp_info else {}
             st.clients = clients
             st.clients_connected = len(clients)
@@ -363,21 +363,21 @@ class NetworkManager:
                             "reported_dbm": reported_dbm,
                         })
                     except Exception as exc:
-                        logger.warning(f"Failed to build tx_power status for {net_id}: {exc}")
+                        logger.warning(f"Failed to build tx_power status for {device_id}: {exc}")
 
                 st.tx_power = NetworkTxPower(**tx_power_data)
         
         return st
 
-    def get_summary(self, net_id: str) -> Optional[dict]:
+    def get_summary(self, device_id: str) -> Optional[dict]:
         """Backward-compatible summary view for a network."""
-        st = self.get_status(net_id)
+        st = self.get_status(device_id)
         if st is None:
             return None
 
         clients = st.clients or []
         return {
-            "net_id": st.net_id,
+            "device_id": st.device_id,
             "interface": st.interface,
             "active": st.active,
             "dhcp": st.dhcp or {},
@@ -385,32 +385,32 @@ class NetworkManager:
             "clients": [c.model_dump() if hasattr(c, "model_dump") else c for c in clients],
         }
 
-    def enable_internet(self, net_id: str) -> NetworkStatus:
+    def enable_internet(self, device_id: str) -> NetworkStatus:
         """
         Enable Internet access for a network (NAT forwarding).
         
         Args:
-            net_id: Network identifier
+            device_id: Device identifier (interface name)
             
         Returns:
             Updated NetworkStatus
         """
-        logger.info(f"Enabling Internet for network {net_id}")
+        logger.info(f"Enabling Internet for network {device_id}")
         
-        st = self.get_status(net_id)
+        st = self.get_status(device_id)
         if not st or not st.active:
-            raise ValueError("Unknown or inactive net_id")
+            raise ValueError("Unknown or inactive device_id")
         
         # Get interface for NAT rules
-        cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
+        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
         if not cfg_net:
-            raise ValueError("Unknown net_id")
+            raise ValueError("Unknown device_id")
         
         # Enable NAT if not already enabled
         if not st.internet_enabled:
             try:
-                self.nat_manager.enable_nat(cfg_net.interface, net_id)
-                logger.info(f"NAT rules applied for {net_id}")
+                self.nat_manager.enable_nat(cfg_net.interface, device_id)
+                logger.info(f"NAT rules applied for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to enable NAT: {e}")
                 raise RuntimeError(f"Cannot enable Internet: {e}") from e
@@ -418,37 +418,37 @@ class NetworkManager:
         st.internet_enabled = True
         if hasattr(st, '_expires_at_timestamp'):
             st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))
-        self.active[net_id] = st
-        logger.info(f"Internet enabled for {net_id}")
+        self.active[device_id] = st
+        logger.info(f"Internet enabled for {device_id}")
         
         return st
 
-    def disable_internet(self, net_id: str) -> NetworkStatus:
+    def disable_internet(self, device_id: str) -> NetworkStatus:
         """
         Disable Internet access for a network (block NAT forwarding).
         
         Args:
-            net_id: Network identifier
+            device_id: Device identifier (interface name)
             
         Returns:
             Updated NetworkStatus
         """
-        logger.info(f"Disabling Internet for network {net_id}")
+        logger.info(f"Disabling Internet for network {device_id}")
         
-        st = self.get_status(net_id)
+        st = self.get_status(device_id)
         if not st or not st.active:
-            raise ValueError("Unknown or inactive net_id")
+            raise ValueError("Unknown or inactive device_id")
         
         # Get interface for NAT rules
-        cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
+        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
         if not cfg_net:
-            raise ValueError("Unknown net_id")
+            raise ValueError("Unknown device_id")
         
         # Disable NAT if currently enabled
         if st.internet_enabled:
             try:
-                self.nat_manager.disable_nat(cfg_net.interface, net_id)
-                logger.info(f"NAT rules removed for {net_id}")
+                self.nat_manager.disable_nat(cfg_net.interface, device_id)
+                logger.info(f"NAT rules removed for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to disable NAT: {e}")
                 # Continue anyway to update state
@@ -456,18 +456,18 @@ class NetworkManager:
         st.internet_enabled = False
         if hasattr(st, '_expires_at_timestamp'):
             st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))
-        self.active[net_id] = st
-        logger.info(f"Internet disabled for {net_id}")
+        self.active[device_id] = st
+        logger.info(f"Internet disabled for {device_id}")
         
         return st
 
-    def list_clients(self, net_id: str) -> List[ClientInfo]:
+    def list_clients(self, device_id: str) -> List[ClientInfo]:
         """
         List currently connected WiFi clients using real-time data from iw station dump.
         Optionally enriches with IP from DHCP lease file if available.
         
         Args:
-            net_id: Network identifier
+            device_id: Device identifier (interface name)
             
         Returns:
             List of ClientInfo objects (MAC and IP address if known)
@@ -475,7 +475,7 @@ class NetworkManager:
         clients = []
         
         # Get interface for this network
-        cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
+        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
         if not cfg_net:
             return clients
         
@@ -505,7 +505,7 @@ class NetworkManager:
         # Build MAC -> IP mapping from DHCP lease file (only valid leases)
         mac_to_ip = {}
         now = int(time.time())
-        dhcp_info = self.dhcp_server.get_subnet_info(net_id)
+        dhcp_info = self.dhcp_server.get_subnet_info(device_id)
         if dhcp_info:
             lease_file = dhcp_info.get('lease_file')
             if lease_file and os.path.exists(lease_file):
@@ -545,12 +545,12 @@ class NetworkManager:
     def shutdown_all(self) -> None:
         """Shutdown all active networks."""
         logger.info("Shutting down all networks")
-        net_ids = list(self.active.keys())
-        for net_id in net_ids:
+        device_ids = list(self.active.keys())
+        for device_id in device_ids:
             try:
-                self.stop_network(net_id)
+                self.stop_network(device_id)
             except Exception as e:
-                logger.error(f"Error stopping {net_id}: {e}")
+                logger.error(f"Error stopping {device_id}: {e}")
         logger.info("All networks shut down")
 
     # ---- TX power management ----
@@ -670,41 +670,41 @@ class NetworkManager:
         }
         return result
 
-    def set_tx_power_level(self, net_id: str, level: int) -> dict:
+    def set_tx_power_level(self, device_id: str, level: int) -> dict:
         """
         Change TX power level for active network.
         Verifies if change was applied and warns if interface doesn't support dynamic changes.
         """
-        st = self.get_status(net_id)
+        st = self.get_status(device_id)
         if not st or not st.active:
-            raise ValueError("Unknown or inactive net_id")
+            raise ValueError("Unknown or inactive device_id")
         if level not in [1, 2, 3, 4]:
             raise ValueError("TX power level must be 1-4")
         if st.channel is None:
             raise ValueError("Channel unknown for this network")
-        cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
+        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
         if not cfg_net:
-            raise ValueError("Unknown net_id")
+            raise ValueError("Unknown device_id")
         
         # Set power with verification (waits 3s and checks if change applied)
         info = self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
         st.tx_power_level = level
-        self.active[net_id] = st
-        return {"net_id": net_id, **info}
+        self.active[device_id] = st
+        return {"device_id": device_id, **info}
 
-    def get_tx_power_info(self, net_id: str) -> dict:
+    def get_tx_power_info(self, device_id: str) -> dict:
         """
         Get current TX power info for network.
         Compares configured level with actual interface power and warns if mismatch.
         """
-        st = self.get_status(net_id)
+        st = self.get_status(device_id)
         if not st or not st.active:
-            raise ValueError("Unknown or inactive net_id")
+            raise ValueError("Unknown or inactive device_id")
         if st.channel is None:
             raise ValueError("Channel unknown for this network")
-        cfg_net = next((n for n in self.config.networks if n.net_id == net_id), None)
+        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
         if not cfg_net:
-            raise ValueError("Unknown net_id")
+            raise ValueError("Unknown device_id")
         
         # Get configured level
         level = st.tx_power_level
@@ -721,10 +721,10 @@ class NetworkManager:
         
         # Keep mismatch as server-side observability; GET payload no longer exposes warning.
         if reported_dbm is not None and abs(reported_dbm - expected_dbm) > 0.5:
-            logger.info(f"{net_id}: Power mismatch - expected {expected_dbm} dBm, reported {reported_dbm} dBm")
+            logger.info(f"{device_id}: Power mismatch - expected {expected_dbm} dBm, reported {reported_dbm} dBm")
         
         result = {
-            "net_id": net_id,
+            "device_id": device_id,
             "interface": cfg_net.interface,
             "max_dbm": caps["max_dbm"],
             "levels_dbm": levels_dbm,
@@ -744,15 +744,15 @@ class NetworkManager:
                 # Copy keys to avoid mutation during iteration
                 with self._lock:
                     items = list(self.active.items())
-                for net_id, st in items:
+                for device_id, st in items:
                     # Some tests may not set internal timestamp; guard accordingly
                     ts = getattr(st, '_expires_at_timestamp', None)
                     if ts is not None and ts < now:
-                        logger.info(f"[expiry-loop] Network {net_id} expired, stopping")
+                        logger.info(f"[expiry-loop] Network {device_id} expired, stopping")
                         try:
-                            self.stop_network(net_id)
+                            self.stop_network(device_id)
                         except Exception as e:
-                            logger.error(f"[expiry-loop] Failed stopping {net_id}: {e}")
+                            logger.error(f"[expiry-loop] Failed stopping {device_id}: {e}")
             except Exception as e:
                 logger.debug(f"[expiry-loop] Loop error: {e}")
             # Run every 5 seconds

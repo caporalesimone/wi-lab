@@ -62,23 +62,23 @@ class TestSubnetResolution:
         """First subnet matches dhcp_base_network /24."""
         cfg = load_config()
         mgr = NetworkManager(cfg)
-        subnet = mgr._get_subnet('ap-01')
+        subnet = mgr._get_subnet('wls16')
         assert subnet == '192.168.120.0/24'
     
     def test_get_subnet_unknown_net_id(self):
         """Test that unknown net_id raises ValueError."""
         cfg = load_config()
         mgr = NetworkManager(cfg)
-        with pytest.raises(ValueError, match="Unknown net_id"):
+        with pytest.raises(ValueError, match="Unknown device_id"):
             mgr._get_subnet('unknown-network')
     
     def test_get_subnet_fallback_calculation(self):
         """Test sequential allocation increments third octet."""
         cfg = load_config()
-        cfg.networks.append(NetworkEntry(net_id='ap-02', interface='wlan1'))
+        cfg.networks.append(NetworkEntry(interface='wlan1'))
         mgr = NetworkManager(cfg)
-        first = mgr._get_subnet('ap-01')
-        second = mgr._get_subnet('ap-02')
+        first = mgr._get_subnet('wls16')
+        second = mgr._get_subnet('wlan1')
         assert first == '192.168.120.0/24'
         assert second == '192.168.121.0/24'
 
@@ -90,10 +90,10 @@ class TestNetworkLifecycle:
         """Test getting status of inactive network."""
         cfg = load_config()
         mgr = NetworkManager(cfg)
-        status = mgr.get_status('ap-01')
+        status = mgr.get_status('wls16')
         assert status is not None
         assert status.active is False
-        assert status.net_id == 'ap-01'
+        assert status.device_id == 'wls16'
     
     def test_get_status_unknown_network(self):
         """Test getting status of unknown network returns None."""
@@ -126,7 +126,7 @@ class TestNetworkLifecycle:
             tx_power_level=4
         )
         
-        status = mgr.start_network('ap-01', req)
+        status = mgr.start_network('wls16', req)
         assert status.active is True
         assert status.ssid == 'TestAP'
         assert status.channel == 6
@@ -156,7 +156,7 @@ class TestNetworkLifecycle:
             internet_enabled=False
         )
         
-        status = mgr.start_network('ap-01', req)
+        status = mgr.start_network('wls16', req)
         assert status.internet_enabled is False
     
     def test_start_network_with_custom_timeout(self, monkeypatch):
@@ -182,7 +182,7 @@ class TestNetworkLifecycle:
         )
         
         now = time.time()
-        status = mgr.start_network('ap-01', req)
+        status = mgr.start_network('wls16', req)
         assert status.expires_at is not None
         # expires_at should be a string in format yyyy-mm-dd HH:MM:SS
         assert isinstance(status.expires_at, str)
@@ -215,7 +215,7 @@ class TestNetworkLifecycle:
         )
         
         now = time.time()
-        status = mgr.start_network('ap-01', req)
+        status = mgr.start_network('wls16', req)
         # Should be bounded to min_timeout (60 seconds)
         assert status.expires_in > 50
         assert status.expires_in < 100
@@ -244,12 +244,12 @@ class TestNetworkLifecycle:
             tx_power_level=4
         )
         
-        status = mgr.start_network('ap-01', req)
+        status = mgr.start_network('wls16', req)
         assert status.active is True
-        assert 'ap-01' in mgr.active
+        assert 'wls16' in mgr.active
         
-        mgr.stop_network('ap-01')
-        assert 'ap-01' not in mgr.active
+        mgr.stop_network('wls16')
+        assert 'wls16' not in mgr.active
     
     def test_stop_network_nonexistent(self, monkeypatch):
         """Test stopping a network that doesn't exist (should not raise)."""
@@ -283,14 +283,14 @@ class TestNetworkLifecycle:
             timeout=3600  # Normal timeout
         )
         
-        status = mgr.start_network('ap-01', req)
+        status = mgr.start_network('wls16', req)
         assert status.active is True
         
         # Manually set internal timestamp to past to simulate expiration
-        mgr.active['ap-01']._expires_at_timestamp = time.time() - 1  # Expired 1 second ago
+        mgr.active['wls16']._expires_at_timestamp = time.time() - 1  # Expired 1 second ago
         
         # Check status should return inactive due to expiration
-        expired_status = mgr.get_status('ap-01')
+        expired_status = mgr.get_status('wls16')
         assert expired_status.active is False
 
 
@@ -305,7 +305,7 @@ class TestInternetControl:
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
         
-        def mock_nat_enable(interface, net_id):
+        def mock_nat_enable(interface, device_id):
             pass  # Mock NAT enable - now requires net_id parameter
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
@@ -322,8 +322,8 @@ class TestInternetControl:
             internet_enabled=False
         )
         
-        mgr.start_network('ap-01', req)
-        status = mgr.enable_internet('ap-01')
+        mgr.start_network('wls16', req)
+        status = mgr.enable_internet('wls16')
         assert status.internet_enabled is True
     
     def test_disable_internet(self, monkeypatch):
@@ -334,10 +334,10 @@ class TestInternetControl:
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
         
-        def mock_nat_enable(interface, net_id):
+        def mock_nat_enable(interface, device_id):
             pass  # Mock NAT enable - now requires net_id parameter
         
-        def mock_nat_disable(interface, net_id):
+        def mock_nat_disable(interface, device_id):
             pass  # Mock NAT disable - now requires net_id parameter
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
@@ -355,8 +355,8 @@ class TestInternetControl:
             internet_enabled=True
         )
         
-        mgr.start_network('ap-01', req)
-        status = mgr.disable_internet('ap-01')
+        mgr.start_network('wls16', req)
+        status = mgr.disable_internet('wls16')
         assert status.internet_enabled is False
     
     def test_internet_control_inactive_network(self):
@@ -365,7 +365,7 @@ class TestInternetControl:
         mgr = NetworkManager(cfg)
         
         with pytest.raises(ValueError, match="Unknown or inactive"):
-            mgr.enable_internet('ap-01')
+            mgr.enable_internet('wls16')
 
 
 class TestClientList:
@@ -392,8 +392,8 @@ class TestClientList:
             tx_power_level=4
         )
         
-        mgr.start_network('ap-01', req)
-        clients = mgr.list_clients('ap-01')
+        mgr.start_network('wls16', req)
+        clients = mgr.list_clients('wls16')
         assert clients == []
     
     def test_list_clients_with_leases(self, monkeypatch, tmp_path):
@@ -430,8 +430,8 @@ class TestClientList:
             tx_power_level=4
         )
         
-        mgr.start_network('ap-01', req)
-        clients = mgr.list_clients('ap-01')
+        mgr.start_network('wls16', req)
+        clients = mgr.list_clients('wls16')
         
         # DHCP leases may not persist in test environment
         assert isinstance(clients, list)
@@ -447,7 +447,7 @@ class TestNetworkSummary:
         """Summary for known but inactive network returns defaults."""
         cfg = load_config()
         mgr = NetworkManager(cfg)
-        summary = mgr.get_summary('ap-01')
+        summary = mgr.get_summary('wls16')
         assert summary is not None
         assert summary['active'] is False
         assert summary['dhcp'] == {}
@@ -482,8 +482,8 @@ class TestNetworkSummary:
             tx_power_level=4
         )
 
-        mgr.start_network('ap-01', req)
-        summary = mgr.get_summary('ap-01')
+        mgr.start_network('wls16', req)
+        summary = mgr.get_summary('wls16')
         assert summary is not None
         assert summary['active'] is True
         assert summary['dhcp']['gateway'] == '192.168.10.1'
@@ -518,7 +518,7 @@ class TestShutdownAll:
             tx_power_level=4
         )
         
-        mgr.start_network('ap-01', req)
+        mgr.start_network('wls16', req)
         assert len(mgr.active) == 1
         
         mgr.shutdown_all()
@@ -562,7 +562,7 @@ class TestTxPower:
             tx_power_level=3  # Now required
         )
 
-        status = mgr.start_network('ap-01', req)
+        status = mgr.start_network('wls16', req)
         assert status.tx_power_level == 3
         # Hardware-independent: verify interface from config, not hardcoded
         cfg_interface = cfg.networks[0].interface
@@ -599,13 +599,13 @@ class TestTxPower:
             tx_power_level=4
         )
 
-        mgr.start_network('ap-01', req)
-        info = mgr.set_tx_power_level('ap-01', 2)
+        mgr.start_network('wls16', req)
+        info = mgr.set_tx_power_level('wls16', 2)
         assert info['tx_power']['requested_level'] == 2
-        assert mgr.active['ap-01'].tx_power_level == 2
+        assert mgr.active['wls16'].tx_power_level == 2
 
         # GET should reflect the last level
-        info2 = mgr.get_tx_power_info('ap-01')
+        info2 = mgr.get_tx_power_info('wls16')
         assert info2['tx_power']['requested_level'] == 2
 
     def test_set_tx_power_level_mismatch_raises_and_preserves_state(self, monkeypatch):
@@ -639,7 +639,7 @@ class TestTxPower:
             band='2.4ghz',
             tx_power_level=4,
         )
-        mgr.start_network('ap-01', req)
+        mgr.start_network('wls16', req)
 
         def fake_mismatch(*args, **kwargs):
             raise TxPowerMismatchError('Interface does not support dynamic power change.')
@@ -647,6 +647,6 @@ class TestTxPower:
         monkeypatch.setattr(mgr, '_set_tx_power', fake_mismatch)
 
         with pytest.raises(TxPowerMismatchError):
-            mgr.set_tx_power_level('ap-01', 2)
+            mgr.set_tx_power_level('wls16', 2)
 
-        assert mgr.active['ap-01'].tx_power_level == 4
+        assert mgr.active['wls16'].tx_power_level == 4

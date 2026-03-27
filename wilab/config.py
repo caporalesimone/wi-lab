@@ -1,24 +1,18 @@
-import re
 import os
 from typing import List, Optional
 from ipaddress import IPv4Network
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-NET_ID_REGEX = re.compile(r"^[a-z0-9-]{1,16}$")
-CIDR_REGEX = re.compile(r"^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$")
-
 
 class NetworkEntry(BaseModel):
-    net_id: str
     interface: str
+    display_name: Optional[str] = None
 
-    @field_validator('net_id')
-    @classmethod
-    def validate_net_id(cls, v: str) -> str:
-        if not NET_ID_REGEX.match(v):
-            raise ValueError("net_id must match ^[a-z0-9-]{1,16}$")
-        return v
+    @property
+    def device_id(self) -> str:
+        """Stable internal identifier derived from interface name."""
+        return self.interface
 
 class AppConfig(BaseModel):
     auth_token: str
@@ -76,6 +70,11 @@ class AppConfig(BaseModel):
                 f"third octet would overflow (max: {max_third})"
             )
         
+        # Check for duplicate interfaces
+        interfaces = [n.interface for n in v]
+        if len(interfaces) != len(set(interfaces)):
+            raise ValueError("Duplicate interface names in networks configuration")
+        
         return v
 
 
@@ -95,8 +94,8 @@ def load_config(path: Optional[str] = None) -> AppConfig:
             try:
                 validate_interface(net.interface)
             except InterfaceError as e:
-                logger.error(f"Interface validation failed for {net.net_id}: {e}")
-                raise SystemExit(f"Configuration error for {net.net_id}: {e}")
+                logger.error(f"Interface validation failed for {net.device_id}: {e}")
+                raise SystemExit(f"Configuration error for {net.device_id}: {e}")
         
         return config
         

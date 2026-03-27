@@ -39,3 +39,5 @@ def calculate_area(radius: float) -> float:
     import math
     return math.pi * radius ** 2
 ```
+
+- validate code always with `make lint` (ruff) and `make type-check` (mypy) before committing.

@@ -11,25 +11,25 @@ router = APIRouter(prefix="/interface", tags=["Network"])
 
 
 @router.post(
-    "/{net_id}/network",
+    "/{device_id}/network",
     responses={
         200: {
             "description": "Network created and started successfully",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Network ap-01 created successfully"}
+                    "example": {"detail": "Network wls16 created successfully"}
                 }
             },
         },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
-        404: {"description": "net_id not found in configuration"},
+        404: {"description": "device_id not found in configuration"},
         409: {"description": "Network already active; stop it first"},
         422: {"description": "Request body validation failed"},
         500: {"description": "Failed to start network due to runtime error"},
     },
 )
 async def start_network(
-    net_id: str = Path(..., examples=["ap-01"]),
+    device_id: str = Path(..., examples=["wls16"]),
     req: NetworkCreateRequest = Body(
         ...,
         examples={
@@ -60,44 +60,44 @@ async def start_network(
     - iptables rules (isolation + optional NAT)
 
     Args:
-        net_id: Unique network identifier from config.
+        device_id: Device identifier (interface name from config).
         req: Network configuration (SSID, channel, password, band, timeout, etc).
 
     Returns:
-        dict: Simple confirmation message. Use GET /interface/{net_id}/network
+        dict: Simple confirmation message. Use GET /interface/{device_id}/network
             to retrieve full network details.
     """
     try:
-        manager.start_network(net_id, req)
-        return {"detail": f"Network {net_id} created successfully"}
+        manager.start_network(device_id, req)
+        return {"detail": f"Network {device_id} created successfully"}
     except ValueError as e:
         error_msg = str(e)
         error_msg_lower = error_msg.lower()
         if "already active" in error_msg_lower:
             raise HTTPException(status_code=409, detail=error_msg)
-        if "unknown net_id" in error_msg_lower:
+        if "unknown device_id" in error_msg_lower:
             raise HTTPException(status_code=404, detail=error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
 
 
 @router.delete(
-    "/{net_id}/network",
+    "/{device_id}/network",
     responses={
         200: {
             "description": "Network stopped successfully",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Network ap-01 stopped successfully"}
+                    "example": {"detail": "Network wls16 stopped successfully"}
                 }
             },
         },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
-        404: {"description": "net_id not found"},
+        404: {"description": "device_id not found"},
         409: {"description": "Network already inactive"},
     },
 )
 async def stop_network(
-    net_id: str = Path(..., examples=["ap-01"]),
+    device_id: str = Path(..., examples=["wls16"]),
     manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):
@@ -107,32 +107,32 @@ async def stop_network(
     Stops hostapd, dnsmasq, and removes iptables rules; disconnects all clients.
 
     Args:
-        net_id: Unique network identifier.
+        device_id: Device identifier (interface name).
 
     Returns:
-        dict: Confirmation with stopped net_id.
+        dict: Confirmation with stopped device_id.
     """
-    st = manager.get_status(net_id)
+    st = manager.get_status(device_id)
     if not st:
-        raise HTTPException(status_code=404, detail="Unknown net_id")
+        raise HTTPException(status_code=404, detail="Unknown device_id")
     if not st.active:
-        raise HTTPException(status_code=409, detail=f"Network {net_id} is already inactive")
+        raise HTTPException(status_code=409, detail=f"Network {device_id} is already inactive")
 
-    manager.stop_network(net_id)
-    return {"detail": f"Network {net_id} stopped successfully"}
+    manager.stop_network(device_id)
+    return {"detail": f"Network {device_id} stopped successfully"}
 
 
 @router.get(
-    "/{net_id}/network",
+    "/{device_id}/network",
     response_model=NetworkStatus,
     responses={
         200: {"description": "Network status retrieved successfully"},
         401: {"description": "Unauthorized (missing or invalid auth token)"},
-        404: {"description": "net_id not found"},
+        404: {"description": "device_id not found"},
     },
 )
 async def get_network(
-    net_id: str = Path(..., examples=["ap-01"]),
+    device_id: str = Path(..., examples=["wls16"]),
     manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):
@@ -143,7 +143,7 @@ async def get_network(
         NetworkStatus: Full details including SSID, channel, password, expiration time,
             DHCP configuration, and list of connected clients.
     """
-    st = manager.get_status(net_id)
+    st = manager.get_status(device_id)
     if not st:
-        raise HTTPException(status_code=404, detail="Unknown net_id")
+        raise HTTPException(status_code=404, detail="Unknown device_id")
     return st

@@ -106,7 +106,7 @@ async def system_status(
         status_data["active_networks"] = len(manager.active)
 
     # Add networks, checks, and rest of data
-    status_data["networks"] = [{"net_id": n.net_id, "interface": n.interface} for n in config.networks]
+    status_data["networks"] = [{"device_id": n.device_id, "interface": n.interface} for n in config.networks]
     status_data.update(health_data)
     return status_data
 
@@ -215,7 +215,7 @@ async def debug_info(
                 "reachable": upstream_reachable,
             },
             "managed": [
-                {"net_id": n.net_id, "interface": n.interface}
+                {"device_id": n.device_id, "interface": n.interface}
                 for n in config.networks
             ],
         },

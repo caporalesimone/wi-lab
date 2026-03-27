@@ -118,7 +118,7 @@ class TestStatusEndpoint:
         
         # Add an active network
         real_mgr.active['test-net'] = NetworkStatus(
-            net_id='test-net',
+            device_id='test-net',
             interface='wlan0',
             active=True,
             ssid='TestAP',
@@ -266,7 +266,7 @@ class TestAuthentication:
     def test_start_network_without_auth(self, client):
         """Test that network creation without auth is rejected."""
         resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             json={
                 'ssid': 'TestAP',
                 'channel': 6,
@@ -279,7 +279,7 @@ class TestAuthentication:
     def test_start_network_with_invalid_token(self, client, invalid_token):
         """Test that request with invalid token is rejected."""
         resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': invalid_token},
             json={
                 'ssid': 'TestAP',
@@ -301,7 +301,7 @@ class TestAuthentication:
             monkeypatch.setattr(_manager.hostapd_manager, 'start', lambda *a, **kw: {})
         
         resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -321,7 +321,7 @@ class TestNetworkCreateEndpoint:
     def test_start_network_invalid_json(self, client, valid_token):
         """Test that invalid JSON is rejected."""
         resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={'invalid': 'payload'}
         )
@@ -352,7 +352,7 @@ class TestNetworkCreateEndpoint:
     def test_start_network_invalid_encryption(self, client, valid_token):
         """Test that invalid encryption is rejected."""
         resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -366,7 +366,7 @@ class TestNetworkCreateEndpoint:
     def test_start_network_invalid_band(self, client, valid_token):
         """Test that invalid band is rejected."""
         resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -390,7 +390,7 @@ class TestNetworkCreateEndpoint:
             )
 
         resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -412,7 +412,7 @@ class TestNetworkCreateEndpoint:
             monkeypatch.setattr(_manager.dhcp_server, 'start', mock_dhcp_start)
             
             resp = client.post(
-                '/api/v1/interface/ap-01/network',
+                '/api/v1/interface/wls16/network',
                 headers={'Authorization': valid_token},
                 json={
                     'ssid': 'TestAP',
@@ -424,12 +424,12 @@ class TestNetworkCreateEndpoint:
             
             if resp.status_code == 200:
                 data = resp.json()
-                assert data == {'detail': 'Network ap-01 created successfully'}
+                assert data == {'detail': 'Network wls16 created successfully'}
 
     def test_start_network_422_has_simple_detail(self, client, valid_token):
         """Validation errors should return a simple string detail."""
         resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={'invalid': 'payload'}
         )
@@ -446,7 +446,7 @@ class TestNetworkGetEndpoint:
     def test_get_network_status_inactive(self, client, valid_token):
         """Test getting status of inactive network."""
         resp = client.get(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 200
@@ -485,7 +485,7 @@ class TestNetworkGetEndpoint:
 
         # Start network
         start_resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -500,14 +500,14 @@ class TestNetworkGetEndpoint:
 
         # Get network status
         resp = client.get(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 200
         data = resp.json()
         
         # Validate complete response structure
-        assert data['net_id'] == 'ap-01'
+        assert data['device_id'] == 'wls16'
         assert data['active'] is True
         assert data['ssid'] == 'TestAP'
         assert 'dhcp' in data
@@ -553,7 +553,7 @@ class TestNetworkGetEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         start_resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -567,7 +567,7 @@ class TestNetworkGetEndpoint:
         assert start_resp.status_code == 200
 
         resp = client.get(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 200
@@ -603,7 +603,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         start_resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -617,11 +617,11 @@ class TestNetworkDeleteEndpoint:
         assert start_resp.status_code == 200
 
         stop_resp = client.delete(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token}
         )
         assert stop_resp.status_code == 200
-        assert stop_resp.json() == {'detail': 'Network ap-01 stopped successfully'}
+        assert stop_resp.json() == {'detail': 'Network wls16 stopped successfully'}
     
     def test_stop_network_inactive(self, client, valid_token, monkeypatch):
         """Test stopping an inactive network returns 409."""
@@ -630,12 +630,12 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         resp = client.delete(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 409
         data = resp.json()
-        assert data['detail'] == 'Network ap-01 is already inactive'
+        assert data['detail'] == 'Network wls16 is already inactive'
     
     def test_stop_network_unknown(self, client, valid_token, monkeypatch):
         """Test stopping unknown network returns 404."""
@@ -665,7 +665,7 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         start_resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -678,11 +678,11 @@ class TestTxPowerGetEndpoint:
         )
         assert start_resp.status_code == 200
 
-        resp = client.get('/api/v1/interface/ap-01/txpower', headers={'Authorization': valid_token})
+        resp = client.get('/api/v1/interface/wls16/txpower', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
 
-        assert data['net_id'] == 'ap-01'
+        assert data['device_id'] == 'wls16'
         assert 'max_dbm' in data
         assert 'levels_dbm' in data
         assert 'tx_power' in data
@@ -702,7 +702,7 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         start_resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -715,7 +715,7 @@ class TestTxPowerGetEndpoint:
         )
         assert start_resp.status_code == 200
 
-        resp = client.get('/api/v1/interface/ap-01/txpower', headers={'Authorization': valid_token})
+        resp = client.get('/api/v1/interface/wls16/txpower', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
 
@@ -736,7 +736,7 @@ class TestTxPowerPostEndpoint:
             manager,
             'set_tx_power_level',
             lambda net_id, level: {
-                'net_id': net_id,
+                'device_id': net_id,
                 'interface': 'wlx-test0',
                 'max_dbm': 20.0,
                 'levels_dbm': {'1': 5.0, '2': 10.0, '3': 15.0, '4': 20.0},
@@ -750,14 +750,14 @@ class TestTxPowerPostEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         resp = client.post(
-            '/api/v1/interface/ap-01/txpower',
+            '/api/v1/interface/wls16/txpower',
             headers={'Authorization': valid_token},
             json={'level': 2},
         )
         assert resp.status_code == 200
         data = resp.json()
 
-        assert data['net_id'] == 'ap-01'
+        assert data['device_id'] == 'wls16'
         assert data['tx_power']['requested_level'] == 2
         assert data['tx_power']['reported_level'] == 2
         assert data['tx_power']['reported_dbm'] == 10.0
@@ -774,7 +774,7 @@ class TestTxPowerPostEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         resp = client.post(
-            '/api/v1/interface/ap-01/txpower',
+            '/api/v1/interface/wls16/txpower',
             headers={'Authorization': valid_token},
             json={'level': 2},
         )
@@ -785,7 +785,7 @@ class TestTxPowerPostEndpoint:
 
     def test_post_txpower_out_of_range_returns_422_simple_message(self, client, valid_token):
         resp = client.post(
-            '/api/v1/interface/ap-01/txpower',
+            '/api/v1/interface/wls16/txpower',
             headers={'Authorization': valid_token},
             json={'level': 9},
         )
@@ -801,7 +801,7 @@ class TestTxPowerPostEndpoint:
         assert resp.status_code == 200
         schema = resp.json()
 
-        txpower_post = schema['paths']['/api/v1/interface/{net_id}/txpower']['post']
+        txpower_post = schema['paths']['/api/v1/interface/{device_id}/txpower']['post']
         responses = txpower_post['responses']
         assert '422' in responses
 
@@ -818,7 +818,7 @@ class TestTxPowerPostEndpoint:
         assert resp.status_code == 200
         schema = resp.json()
 
-        network_get = schema['paths']['/api/v1/interface/{net_id}/network']['get']
+        network_get = schema['paths']['/api/v1/interface/{device_id}/network']['get']
         response_422 = network_get['responses']['422']
         json_schema = response_422['content']['application/json']['schema']
 
@@ -843,7 +843,7 @@ class TestInternetControlEndpoints:
 
         # Start network first
         start_resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -858,12 +858,12 @@ class TestInternetControlEndpoints:
 
         # Enable internet
         enable_resp = client.post(
-            '/api/v1/interface/ap-01/internet/enable',
+            '/api/v1/interface/wls16/internet/enable',
             headers={'Authorization': valid_token}
         )
         assert enable_resp.status_code == 200
         data = enable_resp.json()
-        assert data == {'detail': 'Network ap-01 internet enabled successfully'}
+        assert data == {'detail': 'Network wls16 internet enabled successfully'}
     
     def test_disable_internet_success(self, client, valid_token, monkeypatch):
         """Test disabling internet on active network succeeds and returns detail message."""
@@ -880,7 +880,7 @@ class TestInternetControlEndpoints:
 
         # Start network first
         start_resp = client.post(
-            '/api/v1/interface/ap-01/network',
+            '/api/v1/interface/wls16/network',
             headers={'Authorization': valid_token},
             json={
                 'ssid': 'TestAP',
@@ -895,19 +895,19 @@ class TestInternetControlEndpoints:
 
         # Enable internet first
         enable_resp = client.post(
-            '/api/v1/interface/ap-01/internet/enable',
+            '/api/v1/interface/wls16/internet/enable',
             headers={'Authorization': valid_token}
         )
         assert enable_resp.status_code == 200
 
         # Then disable internet
         disable_resp = client.post(
-            '/api/v1/interface/ap-01/internet/disable',
+            '/api/v1/interface/wls16/internet/disable',
             headers={'Authorization': valid_token}
         )
         assert disable_resp.status_code == 200
         data = disable_resp.json()
-        assert data == {'detail': 'Network ap-01 internet disabled successfully'}
+        assert data == {'detail': 'Network wls16 internet disabled successfully'}
     
     def test_enable_internet_inactive(self, client, valid_token, monkeypatch):
         """Test enabling internet on inactive network fails."""
@@ -916,7 +916,7 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         resp = client.post(
-            '/api/v1/interface/ap-01/internet/enable',
+            '/api/v1/interface/wls16/internet/enable',
             headers={'Authorization': valid_token}
         )
         # Should fail with either 404 or 500 depending on implementation
@@ -929,7 +929,7 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         resp = client.post(
-            '/api/v1/interface/ap-01/internet/disable',
+            '/api/v1/interface/wls16/internet/disable',
             headers={'Authorization': valid_token}
         )
         # Should fail with either 404 or 500 depending on implementation
