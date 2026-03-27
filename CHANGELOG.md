@@ -6,51 +6,82 @@ All notable changes to Wi-Lab are documented in this file.
 
 ## [2.0.0] - 2026-03-27
 
-> Work in progress: this section tracks changes prepared for the upcoming 1.6.0 release.
+Major release introducing a reservation-based device lifecycle. Users must now acquire a time-limited reservation token before performing any network operation. The frontend has been redesigned around this workflow, showing all physical interfaces as cards with real-time status and allowing multiple simultaneous reservations.
+
+### ⚠️ Breaking Changes
+
+- **`net_id` removed from configuration.** Each device is now identified internally by its physical interface name (`device_id`). A new required field `display_name` replaces the old `net_id` label.
+  ```yaml
+  # Before
+  networks:
+    - net_id: "ap-01"
+      interface: "wlxbc071dc527d6"
+
+  # After
+  networks:
+    - interface: "wlxbc071dc527d6"
+      display_name: "bench-antenna-1"
+  ```
+- **All network, internet, and txpower routes now use `{reservation_id}` as path parameter** instead of the old `{net_id}`. A valid reservation token is required for every operation.
+- **The `timeout` parameter on network creation has been removed.** Reservation `duration_seconds` is the only lifetime source; WiFi auto-stops when the reservation expires.
 
 ### ✨ Features
 
-- **Device Reservation System (Phase 1 — Backend)**
-  - Introduced reservation-first workflow: users must acquire a reservation token before any network operation
-  - New endpoints: `POST /api/v1/device-reservation`, `GET /api/v1/device-reservation/{reservation_id}`, `DELETE /api/v1/device-reservation/{reservation_id}`
-  - Reservation allocates the first available device and returns a cryptographically secure `reservation_id` token
-  - When all devices are reserved, `POST` returns `409 Conflict` with `next_available_at` / `next_available_in` ETA fields
-  - Reservation `duration_seconds` is now the single lifetime source — the old per-network `timeout` field has been removed
-  - Network auto-stops and token is invalidated when reservation expires
-  - All network, internet, and txpower routes now require `{reservation_id}` path parameter instead of `{device_id}`
-  - Status API includes `reservation_remaining_seconds` per device (null when unreserved)
-  - `GET /api/v1/network/{reservation_id}` always exposes `expires_at` / `expires_in` from reservation, even when WiFi is off
+- **Device Reservation System**
+  - Reservation-first workflow: a time-limited token must be acquired before any network operation
+  - Devices are allocated automatically — the API assigns the first available interface
+  - Token is an 8-character hex string, cryptographically generated
+  - At reservation expiry the network is stopped, the device is released, and the token is invalidated
+  - When all devices are occupied, the API returns the estimated wait time until the next device becomes free
 
-- **Shared Installation State Contract Across Stages**
-  - Added bootstrap support for a shared setup state contract in installer orchestration
-  - Persisted state in install stages (`01-venv`, `02-systemd`, `03-enable`, `04-verify`, `05-deploy-frontend`)
-  - Persisted state in post-install test stages (`01-service-start` to `05-docs`) for consistent cross-stage behavior
+- **Frontend Reservation UX**
+  - All physical interfaces are displayed as cards, polled every 10 seconds from the status API
+  - Each card shows one of three states: owned (with full WiFi controls), occupied by another user (with live countdown), or available
+  - Users can hold multiple reservations simultaneously; cards appear with a countdown progress bar and `hh:mm:ss` label
+  - "Release All" button with destructive-action confirmation dialog to free all owned devices at once
+  - Reservations persist to `localStorage` and are validated on page reload — surviving browser refresh
+  - When capacity is full, an inline error shows a live countdown to the next available slot
 
-### 🔧 Refactoring & Infrastructure
+- **Shared Installation State Contract**
+  - Installer stages now share a persistent state contract, propagated across precondition checks, install stages, and post-install tests
 
-- **Device Identity Redesign**
-  - Removed static `net_id` from configuration; replaced with `device_id` derived from the physical interface name
-  - `display_name` is now a required field in network configuration
-  - Added duplicate-interface validation at config load time
-  - Internal lookups use `device_id` consistently; client-facing operations are keyed by `reservation_id`
+### 🔌 API Changes
 
-- **Preconditions State Persistence Hardening**
-  - System precondition state keys are now persisted explicitly
-  - Shared precondition state propagation added to Docker, config, tools, and network precheck scripts
-  - Improved resilience of tools precheck flow when required packages are missing
+#### New endpoints — Reservation
 
-### 🧪 Tests
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/device-reservation` | Reserve the first available device. Body: `{ "duration_seconds": <int> }`. Returns `reservation_id`, `display_name`, `interface`, `expires_at`, `expires_in`. |
+| `GET` | `/api/v1/device-reservation/{reservation_id}` | Query reservation status. Returns same fields as create. `404` if expired or unknown. |
+| `DELETE` | `/api/v1/device-reservation/{reservation_id}` | Release a single reservation. `404` if not found. |
+| `DELETE` | `/api/v1/device-reservation` | Release all active reservations at once. Returns `{ "released": <count> }`. |
 
-- Added `tests/test_reservation.py` with 33 tests covering reservation lifecycle, concurrency, expiry, ETA computation, and API integration
-- Extended `tests/test_api.py` with reservation-required operation tests, status reservation info, get-network expiry assertions, and OpenAPI naming contract tests
-- Updated `tests/test_wifi.py` and `tests/test_config.py` for new config schema and reservation-driven timeout
-- Total test count increased from 151 to 196
+When all devices are reserved, `POST` returns `409 Conflict`:
+```json
+{
+  "detail": {
+    "error": "No device available",
+    "next_available_at": "2026-03-27 14:30:00",
+    "next_available_in": 120
+  }
+}
+```
+
+#### Changed endpoints
+
+- **`POST /api/v1/network/{reservation_id}`** — path parameter changed from `net_id` to `reservation_id`; `timeout` field removed from request body.
+- **`GET /api/v1/network/{reservation_id}`** — always returns `expires_at` (ISO 8601 UTC) and `expires_in` (seconds), even when WiFi is off.
+- **`DELETE /api/v1/network/{reservation_id}`** — stops the network but does not release the reservation.
+- **`POST|DELETE /api/v1/internet/{reservation_id}`** — path parameter changed from `net_id` to `reservation_id`.
+- **`GET|PUT /api/v1/txpower/{reservation_id}`** — path parameter changed from `net_id` to `reservation_id`.
+- **`GET /api/v1/status`** — each device now includes `reservation_remaining_seconds` (integer or `null` when unreserved) and `display_name`.
+- **`GET /api/v1/debug`** — each network entry includes `reservation_id` and `display_name`.
 
 ### 📝 Documentation
 
-- Updated `docs/readme-dev.md` with new config example (`interface` + `display_name`, no `net_id`)
-- Updated `docs/networking.md`: replaced "Secure Timeout Configuration" with "Reservation-Driven Timeout" section
-- Updated installation and developer documentation to reflect the shared state contract and stage-to-stage persistence behavior
+- Configuration example updated: `interface` + `display_name`, no `net_id`
+- Networking docs: "Secure Timeout Configuration" section replaced with "Reservation-Driven Timeout"
+- Developer guide updated with new config format and Makefile workflow
 
 ---
 

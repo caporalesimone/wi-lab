@@ -207,12 +207,12 @@ Test logic to add:
 
 ## Phase 2: Frontend Refactor
 
-- [ ] Task 1 - Initial Empty State with Reservation-First UX
-- [ ] Task 2 - Show Card Only After Successful Reservation
-- [ ] Task 3 - Add Release Network Action and Card Removal
-- [ ] Task 4 - Always Display Remaining Time
-- [ ] Task 5 - Add Reservation Progress Bar with hh:mm:ss Label
-- [ ] Task 6 - Error UX for No Available Devices
+- [x] Task 1 - Initial Empty State with Reservation-First UX
+- [x] Task 2 - Show Card Only After Successful Reservation
+- [x] Task 3 - Add Release Network Action and Card Removal
+- [x] Task 4 - Always Display Remaining Time
+- [x] Task 5 - Add Reservation Progress Bar with hh:mm:ss Label
+- [x] Task 6 - Error UX for No Available Devices
 
 ### Task 1 - Initial Empty State with Reservation-First UX
 
