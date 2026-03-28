@@ -21,6 +21,7 @@ def mock_network_operations(monkeypatch):
     from wilab.network import commands
     from wilab.wifi import interface
     from wilab.wifi import manager
+    from wilab.wifi import channels
     
     # Mock WiFi interface validation (requires real hardware)
     def mock_validate_interface(iface):
@@ -40,6 +41,43 @@ def mock_network_operations(monkeypatch):
             return "inet 192.168.120.1/24\nstate UP"
         return ""
     
+    # Realistic iw phy output with 2.4 GHz, 5 GHz, and disabled channels
+    _MOCK_PHY_INFO = """\
+Band 1:
+\t\tFrequencies:
+\t\t\t* 2412.0 MHz [1] (20.0 dBm)
+\t\t\t* 2417.0 MHz [2] (20.0 dBm)
+\t\t\t* 2422.0 MHz [3] (20.0 dBm)
+\t\t\t* 2427.0 MHz [4] (20.0 dBm)
+\t\t\t* 2432.0 MHz [5] (20.0 dBm)
+\t\t\t* 2437.0 MHz [6] (20.0 dBm)
+\t\t\t* 2442.0 MHz [7] (20.0 dBm)
+\t\t\t* 2447.0 MHz [8] (20.0 dBm)
+\t\t\t* 2452.0 MHz [9] (20.0 dBm)
+\t\t\t* 2457.0 MHz [10] (20.0 dBm)
+\t\t\t* 2462.0 MHz [11] (20.0 dBm)
+\t\t\t* 2467.0 MHz [12] (20.0 dBm)
+\t\t\t* 2472.0 MHz [13] (20.0 dBm)
+\t\t\t* 2484.0 MHz [14] (disabled)
+Band 2:
+\t\tFrequencies:
+\t\t\t* 5180.0 MHz [36] (23.0 dBm)
+\t\t\t* 5200.0 MHz [40] (23.0 dBm)
+\t\t\t* 5220.0 MHz [44] (23.0 dBm)
+\t\t\t* 5240.0 MHz [48] (23.0 dBm)
+\t\t\t* 5260.0 MHz [52] (20.0 dBm) (radar detection)
+\t\t\t* 5280.0 MHz [56] (20.0 dBm) (radar detection)
+\t\t\t* 5300.0 MHz [60] (20.0 dBm) (radar detection)
+\t\t\t* 5320.0 MHz [64] (20.0 dBm) (radar detection)
+\t\t\t* 5500.0 MHz [100] (26.0 dBm) (radar detection)
+\t\t\t* 5745.0 MHz [149] (13.0 dBm)
+\t\t\t* 5765.0 MHz [153] (13.0 dBm)
+\t\t\t* 5785.0 MHz [157] (13.0 dBm)
+\t\t\t* 5805.0 MHz [161] (13.0 dBm)
+\t\t\t* 5825.0 MHz [165] (13.0 dBm)
+\t\t\t* 5845.0 MHz [169] (disabled)
+"""
+
     # Mock execute_iw to avoid needing real WiFi hardware
     def mock_execute_iw(args):
         # Return mock wiphy info
@@ -53,11 +91,7 @@ def mock_network_operations(monkeypatch):
         
         # Handle: execute_iw(["phy0", "info"])
         elif args[0].startswith("phy"):
-            # Return phy capabilities with proper channel info
-            return """Band 2.4 GHz
-* 2412 MHz [1] (20.0 dBm)
-* 2437 MHz [6] (20.0 dBm)  
-* 2462 MHz [11] (20.0 dBm)"""
+            return _MOCK_PHY_INFO
         
         # Handle: execute_iw(["dev", interface, "station", "dump"])
         elif "station" in args:
@@ -84,6 +118,9 @@ def mock_network_operations(monkeypatch):
     monkeypatch.setattr(commands, "execute_ip", mock_execute_ip)
     monkeypatch.setattr(commands, "execute_iw", mock_execute_iw)
     monkeypatch.setattr(commands, "execute_command", mock_execute_command)
+
+    # Patch in channels module
+    monkeypatch.setattr(channels, "execute_iw", mock_execute_iw)
 
 
 @pytest.fixture

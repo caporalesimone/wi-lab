@@ -1,11 +1,13 @@
 from fastapi import Depends, HTTPException, Path
 from ..config import AppConfig, load_config
 from ..wifi.manager import NetworkManager
+from ..wifi.channels import ChannelManager
 from ..reservation import ReservationManager, Reservation
 
 _config: AppConfig | None = None
 _manager: NetworkManager | None = None
 _reservation_manager: ReservationManager | None = None
+_channel_manager: ChannelManager | None = None
 
 def get_config() -> AppConfig:
     global _config
@@ -25,6 +27,13 @@ def get_reservation_manager(config: AppConfig = Depends(get_config)) -> Reservat
         device_ids = [n.device_id for n in config.networks]
         _reservation_manager = ReservationManager(device_ids)
     return _reservation_manager
+
+
+def get_channel_manager() -> ChannelManager:
+    global _channel_manager
+    if _channel_manager is None:
+        _channel_manager = ChannelManager()
+    return _channel_manager
 
 
 def resolve_reservation(

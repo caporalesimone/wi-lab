@@ -1,14 +1,17 @@
 """WiFi network lifecycle endpoints (create, delete, query)."""
 
 from datetime import datetime, timezone
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Body
+from pydantic import BaseModel, Field
 
 from ...models import NetworkCreateRequest, NetworkStatus
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager
+from ...wifi.channels import ChannelManager
 from ...api.auth import require_token
-from ...api.dependencies import get_manager, resolve_reservation
+from ...api.dependencies import get_manager, get_channel_manager, resolve_reservation
 
 router = APIRouter(prefix="/interface", tags=["Network"])
 
@@ -148,3 +151,75 @@ async def get_network(
     st.expires_at = datetime.fromtimestamp(reservation.expires_at, tz=timezone.utc).isoformat()
     st.expires_in = reservation.expires_in
     return st
+
+
+# ---- Response models for available channels ----
+
+class ChannelDetail(BaseModel):
+    channel: int = Field(description="WiFi channel number")
+    frequency_mhz: int = Field(description="Center frequency in MHz")
+    max_power_dbm: float = Field(
+        description="Maximum allowed TX power in dBm. "
+        "Disabled channels report 0.0 dBm by convention."
+    )
+    disabled: bool = Field(description="True if the regulatory domain disables this channel")
+
+
+class AvailableChannelsResponse(BaseModel):
+    interface: str = Field(description="Physical interface name")
+    channels_24ghz: List[ChannelDetail] = Field(description="2.4 GHz band channels")
+    channels_5ghz: List[ChannelDetail] = Field(description="5 GHz band channels")
+
+
+@router.get(
+    "/{reservation_id}/network/available-channels",
+    response_model=AvailableChannelsResponse,
+    responses={
+        200: {"description": "Available WiFi channels for the reserved device"},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
+        404: {"description": "Reservation not found or expired"},
+        500: {"description": "Failed to query interface capabilities"},
+    },
+)
+async def get_available_channels(
+    _auth: bool = Depends(require_token),
+    reservation: Reservation = Depends(resolve_reservation),
+    channel_mgr: ChannelManager = Depends(get_channel_manager),
+):
+    """
+    List all WiFi channels supported by the reserved device, split by band.
+
+    Results are cached in memory after the first query per interface.
+    Disabled channels are included with ``max_power_dbm = 0.0`` and
+    ``disabled = true`` so clients can display them as unavailable.
+    """
+    device_id = reservation.device_id
+    try:
+        info = channel_mgr.get_channels(device_id)
+    except (ValueError, Exception) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to query channels for {device_id}: {exc}",
+        )
+
+    return AvailableChannelsResponse(
+        interface=info.interface,
+        channels_24ghz=[
+            ChannelDetail(
+                channel=ch.channel,
+                frequency_mhz=ch.frequency_mhz,
+                max_power_dbm=ch.max_power_dbm,
+                disabled=ch.disabled,
+            )
+            for ch in info.channels_24ghz
+        ],
+        channels_5ghz=[
+            ChannelDetail(
+                channel=ch.channel,
+                frequency_mhz=ch.frequency_mhz,
+                max_power_dbm=ch.max_power_dbm,
+                disabled=ch.disabled,
+            )
+            for ch in info.channels_5ghz
+        ],
+    )
