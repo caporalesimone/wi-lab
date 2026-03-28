@@ -1,16 +1,17 @@
 """WiFi channel information manager with in-memory caching.
 
-Queries ``iw phy`` to build a per-interface list of supported channels,
-separated by band (2.4 GHz / 5 GHz).  Results are cached in memory so
-that the underlying ``iw`` command is executed at most once per physical
-interface.
+Queries ``iw phy<N> channels`` to build a per-interface list of supported
+channels, separated by band (2.4 GHz / 5 GHz).  Results are cached in
+memory so that the underlying ``iw`` command is executed at most once per
+physical interface.
 
 Design decision – disabled channels:
     ``iw`` reports some channels as ``(disabled)`` without a power value.
-    For simplicity these entries are stored with ``max_power_dbm = 0.0``
-    and ``disabled = True``.  This avoids optional-float gymnastics while
-    keeping the information queryable.  Consumers should check the
-    ``disabled`` flag before using ``max_power_dbm``.
+    Channels marked ``No IR`` (no initiate radiation) are also treated as
+    disabled because they cannot be used in AP mode.
+    Both cases are stored with ``max_power_dbm = 0.0`` and
+    ``disabled = True``.  Consumers should check the ``disabled`` flag
+    before using ``max_power_dbm``.
 """
 
 import logging
@@ -50,6 +51,19 @@ def is_valid_channel_for_band(channel: int, band: str) -> bool:
         return channel in VALID_CHANNELS_5GHZ
     # "dual" or unknown — accept any channel that belongs to either band.
     return channel in VALID_CHANNELS_24GHZ or channel in VALID_CHANNELS_5GHZ
+
+
+def set_regulatory_domain(country_code: str) -> None:
+    """Set the WiFi regulatory domain via ``iw reg set``.
+
+    Should be called before populating the channel cache so that
+    ``iw phy channels`` reports the correct flags for the country.
+    """
+    try:
+        execute_iw(["reg", "set", country_code])
+        logger.info("Regulatory domain set to %s", country_code)
+    except Exception as exc:
+        logger.warning("Failed to set regulatory domain to %s: %s", country_code, exc)
 
 
 # ---- Data classes ----
@@ -149,42 +163,63 @@ class ChannelManager:
 
     @staticmethod
     def _parse_iw_phy_output(output: str) -> List[ChannelInfo]:
-        """Parse the output of ``iw phy<N> info`` into a list of channels.
+        """Parse the output of ``iw phy<N> channels`` into a list of channels.
 
-        Handles two formats reported by ``iw``:
-        - Active:   ``* 2412.0 MHz [1] (20.0 dBm)``
-        - Disabled: ``* 2484.0 MHz [14] (disabled)``
+        Handles three cases:
+        - Active:   ``* 2412 MHz [1]`` followed by ``Maximum TX power: 20.0 dBm``
+        - No IR:    same header, with a ``No IR`` line in the block
+        - Disabled: ``* 2484 MHz [14] (disabled)``
         """
-        # Matches both active (with dBm) and disabled lines
-        pattern = re.compile(
-            r"\*\s+([\d.]+)\s+MHz\s+\[(\d+)\]"
-            r"\s+\((?:([\d.]+)\s+dBm|disabled)\)"
+        # Matches both active and disabled header lines
+        header_re = re.compile(
+            r"\*\s+([\d.]+)\s+MHz\s+\[(\d+)\](?:\s+\(disabled\))?"
         )
+        power_re = re.compile(r"Maximum TX power:\s+([\d.]+)\s+dBm")
+
         channels: List[ChannelInfo] = []
+        current_freq: int | None = None
+        current_chan: int | None = None
+        current_disabled = False
+        current_power: float = 0.0
+        current_no_ir = False
+
+        def _flush() -> None:
+            nonlocal current_freq, current_chan, current_disabled, current_power, current_no_ir
+            if current_freq is not None and current_chan is not None:
+                disabled = current_disabled or current_no_ir
+                channels.append(ChannelInfo(
+                    channel=current_chan,
+                    frequency_mhz=current_freq,
+                    max_power_dbm=0.0 if disabled else current_power,
+                    disabled=disabled,
+                ))
+            current_freq = None
+            current_chan = None
+            current_disabled = False
+            current_power = 0.0
+            current_no_ir = False
+
         for line in output.splitlines():
-            m = pattern.search(line)
-            if not m:
+            hm = header_re.search(line)
+            if hm:
+                _flush()
+                current_freq = int(float(hm.group(1)))
+                current_chan = int(hm.group(2))
+                current_disabled = "(disabled)" in line
                 continue
-            freq = int(float(m.group(1)))
-            chan = int(m.group(2))
-            if m.group(3) is not None:
-                max_dbm = float(m.group(3))
-                disabled = False
-            else:
-                max_dbm = 0.0
-                disabled = True
-            channels.append(ChannelInfo(
-                channel=chan,
-                frequency_mhz=freq,
-                max_power_dbm=max_dbm,
-                disabled=disabled,
-            ))
+            if current_freq is not None:
+                pm = power_re.search(line)
+                if pm:
+                    current_power = float(pm.group(1))
+                if "No IR" in line:
+                    current_no_ir = True
+        _flush()
         return channels
 
     def _resolve_channels(self, interface: str) -> InterfaceChannels:
         """Query ``iw`` and split results into 2.4 GHz / 5 GHz bands."""
         phy = self._get_phy_for_interface(interface)
-        output = execute_iw(["phy" + phy, "info"])
+        output = execute_iw(["phy" + phy, "channels"])
         all_channels = self._parse_iw_phy_output(output)
 
         ch_24: List[ChannelInfo] = []

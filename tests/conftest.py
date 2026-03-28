@@ -41,41 +41,109 @@ def mock_network_operations(monkeypatch):
             return "inet 192.168.120.1/24\nstate UP"
         return ""
     
-    # Realistic iw phy output with 2.4 GHz, 5 GHz, and disabled channels
-    _MOCK_PHY_INFO = """\
+    # Realistic iw phy channels output with 2.4 GHz, 5 GHz, No IR, and disabled channels
+    _MOCK_PHY_CHANNELS = """\
 Band 1:
-\t\tFrequencies:
-\t\t\t* 2412.0 MHz [1] (20.0 dBm)
-\t\t\t* 2417.0 MHz [2] (20.0 dBm)
-\t\t\t* 2422.0 MHz [3] (20.0 dBm)
-\t\t\t* 2427.0 MHz [4] (20.0 dBm)
-\t\t\t* 2432.0 MHz [5] (20.0 dBm)
-\t\t\t* 2437.0 MHz [6] (20.0 dBm)
-\t\t\t* 2442.0 MHz [7] (20.0 dBm)
-\t\t\t* 2447.0 MHz [8] (20.0 dBm)
-\t\t\t* 2452.0 MHz [9] (20.0 dBm)
-\t\t\t* 2457.0 MHz [10] (20.0 dBm)
-\t\t\t* 2462.0 MHz [11] (20.0 dBm)
-\t\t\t* 2467.0 MHz [12] (20.0 dBm)
-\t\t\t* 2472.0 MHz [13] (20.0 dBm)
-\t\t\t* 2484.0 MHz [14] (disabled)
+        * 2412 MHz [1] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40+
+        * 2417 MHz [2] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40+
+        * 2422 MHz [3] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40+
+        * 2427 MHz [4] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40+
+        * 2432 MHz [5] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40- HT40+
+        * 2437 MHz [6] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40- HT40+
+        * 2442 MHz [7] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40- HT40+
+        * 2447 MHz [8] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40- HT40+
+        * 2452 MHz [9] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40- HT40+
+        * 2457 MHz [10] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40-
+        * 2462 MHz [11] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40-
+        * 2467 MHz [12] 
+          Maximum TX power: 20.0 dBm
+          No IR
+          Channel widths: 20MHz HT40-
+        * 2472 MHz [13] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40-
+        * 2484 MHz [14] (disabled)
 Band 2:
-\t\tFrequencies:
-\t\t\t* 5180.0 MHz [36] (23.0 dBm)
-\t\t\t* 5200.0 MHz [40] (23.0 dBm)
-\t\t\t* 5220.0 MHz [44] (23.0 dBm)
-\t\t\t* 5240.0 MHz [48] (23.0 dBm)
-\t\t\t* 5260.0 MHz [52] (20.0 dBm) (radar detection)
-\t\t\t* 5280.0 MHz [56] (20.0 dBm) (radar detection)
-\t\t\t* 5300.0 MHz [60] (20.0 dBm) (radar detection)
-\t\t\t* 5320.0 MHz [64] (20.0 dBm) (radar detection)
-\t\t\t* 5500.0 MHz [100] (26.0 dBm) (radar detection)
-\t\t\t* 5745.0 MHz [149] (13.0 dBm)
-\t\t\t* 5765.0 MHz [153] (13.0 dBm)
-\t\t\t* 5785.0 MHz [157] (13.0 dBm)
-\t\t\t* 5805.0 MHz [161] (13.0 dBm)
-\t\t\t* 5825.0 MHz [165] (13.0 dBm)
-\t\t\t* 5845.0 MHz [169] (disabled)
+        * 5180 MHz [36] 
+          Maximum TX power: 23.0 dBm
+          Channel widths: 20MHz HT40+ VHT80
+        * 5200 MHz [40] 
+          Maximum TX power: 23.0 dBm
+          Channel widths: 20MHz HT40- HT40+ VHT80
+        * 5220 MHz [44] 
+          Maximum TX power: 23.0 dBm
+          Channel widths: 20MHz HT40- HT40+ VHT80
+        * 5240 MHz [48] 
+          Maximum TX power: 23.0 dBm
+          Channel widths: 20MHz HT40- HT40+ VHT80
+        * 5260 MHz [52] 
+          Maximum TX power: 20.0 dBm
+          Radar detection
+          Channel widths: 20MHz HT40- HT40+ VHT80
+          DFS state: usable (for 1000 sec)
+          DFS CAC time: 60000 ms
+        * 5280 MHz [56] 
+          Maximum TX power: 20.0 dBm
+          Radar detection
+          Channel widths: 20MHz HT40- HT40+ VHT80
+          DFS state: usable (for 1000 sec)
+          DFS CAC time: 60000 ms
+        * 5300 MHz [60] 
+          Maximum TX power: 20.0 dBm
+          Radar detection
+          Channel widths: 20MHz HT40- HT40+ VHT80
+          DFS state: usable (for 1000 sec)
+          DFS CAC time: 60000 ms
+        * 5320 MHz [64] 
+          Maximum TX power: 20.0 dBm
+          Radar detection
+          Channel widths: 20MHz HT40- VHT80
+          DFS state: usable (for 1000 sec)
+          DFS CAC time: 60000 ms
+        * 5500 MHz [100] 
+          Maximum TX power: 26.0 dBm
+          Radar detection
+          Channel widths: 20MHz HT40+ VHT80
+          DFS state: usable (for 1000 sec)
+          DFS CAC time: 60000 ms
+        * 5745 MHz [149] 
+          Maximum TX power: 13.0 dBm
+          Channel widths: 20MHz HT40+ VHT80
+        * 5765 MHz [153] 
+          Maximum TX power: 13.0 dBm
+          Channel widths: 20MHz HT40- HT40+ VHT80
+        * 5785 MHz [157] 
+          Maximum TX power: 13.0 dBm
+          Channel widths: 20MHz HT40- HT40+ VHT80
+        * 5805 MHz [161] 
+          Maximum TX power: 13.0 dBm
+          Channel widths: 20MHz HT40- HT40+ VHT80
+        * 5825 MHz [165] 
+          Maximum TX power: 13.0 dBm
+          Channel widths: 20MHz HT40- HT40+ VHT80
+        * 5845 MHz [169] (disabled)
 """
 
     # Mock execute_iw to avoid needing real WiFi hardware
@@ -84,14 +152,18 @@ Band 2:
         if not args:
             return ""
         
+        # Handle: execute_iw(["reg", "set", ...])
+        if args[0] == "reg":
+            return ""
+
         # Handle: execute_iw([interface, "info"])
         if len(args) >= 2 and args[1] == "info" and not args[0].startswith("phy"):
             # Return wiphy info for interface
             return f"Interface {args[0]}\nwiphy 0\ntxpower 20.00 dBm"
         
-        # Handle: execute_iw(["phy0", "info"])
+        # Handle: execute_iw(["phy0", "channels"])
         elif args[0].startswith("phy"):
-            return _MOCK_PHY_INFO
+            return _MOCK_PHY_CHANNELS
         
         # Handle: execute_iw(["dev", interface, "station", "dump"])
         elif "station" in args:

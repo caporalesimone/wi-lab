@@ -13,6 +13,7 @@ All notable changes to Wi-Lab are documented in this file.
 - **Channel cache warm-up at startup** – WiFi channel info is pre-fetched in a background thread so the first API call is served from cache
 - **Centralized channel validation** – Static and hardware-aware channel validation, with 5 GHz channels 169/173/177 now recognized. Network creation rejects unsupported or disabled channels with a clear 422 error
 - **Configurable country code** – WiFi regulatory domain (`country_code`) moved from hardcoded value to `config.yaml` (default: `IT`)
+- **Regulatory domain enforcement at startup** – `iw reg set` is called with the configured country code before cache warm-up, ensuring the kernel reports correct channel flags. Channels marked `No IR` (no initiate radiation) are now detected and treated as disabled
 
 ### 🔌 API Changes
 

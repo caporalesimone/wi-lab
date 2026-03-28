@@ -12,6 +12,7 @@ from ..network.dhcp import DhcpServer, DhcpServerError
 from ..network.nat import NatManager
 from ..network.isolation import IsolationManager
 from .hostapd import HostapdManager, HostapdError
+from .channels import ChannelManager
 from .interface import validate_interface_exists, validate_interface_wireless, validate_interface_ap_mode, InterfaceError
 from ..network.commands import execute_iw, execute_command, CommandError
 
@@ -32,6 +33,7 @@ class NetworkManager:
         self.nat_manager = NatManager(upstream_interface=config.upstream_interface)
         self.hostapd_manager = HostapdManager()
         self.isolation_manager = IsolationManager()
+        self._channel_manager = ChannelManager()
         self._lock = threading.Lock()
         # Background expiry checker to auto-stop networks at timeout
         self._expiry_thread = threading.Thread(target=self._expiry_loop, daemon=True)
@@ -546,15 +548,6 @@ class NetworkManager:
 
     # ---- TX power management ----
 
-    def _get_phy_for_interface(self, interface: str) -> str:
-        info = execute_iw([interface, "info"])
-        for line in info.splitlines():
-            if "wiphy" in line:
-                parts = line.strip().split()
-                if len(parts) >= 2:
-                    return parts[1]
-        raise ValueError(f"Cannot determine wiphy for interface {interface}")
-    
     def _read_current_txpower(self, interface: str) -> Optional[float]:
         """Read current TX power from interface in dBm. Returns None if unavailable."""
         try:
@@ -570,26 +563,11 @@ class NetworkManager:
         return None
 
     def _get_channel_capabilities(self, interface: str, channel: int) -> dict:
-        phy = self._get_phy_for_interface(interface)
-        output = execute_iw(["phy" + phy, "info"])
-        # Pattern: * 2437.0 MHz [6] (20.0 dBm) or * 2437 MHz [6] (20.0 dBm)
-        pattern = re.compile(r"\*\s+([\d.]+)\s+MHz\s+\[(\d+)\].*\(([-0-9.]+) dBm\)")
-        freq_mhz = None
-        max_dbm = None
-        for line in output.splitlines():
-            m = pattern.search(line)
-            if not m:
-                continue
-            freq = float(m.group(1))
-            chan = int(m.group(2))
-            dbm = float(m.group(3))
-            if chan == channel:
-                freq_mhz = int(freq)  # Convert to int for cleaner output
-                max_dbm = dbm
-                break
-        if freq_mhz is None or max_dbm is None:
-            raise ValueError(f"Channel {channel} not supported on interface {interface}")
-        return {"frequency_mhz": freq_mhz, "max_dbm": max_dbm}
+        info = self._channel_manager.get_channels(interface)
+        for ch in info.channels_24ghz + info.channels_5ghz:
+            if ch.channel == channel:
+                return {"frequency_mhz": ch.frequency_mhz, "max_dbm": ch.max_power_dbm}
+        raise ValueError(f"Channel {channel} not supported on interface {interface}")
 
     def _compute_level_dbm(self, max_dbm: float) -> Dict[int, float]:
         # Linearly split max power into four steps

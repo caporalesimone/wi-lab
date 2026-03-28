@@ -12,6 +12,7 @@ from fastapi.openapi.utils import get_openapi
 from .dependencies import get_channel_manager, get_config, get_manager
 from .routes import router as api_router
 from ..version import __version__
+from ..wifi.channels import set_regulatory_domain
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,9 @@ async def lifespan(app: FastAPI):
     # Startup: instantiate manager so background expiry runs
     cfg = get_config()
     get_manager(cfg)
+
+    # Set regulatory domain before populating channel cache
+    set_regulatory_domain(cfg.country_code)
 
     # Pre-populate channel cache in background to not delay startup
     channel_mgr = get_channel_manager()

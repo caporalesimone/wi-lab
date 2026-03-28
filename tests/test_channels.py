@@ -54,10 +54,12 @@ def reservation_id(client, valid_token, monkeypatch):
 # ---------------------------------------------------------------------------
 
 class TestChannelManagerParsing:
-    """Test iw output parsing logic."""
+    """Test iw phy channels output parsing logic."""
 
     def test_parse_active_channel(self):
-        output = "* 2412.0 MHz [1] (20.0 dBm)"
+        output = """        * 2412 MHz [1] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40+"""
         channels = ChannelManager._parse_iw_phy_output(output)
         assert len(channels) == 1
         ch = channels[0]
@@ -67,7 +69,7 @@ class TestChannelManagerParsing:
         assert ch.disabled is False
 
     def test_parse_disabled_channel(self):
-        output = "* 2484.0 MHz [14] (disabled)"
+        output = "        * 2484 MHz [14] (disabled)"
         channels = ChannelManager._parse_iw_phy_output(output)
         assert len(channels) == 1
         ch = channels[0]
@@ -76,8 +78,26 @@ class TestChannelManagerParsing:
         assert ch.max_power_dbm == 0.0
         assert ch.disabled is True
 
+    def test_parse_no_ir_channel(self):
+        output = """        * 2467 MHz [12] 
+          Maximum TX power: 20.0 dBm
+          No IR
+          Channel widths: 20MHz HT40-"""
+        channels = ChannelManager._parse_iw_phy_output(output)
+        assert len(channels) == 1
+        ch = channels[0]
+        assert ch.channel == 12
+        assert ch.frequency_mhz == 2467
+        assert ch.max_power_dbm == 0.0
+        assert ch.disabled is True
+
     def test_parse_channel_with_radar(self):
-        output = "* 5260.0 MHz [52] (20.0 dBm) (radar detection)"
+        output = """        * 5260 MHz [52] 
+          Maximum TX power: 20.0 dBm
+          Radar detection
+          Channel widths: 20MHz HT40- HT40+ VHT80
+          DFS state: usable (for 1000 sec)
+          DFS CAC time: 60000 ms"""
         channels = ChannelManager._parse_iw_phy_output(output)
         assert len(channels) == 1
         ch = channels[0]
@@ -87,8 +107,10 @@ class TestChannelManagerParsing:
         assert ch.disabled is False
 
     def test_parse_integer_frequency(self):
-        """iw sometimes omits the decimal point."""
-        output = "* 2437 MHz [6] (20.0 dBm)"
+        """iw uses integer MHz in channels output."""
+        output = """        * 2437 MHz [6] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40- HT40+"""
         channels = ChannelManager._parse_iw_phy_output(output)
         assert len(channels) == 1
         assert channels[0].channel == 6
@@ -97,20 +119,26 @@ class TestChannelManagerParsing:
     def test_parse_mixed_output(self):
         output = """\
 Band 1:
-    Frequencies:
-        * 2412.0 MHz [1] (20.0 dBm)
-        * 2484.0 MHz [14] (disabled)
+        * 2412 MHz [1] 
+          Maximum TX power: 20.0 dBm
+          Channel widths: 20MHz HT40+
+        * 2467 MHz [12] 
+          Maximum TX power: 20.0 dBm
+          No IR
+          Channel widths: 20MHz HT40-
+        * 2484 MHz [14] (disabled)
 Band 2:
-    Frequencies:
-        * 5180.0 MHz [36] (23.0 dBm)
-        * 5845.0 MHz [169] (disabled)
+        * 5180 MHz [36] 
+          Maximum TX power: 23.0 dBm
+          Channel widths: 20MHz HT40+ VHT80
+        * 5845 MHz [169] (disabled)
 """
         channels = ChannelManager._parse_iw_phy_output(output)
-        assert len(channels) == 4
+        assert len(channels) == 5
         active = [c for c in channels if not c.disabled]
         disabled = [c for c in channels if c.disabled]
         assert len(active) == 2
-        assert len(disabled) == 2
+        assert len(disabled) == 3  # ch 12 (No IR) + ch 14 + ch 169
 
     def test_parse_empty_output(self):
         channels = ChannelManager._parse_iw_phy_output("")
@@ -154,6 +182,13 @@ class TestChannelManagerResolve:
         ch14 = next(c for c in info.channels_24ghz if c.channel == 14)
         assert ch14.disabled is True
         assert ch14.max_power_dbm == 0.0
+
+    def test_no_ir_channel_is_disabled(self):
+        mgr = ChannelManager()
+        info = mgr.get_channels("wls16")
+        ch12 = next(c for c in info.channels_24ghz if c.channel == 12)
+        assert ch12.disabled is True
+        assert ch12.max_power_dbm == 0.0
 
     def test_cache_returns_same_object(self):
         mgr = ChannelManager()
@@ -393,6 +428,11 @@ class TestValidateChannel:
         with pytest.raises(ValueError, match="disabled"):
             mgr.validate_channel("wls16", 169, "5ghz")
 
+    def test_no_ir_channel_raises(self):
+        mgr = ChannelManager()
+        with pytest.raises(ValueError, match="disabled"):
+            mgr.validate_channel("wls16", 12, "2.4ghz")
+
     def test_unsupported_channel_raises(self):
         mgr = ChannelManager()
         with pytest.raises(ValueError, match="not supported"):
@@ -450,3 +490,20 @@ class TestNetworkCreationChannelValidation:
         # but is not in the mock hardware data → 422
         assert resp.status_code == 422
         assert "not supported" in resp.json()['detail'].lower()
+
+    def test_no_ir_channel_returns_422(self, client, valid_token, reservation_id):
+        resp = client.post(
+            f'/api/v1/interface/{reservation_id}/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestNet',
+                'channel': 12,
+                'password': 'testpass123',
+                'encryption': 'wpa2',
+                'band': '2.4ghz',
+                'tx_power_level': 4,
+            },
+        )
+        # Channel 12 has No IR in mock data — treated as disabled
+        assert resp.status_code == 422
+        assert "disabled" in resp.json()['detail'].lower()
