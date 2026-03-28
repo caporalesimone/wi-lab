@@ -160,7 +160,8 @@ class NetworkManager:
                 encryption=req.encryption,
                 password=req.password,
                 hidden=req.hidden,
-                band=req.band
+                band=req.band,
+                country_code=self.config.country_code,
             )
             logger.info(f"hostapd started: {hostapd_info}")
         except HostapdError as e:

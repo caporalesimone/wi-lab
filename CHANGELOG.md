@@ -11,6 +11,8 @@ All notable changes to Wi-Lab are documented in this file.
 - **Available WiFi Channels API**
   - New endpoint to query all WiFi channels supported by a reserved device, split by band
 - **Channel cache warm-up at startup** – WiFi channel info is pre-fetched in a background thread so the first API call is served from cache
+- **Centralized channel validation** – Static and hardware-aware channel validation, with 5 GHz channels 169/173/177 now recognized. Network creation rejects unsupported or disabled channels with a clear 422 error
+- **Configurable country code** – WiFi regulatory domain (`country_code`) moved from hardcoded value to `config.yaml` (default: `IT`)
 
 ### 🔌 API Changes
 

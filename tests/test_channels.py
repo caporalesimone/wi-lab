@@ -4,7 +4,11 @@ import pytest
 from fastapi.testclient import TestClient
 from wilab.api import create_app
 from wilab.config import load_config
-from wilab.wifi.channels import ChannelManager
+from wilab.wifi.channels import (
+    ChannelManager,
+    is_valid_channel_for_band,
+    VALID_CHANNELS_5GHZ,
+)
 from wilab.api import dependencies
 from wilab.reservation import ReservationManager
 
@@ -307,3 +311,142 @@ class TestLifespanChannelCacheWarmup:
         # App should start without raising despite iw failures
         with TestClient(app):
             pass
+
+
+# ---------------------------------------------------------------------------
+# Tests – is_valid_channel_for_band (static validation)
+# ---------------------------------------------------------------------------
+
+class TestIsValidChannelForBand:
+    """Test the hardware-independent static channel validation."""
+
+    def test_valid_24ghz_channels(self):
+        for ch in range(1, 15):
+            assert is_valid_channel_for_band(ch, "2.4ghz") is True
+
+    def test_invalid_24ghz_channel_zero(self):
+        assert is_valid_channel_for_band(0, "2.4ghz") is False
+
+    def test_invalid_24ghz_channel_15(self):
+        assert is_valid_channel_for_band(15, "2.4ghz") is False
+
+    def test_valid_5ghz_unii1(self):
+        for ch in (36, 40, 44, 48):
+            assert is_valid_channel_for_band(ch, "5ghz") is True
+
+    def test_valid_5ghz_unii2(self):
+        for ch in (52, 56, 60, 64):
+            assert is_valid_channel_for_band(ch, "5ghz") is True
+
+    def test_valid_5ghz_unii2_extended(self):
+        for ch in (100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144):
+            assert is_valid_channel_for_band(ch, "5ghz") is True
+
+    def test_valid_5ghz_unii3(self):
+        for ch in (149, 153, 157, 161, 165, 169, 173, 177):
+            assert is_valid_channel_for_band(ch, "5ghz") is True
+
+    def test_invalid_5ghz_channel(self):
+        assert is_valid_channel_for_band(50, "5ghz") is False
+        assert is_valid_channel_for_band(99, "5ghz") is False
+        assert is_valid_channel_for_band(180, "5ghz") is False
+
+    def test_dual_accepts_24ghz(self):
+        assert is_valid_channel_for_band(6, "dual") is True
+
+    def test_dual_accepts_5ghz(self):
+        assert is_valid_channel_for_band(36, "dual") is True
+
+    def test_dual_rejects_invalid(self):
+        assert is_valid_channel_for_band(99, "dual") is False
+
+    def test_channel_sets_include_169_173_177(self):
+        """Channels 169, 173, 177 must be in the 5 GHz set."""
+        assert 169 in VALID_CHANNELS_5GHZ
+        assert 173 in VALID_CHANNELS_5GHZ
+        assert 177 in VALID_CHANNELS_5GHZ
+
+
+# ---------------------------------------------------------------------------
+# Tests – ChannelManager.validate_channel (hardware validation)
+# ---------------------------------------------------------------------------
+
+class TestValidateChannel:
+    """Test hardware-aware channel validation against cached data."""
+
+    def test_valid_active_channel(self):
+        mgr = ChannelManager()
+        # Channel 6 is active in mock data — should not raise
+        mgr.validate_channel("wls16", 6, "2.4ghz")
+
+    def test_valid_5ghz_channel(self):
+        mgr = ChannelManager()
+        mgr.validate_channel("wls16", 36, "5ghz")
+
+    def test_disabled_channel_raises(self):
+        mgr = ChannelManager()
+        with pytest.raises(ValueError, match="disabled"):
+            mgr.validate_channel("wls16", 14, "2.4ghz")
+
+    def test_disabled_5ghz_channel_raises(self):
+        mgr = ChannelManager()
+        with pytest.raises(ValueError, match="disabled"):
+            mgr.validate_channel("wls16", 169, "5ghz")
+
+    def test_unsupported_channel_raises(self):
+        mgr = ChannelManager()
+        with pytest.raises(ValueError, match="not supported"):
+            mgr.validate_channel("wls16", 50, "5ghz")
+
+    def test_error_includes_band(self):
+        mgr = ChannelManager()
+        with pytest.raises(ValueError, match="band 5ghz"):
+            mgr.validate_channel("wls16", 50, "5ghz")
+
+    def test_wrong_band_for_channel(self):
+        mgr = ChannelManager()
+        # Channel 6 exists in 2.4 GHz but not in 5 GHz pool
+        with pytest.raises(ValueError, match="not supported"):
+            mgr.validate_channel("wls16", 6, "5ghz")
+
+
+# ---------------------------------------------------------------------------
+# API tests – channel validation on network creation
+# ---------------------------------------------------------------------------
+
+class TestNetworkCreationChannelValidation:
+    """Test that POST /network rejects invalid/disabled channels."""
+
+    def test_disabled_channel_returns_422(self, client, valid_token, reservation_id):
+        resp = client.post(
+            f'/api/v1/interface/{reservation_id}/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestNet',
+                'channel': 14,
+                'password': 'testpass123',
+                'encryption': 'wpa2',
+                'band': '2.4ghz',
+                'tx_power_level': 4,
+            },
+        )
+        assert resp.status_code == 422
+        assert "disabled" in resp.json()['detail'].lower()
+
+    def test_unsupported_channel_returns_422(self, client, valid_token, reservation_id):
+        resp = client.post(
+            f'/api/v1/interface/{reservation_id}/network',
+            headers={'Authorization': valid_token},
+            json={
+                'ssid': 'TestNet',
+                'channel': 173,
+                'password': 'testpass123',
+                'encryption': 'wpa2',
+                'band': '5ghz',
+                'tx_power_level': 4,
+            },
+        )
+        # 173 passes static validation (it's in VALID_CHANNELS_5GHZ)
+        # but is not in the mock hardware data → 422
+        assert resp.status_code == 422
+        assert "not supported" in resp.json()['detail'].lower()

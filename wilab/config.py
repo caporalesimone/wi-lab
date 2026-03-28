@@ -22,6 +22,7 @@ class AppConfig(BaseModel):
     min_timeout: int = 60      # 60 seconds default lower bound
     dhcp_base_network: str
     upstream_interface: str = "auto"
+    country_code: str = "IT"
     dns_server: str = "192.168.10.21"
     internet_enabled_by_default: bool = True
     networks: List[NetworkEntry]

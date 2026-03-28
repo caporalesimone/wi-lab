@@ -1,6 +1,9 @@
 from typing import Optional, List
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
+from .wifi.channels import is_valid_channel_for_band
+
+
 class NetworkCreateRequest(BaseModel):
     ssid: str
     channel: int
@@ -34,22 +37,9 @@ class NetworkCreateRequest(BaseModel):
         """Validate channel is appropriate for the band."""
         if 'band' not in info.data:
             return v
-        
         band = info.data['band']
-        
-        # 2.4GHz: channels 1-14
-        if band == '2.4ghz':
-            if not (1 <= v <= 14):
-                raise ValueError(f"Channel {v} invalid for 2.4GHz band (must be 1-14)")
-        
-        # 5GHz: channels 36-165 (common UNII bands)
-        elif band == '5ghz':
-            valid_5ghz = list(range(36, 65, 4)) + list(range(100, 145, 4)) + list(range(149, 166, 4))
-            if v not in valid_5ghz:
-                raise ValueError(
-                    f"Channel {v} invalid for 5GHz band (typical: 36-64, 100-144, 149-165 in steps of 4)"
-                )
-        
+        if not is_valid_channel_for_band(v, band):
+            raise ValueError(f"Channel {v} is not a valid WiFi channel for band {band}")
         return v
 
     @field_validator('password')

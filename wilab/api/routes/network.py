@@ -30,7 +30,27 @@ router = APIRouter(prefix="/interface", tags=["Network"])
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "Reservation not found or expired"},
         409: {"description": "Network already active; stop it first"},
-        422: {"description": "Request body validation failed"},
+        422: {
+            "description": "Validation failed (body, unsupported channel, or disabled channel)",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "body_validation": {
+                            "summary": "Invalid request body",
+                            "value": {"detail": "Channel 99 is not a valid WiFi channel for band 5ghz"},
+                        },
+                        "unsupported_channel": {
+                            "summary": "Channel not supported by hardware",
+                            "value": {"detail": "Channel 173 is not supported on wls16 for band 5ghz"},
+                        },
+                        "disabled_channel": {
+                            "summary": "Channel disabled by regulatory domain",
+                            "value": {"detail": "Channel 14 is disabled on wls16 for band 2.4ghz (regulatory domain restriction)"},
+                        },
+                    }
+                }
+            },
+        },
         500: {"description": "Failed to start network due to runtime error"},
     },
 )
@@ -51,6 +71,7 @@ async def start_network(
         ],
     ),
     manager: NetworkManager = Depends(get_manager),
+    channel_mgr: ChannelManager = Depends(get_channel_manager),
 ):
     """
     Create and start a WiFi network in AP (access point) mode.
@@ -66,6 +87,13 @@ async def start_network(
         dict: Simple confirmation message.
     """
     device_id = reservation.device_id
+
+    # Validate channel against real hardware capabilities
+    try:
+        channel_mgr.validate_channel(device_id, req.channel, req.band)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
     try:
         manager.start_network(device_id, req, expires_at_timestamp=reservation.expires_at)
         return {"detail": f"Network {device_id} created successfully"}

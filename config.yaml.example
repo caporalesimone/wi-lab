@@ -102,6 +102,23 @@ dns_server: "208.67.222.222"
 internet_enabled_by_default: true
 
 # ==================================================================================================
+# REGULATORY DOMAIN
+# ==================================================================================================
+
+# ISO 3166-1 alpha-2 country code for WiFi regulatory domain
+# Defines which channels and TX power levels are legally permitted.
+# hostapd uses this to configure the radio — incorrect values may
+# prevent AP creation on certain channels (especially 5 GHz).
+#
+# Common country codes:
+#   IT  - Italy              US  - United States
+#   DE  - Germany            GB  - United Kingdom
+#   FR  - France             ES  - Spain
+#   JP  - Japan              CN  - China
+#   KR  - South Korea        AU  - Australia
+country_code: "IT"
+
+# ==================================================================================================
 # MANAGED WiFi NETWORKS
 # ==================================================================================================
 

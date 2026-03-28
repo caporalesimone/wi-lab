@@ -23,10 +23,36 @@ from ..network.commands import execute_iw
 
 logger = logging.getLogger(__name__)
 
-# ---- Data classes ----
+# ---- Constants ----
 
 _BAND_2_4_MAX_FREQ = 2500  # MHz – everything below is 2.4 GHz
 _BAND_5_MIN_FREQ = 5000    # MHz – everything at or above is 5 GHz
+
+# Standard WiFi channel sets for static (hardware-independent) validation.
+VALID_CHANNELS_24GHZ = frozenset(range(1, 15))  # 1–14
+VALID_CHANNELS_5GHZ = (
+    frozenset(range(36, 65, 4))     # UNII-1: 36, 40, 44, 48
+    | frozenset(range(52, 65, 4))   # UNII-2: 52, 56, 60, 64
+    | frozenset(range(100, 145, 4)) # UNII-2 Extended: 100–144
+    | frozenset(range(149, 178, 4)) # UNII-3: 149–177
+)
+
+
+def is_valid_channel_for_band(channel: int, band: str) -> bool:
+    """Check whether *channel* is a standard WiFi channel for *band*.
+
+    This is a hardware-independent check against well-known channel numbers.
+    Use :meth:`ChannelManager.validate_channel` for hardware-aware validation.
+    """
+    if band == "2.4ghz":
+        return channel in VALID_CHANNELS_24GHZ
+    if band == "5ghz":
+        return channel in VALID_CHANNELS_5GHZ
+    # "dual" or unknown — accept any channel that belongs to either band.
+    return channel in VALID_CHANNELS_24GHZ or channel in VALID_CHANNELS_5GHZ
+
+
+# ---- Data classes ----
 
 
 @dataclass(frozen=True)
@@ -83,6 +109,30 @@ class ChannelManager:
                 self._cache.clear()
             else:
                 self._cache.pop(interface, None)
+
+    def validate_channel(self, interface: str, channel: int, band: str) -> None:
+        """Validate *channel* against the hardware capabilities of *interface*.
+
+        Raises :class:`ValueError` if the channel is not supported or disabled.
+        """
+        info = self.get_channels(interface)
+        if band == "2.4ghz":
+            pool = info.channels_24ghz
+        elif band == "5ghz":
+            pool = info.channels_5ghz
+        else:
+            pool = info.channels_24ghz + info.channels_5ghz
+
+        match = next((c for c in pool if c.channel == channel), None)
+        if match is None:
+            raise ValueError(
+                f"Channel {channel} is not supported on {interface} for band {band}"
+            )
+        if match.disabled:
+            raise ValueError(
+                f"Channel {channel} is disabled on {interface} for band {band}"
+                " (regulatory domain restriction)"
+            )
 
     # -- internals --
 

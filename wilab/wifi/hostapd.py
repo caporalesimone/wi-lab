@@ -41,7 +41,8 @@ class HostapdManager:
         encryption: str,
         password: Optional[str],
         hidden: bool,
-        band: str
+        band: str,
+        country_code: str = "IT",
     ) -> str:
         """
         Generate hostapd.conf content.
@@ -54,6 +55,7 @@ class HostapdManager:
             password: WPA password (None for open networks)
             hidden: Whether to hide SSID broadcast
             band: WiFi band (2.4ghz, 5ghz)
+            country_code: ISO 3166-1 alpha-2 country code for regulatory domain
             
         Returns:
             hostapd configuration as string
@@ -101,7 +103,7 @@ class HostapdManager:
         
         # Additional recommended settings
         config_lines.extend([
-            "country_code=IT",
+            f"country_code={country_code}",
             "ieee80211n=1",  # 802.11n support
             "wmm_enabled=1",  # WMM/QoS
         ])
@@ -117,7 +119,8 @@ class HostapdManager:
         encryption: str,
         password: Optional[str],
         hidden: bool,
-        band: str
+        band: str,
+        country_code: str = "IT",
     ) -> dict:
         """
         Start hostapd for an AP network.
@@ -131,6 +134,7 @@ class HostapdManager:
             password: WPA password (None for open)
             hidden: Hide SSID broadcast
             band: WiFi band (2.4ghz/5ghz)
+            country_code: ISO 3166-1 alpha-2 country code
             
         Returns:
             Dictionary with hostapd instance info
@@ -145,7 +149,7 @@ class HostapdManager:
         try:
             # Generate config
             config_content = self._generate_config(
-                interface, ssid, channel, encryption, password, hidden, band
+                interface, ssid, channel, encryption, password, hidden, band, country_code
             )
             
             # Write config file
