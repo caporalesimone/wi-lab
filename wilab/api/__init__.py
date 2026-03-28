@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 import logging
+import threading
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -8,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.openapi.utils import get_openapi
 
-from .dependencies import get_config, get_manager
+from .dependencies import get_channel_manager, get_config, get_manager
 from .routes import router as api_router
 from ..version import __version__
 
@@ -31,7 +32,26 @@ async def lifespan(app: FastAPI):
     # Startup: instantiate manager so background expiry runs
     cfg = get_config()
     get_manager(cfg)
+
+    # Pre-populate channel cache in background to not delay startup
+    channel_mgr = get_channel_manager()
+
+    def _warm_channel_cache() -> None:
+        for net in cfg.networks:
+            try:
+                channel_mgr.get_channels(net.interface)
+                logger.info("Channels cached for %s", net.interface)
+            except Exception as exc:
+                logger.warning("Failed to cache channels for %s: %s", net.interface, exc)
+
+    cache_thread = threading.Thread(
+        target=_warm_channel_cache, name="channel-cache-warmup", daemon=True,
+    )
+    cache_thread.start()
+
     yield
+
+    cache_thread.join(timeout=10)
     # Shutdown: gracefully stop any active networks
     try:
         mgr = get_manager(cfg)

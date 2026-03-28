@@ -10,6 +10,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 - **Available WiFi Channels API**
   - New endpoint to query all WiFi channels supported by a reserved device, split by band
+- **Channel cache warm-up at startup** – WiFi channel info is pre-fetched in a background thread so the first API call is served from cache
 
 ### 🔌 API Changes
 

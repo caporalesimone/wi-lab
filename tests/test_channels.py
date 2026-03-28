@@ -260,3 +260,50 @@ class TestAvailableChannelsAPI:
         assert ch1['disabled'] is False
         assert ch1['max_power_dbm'] == 20.0
         assert ch1['frequency_mhz'] == 2412
+
+
+# ---------------------------------------------------------------------------
+# Tests – lifespan channel cache warm-up
+# ---------------------------------------------------------------------------
+
+class TestLifespanChannelCacheWarmup:
+    """Verify that the app lifespan pre-populates the channel cache."""
+
+    def test_cache_populated_after_startup(self):
+        """After TestClient enters the lifespan, the cache should already have entries."""
+        import time
+        # Reset singleton so lifespan creates a fresh one
+        dependencies._channel_manager = None
+        load_config()
+        app = create_app()
+        with TestClient(app):
+            cfg = load_config()
+            channel_mgr = dependencies._channel_manager
+            assert channel_mgr is not None
+            # Give the background thread a moment to finish
+            time.sleep(0.5)
+            for net in cfg.networks:
+                info = channel_mgr.get_channels(net.interface)
+                assert info.interface == net.interface
+                assert len(info.channels_24ghz) > 0
+
+    def test_warmup_tolerates_failure(self, monkeypatch):
+        """If iw fails for one interface the app should still start."""
+        from wilab.wifi import channels as ch_mod
+
+        original_execute_iw = ch_mod.execute_iw
+
+        def failing_execute_iw(args):
+            # Fail only for interface info lookup (first call per interface)
+            if len(args) >= 2 and args[1] == "info" and not args[0].startswith("phy"):
+                raise RuntimeError("simulated iw failure")
+            return original_execute_iw(args)
+
+        monkeypatch.setattr(ch_mod, "execute_iw", failing_execute_iw)
+        # Reset the singleton so the lifespan creates a fresh one
+        monkeypatch.setattr(dependencies, '_channel_manager', None, raising=False)
+
+        app = create_app()
+        # App should start without raising despite iw failures
+        with TestClient(app):
+            pass
