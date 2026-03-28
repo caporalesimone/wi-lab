@@ -4,6 +4,40 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [2.1.0] - 2026-03-28
+
+### ✨ Features
+
+- **Available WiFi Channels API**
+  - New endpoint to query all WiFi channels supported by a reserved device, split by band
+
+### 🔌 API Changes
+
+#### New endpoint
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/interface/{reservation_id}/network/available-channels` | List supported WiFi channels for the reserved device |
+
+Response body:
+```json
+{
+  "interface": "wlxbc071dc527d6",
+  "channels_24ghz": [
+    { "channel": 1, "frequency_mhz": 2412, "max_power_dbm": 20.0, "disabled": false },
+    { "channel": 14, "frequency_mhz": 2484, "max_power_dbm": 0.0, "disabled": true }
+  ],
+  "channels_5ghz": [
+    { "channel": 36, "frequency_mhz": 5180, "max_power_dbm": 23.0, "disabled": false },
+    { "channel": 169, "frequency_mhz": 5845, "max_power_dbm": 0.0, "disabled": true }
+  ]
+}
+```
+
+Each channel includes frequency in MHz, maximum TX power in dBm, and a disabled flag. Disabled channels (blocked by regulatory domain) are reported with `max_power_dbm = 0.0` by convention. Channel data is resolved from `iw phy` on first request and cached in memory for subsequent calls.
+
+---
+
 ## [2.0.0] - 2026-03-27
 
 Major release introducing a reservation-based device lifecycle. Users must now acquire a time-limited reservation token before performing any network operation. The frontend has been redesigned around this workflow, showing all physical interfaces as cards with real-time status and allowing multiple simultaneous reservations.
