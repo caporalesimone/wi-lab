@@ -6,6 +6,12 @@ All notable changes to Wi-Lab are documented in this file.
 
 ## [2.1.0] - 2026-03-28
 
+### 🔧 Maintenance
+
+- **Reorganized `scripts/` folder** – Removed 10 obsolete API helper scripts; split `restart-service.sh` into `scripts/stop-service.sh` and `scripts/start-service.sh`
+- **Makefile service targets** – Added `make stop`, `make start`, `make restart`; removed duplicate `build-release`/`run-release` targets
+- **Test suite decoupled from host config** – Tests now use a dedicated `tests/test.config.yaml` so they pass regardless of the host `config.yaml`
+
 ### ✨ Features
 
 - **Available WiFi Channels API**

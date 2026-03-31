@@ -61,7 +61,6 @@ def log_host_impact_warning():
     logger.warning("  - WiFi interface state (AP mode)")
     logger.warning("")
     logger.warning("All rules include '-m comment --comment wilab-*' for tracking.")
-    logger.warning("To clean up manually: bash scripts/cleanup-wilab-rules.sh")
     logger.warning("=" * 80)
 
 

@@ -5,7 +5,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help build-dev up down logs test test-verbose test-cov shell build-release run-release venv test-local test-local-quick test-local-cov clean-venv lint lint-fix type-check
+.PHONY: help build-dev up down logs test test-verbose test-cov shell build-release run-release venv test-local test-local-quick test-local-cov clean-venv lint lint-fix type-check stop start restart
 
 # Default target: show help
 help:
@@ -31,6 +31,11 @@ help:
 	@echo "  make down              Stop containers"
 	@echo "  make logs              View container logs"
 	@echo "  make shell             Open shell in running container"
+	@echo ""
+	@echo "Service Management (requires root):"
+	@echo "  make stop              Stop Wi-Lab systemd service"
+	@echo "  make start             Start Wi-Lab systemd service"
+	@echo "  make restart           Restart Wi-Lab systemd service"
 	@echo ""
 	@echo "Release:"
 	@echo "  make build-release     Build release Docker image"
@@ -108,12 +113,15 @@ run-release:
 	  -v $(PWD)/config.yaml:/app/config.yaml:ro \
 	  wilab:$(VERSION)
 
+# Service management targets
+stop:
+	@sudo bash scripts/stop-service.sh
 
-build-release:
-	docker build -t wilab:$(VERSION) -f Dockerfile --build-arg APP_VERSION=$(VERSION) .
+start:
+	@sudo bash scripts/start-service.sh
 
-run-release:
-	docker run --net=host --privileged --cap-add=NET_ADMIN --cap-add=NET_RAW \
-	  -v $(PWD)/config.yaml:/app/config.yaml:ro \
-	  wilab:$(VERSION)
+restart: stop
+	@echo "Waiting 5 seconds before restart..."
+	@sleep 5
+	@sudo bash scripts/start-service.sh
 
