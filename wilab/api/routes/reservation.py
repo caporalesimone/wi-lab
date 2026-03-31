@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ...api.auth import require_token
 from ...api.dependencies import get_config, get_reservation_manager
@@ -19,9 +19,18 @@ router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
 
 class ReservationCreateRequest(BaseModel):
     duration_seconds: int = Field(
-        ..., ge=0, description="Reservation duration in seconds (0 = unlimited, if allowed by config)",
+        ..., description="Reservation duration in seconds (0 = unlimited, if allowed by config)",
         json_schema_extra={"example": 3600}
     )
+
+    @field_validator("duration_seconds")
+    @classmethod
+    def validate_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError(
+                "duration_seconds must be 0 (unlimited) or >= min_timeout"
+            )
+        return v
 
 
 class ReservationResponse(BaseModel):
