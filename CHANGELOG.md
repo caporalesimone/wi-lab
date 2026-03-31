@@ -8,9 +8,42 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### ✨ Features
 
+- **Unlimited reservations** – When `allow_unlimited_reservation: true` in config, users can create reservations with no expiry by sending `duration_seconds: 0`. The reservation stays active until explicitly released.
+- **Duration validation** – `POST /device-reservation` now validates `duration_seconds` against `min_timeout` and `max_timeout` from config (previously only enforced client-side)
+- **Hardcoded `min_timeout` floor** – `min_timeout` can never be set below 10 seconds in config
+
 ### 🔧 Maintenance
 
-### 🐛 Bug Fixes
+- **Frontend unlimited UX** – Reservation dialog shows an "Unlimited" checkbox when allowed. Owned cards show "∞ Unlimited" instead of countdown; occupied cards show "Occupied — No expiry"
+
+### 🔌 API Changes
+
+#### `POST /api/v1/device-reservation`
+
+- `duration_seconds: 0` creates an unlimited reservation (requires `allow_unlimited_reservation: true` in config)
+- `duration_seconds` is now validated server-side against `min_timeout` / `max_timeout`; returns 422 if out of bounds
+- Response fields `expires_at` and `expires_in` are now **nullable** (`null` for unlimited reservations)
+
+#### `GET /api/v1/device-reservation/{reservation_id}`
+
+- Response fields `expires_at` and `expires_in` are now **nullable** (`null` for unlimited reservations)
+
+#### `GET /api/v1/status`
+
+- New field: `allow_unlimited_reservation` (boolean) — reflects the server config
+- Each network entry now includes `reserved` (boolean) — distinguishes "available" from "occupied unlimited" when `reservation_remaining_seconds` is `null`
+- `reservation_remaining_seconds` is `null` for unlimited reservations (previously only `null` when not reserved)
+
+#### `GET /api/v1/interface/{reservation_id}/network`
+
+- `expires_at` and `expires_in` are now **nullable** (`null` for unlimited reservations)
+
+#### New config parameter
+
+```yaml
+# Set to true to allow unlimited reservations (duration_seconds: 0)
+allow_unlimited_reservation: false
+```
 
 ---
 
