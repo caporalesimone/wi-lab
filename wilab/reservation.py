@@ -36,15 +36,19 @@ class Reservation:
     device_id: str
     duration_seconds: int
     created_at: float
-    expires_at: float
+    expires_at: Optional[float]  # None = unlimited (no expiry)
 
     @property
-    def expires_in(self) -> int:
-        """Seconds remaining until expiry (clamped to 0)."""
+    def expires_in(self) -> Optional[int]:
+        """Seconds remaining until expiry (clamped to 0). None if unlimited."""
+        if self.expires_at is None:
+            return None
         return max(0, int(self.expires_at - time.time()))
 
     @property
     def is_expired(self) -> bool:
+        if self.expires_at is None:
+            return False
         return time.time() >= self.expires_at
 
 
@@ -88,7 +92,7 @@ class ReservationManager:
                 device_id=device_id,
                 duration_seconds=duration_seconds,
                 created_at=now,
-                expires_at=now + duration_seconds,
+                expires_at=None if duration_seconds == 0 else now + duration_seconds,
             )
             self._reservations[reservation_id] = reservation
             self._device_to_rid[device_id] = reservation_id
@@ -168,7 +172,8 @@ class ReservationManager:
             self._remove(rid)
 
     def _soonest_expiry(self) -> float:
-        """Return the earliest expires_at among active reservations."""
-        if not self._reservations:
+        """Return the earliest expires_at among active reservations (excluding unlimited)."""
+        timed = [r.expires_at for r in self._reservations.values() if r.expires_at is not None]
+        if not timed:
             return time.time()
-        return min(r.expires_at for r in self._reservations.values())
+        return min(timed)
