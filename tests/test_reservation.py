@@ -410,3 +410,60 @@ class TestReservationAPIDeleteAll:
             json={"duration_seconds": 3600},
         )
         assert resp.status_code == 200
+
+
+# ======================================================================
+# Unit tests for unlimited reservations
+# ======================================================================
+
+
+class TestUnlimitedReservation:
+    """Tests for unlimited (duration_seconds=0) reservations."""
+
+    def test_create_unlimited_reservation(self):
+        """Creating with duration_seconds=0 sets expires_at=None."""
+        mgr = ReservationManager(["dev0"])
+        r = mgr.create(0)
+        assert r.expires_at is None
+        assert r.duration_seconds == 0
+
+    def test_unlimited_expires_in_is_none(self):
+        """Unlimited reservation expires_in returns None."""
+        mgr = ReservationManager(["dev0"])
+        r = mgr.create(0)
+        assert r.expires_in is None
+
+    def test_unlimited_is_not_expired(self):
+        """Unlimited reservation is never expired."""
+        mgr = ReservationManager(["dev0"])
+        r = mgr.create(0)
+        assert r.is_expired is False
+
+    def test_unlimited_not_purged(self):
+        """Unlimited reservation is not purged by _purge_expired."""
+        mgr = ReservationManager(["dev0", "dev1"])
+        r_unlimited = mgr.create(0)
+        r_timed = mgr.create(1)
+        # Force the timed one to expire
+        r_timed.expires_at = time.time() - 1
+        active = mgr.all_active()
+        assert len(active) == 1
+        assert active[0].reservation_id == r_unlimited.reservation_id
+
+    def test_soonest_expiry_ignores_unlimited(self):
+        """_soonest_expiry excludes unlimited reservations."""
+        mgr = ReservationManager(["dev0", "dev1"])
+        mgr.create(0)  # unlimited
+        r_timed = mgr.create(600)
+        with mgr._lock:
+            soonest = mgr._soonest_expiry()
+        assert abs(soonest - r_timed.expires_at) < 2
+
+    def test_soonest_expiry_all_unlimited(self):
+        """_soonest_expiry returns now when all reservations are unlimited."""
+        mgr = ReservationManager(["dev0"])
+        mgr.create(0)
+        before = time.time()
+        with mgr._lock:
+            soonest = mgr._soonest_expiry()
+        assert soonest >= before

@@ -176,7 +176,10 @@ async def get_network(
         raise HTTPException(status_code=404, detail="Unknown device_id")
     # Always inject reservation-derived expiry so clients see countdown
     # even when the network is off.
-    st.expires_at = datetime.fromtimestamp(reservation.expires_at, tz=timezone.utc).isoformat()
+    st.expires_at = (
+        datetime.fromtimestamp(reservation.expires_at, tz=timezone.utc).isoformat()
+        if reservation.expires_at is not None else None
+    )
     st.expires_in = reservation.expires_in
     return st
 

@@ -102,3 +102,44 @@ class TestConfigIntegration:
         from ipaddress import IPv4Network
         IPv4Network(cfg.dhcp_base_network, strict=False)  # Should not raise
 
+
+class TestMinTimeoutConstraint:
+    """Tests for min_timeout hardcoded floor."""
+
+    def test_min_timeout_below_10_rejected(self, tmp_path):
+        """min_timeout < 10 is rejected at config validation."""
+        cfg_file = tmp_path / "bad.yaml"
+        cfg_file.write_text(
+            "auth_token: test\n"
+            "dhcp_base_network: '192.168.120.0/24'\n"
+            "min_timeout: 5\n"
+            "networks:\n"
+            "  - interface: wlan0\n"
+            "    display_name: test\n"
+        )
+        with pytest.raises(SystemExit, match="min_timeout"):
+            load_config(str(cfg_file))
+
+    def test_min_timeout_10_accepted(self, tmp_path):
+        """min_timeout = 10 is accepted (boundary)."""
+        cfg_file = tmp_path / "ok.yaml"
+        cfg_file.write_text(
+            "auth_token: test\n"
+            "dhcp_base_network: '192.168.120.0/24'\n"
+            "min_timeout: 10\n"
+            "networks:\n"
+            "  - interface: wlan0\n"
+            "    display_name: test\n"
+        )
+        cfg = load_config(str(cfg_file))
+        assert cfg.min_timeout == 10
+
+
+class TestAllowUnlimitedReservationConfig:
+    """Tests for allow_unlimited_reservation config field."""
+
+    def test_default_is_false(self):
+        """allow_unlimited_reservation defaults to False."""
+        cfg = load_config()
+        assert cfg.allow_unlimited_reservation is False
+
