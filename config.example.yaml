@@ -63,8 +63,8 @@ min_timeout: 60
 # Allow unlimited (non-expiring) reservations
 # When true, clients can send duration_seconds=0 to create a reservation
 # that never expires. It must be released manually.
-# When false (default), duration_seconds=0 is rejected with 422.
-allow_unlimited_reservation: false
+# When false, duration_seconds=0 is rejected with 422.
+allow_unlimited_reservation: true
 
 # ==================================================================================================
 # DHCP & NETWORKING

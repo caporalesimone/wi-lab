@@ -41,7 +41,7 @@ export class ReservationDialogComponent {
     this.allowUnlimited = data?.allowUnlimited ?? false;
     this.form = this.formBuilder.group({
       unlimited: [false],
-      duration_seconds: [3600, [Validators.required, Validators.min(60), Validators.max(86400)]]
+      duration_seconds: [3600, [Validators.required, Validators.min(10), Validators.max(86400)]]
     });
   }
 
