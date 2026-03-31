@@ -1,6 +1,7 @@
 export interface InterfaceInfo {
   display_name: string;
   interface: string;
+  reserved: boolean;
   reservation_remaining_seconds: number | null;
 }
 

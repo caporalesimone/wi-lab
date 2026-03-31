@@ -54,11 +54,11 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   public get isOccupied(): boolean {
-    return !this.isMine && this.slot.otherReservationSeconds !== null;
+    return !this.isMine && this.slot.occupiedByOther;
   }
 
   public get isAvailable(): boolean {
-    return !this.isMine && this.slot.otherReservationSeconds === null;
+    return !this.isMine && !this.slot.occupiedByOther;
   }
 
   public get reservationId(): string {
@@ -77,6 +77,11 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   /** True when the current reservation has no expiry. */
   public get isUnlimited(): boolean {
     return this.isMine && this.slot.myReservation?.expires_in === null;
+  }
+
+  /** True when occupied by another user with an unlimited reservation. */
+  public get isOccupiedUnlimited(): boolean {
+    return this.isOccupied && this.slot.otherReservationSeconds === null;
   }
 
   public formatCountdown(totalSeconds: number): string {
@@ -98,7 +103,9 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
       this.startOwned();
     }
     if (this.isOccupied) {
-      this.startOccupiedCountdown(this.slot.otherReservationSeconds!);
+      if (this.slot.otherReservationSeconds !== null) {
+        this.startOccupiedCountdown(this.slot.otherReservationSeconds);
+      }
     }
   }
 

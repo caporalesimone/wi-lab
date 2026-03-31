@@ -23,7 +23,9 @@ import { HttpErrorResponse } from '@angular/common/http';
 export interface InterfaceSlot {
   display_name: string;
   interface: string;
-  /** null = available, number = reserved by someone else */
+  /** True when reserved by another user (regardless of unlimited or timed) */
+  occupiedByOther: boolean;
+  /** Remaining seconds for other user's timed reservation, null if unlimited or not occupied */
   otherReservationSeconds: number | null;
   /** Set when this client owns the reservation */
   myReservation: ReservationResponse | null;
@@ -85,7 +87,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   public get availableCount(): number {
-    return this.slots.filter(s => s.myReservation === null && s.otherReservationSeconds === null).length;
+    return this.slots.filter(s => s.myReservation === null && !s.occupiedByOther).length;
   }
 
   public get reservedCount(): number {
@@ -185,6 +187,7 @@ export class AppComponent implements OnInit, OnDestroy {
       return {
         display_name: n.display_name,
         interface: n.interface,
+        occupiedByOther: !myRes && n.reserved,
         otherReservationSeconds: myRes ? null : n.reservation_remaining_seconds,
         myReservation: myRes,
       };
