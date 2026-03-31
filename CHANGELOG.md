@@ -48,7 +48,7 @@ Each channel includes frequency in MHz, maximum TX power in dBm, and a disabled 
 
 ---
 
-## [2.0.0] - 2026-03-27
+## [2.0.0] - 2026-03-27 - ⚠️ Unreleased version ⚠️
 
 Major release introducing a reservation-based device lifecycle. Users must now acquire a time-limited reservation token before performing any network operation. The frontend has been redesigned around this workflow, showing all physical interfaces as cards with real-time status and allowing multiple simultaneous reservations.
 
