@@ -12,8 +12,8 @@ class TestConfigLoading:
         cfg = load_config(path)
         assert isinstance(cfg, AppConfig)
         assert cfg.api_port == 8080
-        assert cfg.networks[0].device_id == 'wls16'
-        assert cfg.networks[0].interface == 'wls16'
+        assert cfg.networks[0].device_id == 'wlxbc071dc527d6'
+        assert cfg.networks[0].interface == 'wlxbc071dc527d6'
     
     def test_load_config_default_path(self):
         """Test loading config from default location."""

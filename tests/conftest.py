@@ -8,11 +8,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 from wilab.config import load_config
 
+TEST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'test.config.yaml')
+
 
 @pytest.fixture(scope="session")
 def config():
-    """Load config once per test session."""
-    return load_config()
+    """Load test config once per test session."""
+    return load_config(TEST_CONFIG_PATH)
+
+
+@pytest.fixture(autouse=True)
+def _test_config_env(monkeypatch):
+    """Point load_config() to the test config and reset cached dependency singletons."""
+    from wilab.api import dependencies
+    monkeypatch.setenv('CONFIG_PATH', TEST_CONFIG_PATH)
+    monkeypatch.setattr(dependencies, '_config', None)
+    monkeypatch.setattr(dependencies, '_manager', None)
+    monkeypatch.setattr(dependencies, '_reservation_manager', None)
+    monkeypatch.setattr(dependencies, '_channel_manager', None)
 
 
 @pytest.fixture(autouse=True)
@@ -183,6 +196,8 @@ Band 2:
     monkeypatch.setattr(interface, "validate_interface_ap_mode", mock_validate_interface_ap_mode)
     
     # Patch in manager module (where they're imported)
+    monkeypatch.setattr(manager, "validate_interface_exists", lambda iface: None)
+    monkeypatch.setattr(manager, "validate_interface_wireless", lambda iface: None)
     monkeypatch.setattr(manager, "validate_interface_ap_mode", mock_validate_interface_ap_mode)
     monkeypatch.setattr(manager, "execute_iw", mock_execute_iw)
     

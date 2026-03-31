@@ -132,10 +132,10 @@ class TestStatusEndpoint:
     def test_status_degraded_on_dhcp_down(self, client, valid_token, monkeypatch):
         """Test status returns degraded when DHCP is down but network is active."""
         from wilab.models import NetworkStatus
-        from wilab.api.dependencies import get_manager as original_get_manager
+        from wilab.api.dependencies import get_manager as original_get_manager, get_config
         
         # Get the real manager once, then mock it
-        real_mgr = original_get_manager()
+        real_mgr = original_get_manager(get_config())
         
         # Add an active network
         real_mgr.active['test-net'] = NetworkStatus(
@@ -163,11 +163,11 @@ class TestStatusEndpoint:
     
     def test_status_upstream_error_handling(self, client, valid_token, monkeypatch):
         """Test status gracefully handles upstream interface errors."""
-        from wilab.api.dependencies import get_manager as original_get_manager
+        from wilab.api.dependencies import get_manager as original_get_manager, get_config
         from wilab.network.commands import CommandError
         
         # Get the real manager once
-        real_mgr = original_get_manager()
+        real_mgr = original_get_manager(get_config())
         
         # Mock get_upstream_interface to raise error
         original_get_upstream = real_mgr.nat_manager.get_upstream_interface
@@ -975,9 +975,9 @@ class TestReservationRequiredForOperations:
     def test_expired_reservation_returns_404(self, client, valid_token, monkeypatch):
         """Expired reservation token is rejected with 404."""
         import time
-        from wilab.api.dependencies import get_reservation_manager
+        from wilab.api.dependencies import get_reservation_manager, get_config
 
-        rmgr = get_reservation_manager()
+        rmgr = get_reservation_manager(get_config())
         r = rmgr.create(3600)
         # Force expiry
         r.expires_at = time.time() - 1

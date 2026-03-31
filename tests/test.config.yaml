@@ -1,0 +1,15 @@
+# Test configuration file — used by the test suite
+# Provides predictable, stable values independent of the host environment.
+auth_token: "secret-token-12345"
+api_port: 8080
+default_timeout: 3600
+max_timeout: 86400
+min_timeout: 60
+dhcp_base_network: "192.168.120.0/24"
+upstream_interface: "auto"
+country_code: "IT"
+dns_server: "192.168.10.21"
+internet_enabled_by_default: true
+networks:
+  - interface: "wls16"
+    display_name: "bench-antenna-1"
