@@ -37,27 +37,25 @@ cors_origins:
 # SECURITY: Only add trusted origins! Leaving this commented disables CORS (recommended for production)
 
 # ==================================================================================================
-# NETWORK TIMEOUTS
+# RESERVATION TIMEOUTS
 # ==================================================================================================
 
-# Default network lifetime in seconds
-# When a WiFi network is created, it will automatically stop after this duration
-# unless explicitly extended
+# Default reservation duration in seconds
+# When a device is reserved without specifying a duration, this value is used.
+# When the reservation expires, the associated WiFi network is automatically stopped.
 # Examples:
 #   - 600 = 10 minutes (quick testing)
 #   - 3600 = 1 hour (typical session)
 #   - 86400 = 24 hours (long-running lab)
 default_timeout: 3600
 
-# Maximum allowed timeout (upper bound for API requests)
-# This is the default maximum timeout value used in the application.
-# API requests with timeout > max_timeout will be rejected.
+# Maximum allowed reservation duration (upper bound for API requests)
+# API requests with duration > max_timeout will be rejected.
 # Set to 24 hours (86400 seconds) by default.
 max_timeout: 86400
 
-# Minimum allowed timeout (lower bound for API requests)
-# This is the default minimum timeout value used in the application.
-# API requests with timeout < min_timeout will be rejected.
+# Minimum allowed reservation duration (lower bound for API requests)
+# API requests with duration < min_timeout will be rejected.
 # Set to 60 seconds by default.
 min_timeout: 60
 
@@ -134,16 +132,11 @@ country_code: "IT"
 #   - display_name: Human-readable label for the device (required)
 #                  Example: "bench-antenna-1"
 #
-# At runtime, WiFi parameters (SSID, channel, band, encryption, password, hidden, 
-# timeout, tx_power_level) are provided via REST API when creating a network.
-# See docs/swagger.md for API endpoint documentation.
-#
-# TX Power Level: Mandatory at network creation (1-4 scale)
-#   1 = Minimum power (~5 dBm)
-#   2 = Low power (~10 dBm)
-#   3 = Medium power (~15 dBm)
-#   4 = Maximum power (~20 dBm)
-# Actual dBm values depend on WiFi interface capabilities.
+# For WiFi interface discovery:
+#   List interfaces: iw dev
+#   Check AP mode support: iw list | grep -A 5 "Supported interface modes"
+#   Find interface name: iw dev (look for "Interface wlx..." lines)
+
 networks:
   - interface: "wlxbc071dc527d6"
     display_name: "bench-antenna-1"
@@ -153,18 +146,3 @@ networks:
 
   - interface: "wlx782051245264"
     display_name: "bench-antenna-3"
-
-# ==================================================================================================
-# DOCUMENTATION & REFERENCES
-# ==================================================================================================
-
-# For complete configuration guidance:
-#   Installation: docs/installation-guide.md
-#   API Reference: docs/swagger.md
-#   Networking: docs/networking.md
-#   Troubleshooting: docs/troubleshooting.md
-#
-# For WiFi interface discovery:
-#   List interfaces: iw dev
-#   Check AP mode support: iw list | grep -A 5 "Supported interface modes"
-#   Find interface name: iw dev (look for "Interface wlx..." lines)

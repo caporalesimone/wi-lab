@@ -7,8 +7,8 @@ class TestConfigLoading:
     """Tests for configuration file loading and validation."""
     
     def test_load_config_example(self):
-        """Test loading the default config.yaml file."""
-        path = os.path.join(os.getcwd(), 'config.yaml')
+        """Test loading the config.example.yaml file."""
+        path = os.path.join(os.getcwd(), 'config.example.yaml')
         cfg = load_config(path)
         assert isinstance(cfg, AppConfig)
         assert cfg.api_port == 8080
