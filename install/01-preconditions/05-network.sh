@@ -18,7 +18,7 @@ install_common_vars
 # Extract WiFi interface from config
 ################################################################################
 
-WIFI_IFACE=$(grep -E "^\s+interface:" "$WILAB_DIR/config.yaml" 2>/dev/null | head -1 | sed -E 's/.*interface:\s*"?([^"]+)"?.*/\1/' | xargs)
+WIFI_IFACE=$(grep -E "^\s+-\s+interface:" "$WILAB_DIR/config.yaml" 2>/dev/null | head -1 | sed -E 's/.*interface:\s*"?([^"]+)"?.*/\1/' | xargs)
 
 if [ -z "$WIFI_IFACE" ]; then
     state_set NETWORK_AP_INTERFACE ""
