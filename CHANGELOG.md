@@ -4,6 +4,16 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [2.2.0] - YYYY-MM-DD
+
+### ✨ Features
+
+### 🔧 Maintenance
+
+### 🐛 Bug Fixes
+
+---
+
 ## [2.1.0] - 2026-03-28
 
 ### 🔧 Maintenance

@@ -20,6 +20,7 @@ class AppConfig(BaseModel):
     default_timeout: int = 3600
     max_timeout: int = 86400   # 24 hours default upper bound
     min_timeout: int = 60      # 60 seconds default lower bound
+    allow_unlimited_reservation: bool = False
     dhcp_base_network: str
     upstream_interface: str = "auto"
     country_code: str = "IT"
@@ -31,6 +32,13 @@ class AppConfig(BaseModel):
         description="CORS allowed origins. If None or empty, CORS is disabled (secure for production). "
                     "For development, add frontend URLs like ['http://localhost:4200', 'http://192.168.1.100:4200']"
     )
+
+    @field_validator('min_timeout')
+    @classmethod
+    def validate_min_timeout(cls, v: int) -> int:
+        if v < 10:
+            raise ValueError("min_timeout must be at least 10 seconds (hardcoded floor)")
+        return v
 
     @field_validator('upstream_interface')
     @classmethod

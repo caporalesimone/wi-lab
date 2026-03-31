@@ -57,7 +57,14 @@ max_timeout: 86400
 # Minimum allowed reservation duration (lower bound for API requests)
 # API requests with duration < min_timeout will be rejected.
 # Set to 60 seconds by default.
+# NOTE: Hardcoded floor of 10 seconds — values below 10 are rejected at startup.
 min_timeout: 60
+
+# Allow unlimited (non-expiring) reservations
+# When true, clients can send duration_seconds=0 to create a reservation
+# that never expires. It must be released manually.
+# When false (default), duration_seconds=0 is rejected with 422.
+allow_unlimited_reservation: false
 
 # ==================================================================================================
 # DHCP & NETWORKING

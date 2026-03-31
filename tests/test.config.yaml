@@ -5,6 +5,7 @@ api_port: 8080
 default_timeout: 3600
 max_timeout: 86400
 min_timeout: 60
+allow_unlimited_reservation: false
 dhcp_base_network: "192.168.120.0/24"
 upstream_interface: "auto"
 country_code: "IT"
