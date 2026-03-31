@@ -57,6 +57,9 @@ export class AppComponent implements OnInit, OnDestroy {
   /** All interface slots (one per system interface) */
   slots: InterfaceSlot[] = [];
 
+  /** Whether the server allows unlimited reservations */
+  allowUnlimitedReservation = false;
+
   /** Error info when all devices are busy */
   capacityError: NoDeviceAvailableError | null = null;
   capacityCountdown = 0;
@@ -161,6 +164,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.apiService.getStatus().subscribe({
       next: (response) => {
         this.version = response.version;
+        this.allowUnlimitedReservation = response.allow_unlimited_reservation ?? false;
         this.title = `Wi-Lab Network Management - ${this.version}`;
         this.buildSlots(response.networks);
         this.loading = false;
@@ -176,6 +180,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private refreshStatus(): void {
     this.apiService.getStatus().subscribe({
       next: (response) => {
+        this.allowUnlimitedReservation = response.allow_unlimited_reservation ?? false;
         this.buildSlots(response.networks);
       }
     });
@@ -198,7 +203,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.capacityError = null;
     this.clearCapacityTimer();
     const dialogRef = this.dialog.open(ReservationDialogComponent, {
-      width: '450px'
+      width: '450px',
+      data: { allowUnlimited: this.allowUnlimitedReservation }
     });
 
     dialogRef.afterClosed().subscribe((result: ReservationRequest | undefined) => {
