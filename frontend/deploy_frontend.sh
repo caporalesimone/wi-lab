@@ -26,9 +26,11 @@ fi
 echo "✓ Docker found"
 echo ""
 
-# Clean up old build output (optional)
+# Clean up old build output (may be root-owned from previous Docker run)
 echo "🧹 Preparing build directory..."
-rm -rf "${PROJECT_ROOT}/dist"
+if [ -d "${PROJECT_ROOT}/dist" ]; then
+    rm -rf "${PROJECT_ROOT}/dist" 2>/dev/null || sudo rm -rf "${PROJECT_ROOT}/dist"
+fi
 mkdir -p "${PROJECT_ROOT}/dist"
 
 # Build Docker image
