@@ -9,6 +9,7 @@ export interface StatusResponse {
   status: string;
   networks: InterfaceInfo[];
   active_networks: number;
+  allow_unlimited_reservation: boolean;
   checks: {
     dnsmasq: { running: boolean; instances: number };
     iptables_nat: { configured: boolean; errors: string[] };
@@ -24,8 +25,8 @@ export interface ReservationResponse {
   reservation_id: string;
   display_name: string;
   interface: string;
-  expires_at: string;
-  expires_in: number;
+  expires_at: string | null;
+  expires_in: number | null;
 }
 
 export interface NetworkStatus {
