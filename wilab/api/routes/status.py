@@ -117,12 +117,13 @@ async def system_status(
             # Find the reservation for this device to report remaining time
             for r in reservation_mgr.all_active():
                 if r.device_id == n.device_id:
-                    entry["reservation_remaining_seconds"] = r.expires_in
+                    entry["reservation_remaining_seconds"] = r.expires_in  # None for unlimited
                     break
         else:
             entry["reservation_remaining_seconds"] = None
         networks_info.append(entry)
     status_data["networks"] = networks_info
+    status_data["allow_unlimited_reservation"] = config.allow_unlimited_reservation
     status_data.update(health_data)
     return status_data
 
