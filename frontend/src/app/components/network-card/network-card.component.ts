@@ -70,8 +70,13 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   public get progressPercent(): number {
-    if (this.totalDuration <= 0) return 0;
+    if (this.isUnlimited || this.totalDuration <= 0) return 0;
     return Math.max(0, Math.min(100, (this.remainingSeconds / this.totalDuration) * 100));
+  }
+
+  /** True when the current reservation has no expiry. */
+  public get isUnlimited(): boolean {
+    return this.isMine && this.slot.myReservation?.expires_in === null;
   }
 
   public formatCountdown(totalSeconds: number): string {
@@ -142,11 +147,13 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
 
   private startOwned(): void {
     if (!this.slot.myReservation) return;
-    this.totalDuration = this.slot.myReservation.expires_in;
-    this.remainingSeconds = this.slot.myReservation.expires_in;
     this.checkStatus(false);
     this.startPolling();
-    this.startCountdown();
+    if (this.slot.myReservation.expires_in !== null) {
+      this.totalDuration = this.slot.myReservation.expires_in;
+      this.remainingSeconds = this.slot.myReservation.expires_in;
+      this.startCountdown();
+    }
   }
 
   private stopOwned(): void {

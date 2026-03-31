@@ -36,11 +36,12 @@
       <div class="reservation-timer">
         <div class="timer-header">
           <span class="label">Reservation</span>
-          <span class="countdown" [class.expiring]="remainingSeconds < 300">
+          <span *ngIf="isUnlimited" class="countdown unlimited">&#8734; Unlimited</span>
+          <span *ngIf="!isUnlimited" class="countdown" [class.expiring]="remainingSeconds < 300">
             {{ formatCountdown(remainingSeconds) }}
           </span>
         </div>
-        <mat-progress-bar
+        <mat-progress-bar *ngIf="!isUnlimited"
           mode="determinate"
           [value]="progressPercent"
           [color]="remainingSeconds < 300 ? 'warn' : 'primary'">
