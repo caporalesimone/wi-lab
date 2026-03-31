@@ -1,11 +1,10 @@
 VERSION := $(shell cat VERSION)
-COMPOSE := docker compose
 VENV := .venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help build-dev up down logs test test-verbose test-cov shell build-release run-release venv test-local test-local-quick test-local-cov clean-venv lint lint-fix type-check stop start restart
+.PHONY: help venv test-local test-local-quick test-local-cov clean-venv lint lint-fix type-check stop start restart build-frontend
 
 # Default target: show help
 help:
@@ -25,21 +24,13 @@ help:
 	@echo "  make lint-fix          Fix code style issues with ruff"
 	@echo "  make type-check        Run mypy type checker"
 	@echo ""
-	@echo "Docker:"
-	@echo "  make build-dev         Build Docker development image"
-	@echo "  make up                Start containers"
-	@echo "  make down              Stop containers"
-	@echo "  make logs              View container logs"
-	@echo "  make shell             Open shell in running container"
+	@echo "Frontend:"
+	@echo "  make build-frontend    Build minified production frontend (via Docker)"
 	@echo ""
 	@echo "Service Management (requires root):"
 	@echo "  make stop              Stop Wi-Lab systemd service"
 	@echo "  make start             Start Wi-Lab systemd service"
 	@echo "  make restart           Restart Wi-Lab systemd service"
-	@echo ""
-	@echo "Release:"
-	@echo "  make build-release     Build release Docker image"
-	@echo "  make run-release       Run release image with host networking"
 
 # Virtual environment setup
 venv: $(VENV)/bin/activate
@@ -89,30 +80,6 @@ clean-venv:
 	rm -rf $(VENV)
 	@echo "✓ Virtual environment removed"
 
-# Docker targets
-build-dev:
-	$(COMPOSE) build --build-arg APP_VERSION=$(VERSION)
-
-up:
-	$(COMPOSE) up -d
-
-down:
-	$(COMPOSE) down
-
-logs:
-	$(COMPOSE) logs -f wilab
-
-shell:
-	$(COMPOSE) exec wilab bash
-
-build-release:
-	docker build -t wilab:$(VERSION) -f Dockerfile --build-arg APP_VERSION=$(VERSION) .
-
-run-release:
-	docker run --net=host --privileged --cap-add=NET_ADMIN --cap-add=NET_RAW \
-	  -v $(PWD)/config.yaml:/app/config.yaml:ro \
-	  wilab:$(VERSION)
-
 # Service management targets
 stop:
 	@sudo bash scripts/stop-service.sh
@@ -124,4 +91,10 @@ restart: stop
 	@echo "Waiting 5 seconds before restart..."
 	@sleep 5
 	@sudo bash scripts/start-service.sh
+
+# Frontend targets
+build-frontend:
+	@echo "Building minified production frontend (via Docker)..."
+	cd frontend && bash deploy_frontend.sh
+	@echo "✓ Frontend build complete"
 
