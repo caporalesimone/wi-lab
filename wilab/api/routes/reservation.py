@@ -2,6 +2,8 @@
 
 from datetime import datetime, timezone
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
@@ -17,7 +19,7 @@ router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
 
 class ReservationCreateRequest(BaseModel):
     duration_seconds: int = Field(
-        ..., gt=0, description="Reservation duration in seconds",
+        ..., ge=0, description="Reservation duration in seconds (0 = unlimited, if allowed by config)",
         json_schema_extra={"example": 3600}
     )
 
@@ -26,8 +28,8 @@ class ReservationResponse(BaseModel):
     reservation_id: str
     display_name: str
     interface: str
-    expires_at: str = Field(description="Expiration datetime (yyyy-mm-dd HH:MM:SS)")
-    expires_in: int = Field(description="Seconds remaining until expiry")
+    expires_at: Optional[str] = Field(None, description="Expiration datetime (yyyy-mm-dd HH:MM:SS), null if unlimited")
+    expires_in: Optional[int] = Field(None, description="Seconds remaining until expiry, null if unlimited")
 
 
 def _display_name_for(device_id: str, config: AppConfig) -> str:
@@ -56,8 +58,28 @@ async def create_reservation(
     _auth: bool = Depends(require_token),
 ):
     """Reserve the first available device for the given duration."""
+    # Validate duration against config bounds
+    duration = req.duration_seconds
+    if duration == 0:
+        if not config.allow_unlimited_reservation:
+            raise HTTPException(
+                status_code=422,
+                detail="Unlimited reservations are not allowed (allow_unlimited_reservation is false)",
+            )
+    else:
+        if duration < config.min_timeout:
+            raise HTTPException(
+                status_code=422,
+                detail=f"duration_seconds must be at least {config.min_timeout} seconds",
+            )
+        if duration > config.max_timeout:
+            raise HTTPException(
+                status_code=422,
+                detail=f"duration_seconds must be at most {config.max_timeout} seconds",
+            )
+
     try:
-        r = mgr.create(req.duration_seconds)
+        r = mgr.create(duration)
     except NoDeviceAvailableError as exc:
         raise HTTPException(
             status_code=409,
@@ -70,11 +92,19 @@ async def create_reservation(
             },
         )
 
+    return _build_response(r, config)
+
+
+def _build_response(r, config: AppConfig) -> ReservationResponse:
+    """Build ReservationResponse handling unlimited (expires_at=None)."""
     return ReservationResponse(
         reservation_id=r.reservation_id,
         display_name=_display_name_for(r.device_id, config),
         interface=r.device_id,
-        expires_at=datetime.fromtimestamp(r.expires_at, tz=timezone.utc).isoformat(),
+        expires_at=(
+            datetime.fromtimestamp(r.expires_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            if r.expires_at is not None else None
+        ),
         expires_in=r.expires_in,
     )
 
@@ -99,13 +129,7 @@ async def get_reservation(
     if r is None:
         raise HTTPException(status_code=404, detail="Reservation not found or expired")
 
-    return ReservationResponse(
-        reservation_id=r.reservation_id,
-        display_name=_display_name_for(r.device_id, config),
-        interface=r.device_id,
-        expires_at=datetime.fromtimestamp(r.expires_at, tz=timezone.utc).isoformat(),
-        expires_in=r.expires_in,
-    )
+    return _build_response(r, config)
 
 
 @router.delete(
