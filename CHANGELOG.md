@@ -4,6 +4,14 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [2.3.0] - 2026-04-01
+
+### 🐛 Bug Fixes
+
+- **Auto-stop network on reservation release** – Releasing a reservation (single or bulk delete) now automatically stops any active WiFi network on the associated device. Previously, the network remained running until its expiry timeout, leaving orphaned AP/DHCP/NAT resources.
+
+---
+
 ## [2.2.0] - 2026-03-31
 
 ### ✨ Features

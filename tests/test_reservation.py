@@ -467,3 +467,149 @@ class TestUnlimitedReservation:
         with mgr._lock:
             soonest = mgr._soonest_expiry()
         assert soonest >= before
+
+
+# ======================================================================
+# Tests for network teardown on reservation release
+# ======================================================================
+
+
+class TestReservationDeleteStopsNetwork:
+    """Releasing a reservation must stop any active WiFi network on the device."""
+
+    def _ensure_manager(self, client, valid_token):
+        """Ensure NetworkManager singleton is initialized by making a status request."""
+        client.get("/api/v1/status", headers={"Authorization": valid_token})
+        return dependencies._manager
+
+    def test_delete_reservation_stops_active_network(self, client, valid_token, monkeypatch):
+        """DELETE reservation stops the active network on the released device."""
+        mgr = self._ensure_manager(client, valid_token)
+        # Create reservation
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        )
+        rid = resp.json()["reservation_id"]
+        device_id = resp.json()["interface"]
+
+        # Simulate an active network on this device
+        from wilab.models import NetworkStatus
+        mgr.active[device_id] = NetworkStatus(interface=device_id, active=True)
+
+        stopped = []
+
+        def mock_stop(did):
+            stopped.append(did)
+            # Remove from active dict (mimics real stop_network behaviour)
+            mgr.active.pop(did, None)
+
+        monkeypatch.setattr(mgr, "stop_network", mock_stop)
+
+        resp = client.delete(
+            f"/api/v1/device-reservation/{rid}",
+            headers={"Authorization": valid_token},
+        )
+        assert resp.status_code == 200
+        assert stopped == [device_id]
+
+    def test_delete_reservation_no_network_active(self, client, valid_token, monkeypatch):
+        """DELETE reservation succeeds even when no network is active (no stop_network call)."""
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        )
+        rid = resp.json()["reservation_id"]
+
+        mgr = self._ensure_manager(client, valid_token)
+        stopped = []
+        monkeypatch.setattr(mgr, "stop_network", lambda did: stopped.append(did))
+
+        resp = client.delete(
+            f"/api/v1/device-reservation/{rid}",
+            headers={"Authorization": valid_token},
+        )
+        assert resp.status_code == 200
+        assert stopped == []
+
+    def test_delete_reservation_stop_network_error_still_releases(self, client, valid_token, monkeypatch):
+        """If stop_network raises, the reservation is still released (best-effort)."""
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        )
+        rid = resp.json()["reservation_id"]
+        device_id = resp.json()["interface"]
+
+        mgr = self._ensure_manager(client, valid_token)
+        from wilab.models import NetworkStatus
+        mgr.active[device_id] = NetworkStatus(interface=device_id, active=True)
+
+        def failing_stop(did):
+            raise RuntimeError("simulated teardown failure")
+
+        monkeypatch.setattr(mgr, "stop_network", failing_stop)
+
+        resp = client.delete(
+            f"/api/v1/device-reservation/{rid}",
+            headers={"Authorization": valid_token},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"detail": "Reservation released"}
+        # Reservation should still be gone
+        resp = client.get(
+            f"/api/v1/device-reservation/{rid}",
+            headers={"Authorization": valid_token},
+        )
+        assert resp.status_code == 404
+
+    def test_delete_all_stops_all_active_networks(self, client, valid_token, monkeypatch):
+        """DELETE all reservations stops active networks on released devices."""
+        # Create reservation (test config has 1 device)
+        r1 = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        ).json()
+
+        mgr = self._ensure_manager(client, valid_token)
+        from wilab.models import NetworkStatus
+        mgr.active[r1["interface"]] = NetworkStatus(interface=r1["interface"], active=True)
+
+        stopped = []
+
+        def mock_stop(did):
+            stopped.append(did)
+            mgr.active.pop(did, None)
+
+        monkeypatch.setattr(mgr, "stop_network", mock_stop)
+
+        resp = client.delete(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["released"] == 1
+        assert stopped == [r1["interface"]]
+
+    def test_delete_all_no_networks_active(self, client, valid_token, monkeypatch):
+        """DELETE all reservations succeeds when no networks are active."""
+        client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        )
+
+        mgr = self._ensure_manager(client, valid_token)
+        stopped = []
+        monkeypatch.setattr(mgr, "stop_network", lambda did: stopped.append(did))
+
+        resp = client.delete(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+        )
+        assert resp.status_code == 200
+        assert stopped == []

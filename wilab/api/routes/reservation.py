@@ -1,5 +1,6 @@
 """Device reservation endpoints (create, query, release)."""
 
+import logging
 from datetime import datetime, timezone
 
 from typing import Optional
@@ -8,9 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field, field_validator
 
 from ...api.auth import require_token
-from ...api.dependencies import get_config, get_reservation_manager
+from ...api.dependencies import get_config, get_manager, get_reservation_manager
 from ...config import AppConfig
 from ...reservation import ReservationManager, NoDeviceAvailableError
+from ...wifi.manager import NetworkManager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
 
@@ -152,14 +156,24 @@ async def get_reservation(
 async def delete_reservation(
     reservation_id: str = Path(...),
     mgr: ReservationManager = Depends(get_reservation_manager),
+    manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):
     """Release a reservation and free the device."""
+    # Resolve device_id before deletion (delete removes the record)
+    reservation = mgr.get(reservation_id)
     removed = mgr.delete(reservation_id)
     if not removed:
         raise HTTPException(
             status_code=404, detail="Reservation not found or already expired"
         )
+    # Best-effort: stop any active network on the released device
+    if reservation and reservation.device_id in manager.active:
+        try:
+            manager.stop_network(reservation.device_id)
+            logger.info("Network %s stopped on reservation release", reservation.device_id)
+        except Exception:
+            logger.exception("Failed to stop network %s on reservation release", reservation.device_id)
     return {"detail": "Reservation released"}
 
 
@@ -172,8 +186,19 @@ async def delete_reservation(
 )
 async def delete_all_reservations(
     mgr: ReservationManager = Depends(get_reservation_manager),
+    manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):
     """Release all active reservations at once."""
+    # Collect device_ids before deletion removes the records
+    device_ids = [r.device_id for r in mgr.all_active()]
     count = mgr.delete_all()
+    # Best-effort: stop any active networks on released devices
+    for device_id in device_ids:
+        if device_id in manager.active:
+            try:
+                manager.stop_network(device_id)
+                logger.info("Network %s stopped on bulk reservation release", device_id)
+            except Exception:
+                logger.exception("Failed to stop network %s on bulk reservation release", device_id)
     return {"detail": f"{count} reservation(s) released", "released": count}
