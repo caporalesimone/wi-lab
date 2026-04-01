@@ -3,5 +3,5 @@
 - Execute always tests before doing a commit.
 - Add more tests for each new implementation.
 - Write clear, concise, and descriptive commit messages.
-
+- Use the script update_version.sh to update the version number in the project.
 	
