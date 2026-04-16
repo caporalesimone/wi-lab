@@ -11,6 +11,8 @@ import { ReservationRequest } from '../../models/network.models';
 
 export interface ReservationDialogData {
   allowUnlimited: boolean;
+  minSeconds: number;
+  maxSeconds: number;
 }
 
 @Component({
@@ -32,6 +34,8 @@ export interface ReservationDialogData {
 export class ReservationDialogComponent {
   form: FormGroup;
   allowUnlimited: boolean;
+  minSeconds: number;
+  maxSeconds: number;
 
   constructor(
     private formBuilder: FormBuilder,
@@ -39,9 +43,11 @@ export class ReservationDialogComponent {
     @Inject(MAT_DIALOG_DATA) data: ReservationDialogData | null
   ) {
     this.allowUnlimited = data?.allowUnlimited ?? false;
+    this.minSeconds = data?.minSeconds ?? 60;
+    this.maxSeconds = data?.maxSeconds ?? 86400;
     this.form = this.formBuilder.group({
       unlimited: [false],
-      duration_seconds: [3600, [Validators.required, Validators.min(10), Validators.max(86400)]]
+      duration_seconds: [3600, [Validators.required, Validators.min(this.minSeconds), Validators.max(this.maxSeconds)]]
     });
   }
 

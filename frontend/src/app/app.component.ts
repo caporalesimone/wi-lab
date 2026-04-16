@@ -16,6 +16,7 @@ import { WilabApiService } from './services/wilab-api.service';
 import { AuthService } from './services/auth.service';
 import {
   InterfaceInfo,
+  ReservationPolicy,
   ReservationRequest,
   ReservationResponse,
   NoDeviceAvailableError
@@ -64,6 +65,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   /** Whether the server allows unlimited reservations */
   allowUnlimitedReservation = false;
+  reservationPolicy: ReservationPolicy = { min_seconds: 60, max_seconds: 86400, allow_unlimited: false };
 
   /** Error info when all devices are busy */
   capacityError: NoDeviceAvailableError | null = null;
@@ -174,7 +176,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.apiService.getStatus().subscribe({
       next: (response) => {
         this.version = response.version;
-        this.allowUnlimitedReservation = response.allow_unlimited_reservation ?? false;
+        this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
+        this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
         this.title = `Wi-Lab Network Management - ${this.version}`;
         this.buildSlots(response.networks);
         this.loading = false;
@@ -190,7 +193,8 @@ export class AppComponent implements OnInit, OnDestroy {
   private refreshStatus(): void {
     this.apiService.getStatus().subscribe({
       next: (response) => {
-        this.allowUnlimitedReservation = response.allow_unlimited_reservation ?? false;
+        this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
+        this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
         this.buildSlots(response.networks);
       }
     });
@@ -214,7 +218,11 @@ export class AppComponent implements OnInit, OnDestroy {
     this.clearCapacityTimer();
     const dialogRef = this.dialog.open(ReservationDialogComponent, {
       width: '450px',
-      data: { allowUnlimited: this.allowUnlimitedReservation }
+      data: {
+        allowUnlimited: this.allowUnlimitedReservation,
+        minSeconds: this.reservationPolicy.min_seconds,
+        maxSeconds: this.reservationPolicy.max_seconds
+      }
     });
 
     dialogRef.afterClosed().subscribe((result: ReservationRequest | undefined) => {
