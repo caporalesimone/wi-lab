@@ -14,6 +14,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 - **Removed hardcoded `authToken`** from both `environment.ts` and `environment.prod.ts`. The token is now provided at runtime by the user, eliminating secrets from the source code.
 - **Removed hardcoded IP** from the development environment file. Both environments now use the relative path `/api/v1`.
+- **401 auto-detection** – An HTTP interceptor detects unauthorized responses, clears the invalid token, and re-prompts the user immediately.
 
 ### 🔧 Maintenance
 
