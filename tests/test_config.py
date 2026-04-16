@@ -26,7 +26,6 @@ class TestConfigLoading:
         cfg = load_config()
         assert hasattr(cfg, 'auth_token')
         assert hasattr(cfg, 'api_port')
-        assert hasattr(cfg, 'default_timeout')
         assert hasattr(cfg, 'dhcp_base_network')
         assert hasattr(cfg, 'upstream_interface')
         assert hasattr(cfg, 'dns_server')
@@ -36,7 +35,6 @@ class TestConfigLoading:
         """Test that config has correct default values."""
         cfg = load_config()
         assert cfg.api_port == 8080
-        assert cfg.default_timeout == 3600
         assert cfg.internet_enabled_by_default is True
         assert cfg.min_timeout == 60
         assert cfg.max_timeout == 86400  # 24 hours

@@ -17,7 +17,6 @@ class NetworkEntry(BaseModel):
 class AppConfig(BaseModel):
     auth_token: str
     api_port: int = 8080
-    default_timeout: int = 3600
     max_timeout: int = 86400   # 24 hours default upper bound
     min_timeout: int = 60      # 60 seconds default lower bound
     allow_unlimited_reservation: bool = False

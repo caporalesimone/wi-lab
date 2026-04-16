@@ -88,7 +88,7 @@ class NetworkManager:
         Args:
             device_id: Device identifier (interface name)
             req: Network creation parameters (SSID, channel, encryption, etc.)
-            expires_at_timestamp: Expiration epoch (from reservation). If None, use default_timeout.
+            expires_at_timestamp: Expiration epoch (from reservation). None for unlimited reservations.
             
         Returns:
             NetworkStatus with active network details
@@ -109,12 +109,11 @@ class NetworkManager:
             logger.warning(f"hostapd is running for {device_id} but network not in active dict, cleaning up")
             self.stop_network(device_id)
         
-        # Expiration: use reservation timestamp if provided, otherwise fallback to default_timeout
-        now = time.time()
-        if expires_at_timestamp is None:
-            expires_at_timestamp = now + self.config.default_timeout
-        
-        expires_at_str = datetime.fromtimestamp(expires_at_timestamp, tz=timezone.utc).isoformat()
+        # Expiration: from reservation timestamp, or None for unlimited
+        if expires_at_timestamp is not None:
+            expires_at_str = datetime.fromtimestamp(expires_at_timestamp, tz=timezone.utc).isoformat()
+        else:
+            expires_at_str = None
         
         # Get subnet (from config or calculated)
         subnet = self._get_subnet(device_id)
@@ -210,7 +209,7 @@ class NetworkManager:
             logger.warning(f"Failed to set TX power for {device_id}: {e}")
         
         # Create status object
-        expires_in = int(expires_at_timestamp - time.time())
+        expires_in = int(expires_at_timestamp - time.time()) if expires_at_timestamp is not None else None
         status = NetworkStatus(
             interface=cfg_net.interface,
             active=True,
@@ -321,14 +320,14 @@ class NetworkManager:
             return NetworkStatus(interface=cfg_net.interface, active=False)
         
         # Check if network has expired (use internal timestamp)
-        if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp < time.time():
+        if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp is not None and st._expires_at_timestamp < time.time():
             logger.info(f"Network {device_id} expired, stopping")
             self.stop_network(device_id)
             cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
             if not cfg_net:
                 return None
             return NetworkStatus(interface=cfg_net.interface, active=False)
-        if hasattr(st, '_expires_at_timestamp'):
+        if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp is not None:
             st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))
         
         # Add DHCP info and clients if active
@@ -409,7 +408,7 @@ class NetworkManager:
                 raise RuntimeError(f"Cannot enable Internet: {e}") from e
         
         st.internet_enabled = True
-        if hasattr(st, '_expires_at_timestamp'):
+        if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp is not None:
             st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))
         self.active[device_id] = st
         logger.info(f"Internet enabled for {device_id}")
@@ -447,7 +446,7 @@ class NetworkManager:
                 # Continue anyway to update state
         
         st.internet_enabled = False
-        if hasattr(st, '_expires_at_timestamp'):
+        if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp is not None:
             st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))
         self.active[device_id] = st
         logger.info(f"Internet disabled for {device_id}")

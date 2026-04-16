@@ -188,31 +188,6 @@ class TestNetworkLifecycle:
         assert status.expires_in > 7100
         assert status.expires_in < 7300
     
-    def test_start_network_default_timeout_when_no_expiry(self, monkeypatch):
-        """Test that default_timeout is used when no expires_at_timestamp is provided."""
-        cfg = load_config()
-        mgr = NetworkManager(cfg)
-        
-        def mock_dhcp_start(*args, **kwargs):
-            return {'gateway': '192.168.10.1'}
-        
-        monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
-        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: {})
-        
-        req = NetworkCreateRequest(
-            ssid='TestAP',
-            channel=6,
-            encryption='wpa2',
-            password='testpass123',
-            band='2.4ghz',
-            tx_power_level=4,
-        )
-        
-        status = mgr.start_network('wls16', req)
-        # Should use default_timeout (3600s) when no expires_at_timestamp
-        assert status.expires_in > 3500
-        assert status.expires_in < 3700
-    
     def test_stop_network(self, monkeypatch):
         """Test stopping a network."""
         cfg = load_config()

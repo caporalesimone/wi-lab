@@ -2,7 +2,6 @@
 # Provides predictable, stable values independent of the host environment.
 auth_token: "secret-token-12345"
 api_port: 8080
-default_timeout: 3600
 max_timeout: 86400
 min_timeout: 60
 allow_unlimited_reservation: false

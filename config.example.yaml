@@ -40,15 +40,6 @@ cors_origins:
 # RESERVATION TIMEOUTS
 # ==================================================================================================
 
-# Default reservation duration in seconds
-# When a device is reserved without specifying a duration, this value is used.
-# When the reservation expires, the associated WiFi network is automatically stopped.
-# Examples:
-#   - 600 = 10 minutes (quick testing)
-#   - 3600 = 1 hour (typical session)
-#   - 86400 = 24 hours (long-running lab)
-default_timeout: 3600
-
 # Maximum allowed reservation duration (upper bound for API requests)
 # API requests with duration > max_timeout will be rejected.
 # Set to 24 hours (86400 seconds) by default.

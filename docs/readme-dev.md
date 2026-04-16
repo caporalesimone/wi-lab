@@ -76,7 +76,6 @@ nano <local-config-file>
 ```yaml
 auth_token: "dev-token-12345"
 api_port: 8080
-default_timeout: 3600
 
 dhcp_base_network: "192.168.120.0/24"
 upstream_interface: "auto"

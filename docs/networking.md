@@ -223,12 +223,7 @@ sudo cp /etc/systemd/system/wi-lab.service /etc/systemd/system/wi-lab.service.ba
 ### Reservation-Driven Timeout
 
 Network lifetime is controlled by device reservations. When a reservation
-expires, the associated network is automatically stopped and cleaned up:
-
-```yaml
-# In config.yaml
-default_timeout: 3600  # 1 hour - fallback if no reservation expiry is set
-```
+expires, the associated network is automatically stopped and cleaned up.
 
 Users must first reserve a device via the reservation API which specifies
 `duration_seconds`. The reservation expiry becomes the authoritative

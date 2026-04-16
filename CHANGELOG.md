@@ -4,6 +4,19 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [2.4.1] - 2026-04-16
+
+### 🔧 Maintenance
+
+- **Removed `default_timeout` config parameter** – Reservation duration is now always required explicitly via `duration_seconds` in the API. The legacy fallback in `NetworkManager.start_network()` was dead code (never triggered by the reservation flow) and has been removed.
+- **Updated documentation** – README rewritten: concise structure, current config format, API usage example, Makefile-based workflow. Removed outdated `net_id` references, duplicate sections, and obsolete curl examples.
+
+### 🐛 Bug Fixes
+
+- **Fixed `TypeError` on unlimited reservations** – `_expires_at_timestamp` `None` comparisons in `NetworkManager` (get_status, enable/disable internet) now handle unlimited reservations correctly.
+
+---
+
 ## [2.4.0] - 2026-04-16
 
 ### ✨ Features

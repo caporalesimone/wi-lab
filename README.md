@@ -1,312 +1,179 @@
 # Wi-Lab
 
-WiFi Access Point management REST API for testing and laboratory environments.
+Wi-Lab turns a Linux machine with multiple USB WiFi adapters into a shared, API-controlled Access Point lab. Each physical WiFi interface can be **reserved** by a user for a configurable time window, used to spin up an isolated AP with its own SSID, channel, DHCP range, and optional Internet access, then released for the next user. Everything is driven through a REST API (FastAPI + Swagger UI) and a companion Angular web frontend.
 
-Wi-Lab provides programmatic control over multiple WiFi interfaces in Access Point (AP) mode through a REST API with token authentication and Swagger UI documentation.
+Typical use-cases: automated wireless testing, RF/antenna benchmarking, classroom labs, CI pipelines that need on-demand WiFi networks.
+
+---
+
+## How It Works
+
+1. **Multiple WiFi interfaces** — each USB adapter is declared in `config.yaml` and managed independently.
+2. **Reservation system** — before touching an interface you acquire a time-limited (or unlimited) reservation token via the API. The token is an 8-char hex string; when it expires the AP is torn down automatically.
+3. **One AP per interface** — while reserved, you can create a WiFi network (hostapd), configure DHCP (dnsmasq), enable/disable Internet (iptables NAT), and adjust TX power — all via REST calls.
+4. **Web frontend** — an Angular SPA shows every interface as a card (available / owned / occupied), lets you reserve, configure, and monitor networks from the browser. The auth token is entered at runtime via a login dialog.
+5. **Web API** — every operation is also available programmatically (`/api/v1/…`), with full Swagger UI at `http://<host>:8080/docs`. Useful for scripting, SDKs, or CI integration.
+
+---
+
+## Requirements
+
+| Category | Requirement |
+|----------|-------------|
+| **OS** | Ubuntu 25+ (tested on 25.04) |
+| **Hardware** | One or more USB WiFi adapters with AP-mode support (`iw list \| grep AP`) |
+| **Network** | Ethernet interface with Internet access (for NAT uplink) |
+| **RAM** | 2 GB+ |
+
+All system packages (hostapd, dnsmasq, iptables, iw, python3 …) are installed automatically by the installer.
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/your-org/wi-lab.git
+# 1. Clone
+git clone https://github.com/caporalesimone/wi-lab
 cd wi-lab
 
-# 2. Configure WiFi interface in config.yaml
-nano config.yaml
-# Update: auth_token, networks[].interface, dns_server, dhcp_base_network
+# 2. Copy and edit configuration
+cp config.example.yaml config.yaml
+nano config.yaml          # set auth_token, networks[].interface, dhcp_base_network, dns_server
 
-# 3. Run automated setup (installs everything!)
+# 3. Install (creates venv, installs deps, builds frontend, enables systemd service)
 sudo bash install.sh
-
-# 4. Verify installation and access API
-# Open in browser: http://localhost:8080/docs
 ```
 
-**That's it!** Wi-Lab is running and will autostart on reboot. 🚀
+After installation Wi-Lab is running on port **8080** and will autostart on reboot.
+Open `http://<host>:8080` for the web UI or `http://<host>:8080/docs` for the Swagger API.
 
----
-
-## Installation and Uninstallation
-
-Use the project scripts for lifecycle management:
+To **uninstall** and remove the systemd service:
 
 ```bash
-# Install Wi-Lab and configure systemd/service dependencies
-sudo bash install.sh
-
-# Uninstall Wi-Lab and remove installed service artifacts
 sudo bash uninstall.sh
 ```
 
-Notes:
-- Run from the repository root.
-- Review `config.yaml` before installation.
-- After installation, open `http://localhost:8080/docs` to validate service availability.
-
 ---
-
-## What is Wi-Lab?
-
-Wi-Lab simplifies WiFi Access Point management for testing:
-
-- ✅ **Dynamic AP Creation:** Create/destroy WiFi networks on demand via REST API
-- ✅ **Multi-Interface Support:** Manage multiple WiFi interfaces simultaneously
-- ✅ **Flexible Configuration:** SSID, channel, band (2.4/5 GHz), encryption, hidden SSID
-- ✅ **Client Control:** Enable/disable Internet access per network (NAT)
-- ✅ **TX Power Management:** Control transmit power level (1-4 scale)
-- ✅ **Network Isolation:** WiFi networks isolated from each other
-- ✅ **Auto-Expiry:** Networks automatically stop after configured timeout
-- ✅ **REST API:** Full programmatic control with Swagger documentation
-- ✅ **Production Ready:** Systemd integration, autostart, comprehensive logging
-
----
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────┐
-│  REST API (FastAPI on port 8080)    │
-│  • Token authentication             │
-│  • Swagger UI documentation         │
-└─────────────────────────────────────┘
-           ↓
-┌─────────────────────────────────────┐
-│  Network Lifecycle Manager          │
-│  • Create/destroy WiFi networks     │
-│  • Manage timeouts & expiry         │
-│  • Control Internet access (NAT)    │
-│  • TX power management              │
-└─────────────────────────────────────┘
-           ↓
-┌─────────────────────────────────────┐
-│  System Integration                 │
-│  • hostapd (AP mode)                │
-│  • dnsmasq (DHCP)                   │
-│  • iptables (NAT/isolation)         │
-│  • iw/ip commands (WiFi control)    │
-└─────────────────────────────────────┘
-           ↓
-┌─────────────────────────────────────┐
-│  WiFi Interfaces (AP mode)          │
-│  • 192.168.120.0/24 (Network 1)     │
-│  • 192.168.121.0/24 (Network 2)     │
-│  • ... (more networks as needed)    │
-└─────────────────────────────────────┘
-```
-
----
-
-## Requirements
-
-### Hardware
-- WiFi interface with AP mode support
-- Ethernet interface for Internet uplink
-- 2GB+ RAM
-- Ubuntu 25
-
-### System Packages
-The setup script automatically installs:
-- `hostapd` - Access Point daemon
-- `dnsmasq` - DHCP server
-- `iptables` - Firewall/NAT
-- `iw` - Wireless management
-- `python3` - Runtime
-
----
-
-## Documentation
-
-Comprehensive guides available in `docs/` directory:
-
-| Document | Purpose |
-|----------|---------|
-| [swagger.md](docs/swagger.md) | API testing via Swagger UI, endpoint examples |
-| [unit-testing.md](docs/unit-testing.md) | Running tests, test structure, pytest usage |
-| [networking.md](docs/networking.md) | Networking details, iptables rules, diagnostics |
-| [troubleshooting.md](docs/troubleshooting.md) | Common issues, service management, debugging |
-
----
-
-## Development
-
-For development setup and contribution guidelines, see [README-DEV.md](README-DEV.md).
-
-Quick development start using Makefile:
-
-```bash
-# Create virtual environment with all dependencies
-make venv
-
-# Activate the virtual environment
-source .venv/bin/activate
-
-# Run tests
-make test-local           # Full test suite with verbose output
-make test-local-quick     # Quick test run with minimal output
-make test-local-cov       # Run tests with coverage report (HTML)
-
-# Run development server
-python main.py
-```
-
-For all available development tasks, see [Makefile](Makefile) or run `make help`.
-
----
-
-## Troubleshooting
-
-For detailed troubleshooting information, see [docs/troubleshooting.md](docs/troubleshooting.md).
-
-This includes:
-- WiFi interface compatibility and setup issues
-- Network configuration and subnet conflicts
-- Service management and startup problems
-- API connectivity and response issues
-- Common errors and solutions
-
----
-
-## Support & Documentation
-
-- **Full Documentation:** See files in `docs/` directory
-- **API Reference:** `http://localhost:8080/docs` (Swagger UI)
-- **GitHub Issues:** Report bugs and request features
-
----
-
-## License
-
-See [LICENSE](LICENSE) file.
-
----
-
-**Ready to get started?** → Run `sudo bash install.sh`
-
-**Want to contribute?** → Read [README-DEV.md](README-DEV.md)
-
-**Need help?** → Check [docs/troubleshooting.md](docs/troubleshooting.md)
-
 
 ## Configuration
 
-File: [config.yaml](config.yaml)
+File: `config.yaml` (copy from `config.example.yaml`).
 
-### Essential Parameters
+Key sections:
 
 ```yaml
-# Authentication
-auth_token: "your-secret-token-12345-change-this"  # CHANGE THIS!
-
-# API Configuration
+auth_token: "change-me"                 # Bearer token for API authentication
 api_port: 8080
 
-# Network Configuration
-dhcp_base_network: "192.168.120.0/24"  # ⚠️  Must NOT conflict with host network!
-upstream_interface: "auto"              # Auto-detect upstream (recommended)
-dns_server: "192.168.10.21"            # Your network's DNS server IP
+# Reservation timeouts
+max_timeout: 86400                      # 24 h
+min_timeout: 60                         # 1 min (hard floor: 10 s)
+allow_unlimited_reservation: false      # allow duration_seconds=0
+
+# Networking
+dhcp_base_network: "192.168.120.0/24"   # MUST NOT overlap with host network!
+upstream_interface: "auto"
+dns_server: "208.67.222.222"
 internet_enabled_by_default: true
+country_code: "IT"                      # WiFi regulatory domain
 
-# Timeout Configuration
-default_timeout: 3600  # 1 hour
-max_timeout: 86400     # 24 hours
-min_timeout: 60        # 1 minute
-
-# Managed WiFi Interfaces
+# Managed interfaces
 networks:
-  - net_id: "ap-01"
-    interface: "wlx782051245264"  # Your WiFi interface (see: iw dev)
+  - interface: "wlxbc071dc527d6"
+    display_name: "bench-antenna-1"
+  - interface: "wlx7820512451b4"
+    display_name: "bench-antenna-2"
 ```
 
-### ⚠️ CRITICAL: Subnet Configuration
-
-**ALWAYS ensure WiFi subnet is different from your host network!**
-
-```bash
-# Check your host network
-ip addr show | grep "inet "
-# Example: inet 192.168.10.113/24
-
-# If host is on 192.168.10.x, use different subnet for WiFi:
-dhcp_base_network: "192.168.120.0/24"  # ✅ SAFE
-```
-
-Using the same subnet will **block your host networking** and require a reboot!
-
----
-
-## API Usage
-
-> 💡 **Quick Tip:** For interactive API exploration, use the **Swagger UI** at http://localhost:8080/docs  
-> You can test all endpoints directly without writing curl commands.
-
-All API requests require Bearer token authentication in the `Authorization: Bearer <token>` header.
-
-### Example: Create WiFi Network
-
-```bash
-curl -X POST http://localhost:8080/api/v1/interface/ap-01/network \
-  -H "Authorization: Bearer secret-token-12345" \
-  -H "Content-Type: application/json" \
-  -d '{"ssid": "TestAP", "channel": 6, "band": "2.4ghz", "encryption": "wpa2", "password": "pass123"}'
-```
-
-For all other operations (stop network, enable/disable internet, get status, list clients, etc.), use the interactive **Swagger UI** at http://localhost:8080/docs.
-
-### API Documentation
-
-- **Interactive API:** http://localhost:8080/docs (Swagger UI)
-- **Alternative docs:** http://localhost:8080/redoc (ReDoc)
+> **Warning:** `dhcp_base_network` must use a subnet different from your host LAN. A conflict will break host networking and may require a physical reboot.
 
 ---
 
 ## Service Management
 
-Wi-Lab runs as a systemd service after installation:
+Everything is managed through the **Makefile**. Run `make` (no arguments) to see all targets:
+
+```
+Wi-Lab Development Targets
+
+Virtual Environment:
+  make venv              Create local Python virtual environment
+  make clean-venv        Remove virtual environment
+
+Testing (Local - uses venv):
+  make test-local        Run all tests with verbose output
+  make test-local-quick  Run tests with minimal output
+  make test-local-cov    Run tests with coverage report (HTML)
+
+Code Quality:
+  make lint              Run ruff linter
+  make lint-fix          Fix code style issues with ruff
+  make type-check        Run mypy type checker
+
+Frontend:
+  make build-frontend    Build minified production frontend (via Docker)
+
+Service Management (requires root):
+  make stop              Stop Wi-Lab systemd service
+  make start             Start Wi-Lab systemd service
+  make restart           Restart Wi-Lab systemd service
+```
+
+---
+
+## API Example
+
+All requests require the header `Authorization: Bearer <auth_token>`.
 
 ```bash
-# Start service
-sudo systemctl start wi-lab.service
+# 1. Reserve a device for 15 minutes (900 seconds)
+curl -X POST http://localhost:8080/api/v1/device-reservation \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"duration_seconds": 900}'
 
-# Stop service
-sudo systemctl stop wi-lab.service
+# Response:
+# {
+#   "reservation_id": "a1b2c3d4",
+#   "interface": "wlxbc071dc527d6",
+#   "display_name": "bench-antenna-1",
+#   "expires_at": "2026-04-16T15:15:00Z",
+#   "expires_in": 900
+# }
 
-# Restart service
-sudo systemctl restart wi-lab.service
-
-# Check status
-sudo systemctl status wi-lab.service
-
-# View logs (real-time)
-sudo journalctl -u wi-lab.service -f
-
-# View logs (last 50 lines)
-sudo journalctl -u wi-lab.service -n 50
+# 2. Create a WiFi network on the reserved device
+curl -X POST http://localhost:8080/api/v1/network/a1b2c3d4 \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"ssid": "TestNetwork", "channel": 6, "band": "2.4ghz", "encryption": "wpa2", "password": "mypassword"}'
 ```
+
+For the full endpoint reference, open **Swagger UI** at `http://<host>:8080/docs`.
 
 ---
 
 ## Documentation
 
-- **Troubleshooting:** [docs/troubleshooting.md](docs/troubleshooting.md)
-- **Networking:** [docs/networking.md](docs/networking.md)
-- **API Documentation:** http://localhost:8080/docs (Swagger UI)
+Detailed guides live in the `docs/` folder:
+
+| Document | Topic |
+|----------|-------|
+| [swagger.md](docs/swagger.md) | API exploration via Swagger UI |
+| [networking.md](docs/networking.md) | Subnet layout, iptables, NAT internals |
+| [unit-testing.md](docs/unit-testing.md) | Test suite structure and pytest usage |
+| [troubleshooting.md](docs/troubleshooting.md) | Common issues, diagnostics scripts, debugging |
+| [readme-dev.md](docs/readme-dev.md) | Developer setup and contribution workflow |
+
+Planned features and ideas are tracked in the `TODOs/` folder.
+
+---
+
+## Troubleshooting
+
+See [docs/troubleshooting.md](docs/troubleshooting.md) for common issues (interface compatibility, subnet conflicts, service failures, API errors) and the diagnostic scripts in `diagnostics/troubleshooting/`.
 
 ---
 
 ## License
 
-See [LICENSE](LICENSE) file.
-
----
-
-## Support
-
-- **GitHub Issues:** Report bugs and feature requests
-- **Documentation:** Check docs/ folder for detailed guides
-- **Logs:** `sudo journalctl -u wi-lab.service -f`
-
----
-
-**Wi-Lab: Professional WiFi AP Management** 🚀
+MIT — see [LICENSE](LICENSE).
