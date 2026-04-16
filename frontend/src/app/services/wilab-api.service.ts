@@ -3,6 +3,7 @@ import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
+import { AuthService } from './auth.service';
 import {
   StatusResponse,
   NetworkStatus,
@@ -16,16 +17,15 @@ import {
 })
 export class WilabApiService {
   private apiUrl = environment.apiUrl;
-  private authToken = environment.authToken;
 
   private getHeaders(): HttpHeaders {
     return new HttpHeaders({
-      'Authorization': `Bearer ${this.authToken}`,
+      'Authorization': `Bearer ${this.authService.getToken() ?? ''}`,
       'Content-Type': 'application/json'
     });
   }
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private authService: AuthService) {}
 
   // ---- Status ----
 
