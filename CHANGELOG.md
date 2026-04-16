@@ -19,6 +19,8 @@ All notable changes to Wi-Lab are documented in this file.
 ### ✨ Features
 
 - **Swagger UI & ReDoc links in toolbar** – Two icon buttons (`description`, `menu_book`) added to the frontend toolbar, separated from the auth lock button by a vertical divider. Each opens the corresponding API docs in a new tab.
+- **Reservation policy API** – `GET /api/v1/status` now returns a `reservation_policy` object with `min_seconds`, `max_seconds`, and `allow_unlimited`, replacing the flat `allow_unlimited_reservation` field.
+- **Dynamic reservation dialog** – The frontend fetches reservation policy from the API and uses server-configured min/max for validation. Duration is shown as a live `00h 00m 00s` badge in the dialog title bar, with a human-readable valid range hint below the input.
 
 ---
 

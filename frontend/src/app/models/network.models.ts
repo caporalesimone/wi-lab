@@ -5,12 +5,18 @@ export interface InterfaceInfo {
   reservation_remaining_seconds: number | null;
 }
 
+export interface ReservationPolicy {
+  min_seconds: number;
+  max_seconds: number;
+  allow_unlimited: boolean;
+}
+
 export interface StatusResponse {
   version: string;
   status: string;
   networks: InterfaceInfo[];
   active_networks: number;
-  allow_unlimited_reservation: boolean;
+  reservation_policy: ReservationPolicy;
   checks: {
     dnsmasq: { running: boolean; instances: number };
     iptables_nat: { configured: boolean; errors: string[] };

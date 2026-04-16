@@ -1,3 +1,15 @@
+.dialog-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  overflow: hidden;
+
+  h2 {
+    margin: 0;
+    flex-shrink: 0;
+  }
+}
+
 .reservation-form {
   display: flex;
   flex-direction: column;
@@ -5,10 +17,36 @@
   padding: 8px 0 0;
 }
 
-.unlimited-checkbox {
-  margin-top: 12px;
-}
-
 mat-form-field {
   width: 100%;
+}
+
+.duration-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: #e3f2fd;
+  color: #1565c0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-right: 24px;
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.duration-hint {
+  font-size: 0.8rem;
+  color: rgba(0, 0, 0, 0.5);
+  margin: -12px 0 8px 0;
+}
+
+.unlimited-checkbox {
+  margin-top: 12px;
 }

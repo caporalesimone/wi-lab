@@ -11,6 +11,8 @@ import { ReservationRequest } from '../../models/network.models';
 
 export interface ReservationDialogData {
   allowUnlimited: boolean;
+  minSeconds: number;
+  maxSeconds: number;
 }
 
 @Component({
@@ -32,6 +34,8 @@ export interface ReservationDialogData {
 export class ReservationDialogComponent {
   form: FormGroup;
   allowUnlimited: boolean;
+  minSeconds: number;
+  maxSeconds: number;
 
   constructor(
     private formBuilder: FormBuilder,
@@ -39,14 +43,29 @@ export class ReservationDialogComponent {
     @Inject(MAT_DIALOG_DATA) data: ReservationDialogData | null
   ) {
     this.allowUnlimited = data?.allowUnlimited ?? false;
+    this.minSeconds = data?.minSeconds ?? 60;
+    this.maxSeconds = data?.maxSeconds ?? 86400;
     this.form = this.formBuilder.group({
       unlimited: [false],
-      duration_seconds: [3600, [Validators.required, Validators.min(10), Validators.max(86400)]]
+      duration_seconds: [3600, [Validators.required, Validators.min(this.minSeconds), Validators.max(this.maxSeconds)]]
     });
   }
 
   public get durationMinutes(): number {
     return Math.floor((this.form.get('duration_seconds')?.value || 0) / 60);
+  }
+
+  public formatDuration(totalSeconds: number): string {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(h)}h ${pad(m)}m ${pad(s)}s`;
+  }
+
+  public get currentDurationFormatted(): string {
+    const val = this.form.get('duration_seconds')?.value || 0;
+    return this.formatDuration(Math.max(0, Math.floor(val)));
   }
 
   public get isUnlimited(): boolean {

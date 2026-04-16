@@ -125,7 +125,11 @@ async def system_status(
             entry["reservation_remaining_seconds"] = None
         networks_info.append(entry)
     status_data["networks"] = networks_info
-    status_data["allow_unlimited_reservation"] = config.allow_unlimited_reservation
+    status_data["reservation_policy"] = {
+        "min_seconds": config.min_timeout,
+        "max_seconds": config.max_timeout,
+        "allow_unlimited": config.allow_unlimited_reservation,
+    }
     status_data.update(health_data)
     return status_data
 
