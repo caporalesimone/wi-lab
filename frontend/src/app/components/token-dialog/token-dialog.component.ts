@@ -30,7 +30,7 @@ export interface TokenDialogData {
       Authentication Token
     </h2>
     <mat-dialog-content>
-      <p>Enter the Bearer token configured in your Wi-Lab <code>config.yaml</code>.</p>
+      <p>Enter the token configured in <code>config.yaml</code>.</p>
       <mat-form-field appearance="outline" style="width: 100%">
         <mat-label>Auth Token</mat-label>
         <input matInput
