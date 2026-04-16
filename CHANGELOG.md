@@ -14,6 +14,11 @@ All notable changes to Wi-Lab are documented in this file.
 ### 🐛 Bug Fixes
 
 - **Fixed `TypeError` on unlimited reservations** – `_expires_at_timestamp` `None` comparisons in `NetworkManager` (get_status, enable/disable internet) now handle unlimited reservations correctly.
+- **Fixed missing ANSI colors in `start-service.sh`** – URL lines were using `echo` without `-e`, printing raw escape codes instead of colored output.
+
+### ✨ Features
+
+- **Swagger UI & ReDoc links in toolbar** – Two icon buttons (`description`, `menu_book`) added to the frontend toolbar, separated from the auth lock button by a vertical divider. Each opens the corresponding API docs in a new tab.
 
 ---
 

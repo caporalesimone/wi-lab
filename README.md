@@ -148,7 +148,7 @@ curl -X POST http://localhost:8080/api/v1/network/a1b2c3d4 \
   -d '{"ssid": "TestNetwork", "channel": 6, "band": "2.4ghz", "encryption": "wpa2", "password": "mypassword"}'
 ```
 
-For the full endpoint reference, open **Swagger UI** at `http://<host>:8080/docs`.
+For the full endpoint reference, open **Swagger UI** at `http://<host>:8080/docs` or **ReDoc** at `http://<host>:8080/redoc`.
 
 ---
 

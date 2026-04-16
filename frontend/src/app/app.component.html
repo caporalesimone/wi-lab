@@ -3,6 +3,13 @@
     <mat-icon>wifi</mat-icon>
     <span class="toolbar-title">{{ title }}</span>
     <span class="toolbar-spacer"></span>
+    <a mat-icon-button href="/docs" target="_blank" matTooltip="Swagger UI — Interactive API docs">
+      <mat-icon>description</mat-icon>
+    </a>
+    <a mat-icon-button href="/redoc" target="_blank" matTooltip="ReDoc — API reference">
+      <mat-icon>menu_book</mat-icon>
+    </a>
+    <span class="toolbar-divider"></span>
     <button mat-icon-button (click)="openTokenDialog()" matTooltip="Change auth token"
             (mouseenter)="lockIcon='lock_open'" (mouseleave)="lockIcon='lock'">
       <mat-icon>{{ lockIcon }}</mat-icon>
