@@ -7,10 +7,13 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { NetworkCardComponent } from './components/network-card/network-card.component';
 import { ReservationDialogComponent } from './components/reservation-dialog/reservation-dialog.component';
 import { ConfirmReleaseAllDialogComponent } from './components/confirm-release-all-dialog/confirm-release-all-dialog.component';
+import { TokenDialogComponent } from './components/token-dialog/token-dialog.component';
 import { WilabApiService } from './services/wilab-api.service';
+import { AuthService } from './services/auth.service';
 import {
   InterfaceInfo,
   ReservationRequest,
@@ -43,6 +46,7 @@ export interface InterfaceSlot {
     MatProgressSpinnerModule,
     MatSnackBarModule,
     MatDialogModule,
+    MatTooltipModule,
     NetworkCardComponent
   ],
   templateUrl: './app.component.html',
@@ -73,12 +77,17 @@ export class AppComponent implements OnInit, OnDestroy {
 
   constructor(
     private apiService: WilabApiService,
+    private authService: AuthService,
     private dialog: MatDialog,
     private snackBar: MatSnackBar
   ) {}
 
   public ngOnInit(): void {
-    this.restoreReservations();
+    if (!this.authService.hasToken()) {
+      this.promptForToken(true);
+    } else {
+      this.restoreReservations();
+    }
   }
 
   public ngOnDestroy(): void {
@@ -297,5 +306,29 @@ export class AppComponent implements OnInit, OnDestroy {
         }
       });
     });
+  }
+
+  /** Open the token dialog. When required=true the dialog cannot be dismissed. */
+  public promptForToken(required: boolean): void {
+    const dialogRef = this.dialog.open(TokenDialogComponent, {
+      width: '450px',
+      disableClose: required,
+      data: { required }
+    });
+
+    dialogRef.afterClosed().subscribe((token: string | null) => {
+      if (token) {
+        this.authService.setToken(token);
+        this.snackBar.open('Token saved', 'Close', { duration: 2000 });
+        // If this was the initial prompt, start the app
+        if (required) {
+          this.restoreReservations();
+        }
+      }
+    });
+  }
+
+  public openTokenDialog(): void {
+    this.promptForToken(false);
   }
 }
