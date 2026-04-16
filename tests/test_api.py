@@ -1187,8 +1187,8 @@ class TestUnlimitedReservationAPI:
         )
         assert resp.status_code == 422
 
-    def test_status_exposes_allow_unlimited_reservation(self, client, valid_token, monkeypatch):
-        """/status includes allow_unlimited_reservation field."""
+    def test_status_exposes_reservation_policy(self, client, valid_token, monkeypatch):
+        """/status includes reservation_policy with min, max, and allow_unlimited."""
         cfg = load_config()
         rmgr = ReservationManager([n.device_id for n in cfg.networks])
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
@@ -1196,8 +1196,11 @@ class TestUnlimitedReservationAPI:
         resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
-        assert 'allow_unlimited_reservation' in data
-        assert data['allow_unlimited_reservation'] is False
+        assert 'reservation_policy' in data
+        policy = data['reservation_policy']
+        assert policy['min_seconds'] == cfg.min_timeout
+        assert policy['max_seconds'] == cfg.max_timeout
+        assert policy['allow_unlimited'] is False
 
     def test_status_shows_null_remaining_for_unlimited(self, client, valid_token, monkeypatch):
         """/status shows reservation_remaining_seconds: null for unlimited."""
