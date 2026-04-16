@@ -57,6 +57,7 @@ export class AppComponent implements OnInit, OnDestroy {
   version: string | null = null;
   loading = true;
   error: string | null = null;
+  lockIcon = 'lock';
 
   /** All interface slots (one per system interface) */
   slots: InterfaceSlot[] = [];
