@@ -55,6 +55,19 @@ export class ReservationDialogComponent {
     return Math.floor((this.form.get('duration_seconds')?.value || 0) / 60);
   }
 
+  public formatDuration(totalSeconds: number): string {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(h)}h ${pad(m)}m ${pad(s)}s`;
+  }
+
+  public get currentDurationFormatted(): string {
+    const val = this.form.get('duration_seconds')?.value || 0;
+    return this.formatDuration(Math.max(0, Math.floor(val)));
+  }
+
   public get isUnlimited(): boolean {
     return this.form.get('unlimited')?.value === true;
   }
