@@ -4,6 +4,24 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [2.4.0] - 2026-04-16
+
+### ✨ Features
+
+- **Token-based login dialog** – The frontend no longer stores the auth token in environment files. On first load, a dialog prompts the user to enter a Bearer token, which is saved in `localStorage` and used for all API requests. A lock icon button in the toolbar allows changing the token at any time.
+
+### 🔒 Security
+
+- **Removed hardcoded `authToken`** from both `environment.ts` and `environment.prod.ts`. The token is now provided at runtime by the user, eliminating secrets from the source code.
+- **Removed hardcoded IP** from the development environment file. Both environments now use the relative path `/api/v1`.
+
+### 🔧 Maintenance
+
+- **New `AuthService`** – Centralized service for token management via `localStorage`.
+- **New `TokenDialogComponent`** – Angular Material dialog for entering/updating the auth token.
+
+---
+
 ## [2.3.0] - 2026-04-01
 
 ### 🐛 Bug Fixes
