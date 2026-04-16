@@ -127,9 +127,9 @@ require_root() {
     fi
 }
 
-# Extract gateway IP (used for URL display)
+# Extract local IP of the machine (used for URL display)
 get_gateway_ip() {
-    local ip=$(ip route | grep default | awk '{print $3}' | head -1)
+    local ip=$(hostname -I | awk '{print $1}')
     echo "${ip:-localhost}"
 }
 
