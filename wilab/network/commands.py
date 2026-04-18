@@ -88,3 +88,8 @@ def execute_pkill(pattern: str, signal: Optional[str] = None) -> str:
 def execute_iw(args: List[str]) -> str:
     """Execute iw command (wireless tools)."""
     return execute_command(["iw", *args])
+
+
+def execute_tc(args: List[str]) -> str:
+    """Execute tc command (traffic control)."""
+    return execute_command(["tc", *args])

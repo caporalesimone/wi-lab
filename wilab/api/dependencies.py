@@ -3,11 +3,13 @@ from ..config import AppConfig, load_config
 from ..wifi.manager import NetworkManager
 from ..wifi.channels import ChannelManager
 from ..reservation import ReservationManager, Reservation
+from ..network.qos import QosManager
 
 _config: AppConfig | None = None
 _manager: NetworkManager | None = None
 _reservation_manager: ReservationManager | None = None
 _channel_manager: ChannelManager | None = None
+_qos_manager: QosManager | None = None
 
 def get_config() -> AppConfig:
     global _config
@@ -34,6 +36,13 @@ def get_channel_manager() -> ChannelManager:
     if _channel_manager is None:
         _channel_manager = ChannelManager()
     return _channel_manager
+
+
+def get_qos_manager() -> QosManager:
+    global _qos_manager
+    if _qos_manager is None:
+        _qos_manager = QosManager()
+    return _qos_manager
 
 
 def resolve_reservation(

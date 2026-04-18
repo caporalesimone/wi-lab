@@ -4,6 +4,14 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [3.0.0] - 2026-04-18
+
+### ✨ Features
+
+- **QoS bandwidth throttling** – New `POST/GET/DELETE /api/v1/interface/{reservation_id}/qos` endpoints for per-reservation download/upload speed limiting via Linux `tc` HTB + IFB. Supports partial updates (omit = keep, `null` = reset, value = apply).
+
+---
+
 ## [2.5.1] - 2026-04-18
 
 ### 🔧 Maintenance

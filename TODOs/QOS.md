@@ -588,17 +588,17 @@ components:
 
 **Tasks**:
 
-- [ ] **P1.1** Add `execute_tc()` wrapper in `wilab/network/commands.py`
+- [x] **P1.1** Add `execute_tc()` wrapper in `wilab/network/commands.py`
   - Pattern: mirror `execute_iptables()` and `execute_iw()`
   - Handle timeout, errors, and logging
 
-- [ ] **P1.2** Create Pydantic models in `wilab/models.py`
+- [x] **P1.2** Create Pydantic models in `wilab/models.py`
   - `QosThrottleRequest`: `download_speed_kbit`, `upload_speed_kbit` (both Optional[int])
   - `QosStatus`: full QoS state including speeds
   - Validation: each field 1–1,000,000 or None
   - Validation: at least one field in request must be non-None
 
-- [ ] **P1.3** Create `QosManager` in `wilab/network/qos.py`
+- [x] **P1.3** Create `QosManager` in `wilab/network/qos.py`
   - Class composition into `NetworkManager`
   - `apply_throttle(interface, download_kbit, upload_kbit)` - HTB setup
   - `clear_throttle(interface)` - full cleanup
@@ -606,7 +606,7 @@ components:
   - IFB allocation/tracking
   - State persistence (in-memory dict per interface)
 
-- [ ] **P1.4** Create API routes in `wilab/api/routes/qos.py`
+- [x] **P1.4** Create API routes in `wilab/api/routes/qos.py`
   - `POST /interface/{reservation_id}/qos` - call manager.apply_throttle() 
   - `GET /interface/{reservation_id}/qos` - call manager.get_status()
   - `DELETE /interface/{reservation_id}/qos` - call manager.clear_throttle()
@@ -615,11 +615,11 @@ components:
   - Register in `wilab/api/routes/__init__.py`
   - Include full Swagger docs with schemas
 
-- [ ] **P1.5** Integrate cleanup in `wilab/wifi/manager.py`
+- [x] **P1.5** Integrate cleanup in `wilab/wifi/manager.py`
   - Call `qos_manager.clear_throttle()` before `hostapd` stop
   - Handle exceptions gracefully
 
-- [ ] **P1.6** Tests in `tests/test_qos.py`
+- [x] **P1.6** Tests in `tests/test_qos.py`
   - Model validation (ranges, None handling)
   - tc command generation (mocked)
   - IFB allocation logic

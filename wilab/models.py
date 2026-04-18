@@ -113,3 +113,59 @@ class TxPowerInfo(BaseModel):
     max_dbm: float
     levels_dbm: dict
     tx_power: NetworkTxPower
+
+
+# --- QoS Models ---
+
+_QOS_SPEED_MIN = 1
+_QOS_SPEED_MAX = 1_000_000
+
+
+class QosRequest(BaseModel):
+    """Request body for POST /interface/{reservation_id}/qos.
+
+    All fields are optional. Omitting a field preserves its current value.
+    Sending ``null`` resets the setting to unlimited / inactive.
+    """
+
+    download_speed_kbit: Optional[int] = Field(
+        None,
+        description="Download speed limit in kbit/s (1-1000000), or null to reset",
+    )
+    upload_speed_kbit: Optional[int] = Field(
+        None,
+        description="Upload speed limit in kbit/s (1-1000000), or null to reset",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "download_speed_kbit": 8000,
+                    "upload_speed_kbit": 3000,
+                }
+            ]
+        }
+    )
+
+    @field_validator("download_speed_kbit", "upload_speed_kbit", mode="before")
+    @classmethod
+    def _validate_speed_range(cls, v: object) -> object:
+        if v is None:
+            return v
+        if not isinstance(v, int):
+            raise ValueError("must be an integer or null")
+        if v < _QOS_SPEED_MIN or v > _QOS_SPEED_MAX:
+            raise ValueError(f"must be between {_QOS_SPEED_MIN} and {_QOS_SPEED_MAX}")
+        return v
+
+
+class QosStatus(BaseModel):
+    """Response model for GET/POST /interface/{reservation_id}/qos."""
+
+    interface: str
+    active: bool = Field(description="True if any QoS rule is active")
+    download_speed_kbit: Optional[int] = Field(None, description="Current download speed limit in kbit/s")
+    upload_speed_kbit: Optional[int] = Field(None, description="Current upload speed limit in kbit/s")
+    download_quality: Optional[int] = Field(None, description="Current download link quality 0-100%")
+    upload_quality: Optional[int] = Field(None, description="Current upload link quality 0-100%")

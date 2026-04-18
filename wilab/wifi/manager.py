@@ -15,6 +15,7 @@ from .hostapd import HostapdManager, HostapdError
 from .channels import ChannelManager
 from .interface import validate_interface_exists, validate_interface_wireless, validate_interface_ap_mode, InterfaceError
 from ..network.commands import execute_iw, execute_command, CommandError
+from ..network.qos import QosManager
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class NetworkManager:
         self.hostapd_manager = HostapdManager()
         self.isolation_manager = IsolationManager()
         self._channel_manager = ChannelManager()
+        self.qos_manager = QosManager()
         self._lock = threading.Lock()
         # Background expiry checker to auto-stop networks at timeout
         self._expiry_thread = threading.Thread(target=self._expiry_loop, daemon=True)
@@ -265,6 +267,13 @@ class NetworkManager:
         cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
         subnet = self.active[device_id].subnet if device_id in self.active else None
         
+        # Clear QoS rules before tearing down the network
+        if cfg_net:
+            try:
+                self.qos_manager.clear_qos(cfg_net.interface)
+            except Exception as e:
+                logger.error(f"Error clearing QoS rules: {e}")
+
         # Stop hostapd
         try:
             self.hostapd_manager.stop(device_id)
