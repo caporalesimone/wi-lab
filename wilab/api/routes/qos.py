@@ -73,10 +73,42 @@ def _require_active_network(
         "- Field set to a value → apply/update\n"
         "- Field set to `null` → reset to unlimited/inactive\n\n"
         "At least one field must be present in the request body.\n\n"
-        "**Speed fields:** `download_speed_kbit`, `upload_speed_kbit` (1-1000000 kbit/s)\n\n"
-        "**Quality fields:** `download_quality`, `upload_quality` (0-100%, 100=perfect)\n\n"
-        "**Advanced override:** `download_quality_advanced`, `upload_quality_advanced` "
-        "(overrides formula-derived netem params)"
+        "**Speed fields:** `download_speed_kbit`, `upload_speed_kbit` (1–1000000 kbit/s)\n\n"
+        "**Quality fields:** `download_quality`, `upload_quality` (0–100%, 100 = perfect)\n\n"
+        "The quality score is mapped to netem impairments via quadratic/cubic curves:\n\n"
+        "| Quality | Packet Loss | Delay | Jitter | Corruption | Perceived |\n"
+        "|---------|-------------|-------|--------|------------|-----------|\n"
+        "| 100 | 0% | 0 ms | 0 ms | 0% | Perfect |\n"
+        "| 90 | 0.3% | 10 ms | 3 ms | ~0% | Near-perfect |\n"
+        "| 75 | 1.9% | 62 ms | 19 ms | 0.002% | Slightly degraded |\n"
+        "| 50 | 7.5% | 250 ms | 75 ms | 0.125% | Noticeable |\n"
+        "| 25 | 16.9% | 562 ms | 169 ms | 0.42% | Poor |\n"
+        "| 0 | 30% | 1000 ms | 300 ms | 1% | Nearly unusable |\n\n"
+        "**Advanced override:** `download_quality_advanced`, `upload_quality_advanced` — "
+        "when provided, **replaces** the formula entirely with your exact netem values. "
+        "Fields:\n\n"
+        "| Field | Type | Range | Default |\n"
+        "|-------|------|-------|---------|\n"
+        "| `packet_loss_percent` | float | 0–100 | 0 |\n"
+        "| `delay_ms` | int | 0–5000 | 0 |\n"
+        "| `jitter_ms` | int | 0–1000 | 0 |\n"
+        "| `corruption_percent` | float | 0–5 | 0 |\n"
+        "| `delay_distribution` | string | normal / pareto / paretonormal | normal |\n\n"
+        "**Advanced override example:**\n"
+        "```json\n"
+        '{\n'
+        '  "download_quality": 90,\n'
+        '  "upload_quality_advanced": {\n'
+        '    "packet_loss_percent": 5.5,\n'
+        '    "delay_ms": 140,\n'
+        '    "jitter_ms": 25,\n'
+        '    "corruption_percent": 0.2,\n'
+        '    "delay_distribution": "paretonormal"\n'
+        '  }\n'
+        '}\n'
+        "```\n"
+        "In this example download uses the formula (quality=90), while upload uses "
+        "the exact values specified in the advanced object."
     ),
 )
 async def apply_qos(
