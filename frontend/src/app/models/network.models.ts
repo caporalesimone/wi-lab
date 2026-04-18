@@ -52,8 +52,8 @@ export interface NetworkStatus {
     reported_level?: number;
     reported_dbm?: number;
   };
-  expires_at?: string;
-  expires_in?: number;
+  expires_at?: string | null;
+  expires_in?: number | null;
   dhcp?: {
     interface: string;
     subnet: string;

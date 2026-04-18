@@ -1161,6 +1161,59 @@ class TestUnlimitedReservationAPI:
         )
         assert resp.status_code == 422
 
+    def test_get_unlimited_reservation_has_null_expiry(self, client, valid_token, monkeypatch):
+        """GET reservation returns expires_at/expires_in as null for unlimited."""
+        cfg = load_config()
+        monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
+        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
+        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+
+        create_resp = client.post(
+            '/api/v1/device-reservation',
+            headers={'Authorization': valid_token},
+            json={'duration_seconds': 0},
+        )
+        assert create_resp.status_code == 200
+        reservation_id = create_resp.json()['reservation_id']
+
+        get_resp = client.get(
+            f'/api/v1/device-reservation/{reservation_id}',
+            headers={'Authorization': valid_token},
+        )
+        assert get_resp.status_code == 200
+        data = get_resp.json()
+        assert data['expires_at'] is None
+        assert data['expires_in'] is None
+
+    def test_get_network_for_unlimited_reservation_has_null_expiry(self, client, valid_token, monkeypatch):
+        """GET network returns expires_at/expires_in as null for unlimited reservations."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
+        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+
+        create_resp = client.post(
+            '/api/v1/device-reservation',
+            headers={'Authorization': valid_token},
+            json={'duration_seconds': 0},
+        )
+        assert create_resp.status_code == 200
+        reservation_id = create_resp.json()['reservation_id']
+
+        get_resp = client.get(
+            f'/api/v1/interface/{reservation_id}/network',
+            headers={'Authorization': valid_token},
+        )
+        assert get_resp.status_code == 200
+        data = get_resp.json()
+        assert data['active'] is False
+        assert data['expires_at'] is None
+        assert data['expires_in'] is None
+
     def test_create_duration_below_min_timeout(self, client, valid_token, monkeypatch):
         """POST with duration_seconds < min_timeout (and != 0) → 422."""
         cfg = load_config()

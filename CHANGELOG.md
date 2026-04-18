@@ -4,6 +4,16 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [2.5.1] - 2026-04-18
+
+### 🐛 Bug Fixes
+
+- **Aligned frontend typing with unlimited reservation responses** – The frontend `NetworkStatus` model now accepts `expires_at: null` and `expires_in: null`, matching the backend contract for unlimited reservations on `GET /api/v1/interface/{reservation_id}/network`.
+
+### ✅ Tests
+
+- **Added explicit unlimited reservation API coverage** – New tests verify that both `GET /api/v1/device-reservation/{reservation_id}` and `GET /api/v1/interface/{reservation_id}/network` return `expires_at: null` and `expires_in: null` for unlimited reservations.
+
 ## [2.5.0] - 2026-04-16
 
 ### 🔧 Maintenance
