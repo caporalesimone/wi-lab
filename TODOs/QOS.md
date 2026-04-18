@@ -731,31 +731,31 @@ components:
 
 **Tasks**:
 
-- [ ] **P2.1** Add quality models in `wilab/models.py`
+- [x] **P2.1** Add quality models in `wilab/models.py`
   - `QosQualityAdvanced`: all 5 fields with ranges
   - Enum for `delay_distribution`
   - Update `QosRequest` with quality fields
   - `NetemParams`: resolved parameters sent in response
 
-- [ ] **P2.2** Implement quality→netem formula in `QosManager`
+- [x] **P2.2** Implement quality→netem formula in `QosManager`
   - `quality_to_netem_params(quality: int) -> NetemParams`
   - Quadratic/cubic formulas as documented
   - If advanced override provided, use instead of formula
 
-- [ ] **P2.3** Extend QosManager with quality management
+- [x] **P2.3** Extend QosManager with quality management
   - `apply_quality(interface, direction, quality, quality_advanced)`
   - Chain netem under HTB (parent 1:10, handle 10:)
   - Create HTB if quality-only (no throttle)
   - Use `tc qdisc change` for live updates
   - `clear_quality(interface)` without losing throttle
 
-- [ ] **P2.4** Update API routes for quality fields
+- [x] **P2.4** Update API routes for quality fields
   - POST endpoint accepts quality + advanced params
   - GET returns netem_params resolved
   - Validation: quality 0–100 or None
   - Swagger docs updated with all schemas
 
-- [ ] **P2.5** Tests for quality
+- [x] **P2.5** Tests for quality
   - Formula validation (edge cases: 0, 50, 100)
   - Advanced override precedence
   - netem command generation

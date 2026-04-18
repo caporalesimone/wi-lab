@@ -9,6 +9,7 @@ All notable changes to Wi-Lab are documented in this file.
 ### ✨ Features
 
 - **QoS bandwidth throttling** – New `POST/GET/DELETE /api/v1/interface/{reservation_id}/qos` endpoints for per-reservation download/upload speed limiting via Linux `tc` HTB + IFB. Supports partial updates (omit = keep, `null` = reset, value = apply).
+- **QoS link quality degradation** – Simulated link impairment via `netem` (packet loss, latency, jitter, corruption). Controllable through a 0–100% quality score (formula-mapped) or advanced per-parameter overrides (`QosQualityAdvanced`). Both download and upload directions independently configurable.
 
 ---
 

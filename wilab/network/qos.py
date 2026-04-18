@@ -1,10 +1,11 @@
-"""QoS traffic control management using tc (HTB + IFB)."""
+"""QoS traffic control management using tc (HTB + IFB + netem)."""
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, TypeVar
 
 from .commands import execute_tc, execute_command, CommandError
+from ..models import NetemParams, QosQualityAdvanced
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +25,16 @@ class _InterfaceQosState:
     upload_speed_kbit: Optional[int] = None
     download_quality: Optional[int] = None
     upload_quality: Optional[int] = None
+    download_quality_advanced: Optional[QosQualityAdvanced] = None
+    upload_quality_advanced: Optional[QosQualityAdvanced] = None
+    download_netem_params: Optional[NetemParams] = None
+    upload_netem_params: Optional[NetemParams] = None
     # Whether the HTB tree is installed on the device
     htb_installed: bool = False
     ifb_htb_installed: bool = False
+    # Whether netem qdisc is installed under HTB
+    download_netem_installed: bool = False
+    upload_netem_installed: bool = False
 
     @property
     def active(self) -> bool:
@@ -55,29 +63,55 @@ class QosManager:
         interface: str,
         download_speed_kbit: object = _SENTINEL,
         upload_speed_kbit: object = _SENTINEL,
+        download_quality: object = _SENTINEL,
+        upload_quality: object = _SENTINEL,
+        download_quality_advanced: object = _SENTINEL,
+        upload_quality_advanced: object = _SENTINEL,
     ) -> None:
-        """Apply or update bandwidth throttling on *interface*.
+        """Apply or update bandwidth throttling and/or quality on *interface*.
 
         Each parameter follows the partial-update semantic:
         - ``_SENTINEL`` (default / omitted): keep current value unchanged.
-        - ``None``: reset to unlimited.
-        - ``int``: apply the new limit.
+        - ``None``: reset to unlimited / inactive.
+        - ``int`` / ``QosQualityAdvanced``: apply the new value.
         """
         state = self._get_or_create(interface)
 
         # Resolve values --------------------------------------------------
         dl = self._resolve(download_speed_kbit, state.download_speed_kbit)
         ul = self._resolve(upload_speed_kbit, state.upload_speed_kbit)
+        dl_q = self._resolve(download_quality, state.download_quality)
+        ul_q = self._resolve(upload_quality, state.upload_quality)
+        dl_qa: Optional[QosQualityAdvanced] = self._resolve(
+            download_quality_advanced, state.download_quality_advanced
+        )
+        ul_qa: Optional[QosQualityAdvanced] = self._resolve(
+            upload_quality_advanced, state.upload_quality_advanced
+        )
 
         # Apply download (egress on physical interface) --------------------
-        self._apply_download_throttle(interface, state, dl)
+        self._apply_download_throttle(interface, state, dl, dl_q)
+        self._apply_netem(interface, state, "download", dl_q, dl_qa)
 
         # Apply upload (egress on IFB device) ------------------------------
-        self._apply_upload_throttle(interface, state, ul)
+        self._apply_upload_throttle(interface, state, ul, ul_q)
+        # For upload netem, ensure IFB is up if quality requested
+        if ul_q is not None or ul_qa is not None:
+            self._ensure_ifb(interface, state)
+        if state.ifb_device:
+            self._apply_netem(state.ifb_device, state, "upload", ul_q, ul_qa)
 
         # Persist state ----------------------------------------------------
         state.download_speed_kbit = dl
         state.upload_speed_kbit = ul
+        state.download_quality = dl_q
+        state.upload_quality = ul_q
+        state.download_quality_advanced = dl_qa
+        state.upload_quality_advanced = ul_qa
+
+        # Compute resolved netem params for status
+        state.download_netem_params = self._resolved_netem(dl_q, dl_qa)
+        state.upload_netem_params = self._resolved_netem(ul_q, ul_qa)
 
         # If nothing is active anymore, tear down trees
         if not state.active:
@@ -93,6 +127,10 @@ class QosManager:
         state.upload_speed_kbit = None
         state.download_quality = None
         state.upload_quality = None
+        state.download_quality_advanced = None
+        state.upload_quality_advanced = None
+        state.download_netem_params = None
+        state.upload_netem_params = None
         logger.info(f"QoS cleared for {interface}")
 
     def get_status(self, interface: str) -> Optional[_InterfaceQosState]:
@@ -103,19 +141,21 @@ class QosManager:
     # ------------------------------------------------------------------
 
     def _apply_download_throttle(
-        self, interface: str, state: _InterfaceQosState, rate_kbit: Optional[int]
+        self, interface: str, state: _InterfaceQosState, rate_kbit: Optional[int],
+        quality: Optional[int] = None,
     ) -> None:
-        if rate_kbit is None and state.download_speed_kbit is None:
+        if rate_kbit is None and state.download_speed_kbit is None and quality is None and state.download_quality is None:
             # Nothing to do and nothing was set
             return
 
         if rate_kbit is None:
             # Reset: remove HTB tree if no quality needs it
-            if state.download_quality is None:
+            if quality is None and state.download_quality is None:
+                self._remove_netem(interface, state, "download")
                 self._remove_root_qdisc(interface)
                 state.htb_installed = False
             else:
-                # Quality still active – set unlimited rate
+                # Quality still active or being set – set unlimited rate
                 self._ensure_htb(interface, state, direction="download")
                 self._change_class_rate(interface, _UNLIMITED_RATE_KBIT)
             return
@@ -129,13 +169,14 @@ class QosManager:
     # ------------------------------------------------------------------
 
     def _apply_upload_throttle(
-        self, interface: str, state: _InterfaceQosState, rate_kbit: Optional[int]
+        self, interface: str, state: _InterfaceQosState, rate_kbit: Optional[int],
+        quality: Optional[int] = None,
     ) -> None:
-        if rate_kbit is None and state.upload_speed_kbit is None:
+        if rate_kbit is None and state.upload_speed_kbit is None and quality is None and state.upload_quality is None:
             return
 
         if rate_kbit is None:
-            if state.upload_quality is None:
+            if quality is None and state.upload_quality is None:
                 self._remove_ifb(interface, state)
             else:
                 self._ensure_ifb(interface, state)
@@ -259,6 +300,7 @@ class QosManager:
             pass
         state.ifb_device = None
         state.ifb_htb_installed = False
+        state.upload_netem_installed = False
         logger.debug(f"IFB removed for {interface}")
 
     def _allocate_ifb(self) -> str:
@@ -267,12 +309,136 @@ class QosManager:
         return name
 
     # ------------------------------------------------------------------
+    # netem management (link quality)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def quality_to_netem_params(quality: int) -> NetemParams:
+        """Convert a 0-100% quality score to netem parameters.
+
+        Uses quadratic/cubic curves so that 80-100% is nearly imperceptible
+        and degradation becomes severe below 30%.
+        """
+        degradation = (100 - quality) / 100.0
+        return NetemParams(
+            packet_loss_percent=round(degradation ** 2 * 30, 2),
+            delay_ms=round(degradation ** 2 * 1000),
+            jitter_ms=round(degradation ** 2 * 300),
+            corruption_percent=round(degradation ** 3 * 1, 4),
+            delay_distribution="normal",
+        )
+
+    @staticmethod
+    def _advanced_to_netem_params(adv: QosQualityAdvanced) -> NetemParams:
+        """Convert advanced override to resolved netem params."""
+        return NetemParams(
+            packet_loss_percent=adv.packet_loss_percent or 0,
+            delay_ms=adv.delay_ms or 0,
+            jitter_ms=adv.jitter_ms or 0,
+            corruption_percent=adv.corruption_percent or 0,
+            delay_distribution=adv.delay_distribution.value if adv.delay_distribution else "normal",
+        )
+
+    def _resolved_netem(
+        self, quality: Optional[int], advanced: Optional[QosQualityAdvanced]
+    ) -> Optional[NetemParams]:
+        """Return resolved netem params based on quality + advanced override."""
+        if advanced is not None:
+            return self._advanced_to_netem_params(advanced)
+        if quality is not None:
+            return self.quality_to_netem_params(quality)
+        return None
+
+    def _apply_netem(
+        self,
+        device: str,
+        state: _InterfaceQosState,
+        direction: str,
+        quality: Optional[int],
+        advanced: Optional[QosQualityAdvanced],
+    ) -> None:
+        """Apply or remove netem qdisc on *device* for the given direction."""
+        params = self._resolved_netem(quality, advanced)
+        netem_installed = (
+            state.download_netem_installed if direction == "download" else state.upload_netem_installed
+        )
+
+        if params is None:
+            # Remove netem if it was installed
+            if netem_installed:
+                self._remove_netem(device, state, direction)
+            return
+
+        # Need HTB tree as parent for netem
+        if direction == "download":
+            self._ensure_htb(device, state, direction="download")
+        else:
+            if state.ifb_device is None:
+                self._ensure_ifb(state.interface, state)
+            self._ensure_htb(device, state, direction="upload")
+
+        # Build netem args
+        netem_args = self._build_netem_args(params)
+
+        if netem_installed:
+            # Change existing netem qdisc
+            execute_tc([
+                "qdisc", "change", "dev", device, "parent", "1:10", "handle", "10:",
+                "netem", *netem_args,
+            ])
+        else:
+            # Add netem qdisc
+            try:
+                execute_tc([
+                    "qdisc", "add", "dev", device, "parent", "1:10", "handle", "10:",
+                    "netem", *netem_args,
+                ])
+            except CommandError:
+                # May already exist – try replace
+                execute_tc([
+                    "qdisc", "replace", "dev", device, "parent", "1:10", "handle", "10:",
+                    "netem", *netem_args,
+                ])
+            if direction == "download":
+                state.download_netem_installed = True
+            else:
+                state.upload_netem_installed = True
+
+        logger.debug(f"netem applied on {device} ({direction}): {params}")
+
+    def _remove_netem(self, device: str, state: _InterfaceQosState, direction: str) -> None:
+        """Remove netem qdisc from *device*."""
+        try:
+            execute_tc(["qdisc", "del", "dev", device, "parent", "1:10", "handle", "10:"])
+        except CommandError:
+            pass
+        if direction == "download":
+            state.download_netem_installed = False
+        else:
+            state.upload_netem_installed = False
+
+    @staticmethod
+    def _build_netem_args(params: NetemParams) -> list:
+        """Build tc netem argument list from resolved parameters."""
+        args: list = []
+        if params.packet_loss_percent > 0:
+            args.extend(["loss", f"{params.packet_loss_percent}%"])
+        if params.delay_ms > 0:
+            args.extend(["delay", f"{params.delay_ms}ms"])
+            if params.jitter_ms > 0:
+                args.extend([f"{params.jitter_ms}ms", "distribution", params.delay_distribution])
+        if params.corruption_percent > 0:
+            args.extend(["corrupt", f"{params.corruption_percent}%"])
+        return args
+
+    # ------------------------------------------------------------------
     # Teardown
     # ------------------------------------------------------------------
 
     def _teardown(self, interface: str, state: _InterfaceQosState) -> None:
         self._remove_root_qdisc(interface)
         state.htb_installed = False
+        state.download_netem_installed = False
         self._remove_ifb(interface, state)
 
     def _remove_root_qdisc(self, device: str) -> None:
@@ -285,8 +451,10 @@ class QosManager:
     # Helpers
     # ------------------------------------------------------------------
 
+    _T = TypeVar("_T")
+
     @staticmethod
-    def _resolve(value: object, current: Optional[int]) -> Optional[int]:
+    def _resolve(value: object, current: _T) -> _T:
         """Resolve partial-update semantic for a single field."""
         if value is _SENTINEL:
             return current

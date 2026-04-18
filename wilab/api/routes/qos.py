@@ -40,8 +40,22 @@ def _require_active_network(
                         "active": True,
                         "download_speed_kbit": 8000,
                         "upload_speed_kbit": 3000,
-                        "download_quality": None,
-                        "upload_quality": None,
+                        "download_quality": 80,
+                        "upload_quality": 65,
+                        "download_netem_params": {
+                            "packet_loss_percent": 1.2,
+                            "delay_ms": 40,
+                            "jitter_ms": 12,
+                            "corruption_percent": 0.008,
+                            "delay_distribution": "normal",
+                        },
+                        "upload_netem_params": {
+                            "packet_loss_percent": 3.68,
+                            "delay_ms": 122,
+                            "jitter_ms": 37,
+                            "corruption_percent": 0.043,
+                            "delay_distribution": "normal",
+                        },
                     }
                 }
             },
@@ -58,7 +72,11 @@ def _require_active_network(
         "- Omitted field → keep current value\n"
         "- Field set to a value → apply/update\n"
         "- Field set to `null` → reset to unlimited/inactive\n\n"
-        "At least one field must be present in the request body."
+        "At least one field must be present in the request body.\n\n"
+        "**Speed fields:** `download_speed_kbit`, `upload_speed_kbit` (1-1000000 kbit/s)\n\n"
+        "**Quality fields:** `download_quality`, `upload_quality` (0-100%, 100=perfect)\n\n"
+        "**Advanced override:** `download_quality_advanced`, `upload_quality_advanced` "
+        "(overrides formula-derived netem params)"
     ),
 )
 async def apply_qos(
@@ -85,7 +103,11 @@ async def apply_qos(
 
     # Build kwargs with sentinel for omitted fields
     kwargs: dict = {}
-    for field_name in ("download_speed_kbit", "upload_speed_kbit"):
+    for field_name in (
+        "download_speed_kbit", "upload_speed_kbit",
+        "download_quality", "upload_quality",
+        "download_quality_advanced", "upload_quality_advanced",
+    ):
         if field_name in body:
             kwargs[field_name] = getattr(req, field_name)
         # else: omitted → _SENTINEL (default in apply_qos)
@@ -111,8 +133,16 @@ async def apply_qos(
                         "active": True,
                         "download_speed_kbit": 8000,
                         "upload_speed_kbit": 3000,
-                        "download_quality": None,
+                        "download_quality": 80,
                         "upload_quality": None,
+                        "download_netem_params": {
+                            "packet_loss_percent": 1.2,
+                            "delay_ms": 40,
+                            "jitter_ms": 12,
+                            "corruption_percent": 0.008,
+                            "delay_distribution": "normal",
+                        },
+                        "upload_netem_params": None,
                     }
                 }
             },
@@ -185,4 +215,6 @@ def _build_status(interface: str, qos: QosManager) -> QosStatus:
         upload_speed_kbit=state.upload_speed_kbit,
         download_quality=state.download_quality,
         upload_quality=state.upload_quality,
+        download_netem_params=state.download_netem_params,
+        upload_netem_params=state.upload_netem_params,
     )

@@ -1,4 +1,5 @@
 from typing import Optional, List
+from enum import Enum
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 from .wifi.channels import is_valid_channel_for_band
@@ -119,6 +120,49 @@ class TxPowerInfo(BaseModel):
 
 _QOS_SPEED_MIN = 1
 _QOS_SPEED_MAX = 1_000_000
+_QOS_QUALITY_MIN = 0
+_QOS_QUALITY_MAX = 100
+
+
+class DelayDistribution(str, Enum):
+    """Supported netem delay distribution profiles."""
+    normal = "normal"
+    pareto = "pareto"
+    paretonormal = "paretonormal"
+
+
+class QosQualityAdvanced(BaseModel):
+    """Advanced netem parameters for fine-grained link quality control.
+
+    When provided, these values override the formula-derived parameters
+    from the simple quality score.
+    """
+
+    packet_loss_percent: Optional[float] = Field(
+        None, ge=0, le=100, description="Packet loss percentage (0-100)"
+    )
+    delay_ms: Optional[int] = Field(
+        None, ge=0, le=5000, description="Base delay in milliseconds (0-5000)"
+    )
+    jitter_ms: Optional[int] = Field(
+        None, ge=0, le=1000, description="Delay jitter in milliseconds (0-1000)"
+    )
+    corruption_percent: Optional[float] = Field(
+        None, ge=0, le=5, description="Bit corruption percentage (0-5)"
+    )
+    delay_distribution: DelayDistribution = Field(
+        DelayDistribution.normal, description="Delay distribution profile"
+    )
+
+
+class NetemParams(BaseModel):
+    """Resolved netem parameters (returned in QoS status responses)."""
+
+    packet_loss_percent: float = 0
+    delay_ms: int = 0
+    jitter_ms: int = 0
+    corruption_percent: float = 0
+    delay_distribution: str = "normal"
 
 
 class QosRequest(BaseModel):
@@ -136,6 +180,22 @@ class QosRequest(BaseModel):
         None,
         description="Upload speed limit in kbit/s (1-1000000), or null to reset",
     )
+    download_quality: Optional[int] = Field(
+        None,
+        description="Download link quality 0-100% (100=perfect), or null to reset",
+    )
+    upload_quality: Optional[int] = Field(
+        None,
+        description="Upload link quality 0-100% (100=perfect), or null to reset",
+    )
+    download_quality_advanced: Optional[QosQualityAdvanced] = Field(
+        None,
+        description="Advanced download netem params (overrides quality score)",
+    )
+    upload_quality_advanced: Optional[QosQualityAdvanced] = Field(
+        None,
+        description="Advanced upload netem params (overrides quality score)",
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -143,6 +203,8 @@ class QosRequest(BaseModel):
                 {
                     "download_speed_kbit": 8000,
                     "upload_speed_kbit": 3000,
+                    "download_quality": 80,
+                    "upload_quality": 65,
                 }
             ]
         }
@@ -159,6 +221,17 @@ class QosRequest(BaseModel):
             raise ValueError(f"must be between {_QOS_SPEED_MIN} and {_QOS_SPEED_MAX}")
         return v
 
+    @field_validator("download_quality", "upload_quality", mode="before")
+    @classmethod
+    def _validate_quality_range(cls, v: object) -> object:
+        if v is None:
+            return v
+        if not isinstance(v, int):
+            raise ValueError("must be an integer or null")
+        if v < _QOS_QUALITY_MIN or v > _QOS_QUALITY_MAX:
+            raise ValueError(f"must be between {_QOS_QUALITY_MIN} and {_QOS_QUALITY_MAX}")
+        return v
+
 
 class QosStatus(BaseModel):
     """Response model for GET/POST /interface/{reservation_id}/qos."""
@@ -169,3 +242,5 @@ class QosStatus(BaseModel):
     upload_speed_kbit: Optional[int] = Field(None, description="Current upload speed limit in kbit/s")
     download_quality: Optional[int] = Field(None, description="Current download link quality 0-100%")
     upload_quality: Optional[int] = Field(None, description="Current upload link quality 0-100%")
+    download_netem_params: Optional[NetemParams] = Field(None, description="Resolved download netem parameters")
+    upload_netem_params: Optional[NetemParams] = Field(None, description="Resolved upload netem parameters")
