@@ -21,6 +21,7 @@ def get_manager(config: AppConfig = Depends(get_config)) -> NetworkManager:
     global _manager
     if _manager is None:
         _manager = NetworkManager(config)
+        _manager.qos_manager = get_qos_manager()
     return _manager
 
 def get_reservation_manager(config: AppConfig = Depends(get_config)) -> ReservationManager:
