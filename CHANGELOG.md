@@ -4,13 +4,11 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
-## [Unreleased]
+## [2.5.1] - 2026-04-18
 
 ### 🔧 Maintenance
 
 - **Non-interactive version bump support** – `update_version.sh` now accepts `--bump-to X.Y.Z`, while preserving the interactive prompt when no argument is provided.
-
-## [2.5.1] - 2026-04-18
 
 ### 🐛 Bug Fixes
 
