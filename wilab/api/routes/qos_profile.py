@@ -41,23 +41,6 @@ async def list_profiles(
     return pm.list_profiles()
 
 
-@catalogue_router.get(
-    "/profiles/{profile_id}",
-    response_model=QosProfile,
-    responses={404: {"description": "Profile not found in catalogue"}},
-    summary="Get a single QoS profile by ID",
-    description="Returns the full detail of a profile including all steps.",
-)
-async def get_profile(
-    profile_id: str,
-    pm: QosProfileManager = Depends(get_qos_profile_manager),
-):
-    profile = pm.get_profile(profile_id)
-    if profile is None:
-        raise HTTPException(status_code=404, detail=f"Profile '{profile_id}' not found")
-    return profile
-
-
 # ---------------------------------------------------------------------------
 # Reservation router — requires auth + active network
 # ---------------------------------------------------------------------------

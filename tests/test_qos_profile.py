@@ -312,6 +312,7 @@ class TestQosProfileManager:
         assert p is not None
         assert p.id == "4g_urban_stationary"
         assert p.description != ""
+        assert p.source_file == "default.json"
 
     def test_get_profile_nonexistent(self, pm):
         assert pm.get_profile("nonexistent") is None
@@ -467,6 +468,7 @@ class TestQosProfileManager:
         assert profile.steps[0].dl_speed_kbit == 8000
         assert profile.steps[0].quality == 80
         assert ":generated_static" in profile.id
+        assert profile.source_file == "generated"
 
     def test_build_inline_profile_advanced(self):
         adv = QosQualityAdvanced(delay_ms=100, jitter_ms=20)
@@ -573,17 +575,8 @@ class TestQosProfileAPI:
         assert len(data) >= 10
         assert all("id" in p for p in data)
         assert all("description" in p for p in data)
-
-    def test_get_profile_by_id(self, client):
-        resp = client.get("/api/v1/qos/profiles/4g_urban_stationary")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["id"] == "4g_urban_stationary"
-        assert len(data["steps"]) == 4
-
-    def test_get_profile_nonexistent(self, client):
-        resp = client.get("/api/v1/qos/profiles/nonexistent")
-        assert resp.status_code == 404
+        assert all("source_file" in p for p in data)
+        assert all(p["source_file"] == "default.json" for p in data)
 
     # --- Profile application endpoints ---
 
