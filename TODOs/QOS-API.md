@@ -89,8 +89,7 @@ This profile is never stored in the catalogue and exists only in memory for the 
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/v1/qos/profiles` | List all available profiles (id, description, mode, step count) |
-| `GET` | `/api/v1/qos/profiles/{profile_id}` | Get full detail of a single profile including all steps |
+| `GET` | `/api/v1/qos/profiles` | List all available profiles (full detail including steps and source_file) |
 
 No auth required for catalogue endpoints (read-only, no sensitive data).
 
@@ -322,7 +321,7 @@ All phases completed.
 
 ### Phase 5 — API Routes
 
-- [x] `catalogue_router` — `GET /profiles`, `GET /profiles/{profile_id}` (no auth)
+- [x] `catalogue_router` — `GET /profiles` (no auth)
 - [x] `reservation_router` — `POST/GET/DELETE /{rid}/qos/profile` (auth required)
 - [x] Route registration in `__init__.py`
 

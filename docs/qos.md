@@ -20,8 +20,7 @@ A **profile** is an ordered sequence of steps. Each step defines a duration and 
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/v1/qos/profiles` | List all available profiles |
-| `GET` | `/api/v1/qos/profiles/{profile_id}` | Get full profile detail with all steps |
+| `GET` | `/api/v1/qos/profiles` | List all available profiles (full detail) |
 
 ### Per-Reservation (requires `Authorization: Bearer <token>`)
 
@@ -56,9 +55,7 @@ wi-lab ships with 10 built-in profiles simulating common scenarios:
 curl "$BASE/qos/profiles"
 ```
 
-```bash
-curl "$BASE/qos/profiles/4g_urban_moving"
-```
+Each profile in the response includes a `source_file` field indicating which JSON file it was loaded from (e.g. `"default.json"`).
 
 ### Custom Profile Files
 
