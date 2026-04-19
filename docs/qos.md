@@ -266,7 +266,15 @@ curl -X DELETE "$BASE/interface/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Returns `204 No Content`. All QoS rules are cleared from the interface.
+Response:
+
+```json
+{
+  "detail": "Profile '4g_urban_moving' deactivated correctly."
+}
+```
+
+Returns `404` if no profile is currently active on the interface.
 
 ### 6. Switch profiles
 
@@ -293,6 +301,7 @@ curl -X POST "$BASE/interface/$RES/qos/profile" \
 | 401 | Missing or invalid token | `"Not authenticated"` |
 | 404 | Reservation not found / expired | `"Reservation not found"` |
 | 404 | Profile ID not in catalogue | `"Profile 'xyz' not found in catalogue"` |
+| 404 | No active profile (on DELETE) | `"No active profile on this interface"` |
 | 409 | Network not active | `"Cannot apply QoS: network is not active for this reservation"` |
 | 409 | Profile already active | `"A profile is already active on this interface. Stop it first."` |
 | 422 | Both profile_id and inline params | `"Cannot specify both 'profile_id' and inline QoS parameters"` |

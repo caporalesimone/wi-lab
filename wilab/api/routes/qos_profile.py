@@ -191,14 +191,14 @@ async def get_profile_state(
 
 @reservation_router.delete(
     "/{reservation_id}/qos/profile",
-    status_code=204,
+    status_code=200,
     responses={
-        204: {"description": "Profile stopped and QoS cleared"},
+        200: {"description": "Profile stopped and QoS cleared"},
         401: {"description": "Unauthorized"},
-        404: {"description": "Reservation not found"},
+        404: {"description": "Reservation not found / no active profile"},
     },
     summary="Stop the active QoS profile",
-    description="Stops the active profile and clears all QoS rules from the interface. No-op if no profile is active.",
+    description="Stops the active profile and clears all QoS rules from the interface.",
 )
 async def stop_profile(
     _auth: bool = Depends(require_token),
@@ -211,4 +211,17 @@ async def stop_profile(
     st = manager.get_status(device_id)
     if st is None:
         raise HTTPException(status_code=404, detail="Unknown device_id")
+
+    ap = pm.get_state(st.interface)
+    if ap is None or not ap.active:
+        raise HTTPException(status_code=404, detail="No active profile on this interface")
+
+    profile_id = ap.profile_id
     pm.stop_profile(st.interface, qos)
+
+    # Verify the profile was actually removed
+    ap_after = pm.get_state(st.interface)
+    if ap_after is not None and ap_after.active:
+        raise HTTPException(status_code=500, detail=f"Failed to deactivate profile '{profile_id}'")
+
+    return {"detail": f"Profile '{profile_id}' deactivated correctly."}

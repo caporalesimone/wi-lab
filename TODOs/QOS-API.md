@@ -139,6 +139,7 @@ Only one format is allowed per request: either `profile_id` **or** QoS parameter
 
 **Error responses:**
 - `404` — profile_id not found in catalogue
+- `404` — no active profile on the interface (on DELETE)
 - `409` — a profile is already active on the interface (stop it first)
 - `422` — invalid request body (both profile_id and QoS params, or neither)
 

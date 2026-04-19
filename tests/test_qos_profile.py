@@ -710,7 +710,9 @@ class TestQosProfileAPI:
             f"/api/v1/interface/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
-        assert resp.status_code == 204
+        assert resp.status_code == 200
+        assert "4g_urban_stationary" in resp.json()["detail"]
+        assert "deactivated correctly" in resp.json()["detail"]
 
         # Verify cleared
         resp = client.get(
@@ -724,7 +726,7 @@ class TestQosProfileAPI:
             f"/api/v1/interface/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
-        assert resp.status_code == 204
+        assert resp.status_code == 404
 
     def test_start_requires_auth(self, client, reservation_id):
         resp = client.post(
