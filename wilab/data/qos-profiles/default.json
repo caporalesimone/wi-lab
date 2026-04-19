@@ -1,0 +1,153 @@
+[
+  {
+    "id": "4g_urban_stationary",
+    "description": "Device stationary in urban area, stable but not perfect. Minor signal fluctuations from nearby buildings and traffic.",
+    "mode": "loop",
+    "steps": [
+      { "duration_sec": 30, "quality": 88 },
+      { "duration_sec": 5,  "quality": 75 },
+      { "duration_sec": 30, "quality": 90 },
+      { "duration_sec": 5,  "quality": 80 }
+    ]
+  },
+  {
+    "id": "4g_urban_moving",
+    "description": "Device on foot in city, occasional signal dips between buildings and crossing streets.",
+    "mode": "loop",
+    "steps": [
+      { "duration_sec": 15, "quality": 85 },
+      { "duration_sec": 4,  "quality": 40 },
+      { "duration_sec": 10, "quality": 80 },
+      { "duration_sec": 3,  "quality": 25 },
+      { "duration_sec": 12, "quality": 88 },
+      { "duration_sec": 6,  "quality": 55 },
+      { "duration_sec": 10, "quality": 82 }
+    ]
+  },
+  {
+    "id": "4g_highway",
+    "description": "Device in a vehicle at highway speed, frequent cell handovers causing brief signal drops.",
+    "mode": "loop",
+    "steps": [
+      { "duration_sec": 8,  "quality": 82 },
+      { "duration_sec": 2,  "quality": 15 },
+      { "duration_sec": 8,  "quality": 85 },
+      { "duration_sec": 2,  "quality": 10 },
+      { "duration_sec": 6,  "quality": 78 },
+      { "duration_sec": 2,  "quality": 20 },
+      { "duration_sec": 7,  "quality": 83 }
+    ]
+  },
+  {
+    "id": "4g_train_tunnel",
+    "description": "Train entering and exiting a tunnel. Signal degrades progressively, drops completely inside, then recovers.",
+    "mode": "once",
+    "steps": [
+      { "duration_sec": 20, "quality": 85 },
+      { "duration_sec": 5,  "quality": 50 },
+      { "duration_sec": 3,  "quality": 10 },
+      { "duration_sec": 30, "quality": 0  },
+      { "duration_sec": 3,  "quality": 10 },
+      { "duration_sec": 5,  "quality": 55 },
+      { "duration_sec": 20, "quality": 87 }
+    ]
+  },
+  {
+    "id": "4g_rural",
+    "description": "Device in rural area, low signal with occasional complete drops due to sparse tower coverage.",
+    "mode": "loop",
+    "steps": [
+      { "duration_sec": 20, "quality": 55 },
+      { "duration_sec": 10, "quality": 35 },
+      { "duration_sec": 5,  "quality": 10 },
+      { "duration_sec": 3,  "quality": 0  },
+      { "duration_sec": 8,  "quality": 20 },
+      { "duration_sec": 15, "quality": 50 }
+    ]
+  },
+  {
+    "id": "4g_congested_stadium",
+    "description": "Many users sharing the same cell at a stadium or concert. High contention causes variable throughput.",
+    "mode": "loop",
+    "steps": [
+      { "duration_sec": 10, "quality": 45 },
+      { "duration_sec": 5,  "quality": 30 },
+      { "duration_sec": 10, "quality": 50 },
+      { "duration_sec": 8,  "quality": 25 },
+      { "duration_sec": 3,  "quality": 10 },
+      { "duration_sec": 10, "quality": 40 }
+    ]
+  },
+  {
+    "id": "4g_to_3g_fallback",
+    "description": "Device loses 4G coverage, falls back to 3G with reduced speed, then recovers 4G.",
+    "mode": "once",
+    "steps": [
+      { "duration_sec": 20, "quality": 85, "dl_speed_kbit": 20000, "ul_speed_kbit": 10000 },
+      { "duration_sec": 5,  "quality": 30, "dl_speed_kbit": 5000,  "ul_speed_kbit": 2000  },
+      { "duration_sec": 3,  "quality": 10, "dl_speed_kbit": 1000,  "ul_speed_kbit": 500   },
+      { "duration_sec": 30, "quality": 60, "dl_speed_kbit": 3000,  "ul_speed_kbit": 1000  },
+      { "duration_sec": 5,  "quality": 75, "dl_speed_kbit": 15000, "ul_speed_kbit": 7000  },
+      { "duration_sec": 20, "quality": 88, "dl_speed_kbit": 20000, "ul_speed_kbit": 10000 }
+    ]
+  },
+  {
+    "id": "wifi_interference",
+    "description": "WiFi with periodic interference from nearby networks, microwave ovens, or neighboring APs.",
+    "mode": "loop",
+    "steps": [
+      { "duration_sec": 25, "quality": 92 },
+      { "duration_sec": 2,  "quality": 45 },
+      { "duration_sec": 25, "quality": 90 },
+      { "duration_sec": 2,  "quality": 40 },
+      { "duration_sec": 25, "quality": 91 },
+      { "duration_sec": 4,  "quality": 20 }
+    ]
+  },
+  {
+    "id": "satellite_link",
+    "description": "Geostationary satellite link with inherently high latency and stable bandwidth. Occasional weather-induced degradation.",
+    "mode": "loop",
+    "steps": [
+      {
+        "duration_sec": 60,
+        "dl_speed_kbit": 15000,
+        "ul_speed_kbit": 3000,
+        "advanced": {
+          "delay_ms": 600,
+          "jitter_ms": 30,
+          "packet_loss_percent": 0.5,
+          "corruption_percent": 0.01,
+          "delay_distribution": "normal"
+        }
+      },
+      {
+        "duration_sec": 10,
+        "dl_speed_kbit": 15000,
+        "ul_speed_kbit": 3000,
+        "advanced": {
+          "delay_ms": 650,
+          "jitter_ms": 80,
+          "packet_loss_percent": 2.0,
+          "corruption_percent": 0.05,
+          "delay_distribution": "pareto"
+        }
+      }
+    ]
+  },
+  {
+    "id": "progressive_degradation",
+    "description": "Simulates a device moving progressively away from the AP until connection drops completely. Useful for stress testing.",
+    "mode": "once",
+    "steps": [
+      { "duration_sec": 15, "quality": 100 },
+      { "duration_sec": 15, "quality": 85  },
+      { "duration_sec": 15, "quality": 70  },
+      { "duration_sec": 15, "quality": 50  },
+      { "duration_sec": 15, "quality": 30  },
+      { "duration_sec": 15, "quality": 15  },
+      { "duration_sec": 15, "quality": 5   },
+      { "duration_sec": 15, "quality": 0   }
+    ]
+  }
+]

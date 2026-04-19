@@ -27,6 +27,7 @@ def _test_config_env(monkeypatch):
     monkeypatch.setattr(dependencies, '_reservation_manager', None)
     monkeypatch.setattr(dependencies, '_channel_manager', None)
     monkeypatch.setattr(dependencies, '_qos_manager', None)
+    monkeypatch.setattr(dependencies, '_qos_profile_manager', None)
 
 
 @pytest.fixture(autouse=True)

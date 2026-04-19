@@ -1,6 +1,6 @@
 from typing import Optional, List
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 from .wifi.channels import is_valid_channel_for_band
 
@@ -244,3 +244,91 @@ class QosStatus(BaseModel):
     upload_quality: Optional[int] = Field(None, description="Current upload link quality 0-100%")
     download_netem_params: Optional[NetemParams] = Field(None, description="Resolved download netem parameters")
     upload_netem_params: Optional[NetemParams] = Field(None, description="Resolved upload netem parameters")
+
+
+# --- QoS Profile Models ---
+
+
+class QosProfileMode(str, Enum):
+    """Playback mode for profile step execution."""
+    loop = "loop"
+    bounce = "bounce"
+    once = "once"
+    hold = "hold"
+
+
+class QosProfileStep(BaseModel):
+    """A single step within a QoS profile."""
+
+    duration_sec: int = Field(..., ge=1, description="Duration of this step in seconds")
+    quality: Optional[int] = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Quality score 0-100")
+    dl_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Download speed cap in kbit/s")
+    ul_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Upload speed cap in kbit/s")
+    advanced: Optional[QosQualityAdvanced] = Field(None, description="Advanced netem override (mutually exclusive with quality)")
+
+    @model_validator(mode="after")
+    def _check_step_constraints(self) -> "QosProfileStep":
+        if self.quality is not None and self.advanced is not None:
+            raise ValueError("'quality' and 'advanced' are mutually exclusive within a step")
+        if self.quality is None and self.advanced is None and self.dl_speed_kbit is None and self.ul_speed_kbit is None:
+            raise ValueError("At least one of 'quality', 'advanced', 'dl_speed_kbit', 'ul_speed_kbit' must be set")
+        return self
+
+
+class QosProfile(BaseModel):
+    """A named QoS profile with an ordered list of steps."""
+
+    id: str = Field(..., min_length=1, description="Unique profile identifier")
+    description: str = Field("", description="Human-readable description of the profile scenario")
+    mode: QosProfileMode = Field(..., description="Playback mode")
+    steps: List[QosProfileStep] = Field(..., min_length=1, description="Ordered list of steps")
+
+
+class QosProfileStartRequest(BaseModel):
+    """Request body for POST /interface/{reservation_id}/qos/profile.
+
+    Either ``profile_id`` or at least one inline QoS parameter must be set, but not both.
+    """
+
+    profile_id: Optional[str] = Field(None, description="Profile from the catalogue")
+    download_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Download speed cap in kbit/s")
+    upload_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Upload speed cap in kbit/s")
+    download_quality: Optional[int] = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Download quality 0-100")
+    upload_quality: Optional[int] = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Upload quality 0-100")
+    advanced: Optional[QosQualityAdvanced] = Field(None, description="Advanced netem override for both directions")
+
+    @model_validator(mode="after")
+    def _check_xor(self) -> "QosProfileStartRequest":
+        has_profile = self.profile_id is not None
+        has_inline = any([
+            self.download_speed_kbit is not None,
+            self.upload_speed_kbit is not None,
+            self.download_quality is not None,
+            self.upload_quality is not None,
+            self.advanced is not None,
+        ])
+        if has_profile and has_inline:
+            raise ValueError("Cannot specify both 'profile_id' and inline QoS parameters")
+        if not has_profile and not has_inline:
+            raise ValueError("Must specify either 'profile_id' or at least one QoS parameter")
+        return self
+
+
+class QosProfileStepState(BaseModel):
+    """Current step progress within an active profile."""
+
+    index: int = Field(..., description="Current step index (0-based)")
+    elapsed_sec: int = Field(..., description="Seconds elapsed in the current step")
+    duration_sec: int = Field(..., description="Total duration of the current step")
+
+
+class QosProfileState(BaseModel):
+    """Response model for profile status endpoints."""
+
+    interface: str
+    active: bool = Field(description="True if a profile is currently running")
+    profile_id: Optional[str] = Field(None, description="Active profile ID")
+    description: Optional[str] = Field(None, description="Active profile description")
+    mode: Optional[QosProfileMode] = Field(None, description="Playback mode")
+    current_step: Optional[QosProfileStepState] = Field(None, description="Current step info")
+    total_elapsed_sec: Optional[int] = Field(None, description="Total seconds since profile started")
