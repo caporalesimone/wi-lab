@@ -60,6 +60,36 @@ curl "$BASE/qos/profiles"
 curl "$BASE/qos/profiles/4g_urban_moving"
 ```
 
+### Custom Profile Files
+
+You can add your own profiles by placing `.json` files in `wilab/data/qos-profiles/`. The loading order is:
+
+1. `default.json` is loaded first (shipped with wi-lab — do not modify)
+2. All other `*.json` files are loaded in alphabetical order
+3. `profile.schema.json` is excluded automatically
+4. Each file is validated against `profile.schema.json` — invalid files are skipped with a warning
+5. If a profile `id` already exists in the catalogue, the duplicate is discarded and a warning is logged
+
+Create a new JSON file (e.g. `custom.json`) with the same structure as `default.json`:
+
+```json
+{
+  "profiles": [
+    {
+      "id": "my_scenario",
+      "description": "Description of the scenario.",
+      "mode": "loop",
+      "steps": [
+        { "duration_sec": 10, "quality": 80, "dl_speed_kbit": 5000 },
+        { "duration_sec": 5, "quality": 30, "dl_speed_kbit": 1000 }
+      ]
+    }
+  ]
+}
+```
+
+Custom profiles appear in the catalogue endpoints and can be used exactly like built-in ones. Profiles are loaded at service startup.
+
 ---
 
 ## Playback Modes
@@ -274,4 +304,3 @@ curl -X POST "$BASE/interface/$RES/qos/profile" \
 - **Profiles do not survive a network restart.** Re-apply after stopping and starting the network.
 - **Quality is interface-wide**, not per-client. All connected clients share the simulated conditions.
 - **Step timing is approximate.** Transitions are not real-time precise; expect tens of milliseconds variance.
-- **Custom profiles:** Place additional `*.json` files in `wilab/data/qos-profiles/`. They are loaded alphabetically after `default.json`. Duplicate IDs are skipped.
