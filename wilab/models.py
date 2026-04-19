@@ -280,6 +280,7 @@ class QosProfile(BaseModel):
 
     id: str = Field(..., min_length=1, description="Unique profile identifier")
     description: str = Field("", description="Human-readable description of the profile scenario")
+    source_file: str = Field("", description="JSON filename this profile was loaded from")
     mode: QosProfileMode = Field(..., description="Playback mode")
     steps: List[QosProfileStep] = Field(..., min_length=1, description="Ordered list of steps")
 

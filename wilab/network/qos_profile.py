@@ -118,6 +118,7 @@ class QosProfileManager:
                 self._profiles[pid] = QosProfile(
                     id=pid,
                     description=raw_profile.get("description", ""),
+                    source_file=json_file.name,
                     mode=QosProfileMode(raw_profile["mode"]),
                     steps=steps,
                 )
@@ -221,6 +222,7 @@ class QosProfileManager:
         return QosProfile(
             id=pid,
             description="Inline static QoS profile",
+            source_file="generated",
             mode=QosProfileMode.once_hold_last,
             steps=[step],
         )
