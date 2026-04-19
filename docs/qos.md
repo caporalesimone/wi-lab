@@ -10,7 +10,7 @@ QoS lets you simulate real-world network conditions on a per-reservation basis. 
 
 A **profile** is an ordered sequence of steps. Each step defines a duration and network parameters (speed limits, link quality, or advanced netem settings). The system executes steps in sequence according to the profile's **playback mode**.
 
-**Static QoS** (fixed speed/quality) is a profile too — it's automatically created as a single-step `hold` profile behind the scenes.
+**Static QoS** (fixed speed/quality) is a profile too — it's automatically created as a single-step `once-hold-last` profile behind the scenes.
 
 ---
 
@@ -69,7 +69,7 @@ curl "$BASE/qos/profiles/4g_urban_moving"
 | `loop` | Repeats indefinitely: restarts from step 0 after the last step |
 | `bounce` | Ping-pong: reverses direction at boundaries (no step duplication) |
 | `once` | Single pass: QoS is cleared after the last step completes |
-| `hold` | Single pass: holds the last step indefinitely until stopped |
+| `once-hold-last` | Single pass: holds the last step indefinitely until stopped |
 
 ---
 
@@ -167,7 +167,7 @@ curl -X POST "$BASE/interface/$RES/qos/profile" \
   }'
 ```
 
-This creates an auto-generated `hold` profile with a single step. The configuration is applied and held indefinitely until you stop it.
+This creates an auto-generated `once-hold-last` profile with a single step. The configuration is applied and held indefinitely until you stop it.
 
 ### 3. Apply inline QoS with advanced override
 

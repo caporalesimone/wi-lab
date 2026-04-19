@@ -28,7 +28,7 @@ This refactor **unifies static and dynamic QoS into a single profile-based syste
 
 - **`QosProfileManager`** becomes the sole orchestrator of QoS state. It manages profile execution via a dedicated thread per active reservation, advancing through steps according to the playback mode.
 - **`QosManager`** is retained as the kernel `tc` driver. It continues to manage HTB, IFB, and netem qdiscs. However, it no longer owns application-level state — it is called by `QosProfileManager` at each step transition.
-- **Static QoS** (the current `POST /qos` with direct parameters) becomes an auto-generated profile with `mode: hold` and a single step. The user-facing behaviour is equivalent: parameters are applied and held indefinitely until explicitly stopped.
+- **Static QoS** (the current `POST /qos` with direct parameters) becomes an auto-generated profile with `mode: once-hold-last` and a single step. The user-facing behaviour is equivalent: parameters are applied and held indefinitely until explicitly stopped.
 - **No conflict state (409)**: since everything is a profile, a reservation has at most one active profile at any time. There is no separate "static QoS" vs "profile" state to conflict.
 
 The old `/qos` endpoints are **removed entirely** and replaced by `/qos/profile`.
@@ -66,7 +66,7 @@ The profile field `mode` (string enum) controls how the step sequence is execute
 | `loop` | Repeats indefinitely: after the last step, restarts from the first |
 | `bounce` | Repeats indefinitely: at the end, reverses direction (ping-pong); boundary steps are not duplicated |
 | `once` | Single execution: after the last step completes, QoS is cleared and the profile becomes inactive |
-| `hold` | Single execution: after the last step completes, remains fixed on that step indefinitely until explicitly stopped |
+| `once-hold-last` | Single execution: after the last step completes, remains fixed on that step indefinitely until explicitly stopped |
 
 ### Profile Catalogue — Multi-file
 
@@ -85,7 +85,7 @@ This allows users to add custom profile files alongside the defaults without mod
 When a user submits QoS parameters directly via `POST /qos/profile` (instead of a `profile_id`), an **ephemeral profile** is auto-generated internally:
 
 - `id`: UUID prefix + `:generated_static` (e.g. `18f7a2b1:generated_static`)
-- `mode`: always `hold`
+- `mode`: always `once-hold-last`
 - `steps`: single step with the user-provided parameters
 
 This profile is never stored in the catalogue and exists only in memory for the duration of its activation.
@@ -118,7 +118,7 @@ Bearer token and active network required.
 { "profile_id": "4g_urban_moving" }
 ```
 
-**`POST` request body — Option 2: inline QoS (auto-generates `hold` profile)**
+**`POST` request body — Option 2: inline QoS (auto-generates `once-hold-last` profile)**
 ```json
 {
   "download_speed_kbit": 1000,
@@ -191,7 +191,7 @@ Starting from the current codebase state where static QoS is already implemented
 - [x] Create directory `wilab/data/qos-profiles/`
 - [x] Create `wilab/data/qos-profiles/profile.schema.json` — JSON Schema:
   - Root: array of profile objects
-  - Required per profile: `id` (string), `description` (string), `mode` (enum: `loop`, `bounce`, `once`, `hold`), `steps` (array, minItems 1)
+  - Required per profile: `id` (string), `description` (string), `mode` (enum: `loop`, `bounce`, `once`, `once-hold-last`), `steps` (array, minItems 1)
   - Per step: `duration_sec` (integer, minimum 1) required; at least one of `quality`, `dl_speed_kbit`, `ul_speed_kbit`, `advanced` present; `quality` and `advanced` mutually exclusive via `not`
   - `quality`: integer, minimum 0, maximum 100
   - `dl_speed_kbit` / `ul_speed_kbit`: integer, minimum 1, maximum 1000000
@@ -202,7 +202,7 @@ Starting from the current codebase state where static QoS is already implemented
 
 In `wilab/models.py`:
 
-- [x] Add `QosProfileMode` — string enum: `loop`, `bounce`, `once`, `hold`
+- [x] Add `QosProfileMode` — string enum: `loop`, `bounce`, `once`, `once-hold-last`
 - [x] Add `QosProfileStep` model:
   - Fields: `duration_sec: int`, `quality: Optional[int]`, `dl_speed_kbit: Optional[int]`, `ul_speed_kbit: Optional[int]`, `advanced: Optional[QosQualityAdvanced]`
   - Validator: `quality` and `advanced` mutually exclusive
@@ -247,7 +247,7 @@ New file `wilab/network/qos_profile.py`:
     - `loop`: `(index + 1) % len(steps)`
     - `bounce`: advance by `direction`; invert at boundaries without repeating the boundary step
     - `once`: advance linearly; after last step call `qos_manager.clear_qos()` and mark inactive
-    - `hold`: advance linearly; on last step enter `stop_event.wait()` with no timeout
+    - `once-hold-last`: advance linearly; on last step enter `stop_event.wait()` with no timeout
 
 ### Phase 4 — Dependency Injection
 
@@ -288,7 +288,7 @@ New file `tests/test_qos_profile.py`:
   - `QosProfileStep` rejects step with no quality/advanced/speed fields
   - `QosProfileStep` accepts quality-only, advanced-only, speed-only, mixed speed+quality
   - `QosProfileStep` rejects `quality` outside 0–100
-  - `QosProfileMode` has exactly 4 values: `loop`, `bounce`, `once`, `hold`
+  - `QosProfileMode` has exactly 4 values: `loop`, `bounce`, `once`, `once-hold-last`
   - `QosProfileStartRequest` accepts `profile_id` alone
   - `QosProfileStartRequest` accepts QoS parameters alone
   - `QosProfileStartRequest` rejects both `profile_id` and QoS parameters
@@ -311,13 +311,13 @@ New file `tests/test_qos_profile.py`:
   - `loop` mode: step_index wraps to 0 after last step
   - `bounce` mode: sequence 0→1→2→1→0→1→2 (boundaries not duplicated)
   - `once` mode: `clear_qos` called after last step, profile inactive
-  - `hold` mode: thread waits on stop_event after last step
+  - `once-hold-last` mode: thread waits on stop_event after last step
 - [x] **TestQosProfileAPI**
   - `GET /api/v1/qos/profiles` → 200, list of profiles
   - `GET /api/v1/qos/profiles/{id}` → 200, correct profile
   - `GET /api/v1/qos/profiles/nonexistent` → 404
   - `POST /{rid}/qos/profile` with `profile_id` → 200, profile starts
-  - `POST /{rid}/qos/profile` with inline QoS params → 200, hold profile starts
+  - `POST /{rid}/qos/profile` with inline QoS params → 200, once-hold-last profile starts
   - `POST /{rid}/qos/profile` with unknown `profile_id` → 404
   - `POST /{rid}/qos/profile` with profile already active → 409
   - `POST /{rid}/qos/profile` with both `profile_id` and QoS params → 422

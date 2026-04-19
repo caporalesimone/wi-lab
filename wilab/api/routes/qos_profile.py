@@ -119,7 +119,7 @@ def _build_profile_state(interface: str, pm: QosProfileManager) -> QosProfileSta
         "Start a QoS profile from the catalogue **or** provide inline QoS parameters.\n\n"
         "**Option 1 — catalogue profile:**\n"
         '```json\n{ "profile_id": "4g_urban_moving" }\n```\n\n'
-        "**Option 2 — inline QoS (auto-generates a `hold` profile):**\n"
+        "**Option 2 — inline QoS (auto-generates a `once-hold-last` profile):**\n"
         '```json\n{ "download_speed_kbit": 1000, "download_quality": 40 }\n```\n\n'
         "Only one format is allowed per request. Providing both or neither returns 422.\n\n"
         "If a profile is already active on the interface, returns 409. Stop it first."

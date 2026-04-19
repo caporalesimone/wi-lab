@@ -20,7 +20,7 @@
       },
       "mode": {
         "type": "string",
-        "enum": ["loop", "bounce", "once", "hold"],
+        "enum": ["loop", "bounce", "once", "once-hold-last"],
         "description": "Playback mode controlling step sequence execution"
       },
       "steps": {

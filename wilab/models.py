@@ -254,7 +254,7 @@ class QosProfileMode(str, Enum):
     loop = "loop"
     bounce = "bounce"
     once = "once"
-    hold = "hold"
+    once_hold_last = "once-hold-last"
 
 
 class QosProfileStep(BaseModel):

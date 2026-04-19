@@ -207,11 +207,11 @@ class QosProfileManager:
         upload_quality: Optional[int] = None,
         advanced: Optional[QosQualityAdvanced] = None,
     ) -> QosProfile:
-        """Create an ephemeral hold profile from inline QoS parameters."""
+        """Create an ephemeral once-hold-last profile from inline QoS parameters."""
         # Map symmetric quality fields into the step model
         quality = download_quality if download_quality is not None else upload_quality
         step = QosProfileStep(
-            duration_sec=1,  # hold mode ignores duration on last (only) step
+            duration_sec=1,  # once-hold-last mode ignores duration on last (only) step
             quality=quality if advanced is None else None,
             dl_speed_kbit=download_speed_kbit,
             ul_speed_kbit=upload_speed_kbit,
@@ -221,7 +221,7 @@ class QosProfileManager:
         return QosProfile(
             id=pid,
             description="Inline static QoS profile",
-            mode=QosProfileMode.hold,
+            mode=QosProfileMode.once_hold_last,
             steps=[step],
         )
 
@@ -246,7 +246,7 @@ class QosProfileManager:
                 # Wait for step duration (or stop event)
                 is_last = self._is_last_step(ap)
 
-                if is_last and ap.mode == QosProfileMode.hold:
+                if is_last and ap.mode == QosProfileMode.once_hold_last:
                     # Hold indefinitely on last step
                     ap.stop_event.wait()
                     break
@@ -331,9 +331,9 @@ class QosProfileManager:
             ap.step_index += 1
             return True
 
-        elif ap.mode == QosProfileMode.hold:
+        elif ap.mode == QosProfileMode.once_hold_last:
             if ap.step_index >= n - 1:
-                return False  # will be caught by hold logic above
+                return False  # will be caught by once-hold-last logic above
             ap.step_index += 1
             return True
 

@@ -84,7 +84,7 @@ class TestQosProfileModels:
             QosProfileMode.loop,
             QosProfileMode.bounce,
             QosProfileMode.once,
-            QosProfileMode.hold,
+            QosProfileMode.once_hold_last,
         }
 
     def test_profile_valid(self):
@@ -320,7 +320,7 @@ class TestQosProfileManager:
         profile = QosProfile(
             id="test",
             description="test",
-            mode=QosProfileMode.hold,
+            mode=QosProfileMode.once_hold_last,
             steps=[QosProfileStep(duration_sec=1, quality=80)],
         )
         pm.start_profile("wlan0", profile, qos)
@@ -333,7 +333,7 @@ class TestQosProfileManager:
         profile = QosProfile(
             id="test",
             description="test",
-            mode=QosProfileMode.hold,
+            mode=QosProfileMode.once_hold_last,
             steps=[QosProfileStep(duration_sec=1, quality=80)],
         )
         pm.start_profile("wlan0", profile, qos)
@@ -345,7 +345,7 @@ class TestQosProfileManager:
         profile = QosProfile(
             id="test",
             description="test",
-            mode=QosProfileMode.hold,
+            mode=QosProfileMode.once_hold_last,
             steps=[QosProfileStep(duration_sec=1, quality=80)],
         )
         pm.start_profile("wlan0", profile, qos)
@@ -360,7 +360,7 @@ class TestQosProfileManager:
         profile = QosProfile(
             id="test",
             description="test",
-            mode=QosProfileMode.hold,
+            mode=QosProfileMode.once_hold_last,
             steps=[QosProfileStep(duration_sec=1, quality=80, dl_speed_kbit=5000)],
         )
         pm.start_profile("wlan0", profile, qos)
@@ -441,14 +441,14 @@ class TestQosProfileManager:
         profile = QosProfile(
             id="test",
             description="test",
-            mode=QosProfileMode.hold,
+            mode=QosProfileMode.once_hold_last,
             steps=[
                 QosProfileStep(duration_sec=1, quality=90),
                 QosProfileStep(duration_sec=1, quality=50),
             ],
         )
         pm.start_profile("wlan0", profile, qos)
-        # Wait for both steps to execute and then hold
+        # Wait for both steps to execute and then once-hold-last
         time.sleep(2.5)
         assert pm.is_active("wlan0")
         state = pm.get_state("wlan0")
@@ -460,7 +460,7 @@ class TestQosProfileManager:
             download_speed_kbit=8000,
             download_quality=80,
         )
-        assert profile.mode == QosProfileMode.hold
+        assert profile.mode == QosProfileMode.once_hold_last
         assert len(profile.steps) == 1
         assert profile.steps[0].dl_speed_kbit == 8000
         assert profile.steps[0].quality == 80
@@ -616,7 +616,7 @@ class TestQosProfileAPI:
         data = resp.json()
         assert data["active"] is True
         assert ":generated_static" in data["profile_id"]
-        assert data["mode"] == "hold"
+        assert data["mode"] == "once-hold-last"
 
         client.delete(
             f"/api/v1/interface/{reservation_id}/qos/profile",
