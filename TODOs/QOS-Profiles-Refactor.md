@@ -1,7 +1,7 @@
 # Feature: QoS Profiles (Unified Architecture)
 
 **Priority:** 3 (MEDIUM)
-**Status:** PROPOSED
+**Status:** IMPLEMENTED
 **Estimated Effort:** ~8 hours
 **Note:** Replaces the current static QoS system with a unified profile-based architecture
 
@@ -134,6 +134,7 @@ Only one format is allowed per request: either `profile_id` **or** QoS parameter
   "interface": "wlan0",
   "active": true,
   "profile_id": "4g_urban_moving",
+  "description": "Device on foot in city, occasional signal dips between buildings and crossing streets.",
   "mode": "loop",
   "current_step": {
     "index": 0,
@@ -187,58 +188,58 @@ Starting from the current codebase state where static QoS is already implemented
 
 ### Phase 1 — Data & Catalogue
 
-- [ ] Create directory `wilab/data/qos-profiles/`
-- [ ] Create `wilab/data/qos-profiles/profile.schema.json` — JSON Schema:
+- [x] Create directory `wilab/data/qos-profiles/`
+- [x] Create `wilab/data/qos-profiles/profile.schema.json` — JSON Schema:
   - Root: array of profile objects
   - Required per profile: `id` (string), `description` (string), `mode` (enum: `loop`, `bounce`, `once`, `hold`), `steps` (array, minItems 1)
   - Per step: `duration_sec` (integer, minimum 1) required; at least one of `quality`, `dl_speed_kbit`, `ul_speed_kbit`, `advanced` present; `quality` and `advanced` mutually exclusive via `not`
   - `quality`: integer, minimum 0, maximum 100
   - `dl_speed_kbit` / `ul_speed_kbit`: integer, minimum 1, maximum 1000000
   - `advanced`: object with optional fields `delay_ms` (int, 0–5000), `jitter_ms` (int, 0–1000), `packet_loss_percent` (number, 0–100), `corruption_percent` (number, 0–5), `delay_distribution` (enum: `normal`, `pareto`, `paretonormal`)
-- [ ] Create `wilab/data/qos-profiles/default.json` with the 10 default profiles listed above
+- [x] Create `wilab/data/qos-profiles/default.json` with the 10 default profiles listed above
 
 ### Phase 2 — Pydantic Models
 
 In `wilab/models.py`:
 
-- [ ] Add `QosProfileMode` — string enum: `loop`, `bounce`, `once`, `hold`
-- [ ] Add `QosProfileStep` model:
+- [x] Add `QosProfileMode` — string enum: `loop`, `bounce`, `once`, `hold`
+- [x] Add `QosProfileStep` model:
   - Fields: `duration_sec: int`, `quality: Optional[int]`, `dl_speed_kbit: Optional[int]`, `ul_speed_kbit: Optional[int]`, `advanced: Optional[QosQualityAdvanced]`
   - Validator: `quality` and `advanced` mutually exclusive
   - Validator: at least one of `quality`, `advanced`, `dl_speed_kbit`, `ul_speed_kbit` must be set
   - Validator: `quality` range 0–100
-- [ ] Add `QosProfile` model:
+- [x] Add `QosProfile` model:
   - Fields: `id: str`, `description: str`, `mode: QosProfileMode`, `steps: list[QosProfileStep]`
-- [ ] Add `QosProfileStartRequest` — unified request model:
+- [x] Add `QosProfileStartRequest` — unified request model:
   - `profile_id: Optional[str]` — profile from catalogue
   - `download_speed_kbit: Optional[int]`, `upload_speed_kbit: Optional[int]`, `download_quality: Optional[int]`, `upload_quality: Optional[int]`, `advanced: Optional[QosQualityAdvanced]` — inline QoS parameters
   - Validator (XOR): either `profile_id` is set, **or** at least one QoS parameter is set, but not both
-- [ ] Add `QosProfileStepState` model:
+- [x] Add `QosProfileStepState` model:
   - Fields: `index: int`, `elapsed_sec: int`, `duration_sec: int`
-- [ ] Add `QosProfileState` model:
-  - Fields: `interface: str`, `active: bool`, `profile_id: Optional[str]`, `mode: Optional[QosProfileMode]`, `current_step: Optional[QosProfileStepState]`, `total_elapsed_sec: Optional[int]`
+- [x] Add `QosProfileState` model:
+  - Fields: `interface: str`, `active: bool`, `profile_id: Optional[str]`, `description: Optional[str]`, `mode: Optional[QosProfileMode]`, `current_step: Optional[QosProfileStepState]`, `total_elapsed_sec: Optional[int]`
 
 ### Phase 3 — QosProfileManager
 
 New file `wilab/network/qos_profile.py`:
 
-- [ ] Define `_ActiveProfile` dataclass:
+- [x] Define `_ActiveProfile` dataclass:
   - `profile_id: str`, `mode: QosProfileMode`, `steps: list[QosProfileStep]`, `step_index: int`, `direction: int` (+1/-1 for bounce), `step_started_at: float`, `started_at: float`, `stop_event: threading.Event`, `thread: threading.Thread`
-- [ ] Implement `QosProfileManager.__init__(catalogue_dir: str)`:
+- [x] Implement `QosProfileManager.__init__(catalogue_dir: str)`:
   - Load `profile.schema.json` from the catalogue directory
   - Glob all `*.json` files excluding the schema
   - Load `default.json` first, then remaining files in alphabetical order
   - Validate each file against the JSON Schema (skip + warn on failure)
   - Merge profiles into `dict[str, QosProfile]`; skip + warn on duplicate `id`
-- [ ] Implement `list_profiles() -> list[QosProfile]`
-- [ ] Implement `get_profile(profile_id: str) -> Optional[QosProfile]`
-- [ ] Implement `is_active(interface: str) -> bool`
-- [ ] Implement `get_state(interface: str) -> Optional[_ActiveProfile]`
-- [ ] Implement `start_profile(interface: str, profile: QosProfile, qos_manager: QosManager) -> None`:
+- [x] Implement `list_profiles() -> list[QosProfile]`
+- [x] Implement `get_profile(profile_id: str) -> Optional[QosProfile]`
+- [x] Implement `is_active(interface: str) -> bool`
+- [x] Implement `get_state(interface: str) -> Optional[_ActiveProfile]`
+- [x] Implement `start_profile(interface: str, profile: QosProfile, qos_manager: QosManager) -> None`:
   - Create `_ActiveProfile`, start daemon thread running `_run_profile`
-- [ ] Implement `stop_profile(interface: str, qos_manager: QosManager) -> None`:
+- [x] Implement `stop_profile(interface: str, qos_manager: QosManager) -> None`:
   - Set stop event, join thread, call `qos_manager.clear_qos(interface)`, remove from active dict
-- [ ] Implement `_run_profile(interface, active, qos_manager)` thread target:
+- [x] Implement `_run_profile(interface, active, qos_manager)` thread target:
   - At each step: call `qos_manager.apply_qos()` with all 6 fields explicitly (pass `None` for unset fields to enforce step isolation)
   - Wait via `stop_event.wait(step.duration_sec)` for interruptibility
   - If stop event fires: exit immediately
@@ -252,37 +253,37 @@ New file `wilab/network/qos_profile.py`:
 
 In `wilab/api/dependencies.py`:
 
-- [ ] Add `_qos_profile_manager: QosProfileManager | None = None`
-- [ ] Add `get_qos_profile_manager() -> QosProfileManager` — singleton, resolves catalogue dir as `Path(__file__).resolve().parent.parent / "data" / "qos-profiles"`
+- [x] Add `_qos_profile_manager: QosProfileManager | None = None`
+- [x] Add `get_qos_profile_manager() -> QosProfileManager` — singleton, resolves catalogue dir as `Path(__file__).resolve().parent.parent / "data" / "qos-profiles"`
 
 ### Phase 5 — API Routes
 
 New file `wilab/api/routes/qos_profile.py`:
 
-- [ ] Implement `catalogue_router` (prefix `/qos`, tag `QoS Profiles`):
+- [x] Implement `catalogue_router` (prefix `/qos`, tag `QoS Profiles`):
   - `GET /profiles` — list all profiles, no auth
   - `GET /profiles/{profile_id}` — profile detail or 404, no auth
-- [ ] Implement `reservation_router` (prefix `/interface`, tag `QoS Profiles`):
+- [x] Implement `reservation_router` (prefix `/interface`, tag `QoS Profiles`):
   - `POST /{reservation_id}/qos/profile` — validate request (XOR), resolve profile or generate inline, check no active profile (409), start profile, return `QosProfileState`
   - `GET /{reservation_id}/qos/profile` — return current state (active or inactive)
   - `DELETE /{reservation_id}/qos/profile` — stop profile if active (no-op otherwise), return 204
 
 In `wilab/api/routes/__init__.py`:
 
-- [ ] Remove import and registration of old `qos_router` from `qos.py`
-- [ ] Import `catalogue_router` and `reservation_router` from `qos_profile`
-- [ ] Register both on the main `/api/v1` router
+- [x] Remove import and registration of old `qos_router` from `qos.py`
+- [x] Import `catalogue_router` and `reservation_router` from `qos_profile`
+- [x] Register both on the main `/api/v1` router
 
 Cleanup:
 
-- [ ] Delete `wilab/api/routes/qos.py` (old static QoS endpoints — fully replaced)
-- [ ] Delete `tests/test_qos.py` API tests that reference the old `/qos` endpoints (keep `QosManager` unit tests — the tc driver is unchanged)
+- [x] Delete `wilab/api/routes/qos.py` (old static QoS endpoints — fully replaced)
+- [x] Delete `tests/test_qos.py` API tests that reference the old `/qos` endpoints (keep `QosManager` unit tests — the tc driver is unchanged)
 
 ### Phase 6 — Tests
 
 New file `tests/test_qos_profile.py`:
 
-- [ ] **TestQosProfileModels**
+- [x] **TestQosProfileModels**
   - `QosProfileStep` rejects both `quality` and `advanced` set simultaneously
   - `QosProfileStep` rejects step with no quality/advanced/speed fields
   - `QosProfileStep` accepts quality-only, advanced-only, speed-only, mixed speed+quality
@@ -292,13 +293,13 @@ New file `tests/test_qos_profile.py`:
   - `QosProfileStartRequest` accepts QoS parameters alone
   - `QosProfileStartRequest` rejects both `profile_id` and QoS parameters
   - `QosProfileStartRequest` rejects empty body (neither set)
-- [ ] **TestQosProfileCatalogue**
+- [x] **TestQosProfileCatalogue**
   - Load single valid JSON from temp directory
   - `default.json` loaded before other files (priority)
   - Duplicate `id` across files: second skipped, warning logged
   - Invalid JSON: skipped with warning
   - JSON Schema validation failure: skipped with warning
-- [ ] **TestQosProfileManager**
+- [x] **TestQosProfileManager**
   - `list_profiles()` returns all loaded profiles
   - `get_profile("existing")` returns correct profile
   - `get_profile("nonexistent")` returns `None`
@@ -311,7 +312,7 @@ New file `tests/test_qos_profile.py`:
   - `bounce` mode: sequence 0→1→2→1→0→1→2 (boundaries not duplicated)
   - `once` mode: `clear_qos` called after last step, profile inactive
   - `hold` mode: thread waits on stop_event after last step
-- [ ] **TestQosProfileAPI**
+- [x] **TestQosProfileAPI**
   - `GET /api/v1/qos/profiles` → 200, list of profiles
   - `GET /api/v1/qos/profiles/{id}` → 200, correct profile
   - `GET /api/v1/qos/profiles/nonexistent` → 404

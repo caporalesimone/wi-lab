@@ -6,10 +6,32 @@ All notable changes to Wi-Lab are documented in this file.
 
 ## [3.0.0] - 2026-04-18
 
+### ⚠️ Breaking Changes
+
+- **Removed static QoS endpoints** — `POST/GET/DELETE /api/v1/interface/{rid}/qos` have been removed. All QoS is now managed through the unified profile system (see below).
+
 ### ✨ Features
 
-- **QoS bandwidth throttling** – New `POST/GET/DELETE /api/v1/interface/{reservation_id}/qos` endpoints for per-reservation download/upload speed limiting via Linux `tc` HTB + IFB. Supports partial updates (omit = keep, `null` = reset, value = apply).
-- **QoS link quality degradation** – Simulated link impairment via `netem` (packet loss, latency, jitter, corruption). Controllable through a 0–100% quality score (formula-mapped) or advanced per-parameter overrides (`QosQualityAdvanced`). Both download and upload directions independently configurable.
+- **Unified QoS Profile system** — Replaces static QoS with a profile-based architecture. A profile is an ordered sequence of steps, each with a duration and network parameters (speed limits, quality score, or advanced netem overrides). Supports both dynamic scenarios (time-varying conditions like cell handovers, tunnels, congested cells) and static configurations (single-step hold).
+- **Profile catalogue** — 10 built-in profiles shipped in `wilab/data/qos-profiles/default.json`: 4G urban/highway/rural/tunnel/stadium, 4G-to-3G fallback, WiFi interference, satellite link, and progressive degradation. Users can add custom profiles by placing `*.json` files in the catalogue directory.
+- **4 playback modes** — `loop` (repeat indefinitely), `bounce` (ping-pong), `once` (single pass then clear), `hold` (hold last step indefinitely).
+- **Inline QoS as auto-generated profiles** — `POST /qos/profile` with direct QoS parameters (speed, quality, advanced) auto-creates a `hold` profile with a single step, equivalent to the old static QoS.
+- **Profile catalogue API** — `GET /api/v1/qos/profiles` (list) and `GET /api/v1/qos/profiles/{id}` (detail), no auth required.
+- **Per-reservation profile API** — `POST /api/v1/interface/{rid}/qos/profile` (start), `GET` (state), `DELETE` (stop with 204).
+- **Step isolation** — Each step is fully self-contained; parameters not specified in a step revert to baseline (no carry-over between steps).
+- **JSON Schema validation** — Profile catalogue files are validated against `profile.schema.json` at startup. Invalid files are skipped with a warning.
+- **Quality score** — 0–100 mapped to netem impairments (packet loss, delay, jitter, corruption) via quadratic/cubic curves. Applied symmetrically to download and upload.
+- **Advanced netem override** — Per-step `advanced` object for precise control over impairment parameters (mutually exclusive with quality score).
+
+### 🔧 Maintenance
+
+- Added `jsonschema>=4.19.0` to `requirements.txt` and `types-jsonschema` to `requirements-dev.txt`.
+- `QosManager` (tc driver) is preserved unchanged as the kernel-level backend.
+
+### ✅ Tests
+
+- 59 new tests in `tests/test_qos_profile.py` covering models, catalogue loading, profile manager (all 4 playback modes, step isolation, inline profiles), and API endpoints (catalogue browsing, start/stop/state, error cases 401/404/409/422).
+- 54 existing `QosManager` unit tests preserved in `tests/test_qos.py`.
 
 ---
 

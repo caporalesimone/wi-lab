@@ -1,84 +1,119 @@
-# QoS (Quality of Service)
+# QoS Profiles
 
-QoS lets you control **bandwidth** and **link quality** on a per-reservation basis. Download and upload are configured independently. Settings persist until you clear them or stop the network.
+QoS lets you simulate real-world network conditions on a per-reservation basis. You can apply a **profile** from the built-in catalogue or provide **inline QoS parameters** that are applied as a static configuration.
 
-> **Prerequisite:** the network must be **active** on the reservation before applying QoS.
+> **Prerequisite:** the network must be **active** on the reservation before applying a QoS profile.
+
+---
+
+## How It Works
+
+A **profile** is an ordered sequence of steps. Each step defines a duration and network parameters (speed limits, link quality, or advanced netem settings). The system executes steps in sequence according to the profile's **playback mode**.
+
+**Static QoS** (fixed speed/quality) is a profile too — it's automatically created as a single-step `hold` profile behind the scenes.
 
 ---
 
 ## Endpoints
 
-| Method   | Path                                      | Description                  |
-|----------|-------------------------------------------|------------------------------|
-| `POST`   | `/api/v1/interface/{reservation_id}/qos`  | Apply or update QoS settings |
-| `GET`    | `/api/v1/interface/{reservation_id}/qos`  | Get current QoS status       |
-| `DELETE` | `/api/v1/interface/{reservation_id}/qos`  | Remove all QoS rules         |
+### Catalogue (no auth required)
 
-All endpoints require `Authorization: Bearer <token>`.
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/qos/profiles` | List all available profiles |
+| `GET` | `/api/v1/qos/profiles/{profile_id}` | Get full profile detail with all steps |
 
----
+### Per-Reservation (requires `Authorization: Bearer <token>`)
 
-## Update Semantics
-
-Every `POST` is a **partial update**. Each field can be in one of three states:
-
-| Field state              | Behaviour                                     |
-|--------------------------|-----------------------------------------------|
-| **Omitted** from body    | Keep the current value (no change)             |
-| **Set to a value**       | Apply/update to that value                     |
-| **Set to `null`**        | Reset that specific setting to inactive        |
-
-`DELETE /qos` removes **everything** (speed + quality) at once.
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/interface/{reservation_id}/qos/profile` | Start a profile |
+| `GET` | `/api/v1/interface/{reservation_id}/qos/profile` | Get active profile state |
+| `DELETE` | `/api/v1/interface/{reservation_id}/qos/profile` | Stop profile and clear QoS |
 
 ---
 
-## Parameters
+## Profile Catalogue
 
-### Speed (bandwidth throttling)
+wi-lab ships with 10 built-in profiles simulating common scenarios:
 
-| Field                | Type           | Range           | Description                            |
-|----------------------|----------------|-----------------|----------------------------------------|
-| `download_speed_kbit`| `integer\|null`| 1 – 1 000 000   | Download cap in kbit/s (`null` = unlimited) |
-| `upload_speed_kbit`  | `integer\|null`| 1 – 1 000 000   | Upload cap in kbit/s (`null` = unlimited)   |
+| Profile ID | Mode | Steps | Scenario |
+|---|---|---|---|
+| `4g_urban_stationary` | loop | 4 | Stable urban, minor signal fluctuations |
+| `4g_urban_moving` | loop | 7 | On foot in city, signal dips between buildings |
+| `4g_highway` | loop | 7 | Vehicle at highway speed, frequent cell handovers |
+| `4g_train_tunnel` | once | 7 | Train entering/exiting a tunnel |
+| `4g_rural` | loop | 6 | Rural area, low signal, occasional drops |
+| `4g_congested_stadium` | loop | 6 | Many users sharing same cell |
+| `4g_to_3g_fallback` | once | 6 | 4G loss → 3G fallback with speed caps → recovery |
+| `wifi_interference` | loop | 6 | Periodic interference from nearby networks |
+| `satellite_link` | loop | 2 | Geostationary satellite: high latency, stable bandwidth |
+| `progressive_degradation` | once | 8 | Progressive signal loss for stress testing |
 
-### Quality (link impairment simulation)
+### Browse the catalogue
 
-| Field                       | Type           | Range  | Description                                     |
-|-----------------------------|----------------|--------|-------------------------------------------------|
-| `download_quality`          | `integer\|null`| 0 – 100 | Download link quality score (`null` = disabled) |
-| `upload_quality`            | `integer\|null`| 0 – 100 | Upload link quality score (`null` = disabled)   |
-| `download_quality_advanced` | `object\|null` | —      | Advanced override for download netem params      |
-| `upload_quality_advanced`   | `object\|null` | —      | Advanced override for upload netem params        |
+```bash
+curl "$BASE/qos/profiles"
+```
 
-**100 = perfect link, 0 = severely degraded.**
+```bash
+curl "$BASE/qos/profiles/4g_urban_moving"
+```
 
-The quality score is mapped to network impairments using a formula that keeps **80-100% nearly imperceptible** and makes degradation harsh below 30%:
+---
 
-| Quality | Packet Loss | Delay     | Jitter   | Corruption | Perceived          |
-|---------|-------------|-----------|----------|------------|--------------------|
-| 100     | 0%          | 0 ms      | 0 ms     | 0%         | Perfect            |
-| 90      | 0.3%        | 10 ms     | 3 ms     | ~0%        | Near-perfect       |
-| 75      | 1.9%        | 62 ms     | 19 ms    | 0.002%     | Slightly degraded  |
-| 50      | 7.5%        | 250 ms    | 75 ms    | 0.125%     | Noticeable         |
-| 25      | 16.9%       | 562 ms    | 169 ms   | 0.42%      | Poor               |
-| 0       | 30%         | 1000 ms   | 300 ms   | 1%         | Nearly unusable    |
+## Playback Modes
+
+| Mode | Behaviour |
+|------|-----------|
+| `loop` | Repeats indefinitely: restarts from step 0 after the last step |
+| `bounce` | Ping-pong: reverses direction at boundaries (no step duplication) |
+| `once` | Single pass: QoS is cleared after the last step completes |
+| `hold` | Single pass: holds the last step indefinitely until stopped |
+
+---
+
+## Step Parameters
+
+Each step in a profile defines:
+
+| Field | Required | Description |
+|---|---|---|
+| `duration_sec` | Yes | Duration in seconds |
+| `quality` | No | Link quality 0–100 (applied symmetrically to download and upload) |
+| `dl_speed_kbit` | No | Download speed cap in kbit/s |
+| `ul_speed_kbit` | No | Upload speed cap in kbit/s |
+| `advanced` | No | Advanced netem override (mutually exclusive with `quality`) |
+
+**Constraints:**
+- `quality` and `advanced` cannot both be set in the same step
+- At least one of `quality`, `advanced`, `dl_speed_kbit`, `ul_speed_kbit` must be present
+- Each step is **self-contained**: parameters not set in a step revert to baseline (no carry-over)
+
+### Quality Score Mapping
+
+The quality score (0–100) is mapped to network impairments:
+
+| Quality | Packet Loss | Delay | Jitter | Corruption | Perceived |
+|---------|-------------|-------|--------|------------|-----------|
+| 100 | 0% | 0 ms | 0 ms | 0% | Perfect |
+| 90 | 0.3% | 10 ms | 3 ms | ~0% | Near-perfect |
+| 75 | 1.9% | 62 ms | 19 ms | 0.002% | Slightly degraded |
+| 50 | 7.5% | 250 ms | 75 ms | 0.125% | Noticeable |
+| 25 | 16.9% | 562 ms | 169 ms | 0.42% | Poor |
+| 0 | 30% | 1000 ms | 300 ms | 1% | Nearly unusable |
 
 ### Advanced Override
 
-If you need precise control over individual impairment parameters instead of the formula, use the `*_quality_advanced` fields. When provided, the advanced object **replaces** the formula entirely.
+For precise control over impairment parameters:
 
-| Field                 | Type    | Range       | Default  |
-|-----------------------|---------|-------------|----------|
-| `packet_loss_percent` | `float` | 0 – 100     | 0        |
-| `delay_ms`            | `int`   | 0 – 5000    | 0        |
-| `jitter_ms`           | `int`   | 0 – 1000    | 0        |
-| `corruption_percent`  | `float` | 0 – 5       | 0        |
-| `delay_distribution`  | `string`| `normal`, `pareto`, `paretonormal` | `normal` |
-
-Delay distribution profiles:
-- **normal** — Gaussian; typical for stable wired or good WiFi paths.
-- **pareto** — Heavy-tail; models bursty wireless conditions.
-- **paretonormal** — Mixed; often more realistic for real WiFi links.
+| Field | Type | Range | Default |
+|-------|------|-------|---------|
+| `packet_loss_percent` | float | 0–100 | 0 |
+| `delay_ms` | int | 0–5000 | 0 |
+| `jitter_ms` | int | 0–1000 | 0 |
+| `corruption_percent` | float | 0–5 | 0 |
+| `delay_distribution` | string | `normal`, `pareto`, `paretonormal` | `normal` |
 
 ---
 
@@ -92,42 +127,13 @@ TOKEN=<your_auth_token>
 RES=<reservation_id>
 ```
 
-### 1. Limit download to 8 Mbit/s, upload to 3 Mbit/s
+### 1. Start a profile from the catalogue
 
 ```bash
-curl -X POST "$BASE/interface/$RES/qos" \
+curl -X POST "$BASE/interface/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "download_speed_kbit": 8000,
-    "upload_speed_kbit": 3000
-  }'
-```
-
-### 2. Set link quality to 80% download, 65% upload
-
-```bash
-curl -X POST "$BASE/interface/$RES/qos" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "download_quality": 80,
-    "upload_quality": 65
-  }'
-```
-
-### 3. Speed + quality combined
-
-```bash
-curl -X POST "$BASE/interface/$RES/qos" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "download_speed_kbit": 8000,
-    "upload_speed_kbit": 3000,
-    "download_quality": 80,
-    "upload_quality": 65
-  }'
+  -d '{"profile_id": "4g_urban_moving"}'
 ```
 
 Response:
@@ -136,113 +142,136 @@ Response:
 {
   "interface": "wlan0",
   "active": true,
-  "download_speed_kbit": 8000,
-  "upload_speed_kbit": 3000,
-  "download_quality": 80,
-  "upload_quality": 65,
-  "download_netem_params": {
-    "packet_loss_percent": 1.2,
-    "delay_ms": 40,
-    "jitter_ms": 12,
-    "corruption_percent": 0.008,
-    "delay_distribution": "normal"
+  "profile_id": "4g_urban_moving",
+  "description": "Device on foot in city, occasional signal dips between buildings and crossing streets.",
+  "mode": "loop",
+  "current_step": {
+    "index": 0,
+    "elapsed_sec": 0,
+    "duration_sec": 15
   },
-  "upload_netem_params": {
-    "packet_loss_percent": 3.68,
-    "delay_ms": 122,
-    "jitter_ms": 37,
-    "corruption_percent": 0.043,
-    "delay_distribution": "normal"
-  }
+  "total_elapsed_sec": 0
 }
 ```
 
-### 4. Advanced override (precise netem values)
-
-Use this when you need exact impairment parameters instead of the formula mapping:
+### 2. Apply static QoS (inline parameters)
 
 ```bash
-curl -X POST "$BASE/interface/$RES/qos" \
+curl -X POST "$BASE/interface/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "download_speed_kbit": 12000,
-    "download_quality": 90,
-    "upload_quality_advanced": {
-      "packet_loss_percent": 5.5,
-      "delay_ms": 140,
-      "jitter_ms": 25,
-      "corruption_percent": 0.2,
-      "delay_distribution": "paretonormal"
+    "download_speed_kbit": 8000,
+    "upload_speed_kbit": 3000,
+    "download_quality": 80
+  }'
+```
+
+This creates an auto-generated `hold` profile with a single step. The configuration is applied and held indefinitely until you stop it.
+
+### 3. Apply inline QoS with advanced override
+
+```bash
+curl -X POST "$BASE/interface/$RES/qos/profile" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "download_speed_kbit": 15000,
+    "upload_speed_kbit": 3000,
+    "advanced": {
+      "delay_ms": 600,
+      "jitter_ms": 30,
+      "packet_loss_percent": 0.5,
+      "delay_distribution": "normal"
     }
   }'
 ```
 
-In this example download uses the formula (`quality=90`), while upload uses the exact values you specified.
-
-### 5. Update only one setting (partial update)
-
-Change download speed without touching anything else:
+### 4. Check active profile state
 
 ```bash
-curl -X POST "$BASE/interface/$RES/qos" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"download_speed_kbit": 15000}'
-```
-
-### 6. Reset a single setting to unlimited/inactive
-
-Reset download speed to unlimited (upload, quality, etc. stay as-is):
-
-```bash
-curl -X POST "$BASE/interface/$RES/qos" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"download_speed_kbit": null}'
-```
-
-Reset upload quality to inactive:
-
-```bash
-curl -X POST "$BASE/interface/$RES/qos" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"upload_quality": null}'
-```
-
-### 7. Get current status
-
-```bash
-curl -X GET "$BASE/interface/$RES/qos" \
+curl "$BASE/interface/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### 8. Clear everything
+Response when active:
+
+```json
+{
+  "interface": "wlan0",
+  "active": true,
+  "profile_id": "4g_highway",
+  "description": "Device in a vehicle at highway speed, frequent cell handovers causing brief signal drops.",
+  "mode": "loop",
+  "current_step": {
+    "index": 3,
+    "elapsed_sec": 1,
+    "duration_sec": 2
+  },
+  "total_elapsed_sec": 19
+}
+```
+
+Response when inactive:
+
+```json
+{
+  "interface": "wlan0",
+  "active": false,
+  "profile_id": null,
+  "description": null,
+  "mode": null,
+  "current_step": null,
+  "total_elapsed_sec": null
+}
+```
+
+### 5. Stop the active profile
 
 ```bash
-curl -X DELETE "$BASE/interface/$RES/qos" \
+curl -X DELETE "$BASE/interface/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN"
+```
+
+Returns `204 No Content`. All QoS rules are cleared from the interface.
+
+### 6. Switch profiles
+
+You must stop the current profile before starting a new one:
+
+```bash
+# Stop current
+curl -X DELETE "$BASE/interface/$RES/qos/profile" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Start new
+curl -X POST "$BASE/interface/$RES/qos/profile" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"profile_id": "satellite_link"}'
 ```
 
 ---
 
 ## Error Responses
 
-| Status | Cause                              | Example detail                                                    |
-|--------|------------------------------------|-------------------------------------------------------------------|
-| 401    | Missing or invalid token           | `"Not authenticated"`                                             |
-| 404    | Reservation not found / expired    | `"Reservation not found"`                                         |
-| 409    | Network not active                 | `"Cannot apply QoS: network is not active for this reservation"`  |
-| 422    | Invalid parameter value            | `"download_speed_kbit must be between 1 and 1000000"`             |
-| 422    | Empty body                         | `"At least one QoS field must be provided"`                       |
+| Status | Cause | Example detail |
+|--------|-------|----------------|
+| 401 | Missing or invalid token | `"Not authenticated"` |
+| 404 | Reservation not found / expired | `"Reservation not found"` |
+| 404 | Profile ID not in catalogue | `"Profile 'xyz' not found in catalogue"` |
+| 409 | Network not active | `"Cannot apply QoS: network is not active for this reservation"` |
+| 409 | Profile already active | `"A profile is already active on this interface. Stop it first."` |
+| 422 | Both profile_id and inline params | `"Cannot specify both 'profile_id' and inline QoS parameters"` |
+| 422 | Empty request body | `"Must specify either 'profile_id' or at least one QoS parameter"` |
 
 ---
 
 ## Notes
 
-- **QoS is cleared automatically** when the network is stopped (`DELETE /network`).
-- **QoS does not survive a network restart.** After stopping and starting the network you must re-apply settings.
-- **Quality is interface-wide**, not per-client. All connected clients on the same AP share the impairment.
-- Speed and quality are **independent**: you can use speed-only, quality-only, or both at the same time.
-- The `download_netem_params` / `upload_netem_params` fields in the response show the **resolved** impairment values (from the formula or from the advanced override). They are read-only.
+- **One profile at a time:** A reservation can have at most one active profile. Stop it before starting another.
+- **QoS is cleared automatically** when the network is stopped.
+- **Profiles do not survive a network restart.** Re-apply after stopping and starting the network.
+- **Quality is interface-wide**, not per-client. All connected clients share the simulated conditions.
+- **Step timing is approximate.** Transitions are not real-time precise; expect tens of milliseconds variance.
+- **Custom profiles:** Place additional `*.json` files in `wilab/data/qos-profiles/`. They are loaded alphabetically after `default.json`. Duplicate IDs are skipped.
