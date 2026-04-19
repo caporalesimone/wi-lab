@@ -95,6 +95,7 @@ def _build_profile_state(interface: str, pm: QosProfileManager) -> QosProfileSta
         profile_id=ap.profile_id,
         description=ap.description,
         mode=ap.mode,
+        steps=len(ap.steps),
         current_step=QosProfileStepState(
             index=ap.step_index,
             elapsed_sec=elapsed_step,

@@ -175,6 +175,7 @@ Response:
   "profile_id": "4g_urban_moving",
   "description": "Device on foot in city, occasional signal dips between buildings and crossing streets.",
   "mode": "loop",
+  "steps": 7,
   "current_step": {
     "index": 0,
     "elapsed_sec": 0,
@@ -233,6 +234,7 @@ Response when active:
   "profile_id": "4g_highway",
   "description": "Device in a vehicle at highway speed, frequent cell handovers causing brief signal drops.",
   "mode": "loop",
+  "steps": 7,
   "current_step": {
     "index": 3,
     "elapsed_sec": 1,
@@ -251,6 +253,7 @@ Response when inactive:
   "profile_id": null,
   "description": null,
   "mode": null,
+  "steps": null,
   "current_step": null,
   "total_elapsed_sec": null
 }

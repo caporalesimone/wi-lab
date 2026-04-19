@@ -330,5 +330,6 @@ class QosProfileState(BaseModel):
     profile_id: Optional[str] = Field(None, description="Active profile ID")
     description: Optional[str] = Field(None, description="Active profile description")
     mode: Optional[QosProfileMode] = Field(None, description="Playback mode")
+    steps: Optional[int] = Field(None, description="Total number of steps in the profile")
     current_step: Optional[QosProfileStepState] = Field(None, description="Current step info")
     total_elapsed_sec: Optional[int] = Field(None, description="Total seconds since profile started")

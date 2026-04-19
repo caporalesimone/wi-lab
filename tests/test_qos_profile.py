@@ -141,11 +141,13 @@ class TestQosProfileModels:
             profile_id="test",
             description="Test",
             mode=QosProfileMode.loop,
+            steps=3,
             current_step=QosProfileStepState(index=0, elapsed_sec=5, duration_sec=10),
             total_elapsed_sec=5,
         )
         assert st.active
         assert st.description == "Test"
+        assert st.steps == 3
 
     def test_step_state(self):
         ss = QosProfileStepState(index=2, elapsed_sec=5, duration_sec=30)
@@ -597,6 +599,7 @@ class TestQosProfileAPI:
         assert data["profile_id"] == "4g_urban_stationary"
         assert data["description"] != ""
         assert data["mode"] == "loop"
+        assert data["steps"] == 4
         assert data["current_step"] is not None
         assert data["total_elapsed_sec"] is not None
 
@@ -617,6 +620,7 @@ class TestQosProfileAPI:
         assert data["active"] is True
         assert ":generated_static" in data["profile_id"]
         assert data["mode"] == "once-hold-last"
+        assert data["steps"] == 1
 
         client.delete(
             f"/api/v1/interface/{reservation_id}/qos/profile",
@@ -694,6 +698,7 @@ class TestQosProfileAPI:
         data = resp.json()
         assert data["active"] is False
         assert data["profile_id"] is None
+        assert data["steps"] is None
 
     def test_delete_profile(self, client, auth_headers, reservation_id):
         client.post(

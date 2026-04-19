@@ -127,6 +127,7 @@ Only one format is allowed per request: either `profile_id` **or** QoS parameter
   "profile_id": "4g_urban_moving",
   "description": "Device on foot in city, occasional signal dips between buildings and crossing streets.",
   "mode": "loop",
+  "steps": 7,
   "current_step": {
     "index": 0,
     "elapsed_sec": 2,
