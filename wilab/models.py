@@ -330,6 +330,7 @@ class QosProfileState(BaseModel):
     active: bool = Field(description="True if a profile is currently running")
     profile_id: Optional[str] = Field(None, description="Active profile ID")
     description: Optional[str] = Field(None, description="Active profile description")
+    source_file: Optional[str] = Field(None, description="JSON file this profile was loaded from")
     mode: Optional[QosProfileMode] = Field(None, description="Playback mode")
     steps: Optional[int] = Field(None, description="Total number of steps in the profile")
     current_step: Optional[QosProfileStepState] = Field(None, description="Current step info")

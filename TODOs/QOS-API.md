@@ -125,6 +125,7 @@ Only one format is allowed per request: either `profile_id` **or** QoS parameter
   "active": true,
   "profile_id": "4g_urban_moving",
   "description": "Device on foot in city, occasional signal dips between buildings and crossing streets.",
+  "source_file": "default.json",
   "mode": "loop",
   "steps": 7,
   "current_step": {

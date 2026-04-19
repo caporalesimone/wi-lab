@@ -171,6 +171,7 @@ Response:
   "active": true,
   "profile_id": "4g_urban_moving",
   "description": "Device on foot in city, occasional signal dips between buildings and crossing streets.",
+  "source_file": "default.json",
   "mode": "loop",
   "steps": 7,
   "current_step": {
@@ -230,6 +231,7 @@ Response when active:
   "active": true,
   "profile_id": "4g_highway",
   "description": "Device in a vehicle at highway speed, frequent cell handovers causing brief signal drops.",
+  "source_file": "default.json",
   "mode": "loop",
   "steps": 7,
   "current_step": {
@@ -249,6 +251,7 @@ Response when inactive:
   "active": false,
   "profile_id": null,
   "description": null,
+  "source_file": null,
   "mode": null,
   "steps": null,
   "current_step": null,

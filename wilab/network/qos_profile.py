@@ -30,6 +30,7 @@ class _ActiveProfile:
 
     profile_id: str
     description: str
+    source_file: str
     mode: QosProfileMode
     steps: list  # list[QosProfileStep] — kept as list for dataclass compat
     step_index: int = 0
@@ -161,6 +162,7 @@ class QosProfileManager:
             ap = _ActiveProfile(
                 profile_id=profile.id,
                 description=profile.description,
+                source_file=profile.source_file,
                 mode=profile.mode,
                 steps=list(profile.steps),
                 step_index=0,
