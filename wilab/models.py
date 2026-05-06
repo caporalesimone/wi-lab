@@ -1,5 +1,6 @@
 from typing import Optional, List
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from enum import Enum
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 from .wifi.channels import is_valid_channel_for_band
 
@@ -113,3 +114,224 @@ class TxPowerInfo(BaseModel):
     max_dbm: float
     levels_dbm: dict
     tx_power: NetworkTxPower
+
+
+# --- QoS Models ---
+
+_QOS_SPEED_MIN = 1
+_QOS_SPEED_MAX = 1_000_000
+_QOS_QUALITY_MIN = 0
+_QOS_QUALITY_MAX = 100
+
+
+class DelayDistribution(str, Enum):
+    """Supported netem delay distribution profiles."""
+    normal = "normal"
+    pareto = "pareto"
+    paretonormal = "paretonormal"
+
+
+class QosQualityAdvanced(BaseModel):
+    """Advanced netem parameters for fine-grained link quality control.
+
+    When provided, these values override the formula-derived parameters
+    from the simple quality score.
+    """
+
+    packet_loss_percent: Optional[float] = Field(
+        None, ge=0, le=100, description="Packet loss percentage (0-100)"
+    )
+    delay_ms: Optional[int] = Field(
+        None, ge=0, le=5000, description="Base delay in milliseconds (0-5000)"
+    )
+    jitter_ms: Optional[int] = Field(
+        None, ge=0, le=1000, description="Delay jitter in milliseconds (0-1000)"
+    )
+    corruption_percent: Optional[float] = Field(
+        None, ge=0, le=5, description="Bit corruption percentage (0-5)"
+    )
+    delay_distribution: DelayDistribution = Field(
+        DelayDistribution.normal, description="Delay distribution profile"
+    )
+
+
+class NetemParams(BaseModel):
+    """Resolved netem parameters (returned in QoS status responses)."""
+
+    packet_loss_percent: float = 0
+    delay_ms: int = 0
+    jitter_ms: int = 0
+    corruption_percent: float = 0
+    delay_distribution: str = "normal"
+
+
+class QosRequest(BaseModel):
+    """Request body for POST /interface/{reservation_id}/qos.
+
+    All fields are optional. Omitting a field preserves its current value.
+    Sending ``null`` resets the setting to unlimited / inactive.
+    """
+
+    download_speed_kbit: Optional[int] = Field(
+        None,
+        description="Download speed limit in kbit/s (1-1000000), or null to reset",
+    )
+    upload_speed_kbit: Optional[int] = Field(
+        None,
+        description="Upload speed limit in kbit/s (1-1000000), or null to reset",
+    )
+    download_quality: Optional[int] = Field(
+        None,
+        description="Download link quality 0-100% (100=perfect), or null to reset",
+    )
+    upload_quality: Optional[int] = Field(
+        None,
+        description="Upload link quality 0-100% (100=perfect), or null to reset",
+    )
+    download_quality_advanced: Optional[QosQualityAdvanced] = Field(
+        None,
+        description="Advanced download netem params (overrides quality score)",
+    )
+    upload_quality_advanced: Optional[QosQualityAdvanced] = Field(
+        None,
+        description="Advanced upload netem params (overrides quality score)",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "download_speed_kbit": 8000,
+                    "upload_speed_kbit": 3000,
+                    "download_quality": 80,
+                    "upload_quality": 65,
+                }
+            ]
+        }
+    )
+
+    @field_validator("download_speed_kbit", "upload_speed_kbit", mode="before")
+    @classmethod
+    def _validate_speed_range(cls, v: object) -> object:
+        if v is None:
+            return v
+        if not isinstance(v, int):
+            raise ValueError("must be an integer or null")
+        if v < _QOS_SPEED_MIN or v > _QOS_SPEED_MAX:
+            raise ValueError(f"must be between {_QOS_SPEED_MIN} and {_QOS_SPEED_MAX}")
+        return v
+
+    @field_validator("download_quality", "upload_quality", mode="before")
+    @classmethod
+    def _validate_quality_range(cls, v: object) -> object:
+        if v is None:
+            return v
+        if not isinstance(v, int):
+            raise ValueError("must be an integer or null")
+        if v < _QOS_QUALITY_MIN or v > _QOS_QUALITY_MAX:
+            raise ValueError(f"must be between {_QOS_QUALITY_MIN} and {_QOS_QUALITY_MAX}")
+        return v
+
+
+class QosStatus(BaseModel):
+    """Response model for GET/POST /interface/{reservation_id}/qos."""
+
+    interface: str
+    active: bool = Field(description="True if any QoS rule is active")
+    download_speed_kbit: Optional[int] = Field(None, description="Current download speed limit in kbit/s")
+    upload_speed_kbit: Optional[int] = Field(None, description="Current upload speed limit in kbit/s")
+    download_quality: Optional[int] = Field(None, description="Current download link quality 0-100%")
+    upload_quality: Optional[int] = Field(None, description="Current upload link quality 0-100%")
+    download_netem_params: Optional[NetemParams] = Field(None, description="Resolved download netem parameters")
+    upload_netem_params: Optional[NetemParams] = Field(None, description="Resolved upload netem parameters")
+
+
+# --- QoS Profile Models ---
+
+
+class QosProfileMode(str, Enum):
+    """Playback mode for profile step execution."""
+    loop = "loop"
+    bounce = "bounce"
+    once = "once"
+    once_hold_last = "once-hold-last"
+
+
+class QosProfileStep(BaseModel):
+    """A single step within a QoS profile."""
+
+    duration_sec: int = Field(..., ge=1, description="Duration of this step in seconds")
+    quality: Optional[int] = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Quality score 0-100")
+    dl_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Download speed cap in kbit/s")
+    ul_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Upload speed cap in kbit/s")
+    advanced: Optional[QosQualityAdvanced] = Field(None, description="Advanced netem override (mutually exclusive with quality)")
+
+    @model_validator(mode="after")
+    def _check_step_constraints(self) -> "QosProfileStep":
+        if self.quality is not None and self.advanced is not None:
+            raise ValueError("'quality' and 'advanced' are mutually exclusive within a step")
+        if self.quality is None and self.advanced is None and self.dl_speed_kbit is None and self.ul_speed_kbit is None:
+            raise ValueError("At least one of 'quality', 'advanced', 'dl_speed_kbit', 'ul_speed_kbit' must be set")
+        return self
+
+
+class QosProfile(BaseModel):
+    """A named QoS profile with an ordered list of steps."""
+
+    id: str = Field(..., min_length=1, description="Unique profile identifier")
+    description: str = Field("", description="Human-readable description of the profile scenario")
+    source_file: str = Field("", description="JSON filename this profile was loaded from")
+    mode: QosProfileMode = Field(..., description="Playback mode")
+    steps: List[QosProfileStep] = Field(..., min_length=1, description="Ordered list of steps")
+
+
+class QosProfileStartRequest(BaseModel):
+    """Request body for POST /interface/{reservation_id}/qos/profile.
+
+    Either ``profile_id`` or at least one inline QoS parameter must be set, but not both.
+    """
+
+    profile_id: Optional[str] = Field(None, description="Profile from the catalogue")
+    download_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Download speed cap in kbit/s")
+    upload_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Upload speed cap in kbit/s")
+    download_quality: Optional[int] = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Download quality 0-100")
+    upload_quality: Optional[int] = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Upload quality 0-100")
+    advanced: Optional[QosQualityAdvanced] = Field(None, description="Advanced netem override for both directions")
+
+    @model_validator(mode="after")
+    def _check_xor(self) -> "QosProfileStartRequest":
+        has_profile = self.profile_id is not None
+        has_inline = any([
+            self.download_speed_kbit is not None,
+            self.upload_speed_kbit is not None,
+            self.download_quality is not None,
+            self.upload_quality is not None,
+            self.advanced is not None,
+        ])
+        if has_profile and has_inline:
+            raise ValueError("Cannot specify both 'profile_id' and inline QoS parameters")
+        if not has_profile and not has_inline:
+            raise ValueError("Must specify either 'profile_id' or at least one QoS parameter")
+        return self
+
+
+class QosProfileStepState(BaseModel):
+    """Current step progress within an active profile."""
+
+    index: int = Field(..., description="Current step index (0-based)")
+    elapsed_sec: int = Field(..., description="Seconds elapsed in the current step")
+    duration_sec: int = Field(..., description="Total duration of the current step")
+
+
+class QosProfileState(BaseModel):
+    """Response model for profile status endpoints."""
+
+    interface: str
+    active: bool = Field(description="True if a profile is currently running")
+    profile_id: Optional[str] = Field(None, description="Active profile ID")
+    description: Optional[str] = Field(None, description="Active profile description")
+    source_file: Optional[str] = Field(None, description="JSON file this profile was loaded from")
+    mode: Optional[QosProfileMode] = Field(None, description="Playback mode")
+    steps: Optional[int] = Field(None, description="Total number of steps in the profile")
+    current_step: Optional[QosProfileStepState] = Field(None, description="Current step info")
+    total_elapsed_sec: Optional[int] = Field(None, description="Total seconds since profile started")

@@ -26,6 +26,8 @@ def _test_config_env(monkeypatch):
     monkeypatch.setattr(dependencies, '_manager', None)
     monkeypatch.setattr(dependencies, '_reservation_manager', None)
     monkeypatch.setattr(dependencies, '_channel_manager', None)
+    monkeypatch.setattr(dependencies, '_qos_manager', None)
+    monkeypatch.setattr(dependencies, '_qos_profile_manager', None)
 
 
 @pytest.fixture(autouse=True)
@@ -204,6 +206,7 @@ Band 2:
     # Patch commands
     monkeypatch.setattr(commands, "execute_ip", mock_execute_ip)
     monkeypatch.setattr(commands, "execute_iw", mock_execute_iw)
+    monkeypatch.setattr(commands, "execute_tc", lambda args: "")
     monkeypatch.setattr(commands, "execute_command", mock_execute_command)
 
     # Patch in channels module

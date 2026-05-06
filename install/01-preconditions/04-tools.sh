@@ -17,24 +17,28 @@ source "$SCRIPT_DIR/../common.sh"
 declare -a REQUIRED_CMDS=(
     "python3"
     "ip"
+    "tc"
     "iptables"
     "hostapd"
     "dnsmasq"
     "iw"
     "jq"
     "nmcli"
+    "modprobe"
     "systemctl"
 )
 
 declare -A CMD_TO_PKGS=(
     [python3]="python3 python3-venv python3-pip"
     [ip]="iproute2"
+    [tc]="iproute2"
     [iptables]="iptables"
     [hostapd]="hostapd"
     [dnsmasq]="dnsmasq"
     [iw]="iw"
     [jq]="jq"
     [nmcli]="network-manager"
+    [modprobe]="kmod"
 )
 
 ################################################################################

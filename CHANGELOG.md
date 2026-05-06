@@ -4,6 +4,31 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [3.0.0] - 2026-04-18
+
+### ✨ Features
+
+- **QoS Profiles** — Per-reservation network condition simulation via profiles. A profile is an ordered sequence of timed steps, each defining bandwidth limits, a 0–100 quality score (mapped to packet loss, delay, jitter, corruption via netem), or advanced netem overrides. Supports 4 playback modes: `loop`, `bounce`, `once`, `once-hold-last`.
+- **Built-in profile catalogue** — 10 ready-to-use profiles covering 4G urban/highway/rural/tunnel/stadium, 4G-to-3G fallback, WiFi interference, satellite link, and progressive degradation. Custom profiles can be added as `*.json` files in `wilab/data/qos-profiles/`, validated against a JSON Schema at startup.
+- **Inline static QoS** — Submitting speed/quality parameters directly auto-generates a single-step `once-hold-last` profile, applied indefinitely until stopped.
+- **Profile source tracking** — Each profile includes a `source_file` field showing which JSON file it was loaded from, both in the catalogue and in active profile state responses. Inline generated profiles show `"generated"`.
+- **Profile state includes step count** — The `steps` field in profile state responses shows the total number of steps in the active profile.
+- **New API endpoints:**
+  - `GET /api/v1/qos/profiles` — browse the full catalogue (no auth)
+  - `POST /api/v1/interface/{rid}/qos/profile` — start a profile or inline QoS
+  - `GET /api/v1/interface/{rid}/qos/profile` — active profile state
+  - `DELETE /api/v1/interface/{rid}/qos/profile` — stop and clear (returns 200 with confirmation, 404 if no active profile)
+
+### 🔧 Maintenance
+
+- Added `jsonschema>=4.19.0` to `requirements.txt` and `types-jsonschema` to `requirements-dev.txt`.
+
+### ✅ Tests
+
+- 113 tests covering models, catalogue loading, profile manager (all 4 playback modes, step isolation, inline profiles), API endpoints, and the underlying tc driver (`QosManager`).
+
+---
+
 ## [2.5.1] - 2026-04-18
 
 ### 🔧 Maintenance
