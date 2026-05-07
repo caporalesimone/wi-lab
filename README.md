@@ -174,6 +174,17 @@ See [docs/troubleshooting.md](docs/troubleshooting.md) for common issues (interf
 
 ---
 
+## Tested Hardware
+
+| Commercial Name | Chipset | Driver | Driver Version | Kernel Version | OS | AP Mode |
+|-----------------|---------|--------|----------------|----------------|----|---------|
+| BrosTrend AXE3000 | MediaTek MT7921U | mt7921u | FW ____010000 | 7.0.0-15-generic | Ubuntu 26.04 LTS | ✅ Working |
+| TP-Link Archer T3U Plus | Realtek RTL8822BU | rtw88_8822bu | FW 30.20.0 | 7.0.0-15-generic | Ubuntu 26.04 LTS | ❌ Broken (no beacon TX) |
+
+> **Note:** The Realtek RTL8822BU with the in-kernel `rtw88_8822bu` driver fails to transmit beacons in AP mode (firmware reports `failed to get tx report from firmware`). This is a [known upstream issue](https://github.com/lwfinger/rtw88/issues/241). MediaTek-based adapters are recommended for reliable AP operation.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
