@@ -41,71 +41,15 @@ This is a **silent failure**: the API returns success, the user sees "Network st
 - `wilab/wifi/hostapd.py` — add TX packet verification after process start
 - `wilab/wifi/manager.py` — handle the new failure case in `start_network()`
 
-### 2. Driver Compatibility Warning at Startup
 
-**What:** On service startup, check each configured interface's driver and log a warning if it's known to have AP mode issues.
+IMPORTANT COMMENT:
 
-**How:**
-- Read driver name from `/sys/class/net/{interface}/device/uevent` (DRIVER= field) or via `ethtool -i`
-- Maintain a small list of known-problematic drivers for AP mode:
-  - `rtw88_8822bu`
-  - `rtw88_8821cu`
-  - `rtl8xxxu`
-  - Other Realtek USB drivers with known AP issues
-- On match, log a WARNING: `"Interface {name} uses driver {driver} which has known AP mode limitations. Consider using a MediaTek-based adapter for reliable AP operation."`
+Before starting this development, evaluate the cost of keeping an API waiting more than 5 seconds for a response.
+The impact of switching to a request/job-id/polling pattern is high, as it requires clients to refactor their existing code.
+A lighter alternative could be to check the beacon rate (beacons/sec) over a 5-second window at startup of Wi-Lab, and mark any underperforming networks as unavailable.
 
-**Implementation Location:**
-- `wilab/wifi/manager.py` — during interface validation at startup / channel cache warm-up
+Checking all configured Wi-Fi networks at startup has the additional advantage of proactively marking unavailable any network whose driver is not functioning correctly, preventing it from ever being presented to the user as an option.However, it remains essential to provide a clear and easily accessible way for the user to understand why certain networks have been disabled — for example, through a dedicated status log or a visible warning indicating that the network was excluded due to a driver failure detected at startup.
 
-### 3. Network Health Status in API Response
-
-**What:** Add a `health` or `radio_status` field to the network status API response so the frontend and users can see if the AP is actually functional.
-
-**How:**
-- After network start, include in `GET /api/v1/interface/{rid}/network` response:
-  ```json
-  {
-    "radio_health": {
-      "carrier": true,
-      "operstate": "up",
-      "driver": "mt7921u",
-      "driver_warning": null
-    }
-  }
-  ```
-- For problematic states:
-  ```json
-  {
-    "radio_health": {
-      "carrier": false,
-      "operstate": "down",
-      "driver": "rtw88_8822bu",
-      "driver_warning": "This driver has known AP mode limitations"
-    }
-  }
-  ```
-
-**Implementation Location:**
-- `wilab/models.py` — add `RadioHealth` model
-- `wilab/wifi/manager.py` — populate during network status gathering
-- `wilab/api/routes/network.py` — include in response
-
-### 4. dmesg Error Detection (Optional / Advanced)
-
-**What:** After AP start, check recent kernel messages for driver-level errors that indicate radio failure.
-
-**How:**
-- Run `dmesg --since "30 seconds ago"` (or read `/dev/kmsg`) after hostapd start
-- Search for patterns like `failed to get tx report from firmware`, `firmware error`, `timeout`
-- If found, log as ERROR and optionally fail the AP start
-
-**Caveats:**
-- Requires root/CAP_SYSLOG to read dmesg
-- Pattern matching is fragile across kernel versions
-- Consider this as a supplementary diagnostic, not a primary check
-
-**Implementation Location:**
-- `wilab/wifi/hostapd.py` — optional diagnostic after start
 
 ---
 
@@ -113,11 +57,7 @@ This is a **silent failure**: the API returns success, the user sees "Network st
 
 - [ ] AP start on Realtek `rtw88_8822bu` is correctly detected as failed (carrier check)
 - [ ] API returns a meaningful error instead of false success
-- [ ] Resources are rolled back on detected failure (hostapd, dnsmasq, iptables)
-- [ ] Known-problematic drivers produce a startup warning in logs
-- [ ] Network status API exposes radio health information
 - [ ] Existing functionality for working adapters (MediaTek) is not affected
-- [ ] Test coverage for carrier-check logic (mocked)
 
 ---
 
