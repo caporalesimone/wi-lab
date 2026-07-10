@@ -104,9 +104,14 @@ class HostapdManager:
         # Additional recommended settings
         config_lines.extend([
             f"country_code={country_code}",
+            "ieee80211d=1",  # Advertise country code and apply regulatory domain
             "ieee80211n=1",  # 802.11n support
             "wmm_enabled=1",  # WMM/QoS
         ])
+
+        # Enable 802.11h (DFS/TPC) on 5 GHz where regulatory rules require it
+        if band == "5ghz":
+            config_lines.append("ieee80211h=1")
         
         return "\n".join(config_lines) + "\n"
     

@@ -617,3 +617,39 @@ class TestTxPower:
             mgr.set_tx_power_level('wls16', 2)
 
         assert mgr.active['wls16'].tx_power_level == 4
+
+
+class TestHostapdConfigGeneration:
+    """Tests for hostapd configuration file generation."""
+
+    def _generate(self, **overrides):
+        from wilab.wifi.hostapd import HostapdManager
+
+        params = dict(
+            interface='wlan0',
+            ssid='TestAP',
+            channel=5,
+            encryption='wpa2',
+            password='testpass123',
+            hidden=False,
+            band='2.4ghz',
+            country_code='IT',
+        )
+        params.update(overrides)
+        return HostapdManager()._generate_config(**params)
+
+    def test_country_regulatory_advertised(self):
+        """802.11d must be enabled so the driver applies the regulatory domain."""
+        config = self._generate()
+        assert 'country_code=IT' in config
+        assert 'ieee80211d=1' in config
+
+    def test_no_dot11h_on_24ghz(self):
+        """802.11h (DFS/TPC) is only relevant on 5 GHz, not 2.4 GHz."""
+        config = self._generate(band='2.4ghz')
+        assert 'ieee80211h=1' not in config
+
+    def test_dot11h_enabled_on_5ghz(self):
+        """802.11h must be enabled on 5 GHz for DFS/TPC regulatory compliance."""
+        config = self._generate(band='5ghz', channel=36)
+        assert 'ieee80211h=1' in config

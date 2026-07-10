@@ -4,6 +4,18 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [Unreleased]
+
+### 🔧 Maintenance
+
+- **hostapd regulatory compliance** — The generated hostapd configuration now enables `ieee80211d=1` (advertise country code and apply the regulatory domain) on all bands, and `ieee80211h=1` (DFS/TPC) on 5 GHz where regulatory rules require it.
+
+### ✅ Tests
+
+- Added `TestHostapdConfigGeneration` covering the presence of `ieee80211d` on all bands and the band-dependent handling of `ieee80211h` (enabled on 5 GHz, absent on 2.4 GHz).
+
+---
+
 ## [3.0.0] - 2026-04-18
 
 ### ✨ Features
