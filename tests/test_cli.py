@@ -130,6 +130,41 @@ class TestStartupEnforcement:
         assert "country_code" in message
         assert "api_port" in message
 
+    def test_startup_parses_the_config_once(self, write_config, monkeypatch):
+        """run_server() must reuse the dependency singleton, not re-parse the file.
+
+        It used to call load_config() directly and then create_app() called get_config(),
+        which loaded again: the file was read, validated and logged twice on every boot.
+        """
+        import uvicorn
+
+        from wilab.api import dependencies
+
+        loads = []
+
+        # Both bindings must be counted: wilab.config owns the function, and
+        # dependencies.py imported it by value at module load. Spying on only one of
+        # them counts one call whichever way main.py is written, and the test would
+        # pass against the very behaviour it is meant to forbid.
+        from wilab import config as config_mod
+
+        real_load = config_mod.load_config
+
+        def counting(path=None):
+            loads.append(path)
+            return real_load(path)
+
+        monkeypatch.setattr(config_mod, "load_config", counting)
+        monkeypatch.setattr(dependencies, "load_config", counting)
+        monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)
+        monkeypatch.setenv("CONFIG_PATH", write_config())
+        dependencies._config = None
+        dependencies._manager = None
+        dependencies._reservation_manager = None
+
+        assert cli.main([]) == cli.EXIT_OK
+        assert len(loads) == 1, f"config parsed {len(loads)} times, expected once"
+
     def test_capability_matrix_is_logged_at_startup(self, write_config, caplog):
         """The line that answers 'why did I get that antenna' in the journal."""
         import logging

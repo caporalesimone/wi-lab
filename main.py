@@ -70,7 +70,7 @@ def run_server(config_path: str) -> int:
     import uvicorn
 
     from wilab.api import create_app
-    from wilab.config import load_config
+    from wilab.api.dependencies import get_config
     from wilab.network.safety import check_existing_wilab_rules, log_host_impact_warning
 
     logger.info(f"Wi-Lab v{__version__} starting...")
@@ -81,8 +81,10 @@ def run_server(config_path: str) -> int:
     # Check for existing rules from previous runs
     check_existing_wilab_rules()
 
-    # Load configuration (validates first; exits with the full report on failure)
-    config = load_config(config_path)
+    # Load configuration (validates first; exits with the full report on failure).
+    # get_config() rather than load_config(): it memoises, so create_app() and the routes
+    # reuse this instance instead of parsing and validating the file a second time.
+    config = get_config()
     logger.info(f"Configuration loaded from {config_path}")
     logger.info(f"Managed networks: {[n.device_id for n in config.networks]}")
 
