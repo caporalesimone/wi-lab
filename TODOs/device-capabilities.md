@@ -1911,6 +1911,54 @@ reserved device's capabilities, 422-vs-409 rendering, and the null-countdown cas
       [§11.1](#111-upgrading-an-existing-installation) as an executable test
 - [ ] `install/03-tests/` service-start checks still pass with the new install stage
 
+### 12.9 Bench validation — required, and not possible on a Windows workstation
+
+Wi-Lab targets Ubuntu and drives `iw`, `ip`, `iptables`, `hostapd`, `dnsmasq` and
+systemd. Development may happen on Windows, but a meaningful part of the suite and every
+integration path can only be exercised on the Linux test bench. **This is a mandatory
+phase, not an optional one**: a work item is "green on the dev machine", not "verified",
+until it has been through this list.
+
+Concretely, on a Windows workstation the suite already reports **3 failures and 12
+errors before any of this work**, all from the same cause — no `ip` binary, no `iw`, no
+`wls16` interface. Those numbers are the honest baseline to compare against, and a
+change is judged by whether it moves them, not by whether they are zero.
+
+**What cannot be verified off-bench**
+
+| Area | Why Windows cannot answer it |
+|------|------------------------------|
+| The 12 `test_qos_profile.py` errors and 3 pre-existing failures | Need real `ip` / `iw` and a real interface |
+| Validator hardware phase against real adapters | The unit tests mock `validate_interface` and the route table; only the bench proves the real helpers are wired correctly |
+| `dhcp_base_network` overlap detection | Needs a genuine `ip route` table, and the only convincing test is a subnet that really does collide with the host LAN |
+| The installer stage | Bash, systemd, root, and the real stage ordering under `install.sh` |
+| systemd `StartLimitIntervalSec` / `StartLimitBurst` | Requires a real unit and a real deliberate config error |
+| `make validate-config`, `make lint`, `make type-check` | The Makefile uses POSIX venv paths (`$(VENV)/bin/python`) |
+| Frontend build | Docker-based build stage |
+
+**Bench checklist**
+
+- [ ] `make test-local` — full suite; record failures/errors and compare against the
+      pre-change baseline on the same machine
+- [ ] `make lint` and `make type-check`
+- [ ] `make validate-config` on a real `config.yaml`
+- [ ] `python3 main.py --validate-config` on a config with **no** capabilities (a v3.0
+      file): confirm every missing key is listed once, with usable hints
+- [ ] `python3 main.py --validate-config` (no `--check-hardware`) with an adapter
+      **unplugged**: must still exit 0, proving the phase split works
+- [ ] `python3 main.py --validate-config --check-hardware` with an adapter unplugged:
+      must report that interface and exit 1
+- [ ] Set `dhcp_base_network` to the host's own LAN subnet and confirm
+      `--check-hardware` catches the collision **before** anything is started
+- [ ] Deliberately break `config.yaml`, `systemctl restart wi-lab`, then confirm the unit
+      reaches `failed` (not an endless `activating (auto-restart)` loop) and that
+      `systemctl status wi-lab` shows the validation report
+- [ ] Fresh `sudo bash install.sh` with a broken config: the install must abort at the
+      validation stage, before the service is enabled
+- [ ] Fresh `sudo bash install.sh` with a good config: normal install, service starts,
+      and the journal shows the "Managed device capabilities" matrix
+- [ ] Confirm the rendered report is readable in `journalctl` under the bench's locale
+
 ---
 
 ## 13. Implementation Checklist
@@ -1929,6 +1977,7 @@ each finishing green:
 | WI-4 | Reservation core + API | 4 + 5 | ~3.5 h | WI-5 |
 | WI-5 | Frontend | 6 | ~4 h | — |
 | WI-6 | Integration, e2e & docs | rest of 7 | ~4 h | release |
+| WI-7 | **Bench validation** | [§12.9](#129-bench-validation--required-and-not-possible-on-a-windows-workstation) | ~2 h | sign-off |
 
 **WI-1 — write phases 1 and 2 as one unit.** The registry and the validator are not
 separable in practice: the validator's required-key manifest, its capability rules and
@@ -1968,6 +2017,14 @@ shapes. It is the only item that can overlap.
 **WI-6 — what genuinely cannot be done earlier.** Cross-cutting work only: the full-suite
 run against the extended fixtures, the v3.0-config migration test, `make lint` /
 `make type-check`, the installer stage test, and the documentation.
+
+**WI-7 — the bench.** Development can happen on any workstation, but Wi-Lab drives `iw`,
+`ip`, `iptables`, hostapd, dnsmasq and systemd, so a substantial part of the suite and
+every integration path only mean something on the Linux test bench. Each earlier work
+item is *green on the dev machine*; none is *verified* until it has been through
+[§12.9](#129-bench-validation--required-and-not-possible-on-a-windows-workstation).
+This is a distinct sign-off step, deliberately not folded into WI-6, because it depends
+on hardware rather than on code being finished.
 
 > **Tests are not a final phase.** Each work item is done when *its own* slice of
 > [§12](#12-testing-plan) is green — WI-1 owns §12.2 and §12.4, WI-2 owns §12.3, WI-4
@@ -2059,6 +2116,18 @@ here is only the cross-cutting work.
 - [ ] `install/03-tests/` still green with the new install stage
 - [ ] Docs from [§14](#14-documentation-to-update)
 - [ ] Version bump via `update_version.sh --bump-to 3.1.0`
+
+**Phase 8 — Bench validation (WI-7, Linux test bench only)** *(~2 h)*
+
+Cannot be performed on a Windows workstation. Full list and rationale in
+[§12.9](#129-bench-validation--required-and-not-possible-on-a-windows-workstation).
+
+- [ ] Full suite, lint and type-check via the Makefile on the bench
+- [ ] Validator against real adapters, plugged and unplugged, with and without
+      `--check-hardware`
+- [ ] Subnet-collision detection against the host's real route table
+- [ ] systemd start-limit behaviour on a deliberately broken config
+- [ ] Installer aborts at the validation stage before enabling the service
 
 ---
 

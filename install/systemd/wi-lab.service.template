@@ -4,6 +4,13 @@ Documentation=https://github.com/caporalesimone/wi-lab
 After=network-online.target
 Wants=network-online.target
 
+# A configuration error is permanent: restarting cannot fix it. Without a start limit,
+# Restart=always would retry every 10s forever, flooding the journal and leaving the unit
+# stuck in "activating (auto-restart)" instead of reaching a clean "failed" state where
+# `systemctl status wi-lab` shows the validation report.
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
 [Service]
 Type=simple
 WorkingDirectory=WILAB_DIR

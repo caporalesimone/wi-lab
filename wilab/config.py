@@ -194,6 +194,19 @@ class AppConfig(BaseModel):
         return []
 
 
+def _log_capability_matrix(config: AppConfig) -> None:
+    """Log what the device pool actually looks like.
+
+    The single most useful line in the journal when diagnosing "why did I get that
+    antenna": allocation is driven entirely by these declarations.
+    """
+    logger.info("Managed device capabilities:")
+    width = max((len(n.interface) for n in config.networks), default=0)
+    for n in config.networks:
+        caps = ", ".join(config.capabilities_for(n.device_id)) or "(none)"
+        logger.info("  %-*s  %s  %s", width, n.interface, n.display_name, caps)
+
+
 def load_config(path: Optional[str] = None) -> AppConfig:
     """Validate and load the configuration file.
 
@@ -216,7 +229,9 @@ def load_config(path: Optional[str] = None) -> AppConfig:
     try:
         with open(cfg_path, 'r', encoding='utf-8-sig') as f:
             raw = yaml.safe_load(f) or {}
-        return AppConfig(**raw)
+        config = AppConfig(**raw)
+        _log_capability_matrix(config)
+        return config
     except ValidationError as e:
         # Defence in depth: the validator already passed, so a failure here means the models
         # and the rule set disagree. Surface it loudly rather than crashing obscurely later.

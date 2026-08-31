@@ -4,7 +4,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help venv test-local test-local-quick test-local-cov clean-venv lint lint-fix type-check stop start restart build-frontend
+.PHONY: help venv test-local test-local-quick test-local-cov clean-venv validate-config lint lint-fix type-check stop start restart build-frontend
 
 # Default target: show help
 help:
@@ -18,6 +18,9 @@ help:
 	@echo "  make test-local        Run all tests with verbose output"
 	@echo "  make test-local-quick  Run tests with minimal output"
 	@echo "  make test-local-cov    Run tests with coverage report (HTML)"
+	@echo ""
+	@echo "Configuration:"
+	@echo "  make validate-config   Validate config.yaml and exit (no service started)"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint              Run ruff linter"
@@ -56,6 +59,12 @@ test-local-cov: venv
 	$(PYTEST) tests/ --cov=wilab --cov-report=html --cov-report=term
 	@echo ""
 	@echo "✓ Coverage report generated in htmlcov/index.html"
+
+# Configuration validation
+validate-config: venv
+	@echo "Validating configuration..."
+	$(VENV)/bin/python main.py --validate-config
+	@echo "✓ Configuration valid"
 
 # Code quality targets
 lint: venv

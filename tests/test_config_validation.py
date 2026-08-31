@@ -466,7 +466,7 @@ class TestRendering:
         text = validate_config_file(write_config({"min_timeout": 5})).render()
         assert "FAILED" in text
         assert "min_timeout" in text
-        assert "→" in text
+        assert "-> " in text, "every issue must carry an actionable hint"
 
     def test_ok_report_mentions_networks_and_capabilities(self, write_config):
         text = validate_config_file(write_config()).render()
@@ -478,6 +478,24 @@ class TestRendering:
         report = validate_config_file(write_config({"api_port": 80}))
         assert report.ok is True
         assert "warning(s)" in report.render()
+
+    def test_report_is_ascii_only(self, write_config, valid_config):
+        """The report is printed to terminals, journals and CI logs.
+
+        A console with a legacy code page (cp1252 on Windows, LANG=C on a server) raises
+        UnicodeEncodeError on typographic characters, so a diagnostic that cannot be
+        printed is worse than one without arrows. pytest captures in UTF-8, which is why
+        this needs an explicit assertion rather than relying on the other tests passing.
+        """
+        nets = valid_config["networks"]
+        nets[0]["capabilities"] = {"2.4ghz": False, "5ghz": False}
+        for report in (
+            validate_config_file(write_config({"networks": nets, "min_timeout": 5})),
+            validate_config_file(write_config({"api_port": 80})),
+            validate_config_file(write_config()),
+        ):
+            text = report.render()
+            text.encode("ascii")  # raises if a non-ASCII character crept in
 
     def test_report_never_leaks_the_auth_token(self, write_config):
         """Review finding SYS-4: the report reaches journals and CI logs."""

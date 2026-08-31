@@ -92,7 +92,12 @@ class ValidationReport:
         return not self.errors
 
     def render(self) -> str:
-        """Human-readable report, used identically by the CLI and by startup."""
+        """Human-readable report, used identically by the CLI and by startup.
+
+        Deliberately ASCII-only. This text is printed to a terminal, written to the
+        journal and pasted into CI logs; a report that raises UnicodeEncodeError on a
+        console with a legacy code page is worse than one without typographic arrows.
+        """
         lines: List[str] = []
         if self.ok:
             lines.append("Wi-Lab configuration validation OK")
@@ -116,11 +121,11 @@ class ValidationReport:
                 for msg_line in issue.message.splitlines():
                     lines.append(f"        {msg_line}")
                 if issue.hint:
-                    lines.append(f"        → {issue.hint}")
+                    lines.append(f"        -> {issue.hint}")
                 lines.append("")
 
         if self.ok and self.warnings:
-            lines.append(f"{len(self.warnings)} warning(s) — see above")
+            lines.append(f"{len(self.warnings)} warning(s) - see above")
 
         return "\n".join(lines).rstrip() + "\n"
 
