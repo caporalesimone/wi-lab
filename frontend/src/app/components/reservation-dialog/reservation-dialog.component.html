@@ -7,7 +7,84 @@
 </div>
 <mat-dialog-content>
   <form [formGroup]="form" class="reservation-form">
-    <mat-form-field appearance="outline">
+
+    <mat-button-toggle-group
+      formControlName="mode"
+      class="mode-toggle"
+      aria-label="How to choose a device"
+      (change)="onModeChange()">
+      <mat-button-toggle value="capability">
+        <mat-icon>tune</mat-icon>
+        By capability
+      </mat-button-toggle>
+      <mat-button-toggle value="device">
+        <mat-icon>router</mat-icon>
+        By device
+      </mat-button-toggle>
+    </mat-button-toggle-group>
+
+    <!-- ============ BY CAPABILITY ============ -->
+    <ng-container *ngIf="mode === 'capability'">
+      <div class="section-hint">
+        Wi-Lab assigns the least capable device that fits, so a dual-band antenna stays
+        free for whoever needs 5 GHz.
+      </div>
+
+      <div class="capability-groups" role="group" aria-label="Required capabilities">
+        <div *ngFor="let group of capabilityGroups" class="capability-group">
+          <div *ngIf="showGroupHeadings" class="group-heading">{{ group.label }}</div>
+          <div *ngFor="let cap of group.items" class="capability-row">
+            <mat-checkbox
+              [checked]="isCapabilitySelected(cap.id)"
+              (change)="toggleCapability(cap.id, $event.checked)">
+              {{ cap.label }}
+            </mat-checkbox>
+            <span class="availability"
+                  [class.none-free]="cap.available_devices === 0">
+              {{ cap.available_devices }} of {{ cap.total_devices }} free
+            </span>
+          </div>
+        </div>
+        <div *ngIf="capabilityGroups.length === 0" class="section-hint">
+          This lab declares no capabilities.
+        </div>
+      </div>
+
+      <div class="match-summary" [class.no-match]="matchingDeviceCount === 0">
+        <mat-icon>{{ matchingDeviceCount === 0 ? 'error_outline' : 'info_outline' }}</mat-icon>
+        <span>{{ matchSummary }}</span>
+      </div>
+    </ng-container>
+
+    <!-- ============ BY DEVICE ============ -->
+    <ng-container *ngIf="mode === 'device'">
+      <div class="section-hint">Pick a specific antenna. Reserved ones cannot be selected.</div>
+
+      <mat-radio-group
+        formControlName="selectedInterface"
+        class="device-list"
+        aria-label="Device to reserve">
+        <div *ngFor="let device of devices" class="device-row" [class.busy]="device.reserved">
+          <mat-radio-button [value]="device.interface" [disabled]="device.reserved">
+            <div class="device-label">
+              <span class="device-name">{{ device.display_name }}</span>
+              <span class="device-iface">{{ device.interface }}</span>
+            </div>
+          </mat-radio-button>
+          <div class="device-meta">
+            <mat-chip-set aria-label="Capabilities">
+              <mat-chip *ngFor="let cap of capabilitiesOf(device)">{{ labelFor(cap) }}</mat-chip>
+            </mat-chip-set>
+            <span class="device-state" [class.free]="!device.reserved">
+              {{ device.reserved ? 'reserved' : 'free' }}
+            </span>
+          </div>
+        </div>
+      </mat-radio-group>
+    </ng-container>
+
+    <!-- ============ DURATION (always) ============ -->
+    <mat-form-field appearance="outline" class="duration-field">
       <mat-label>Duration (seconds)</mat-label>
       <input matInput type="number" formControlName="duration_seconds" />
       <mat-error *ngIf="form.get('duration_seconds')?.hasError('required')">Required</mat-error>
@@ -28,7 +105,7 @@
 </mat-dialog-content>
 <mat-dialog-actions align="end">
   <button mat-button (click)="onCancel()">Cancel</button>
-  <button mat-raised-button color="primary" (click)="onSubmit()" [disabled]="!isUnlimited && !form.valid">
+  <button mat-raised-button color="primary" (click)="onSubmit()" [disabled]="!canSubmit">
     <mat-icon>lock_clock</mat-icon>
     Reserve
   </button>

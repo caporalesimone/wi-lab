@@ -15,6 +15,8 @@ import { TokenDialogComponent } from './components/token-dialog/token-dialog.com
 import { WilabApiService } from './services/wilab-api.service';
 import { AuthService } from './services/auth.service';
 import {
+  CapabilityId,
+  CapabilityInfo,
   InterfaceInfo,
   ReservationPolicy,
   ReservationRequest,
@@ -33,6 +35,8 @@ export interface InterfaceSlot {
   otherReservationSeconds: number | null;
   /** Set when this client owns the reservation */
   myReservation: ReservationResponse | null;
+  /** Enabled capabilities of the device, for the card chips */
+  capabilities: CapabilityId[];
 }
 
 @Component({
@@ -66,6 +70,11 @@ export class AppComponent implements OnInit, OnDestroy {
   /** Whether the server allows unlimited reservations */
   allowUnlimitedReservation = false;
   reservationPolicy: ReservationPolicy = { min_seconds: 60, max_seconds: 86400, allow_unlimited: false };
+
+  /** Capability catalogue from the backend: labels, kinds and counts. */
+  capabilitiesCatalogue: CapabilityInfo[] = [];
+  /** Last status snapshot, passed to the reservation dialog for the device picker. */
+  private lastNetworks: InterfaceInfo[] = [];
 
   /** Error info when all devices are busy */
   capacityError: NoDeviceAvailableError | null = null;
@@ -195,12 +204,14 @@ export class AppComponent implements OnInit, OnDestroy {
       next: (response) => {
         this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
         this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
+        this.capabilitiesCatalogue = response.capabilities_catalogue ?? [];
         this.buildSlots(response.networks);
       }
     });
   }
 
   private buildSlots(networks: InterfaceInfo[]): void {
+    this.lastNetworks = networks;
     this.slots = networks.map(n => {
       const myRes = this.myReservations.get(n.interface) ?? null;
       return {
@@ -209,6 +220,9 @@ export class AppComponent implements OnInit, OnDestroy {
         occupiedByOther: !myRes && n.reserved,
         otherReservationSeconds: myRes ? null : n.reservation_remaining_seconds,
         myReservation: myRes,
+        // Defaulted: a pre-3.1 backend, or a reservation restored from localStorage
+        // written by an older frontend, carries no capabilities.
+        capabilities: n.capabilities ?? [],
       };
     });
   }
@@ -221,7 +235,9 @@ export class AppComponent implements OnInit, OnDestroy {
       data: {
         allowUnlimited: this.allowUnlimitedReservation,
         minSeconds: this.reservationPolicy.min_seconds,
-        maxSeconds: this.reservationPolicy.max_seconds
+        maxSeconds: this.reservationPolicy.max_seconds,
+        capabilities: this.capabilitiesCatalogue,
+        devices: this.lastNetworks
       }
     });
 
@@ -248,7 +264,16 @@ export class AppComponent implements OnInit, OnDestroy {
         this.loading = false;
         const raw = (err as { originalError?: HttpErrorResponse }).originalError;
         const detail = raw?.error?.detail;
-        if (raw && raw.status === 409 && detail?.next_available_in !== undefined) {
+        // 422 with a capability error is PERMANENT: no antenna in the lab provides the
+        // requested combination, so retrying cannot help and no countdown must start.
+        if (raw && raw.status === 422 && typeof detail === 'object' && detail?.error) {
+          const missing: string[] = detail.missing ?? detail.requested ?? [];
+          const suffix = missing.length ? ` (${missing.join(', ')})` : '';
+          this.snackBar.open(`${detail.error}${suffix}`, 'Close', {
+            duration: 8000,
+            panelClass: ['error-snackbar']
+          });
+        } else if (raw && raw.status === 409 && detail?.next_available_in !== undefined) {
           this.capacityError = detail as NoDeviceAvailableError;
           // null means every busy device is held indefinitely: there is no release to
           // count down to, so show a static message instead of a timer stuck at zero.

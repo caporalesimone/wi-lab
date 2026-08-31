@@ -10,7 +10,7 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { interval, Subscription } from 'rxjs';
 import { WilabApiService } from '../../services/wilab-api.service';
-import { ClientInfo, NetworkStatus } from '../../models/network.models';
+import { CapabilityId, ClientInfo, NetworkStatus } from '../../models/network.models';
 import { environment } from '../../../environments/environment';
 import { NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
 import { InterfaceSlot } from '../../app.component';
@@ -40,6 +40,12 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   pollingSubscription?: Subscription;
   countdownSubscription?: Subscription;
   clientsCount = 0;
+
+  /** Capabilities the device declares. Undefined-safe: a reservation restored from a
+   *  localStorage entry written by an older frontend carries none. */
+  public get capabilities(): CapabilityId[] {
+    return this.slot?.capabilities ?? [];
+  }
 
   /** Remaining seconds from reservation (always visible when mine) */
   remainingSeconds = 0;
@@ -231,7 +237,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   public startWiFi(): void {
     const dialogRef = this.dialog.open(NetworkFormDialogComponent, {
       width: '500px',
-      data: { netId: this.reservationId }
+      data: { netId: this.reservationId, capabilities: this.capabilities }
     });
 
     dialogRef.afterClosed().subscribe(result => {

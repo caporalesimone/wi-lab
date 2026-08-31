@@ -1968,6 +1968,27 @@ change is judged by whether it moves them, not by whether they are zero.
       and the journal shows the "Managed device capabilities" matrix
 - [ ] Confirm the rendered report is readable in `journalctl` under the bench's locale
 
+**Frontend bench checklist**
+
+The Angular app builds and type-checks off-bench (`npx ng build --configuration
+production`), but it has **no test infrastructure at all**: `angular.json` declares no
+`test` target, there is no `tsconfig.spec.json`, and karma/jasmine are absent from
+`package.json`. Wiring it up means editing `package.json`, and the Docker build runs
+`npm ci`, which fails unless `package-lock.json` is regenerated in the same commit — so
+it is deliberately left to the bench rather than done blind.
+
+- [ ] Add the test target, `tsconfig.spec.json` and karma/jasmine devDependencies,
+      regenerating `package-lock.json` in the same commit, then run
+      `reservation-dialog.component.spec.ts`. The spec is already written and
+      instantiates the component directly, so it needs a runner and no Angular harness.
+- [ ] Verify the production Docker build still succeeds after that `package.json` change
+- [ ] Manually: mode toggle, live match count, Reserve disabled at zero matches, reserved
+      devices disabled in device mode, capability chips on the cards
+- [ ] Band dropdown in the network form limited to the reserved device's capabilities,
+      and defaulting to a band that device can actually serve
+- [ ] Error rendering: a 422 capability error shows a message and starts **no** countdown;
+      a 409 with `next_available_in: null` shows the static "no scheduled release" text
+
 ---
 
 ## 13. Implementation Checklist

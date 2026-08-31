@@ -13,6 +13,9 @@
         {{ slot.display_name }}
       </mat-card-title>
       <mat-card-subtitle>{{ slot.interface }}</mat-card-subtitle>
+      <div *ngIf="capabilities.length" class="capability-chips">
+        <span *ngFor="let cap of capabilities" class="status-chip capability-chip">{{ cap }}</span>
+      </div>
     </div>
     <div *ngIf="isMine && status?.active"
       class="internet-status-badge"
