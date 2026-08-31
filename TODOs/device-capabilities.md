@@ -1,7 +1,9 @@
 # Reservation Improvement Proposal — Device Capabilities
 
 **Priority:** 1 (HIGH)
-**Status:** PROPOSED — reviewed
+**Status:** IN PROGRESS — backend complete, documentation and bench validation outstanding.
+**Read [§18](#18-implementation-status--remaining-work) first**: it records what is built,
+what is left, where the implementation deviated from this proposal, and the open decisions.
 **Target version:** 3.1.0
 **Estimated effort:** ~16–20 hours (see [§13](#13-implementation-checklist) for the per-phase breakdown)
 **Audience:** this document is written to be executed by an AI coding agent
@@ -28,6 +30,7 @@
 15. [Design Decisions & Rejected Alternatives](#15-design-decisions--rejected-alternatives)
 16. [Review Log](#16-review-log)
 17. [Out Of Scope / Future Extensions](#17-out-of-scope--future-extensions)
+18. [Implementation Status & Remaining Work](#18-implementation-status--remaining-work)
 
 ---
 
@@ -2305,3 +2308,128 @@ Deliberately **not** part of this proposal — listed so the design leaves room 
 * **Enforcing capabilities at AP creation.** `POST /interface/{rid}/network` could
   reject a `band` the reserved device does not declare, as a second line of defence
   behind the frontend filtering. Cheap to add, worth a follow-up.
+
+---
+
+## 18. Implementation Status & Remaining Work
+
+Recorded at the end of the implementation session on **2026-09-01**, on branch
+`feature/device-capabilities`. The backend is complete and green; documentation, the
+release bump and bench validation are not done.
+
+### 18.1 What is built
+
+| Work item | Commit | Contents |
+|---|---|---|
+| WI-1 (phases 1+2) | `3152a78` | Capability registry, `config_validation.py`, `load_config()` enforcement, 88 tests |
+| WI-2 (phase 3) | `cbd3f2c` | `--validate-config` CLI with exit codes 0/1/2, capability matrix logging, `make validate-config`, installer stage, systemd start limit, 17 tests |
+| WI-3 (fixtures) | `c21e2f1` | `tests/test.config.yaml` extended to three asymmetric devices |
+| bug fix | `e6cddbb` | 409 `next_available_at` rendered in UTC |
+| bug fix | `6a8ca70` | `next_available_*` null when every holder is unlimited |
+| WI-4 (phases 4+5) | `0e278bc` | `DeviceSpec`, `_select()`, the two new exceptions, request/response fields, `/status` catalogue, 42 tests |
+| refactor | `d42528b` | Configuration parsed once at startup instead of twice |
+| WI-5 (phase 6) | `728ef7f` | Reservation dialog with capability/device modes, card chips, band filtering |
+
+**Suite state:** 527 passed. The 2 failures and 12 errors are pre-existing and
+environmental (Windows workstation: no `ip`, no `iw`, no `wls16`). mypy is clean across
+43 source files. `ng build` succeeds in development and production configurations.
+
+### 18.2 Remaining — WI-6, documentation and release (~3 h)
+
+The only thing standing between this feature and completeness that does **not** need the
+bench. Nothing here has been started except `config.example.yaml`.
+
+- [ ] **`README.md`** — capabilities in the configuration snippet; a *Validating the
+      configuration* section covering `--validate-config`, `--check-hardware` and the
+      exit codes; a capability-driven API example; the upgrade note
+- [ ] **`CHANGELOG.md`** — four sections:
+      `⚠️ Breaking Changes` (config.yaml must be complete before upgrading, §11.1);
+      `✨ Features` (capabilities, selection, validator, CLI);
+      `🐛 Bug Fixes` (the UTC timestamp and the unlimited-reservation ETA);
+      `🔧 Maintenance` (the allocation change of §11.2, validators moved out of Pydantic,
+      configuration now parsed once at startup)
+- [ ] **`docs/troubleshooting.md`** — "service does not start: configuration validation
+      failed", how to read the report, `--validate-config` as the first diagnostic, and
+      the `failed` versus `activating (auto-restart)` unit state
+- [ ] **`docs/swagger.md`** — the new request and response fields; nullable `next_available_*`
+- [ ] **`docs/networking.md`** — capabilities are a declaration and never a probe; how
+      they relate to `band` at AP creation; the new host-route overlap check
+- [ ] **`docs/readme-dev.md`** — `make validate-config`; how to add a validation rule and
+      a capability; the deferred-import requirement of §5.10 and why it is not stylistic
+- [ ] **`docs/unit-testing.md`** — the config fixtures and what each is for
+- [ ] **Version bump** — `VERSION` is still `3.0.0`; run `update_version.sh --bump-to 3.1.0`
+- [ ] **Migration test (§12.8)** — the one executable test still missing: a v3.0-style
+      config (no capabilities, several keys absent) must produce exactly the expected set
+      of validation errors. This turns the upgrade path of §11.1 into a regression guard.
+
+### 18.3 Remaining — WI-7, bench validation (~2 h)
+
+The full list is [§12.9](#129-bench-validation--required-and-not-possible-on-a-windows-workstation),
+which also carries the `requirements-dev.txt` fix. Nothing there can be done off-bench.
+
+### 18.4 Deviations from this proposal, and why
+
+Recorded so a later reader does not mistake them for oversights.
+
+| # | Deviation | Reason |
+|---|---|---|
+| 1 | `load_config()` validation was wired in WI-1, though the checklist puts it in phase 3 | The four `field_validator`s leave the model in WI-1. Without the wiring the relocated rules would be unenforced for one commit and the suite red, which contradicts §13.1's own rule that each work item finishes green. |
+| 2 | `capabilities` is `Dict[str, StrictBool]`, not `Dict[str, bool]` | Pydantic coerces the YAML string `"yes"` to `True`, while the group rule compares with `is True` and reads it as disabled. Plain `bool` made the model and the rule set disagree about a value that decides whether a device can host an AP. |
+| 3 | The report is ASCII-only; §5.7 showed typographic arrows | Found by a manual smoke test, not the suite: pytest captures stdout as UTF-8, so the arrow passed every test and then raised `UnicodeEncodeError` on a cp1252 console. The same would happen in journald under `LANG=C`. |
+| 4 | The v1 registry guard raises instead of asserting | `assert` is stripped under `python -O`, and this guard protects allocation correctness. |
+| 5 | `NetworkEntry` normalises capability keys in a `field_validator`; §4.3 called it a plain container | Purely mechanical key canonicalisation, no semantics. Without it `capability_set` breaks on a file that legitimately writes `"5GHz"`. |
+| 6 | No `tests/invalid.config.yaml`; the `write_config` fixture builds broken configs instead | Self-contained, and each test states its own faults rather than depending on a shared broken file whose contents must be cross-referenced. |
+| 7 | Capability tests live in `tests/test_reservation_capabilities.py`, not `test_reservation.py` | That file is already 800+ lines and covers the reservation lifecycle; allocation policy is a separate concern. |
+| 8 | The install stage is `02-validate-config.sh`, sharing the `02` prefix with `02-systemd.sh` | The orchestrator's `find` piped through `sort -V` orders it after systemd and before `03-enable.sh`, which is what matters. Renumbering the later stages would churn their `INSTALL_STAGE_NN_DONE` state keys for no gain. |
+| 9 | Card capability chips reuse `.status-chip` rather than defining their own rule | See the SCSS budget in §18.5. A standalone rule broke the production build. |
+
+### 18.5 Open decisions
+
+Three questions this implementation deliberately did **not** answer.
+
+**`make lint` is not achievable as the project stands, and §12.8 asks for it.**
+412 errors, of which 386 predate this feature. The composition is the point:
+
+| Rule | Count | What it is |
+|---|---|---|
+| UP045 / UP006 / UP035 | 242 | `typing.List` and `Optional[X]` instead of the PEP 585/604 builtins — the convention of the entire codebase |
+| B008 | 49 | `Depends()` in argument defaults — FastAPI's own idiom, which ruff flags by design |
+| BLE001 | 50 | `except Exception`, used throughout and often deliberately |
+
+The root cause is that **the project has no ruff configuration file** — no `pyproject.toml`,
+no `ruff.toml` — so `make lint` runs whatever default rule set the installed version
+carries, and `requirements-dev.txt` pins only `ruff>=0.3.0`. The output therefore changes
+with whoever runs it (measured with 0.16.5). Closing this needs a `ruff.toml` fixing the
+rule set, with `flake8-bugbear.extend-immutable-calls` listing `fastapi.Depends` to
+remove the 49 false positives. Out of scope here, but §12.8 cannot be satisfied until
+someone decides it.
+
+**The frontend is to be rewritten.** WI-5's code is therefore provisional. Two things
+survive it: §8 remains a valid specification for the replacement, and the API contract is
+frozen and covered by 42 tests, so the rewrite has something firm to build against. To
+decide: whether §12.9's frontend checklist and
+`reservation-dialog.component.spec.ts` should be kept for the new implementation or
+marked superseded.
+
+**`network-card.component.scss` is 30 bytes from failing the production build.**
+The `anyComponentStyle` budget (2 kB warning, 4 kB error, in `frontend/angular.json`)
+holds the Angular CLI's `ng new` defaults, which nobody on this project chose. That file
+sits at 3.98 kB, and the initial bundle already exceeds its own budget by 471 kB, so the
+budgets are effectively decorative except where they hit the error threshold. The next
+addition to that stylesheet will fail the build. Deferred pending the frontend rewrite.
+
+### 18.6 Facts discovered during implementation
+
+Small findings that are worth not rediscovering.
+
+* **`tests/test_api.py::TestAuthentication::test_request_without_auth` is a weak test.**
+  It requests `/api/v1/interfaces`, an endpoint that no longer exists, and expects 200.
+  It fails on a clean checkout and passes as soon as `frontend/dist` exists, because the
+  SPA catch-all then answers every path. Verified by renaming the directory. It asserts
+  nothing about authentication.
+* **`requirements-dev.txt` cannot be installed.** `types-PyYAML>=2024.1.0` is
+  unsatisfiable: that package versions as `6.0.12.<date>`, and `6.0.12.x < 2024.1.0`
+  under PEP 440. `make venv` for development therefore installs nothing from a clean
+  checkout. Listed in §12.9.
+* **The configuration was parsed twice on every boot** before `d42528b`, once by
+  `run_server()` and once by `create_app()` through `get_config()`.
