@@ -194,6 +194,24 @@ def valid_token():
     return f"Bearer {cfg.auth_token}"
 
 
+@pytest.fixture
+def unlimited_client(write_config, monkeypatch):
+    """A client bound to a config that permits unlimited reservations.
+
+    The shared fixture sets allow_unlimited_reservation: false, so duration_seconds=0
+    is refused there; config.example.yaml ships it as true, which is what makes the
+    all-unlimited case reachable in the field.
+    """
+    path = write_config({"allow_unlimited_reservation": True}, name="unlimited.yaml")
+    monkeypatch.setenv("CONFIG_PATH", path)
+    dependencies._config = None
+    dependencies._manager = None
+    dependencies._reservation_manager = None
+    cfg = load_config(path)
+    app = create_app()
+    return TestClient(app), f"Bearer {cfg.auth_token}"
+
+
 class TestReservationAPICreate:
     """Tests for POST /api/v1/device-reservation."""
 
@@ -463,13 +481,18 @@ class TestUnlimitedReservation:
         assert abs(soonest - r_timed.expires_at) < 2
 
     def test_soonest_expiry_all_unlimited(self):
-        """_soonest_expiry returns now when all reservations are unlimited."""
+        """_soonest_expiry returns None when every reservation is unlimited.
+
+        This test previously asserted the opposite - that the method returned "now" -
+        which is what the code did and what made the API answer "available now" about a
+        pool nothing was scheduled to leave. The assertion codified the defect, so it is
+        inverted here rather than deleted, to keep the case covered.
+        """
         mgr = ReservationManager(["dev0"])
         mgr.create(0)
-        before = time.time()
         with mgr._lock:
             soonest = mgr._soonest_expiry()
-        assert soonest >= before
+        assert soonest is None
 
 
 # ======================================================================
@@ -683,3 +706,57 @@ class TestTimestampConsistency:
             )
             expiries.append(got.json()["expires_at"])
         assert eta in expiries, "the 409 ETA must be one of the reservations' expiry times"
+
+
+class TestUnlimitedReservationsHaveNoETA:
+    """Regression guard: a pool held indefinitely has no next-available time.
+
+    _soonest_expiry() used to return time.time() when no active reservation had an
+    expiry, so the API answered "available now" (next_available_in: 0) about a pool
+    nothing was scheduled to leave. The frontend then started a countdown that fired
+    immediately and retried straight into another 409.
+
+    Reachable with the allow_unlimited_reservation: true shipped in
+    config.example.yaml.
+    """
+
+    def test_manager_reports_none_when_all_holders_are_unlimited(self):
+        mgr = ReservationManager(["dev0", "dev1"])
+        mgr.create(0)
+        mgr.create(0)
+        with pytest.raises(NoDeviceAvailableError) as exc_info:
+            mgr.create(60)
+        assert exc_info.value.next_available_at is None
+        assert exc_info.value.next_available_in is None
+
+    def test_a_timed_holder_still_provides_an_eta(self):
+        """Mixed pool: the timed reservation is the one that will free up."""
+        mgr = ReservationManager(["dev0", "dev1"])
+        mgr.create(0)
+        mgr.create(3600)
+        with pytest.raises(NoDeviceAvailableError) as exc_info:
+            mgr.create(60)
+        assert exc_info.value.next_available_at is not None
+        assert 0 < exc_info.value.next_available_in <= 3600
+
+    def test_api_returns_null_rather_than_zero(self, unlimited_client):
+        """The wire contract: null, not 0. Zero means "now", which is false here."""
+        client, token = unlimited_client
+        status = client.get("/api/v1/status", headers={"Authorization": token})
+        for _ in status.json()["networks"]:
+            r = client.post(
+                "/api/v1/device-reservation",
+                headers={"Authorization": token},
+                json={"duration_seconds": 0},
+            )
+            assert r.status_code == 200, r.text
+
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": token},
+            json={"duration_seconds": 60},
+        )
+        assert resp.status_code == 409
+        detail = resp.json()["detail"]
+        assert detail["next_available_at"] is None
+        assert detail["next_available_in"] is None

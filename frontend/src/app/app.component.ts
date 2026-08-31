@@ -250,7 +250,14 @@ export class AppComponent implements OnInit, OnDestroy {
         const detail = raw?.error?.detail;
         if (raw && raw.status === 409 && detail?.next_available_in !== undefined) {
           this.capacityError = detail as NoDeviceAvailableError;
-          this.startCapacityTimer(detail.next_available_in);
+          // null means every busy device is held indefinitely: there is no release to
+          // count down to, so show a static message instead of a timer stuck at zero.
+          if (typeof detail.next_available_in === 'number') {
+            this.startCapacityTimer(detail.next_available_in);
+          } else {
+            this.clearCapacityTimer();
+            this.capacityCountdown = 0;
+          }
         } else {
           this.snackBar.open(`Reservation failed: ${err.message}`, 'Close', {
             duration: 5000,

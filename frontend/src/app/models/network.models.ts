@@ -86,6 +86,7 @@ export interface ClientInfo {
 
 export interface NoDeviceAvailableError {
   detail: string;
-  next_available_at: string;
-  next_available_in: number;
+  /** Null when every busy device is held by an unlimited reservation: no scheduled release. */
+  next_available_at: string | null;
+  next_available_in: number | null;
 }
