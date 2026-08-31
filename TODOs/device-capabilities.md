@@ -1915,6 +1915,69 @@ reserved device's capabilities, 422-vs-409 rendering, and the null-countdown cas
 
 ## 13. Implementation Checklist
 
+### 13.1 Execution order
+
+The phases below are ordered by dependency, not by the order they appear in this
+document. They collapse into **five work items**, each independently reviewable and
+each finishing green:
+
+| # | Work item | Phases | Effort | Unblocks |
+|---|-----------|--------|--------|----------|
+| WI-1 | Registry + validator | 1 + 2 | ~6 h | everything |
+| WI-2 | CLI, startup & deployment | 3 | ~1.5 h | any local run of the service |
+| WI-3 | Test fixtures | part of 7 | ~1 h | WI-4's tests |
+| WI-4 | Reservation core + API | 4 + 5 | ~3.5 h | WI-5 |
+| WI-5 | Frontend | 6 | ~4 h | — |
+| WI-6 | Integration, e2e & docs | rest of 7 | ~4 h | release |
+
+**WI-1 — write phases 1 and 2 as one unit.** The registry and the validator are not
+separable in practice: the validator's required-key manifest, its capability rules and
+its error messages all read `CAPABILITY_REGISTRY`, so a registry landed alone has no
+consumer and no test that exercises it. Splitting them means writing throwaway tests for
+an interface that changes an hour later. This is the largest item and the one everything
+else waits on.
+
+**WI-2 — small, but it is what makes the system runnable again.** After WI-1 every
+existing `config.yaml` in the repo (including a developer's own) is incomplete by the
+new rules, and `load_config()` refuses to start. Until `--validate-config` exists there
+is no ergonomic way to find out *why*. Do this immediately after WI-1, not later, or
+every subsequent phase is debugged against a service that will not boot.
+
+**WI-3 — extend the fixtures before writing selection tests, and expect collateral.**
+`tests/test.config.yaml` currently declares a single device, so no selection test can be
+written against it. Extending it to three devices touches assertions on network counts
+and subnet allocation across `test_api.py`, `test_channels.py` and `test_qos_profile.py`.
+Add the new devices **at the end of the list** so `wls16` keeps index 0 and its
+`192.168.120.0/24` subnet, which limits the blast radius to count assertions. Doing this
+before WI-4 rather than during it keeps a mechanical, wide diff separate from the
+behavioural change.
+
+**WI-4 — and commit the two bug fixes separately.** The `_soonest_expiry()` /
+`next_available_*` nullability ([§7.1](#71-wilabreservationpy)) and the naive-vs-UTC
+timestamp ([§7.3](#73-wilabapiroutesreservationpy)) are pre-existing defects, not part of
+this feature. They have their own regression tests and their own CHANGELOG section
+(`### 🐛 Bug Fixes`). Landing them as two commits ahead of the capability work makes both
+the review and a future `git bisect` far easier, and they are independently
+cherry-pickable onto a maintenance branch if 3.1.0 slips.
+
+**WI-5 — parallelisable once the API shape is frozen.** The frontend depends only on the
+response contracts of [§6](#6-technical-design--api), not on the backend implementation.
+As soon as WI-4's models are agreed the frontend can proceed alongside, against those
+shapes. It is the only item that can overlap.
+
+**WI-6 — what genuinely cannot be done earlier.** Cross-cutting work only: the full-suite
+run against the extended fixtures, the v3.0-config migration test, `make lint` /
+`make type-check`, the installer stage test, and the documentation.
+
+> **Tests are not a final phase.** Each work item is done when *its own* slice of
+> [§12](#12-testing-plan) is green — WI-1 owns §12.2 and §12.4, WI-2 owns §12.3, WI-4
+> owns §12.5 and §12.6, WI-5 owns §12.7. Phase 7 in the checklist below is only the
+> residue that is genuinely cross-cutting ([§12.8](#128-end-to-end--regression)). Reading
+> the checklist as "build everything, then test" would defeat the point of the sequencing
+> above.
+
+### 13.2 Phase checklists
+
 Effort is given per phase; the earlier "6–8 hours" estimate predated the validator and
 was not realistic.
 
@@ -1977,11 +2040,23 @@ was not realistic.
 - [ ] Network card capability chips (undefined-safe)
 - [ ] Network form dialog band filtering + default band
 
-**Phase 7 — Tests & docs** *(~5 h)*
-- [ ] `tests/test.config.yaml` extended; `tests/invalid.config.yaml` added
-- [ ] All test items from [§12](#12-testing-plan)
-- [ ] Minimal Angular test setup + the reservation-dialog spec
+**Fixtures — WI-3, do this before Phase 4** *(~1 h)*
+- [ ] `tests/test.config.yaml` extended to three devices with asymmetric capabilities,
+      new entries appended so `wls16` keeps index 0 ([§12.1](#121-teststestconfigyaml))
+- [ ] `tests/invalid.config.yaml` added
+- [ ] Count and subnet assertions repaired across `test_api.py`, `test_channels.py`
+      and `test_qos_profile.py`
+
+**Phase 7 — Integration, e2e & docs** *(~4 h)*
+
+Per-phase tests belong to their own phase ([§13.1](#131-execution-order)); what remains
+here is only the cross-cutting work.
+
+- [ ] Minimal Angular test setup + the reservation-dialog spec ([§12.7](#127-frontend))
+- [ ] End-to-end and regression items from [§12.8](#128-end-to-end--regression),
+      including the v3.0-config migration test
 - [ ] `make lint` + `make type-check` clean
+- [ ] `install/03-tests/` still green with the new install stage
 - [ ] Docs from [§14](#14-documentation-to-update)
 - [ ] Version bump via `update_version.sh --bump-to 3.1.0`
 
