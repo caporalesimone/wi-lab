@@ -238,13 +238,16 @@ class TestReservationAPICreate:
 
     def test_full_capacity_returns_409_with_eta(self, client, valid_token):
         """All devices reserved returns 409 with next_available_at/in."""
-        # Config has 1 device (wls16), reserve it
-        client.post(
-            "/api/v1/device-reservation",
-            headers={"Authorization": valid_token},
-            json={"duration_seconds": 120},
-        )
-        # Try again — should get 409
+        # Drain the pool, whatever its size, so the test does not depend on the fixture
+        # having exactly one device.
+        status = client.get("/api/v1/status", headers={"Authorization": valid_token})
+        for _ in status.json()["networks"]:
+            client.post(
+                "/api/v1/device-reservation",
+                headers={"Authorization": valid_token},
+                json={"duration_seconds": 120},
+            )
+        # Try one more — should get 409
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},

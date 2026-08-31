@@ -1938,6 +1938,15 @@ change is judged by whether it moves them, not by whether they are zero.
 
 **Bench checklist**
 
+- [ ] **`pip install -r requirements-dev.txt` completes.** It currently cannot: the pin
+      `types-PyYAML>=2024.1.0` is unsatisfiable, because that package's versions are
+      `6.0.12.<date>` and `6.0.12.20260815 < 2024.1.0` under PEP 440 ordering. The
+      constraint was presumably written expecting a `2024.x` calendar version scheme that
+      the package does not use. Nothing in this feature depends on it, but it means
+      `make venv` for development installs nothing today, so the whole tooling chain
+      (`make lint`, `make type-check`, `make test-local`) is unreachable from a clean
+      checkout. Fix the pin (drop the lower bound, or use `types-PyYAML>=6.0.12`) and
+      confirm a clean `make venv` from an empty environment.
 - [ ] `make test-local` — full suite; record failures/errors and compare against the
       pre-change baseline on the same machine
 - [ ] `make lint` and `make type-check`

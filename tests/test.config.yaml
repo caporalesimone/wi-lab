@@ -3,6 +3,10 @@
 #
 # Every key the schema knows about must be present: this fixture is loaded through the
 # same validator as a production config, so it doubles as a worked example of a valid file.
+#
+# The three devices are deliberately ASYMMETRIC, so that capability-based selection can be
+# exercised at all. wls16 stays first so it keeps index 0 and subnet 192.168.120.0/24,
+# which several existing tests assume.
 auth_token: "secret-token-12345"
 api_port: 8080
 max_timeout: 86400
@@ -15,8 +19,23 @@ dns_server: "192.168.10.21"
 internet_enabled_by_default: true
 cors_origins: []
 networks:
+  # Dual band — the only device that can serve a 5 GHz request.
   - interface: "wls16"
     display_name: "bench-antenna-1"
+    capabilities:
+      "2.4ghz": true
+      "5ghz": true
+
+  # 2.4 GHz only — the minimal device a 2.4 GHz request should prefer.
+  - interface: "wls17"
+    display_name: "bench-antenna-2"
+    capabilities:
+      "2.4ghz": true
+      "5ghz": false
+
+  # Dual band again — gives the tie-break something to break.
+  - interface: "wls18"
+    display_name: "bench-antenna-3"
     capabilities:
       "2.4ghz": true
       "5ghz": true

@@ -73,17 +73,20 @@ class TestSubnetResolution:
             mgr._get_subnet('unknown-network')
     
     def test_get_subnet_fallback_calculation(self):
-        """Test sequential allocation increments third octet."""
+        """Test sequential allocation increments third octet.
+
+        Subnets follow declaration order, so an appended device gets the octet after the
+        last configured one rather than a fixed .121.
+        """
         cfg = load_config()
+        appended_index = len(cfg.networks)
         cfg.networks.append(NetworkEntry(
             interface='wlan1', display_name='extra',
             capabilities={'2.4ghz': True, '5ghz': False},
         ))
         mgr = NetworkManager(cfg)
-        first = mgr._get_subnet('wls16')
-        second = mgr._get_subnet('wlan1')
-        assert first == '192.168.120.0/24'
-        assert second == '192.168.121.0/24'
+        assert mgr._get_subnet('wls16') == '192.168.120.0/24'
+        assert mgr._get_subnet('wlan1') == f'192.168.{120 + appended_index}.0/24'
 
 
 class TestNetworkLifecycle:
