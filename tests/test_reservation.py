@@ -616,3 +616,70 @@ class TestReservationDeleteStopsNetwork:
         )
         assert resp.status_code == 200
         assert stopped == []
+
+
+class TestTimestampConsistency:
+    """Regression guard: every timestamp the API renders must be UTC.
+
+    The 409 handler used a naive datetime.fromtimestamp() while _build_response() used
+    tz=timezone.utc, so the same API reported two different clocks, differing by the
+    host's UTC offset. Only a machine running in UTC would have seen them agree.
+    """
+
+    def test_409_next_available_at_matches_the_real_utc_expiry(self, client, valid_token):
+        """Compare against the expected UTC instant, not merely "in the future".
+
+        A "> now" assertion has no teeth on a host east of UTC, where a local-time
+        rendering is simply further ahead. Comparing against the computed expiry catches
+        an offset in either direction.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        status = client.get("/api/v1/status", headers={"Authorization": valid_token})
+        for _ in status.json()["networks"]:
+            client.post(
+                "/api/v1/device-reservation",
+                headers={"Authorization": valid_token},
+                json={"duration_seconds": 3600},
+            )
+        expected = datetime.now(tz=timezone.utc) + timedelta(seconds=3600)
+
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 60},
+        )
+        assert resp.status_code == 409
+        rendered = resp.json()["detail"]["next_available_at"]
+        parsed = datetime.strptime(rendered, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        assert abs((parsed - expected).total_seconds()) < 60, (
+            f"expected ~{expected}, got {parsed} - looks like a local-time rendering"
+        )
+
+    def test_409_and_get_reservation_agree_on_the_clock(self, client, valid_token):
+        """Both timestamps describe the same expiry, so they must be the same string."""
+        status = client.get("/api/v1/status", headers={"Authorization": valid_token})
+        ids = []
+        for _ in status.json()["networks"]:
+            r = client.post(
+                "/api/v1/device-reservation",
+                headers={"Authorization": valid_token},
+                json={"duration_seconds": 3600},
+            )
+            ids.append(r.json()["reservation_id"])
+
+        refused = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 60},
+        )
+        eta = refused.json()["detail"]["next_available_at"]
+
+        expiries = []
+        for rid in ids:
+            got = client.get(
+                f"/api/v1/device-reservation/{rid}",
+                headers={"Authorization": valid_token},
+            )
+            expiries.append(got.json()["expires_at"])
+        assert eta in expiries, "the 409 ETA must be one of the reservations' expiry times"

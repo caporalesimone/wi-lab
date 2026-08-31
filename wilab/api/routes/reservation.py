@@ -98,8 +98,11 @@ async def create_reservation(
             status_code=409,
             detail={
                 "error": "No device available",
+                # tz=timezone.utc to match _build_response(): without it this field was
+                # rendered in the host's local time while every other timestamp in the
+                # API was UTC, so the two disagreed by the machine's offset.
                 "next_available_at": datetime.fromtimestamp(
-                    exc.next_available_at
+                    exc.next_available_at, tz=timezone.utc
                 ).strftime("%Y-%m-%d %H:%M:%S"),
                 "next_available_in": exc.next_available_in,
             },
