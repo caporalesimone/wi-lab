@@ -113,7 +113,7 @@ Version 1 ships exactly two capabilities:
 
 The identifiers are deliberately **identical to the values already accepted by the
 `band` field** of `NetworkCreateRequest` (`^(2\.4ghz|5ghz|dual)$`, see
-[wilab/models.py](wilab/models.py)). One vocabulary, no translation layer, no mapping
+[wilab/models.py](../wilab/models.py)). One vocabulary, no translation layer, no mapping
 table.
 
 ### 2.2 The capability registry
@@ -494,7 +494,7 @@ Two welcome consequences:
 * **No startup ordering constraint.** An earlier draft had to resolve capabilities
   synchronously in the `lifespan` hook, *before* `get_reservation_manager()` built the
   pool, because the channel cache is warmed in a background daemon thread
-  (`_warm_channel_cache` in [wilab/api/\_\_init\_\_.py](wilab/api/__init__.py)) and the
+  (`_warm_channel_cache` in [wilab/api/\_\_init\_\_.py](../wilab/api/__init__.py)) and the
   first reservation could race it. With config as the only source, capabilities are
   fully known the moment `load_config()` returns. **`wilab/api/__init__.py` needs no
   change at all**, and the background warm-up keeps serving `available-channels`
@@ -743,7 +743,7 @@ against the code before being labelled.
 | `networks[].capabilities` | At least one enabled per required group ([§5.5](#55-the-rule-registry-and-the-capabilities-custom-rule)) | ERROR |
 | `networks[].interface` | **hardware phase:** exists, wireless, AP-capable (existing `validate_interface`, relocated) | ERROR |
 
-The existing `field_validator`s in [wilab/config.py](wilab/config.py)
+The existing `field_validator`s in [wilab/config.py](../wilab/config.py)
 (`validate_min_timeout`, `validate_upstream_interface`, `validate_dhcp_base_network`,
 `validate_network_count`) **move into the rule set**. Keeping them in Pydantic would
 mean two reporting paths with different formatting, and Pydantic's fail-fast-per-field
@@ -791,7 +791,7 @@ because a report whose order shifts between runs is hard to diff in CI.
 
 ### 5.8 CLI integration
 
-[main.py](main.py) currently takes no arguments. Add `argparse`:
+[main.py](../main.py) currently takes no arguments. Add `argparse`:
 
 ```
 Usage: python3 main.py [options]
@@ -924,7 +924,7 @@ just capabilities.
 
 This endpoint is already polled by the frontend on a timer and already contains a
 `networks[]` section built from `config.networks`
-([wilab/api/routes/status.py](wilab/api/routes/status.py)). Capabilities are **static
+([wilab/api/routes/status.py](../wilab/api/routes/status.py)). Capabilities are **static
 config data**: serving them here costs no shell command, no extra latency, and no new
 auth surface. Putting them anywhere else would mean a second round-trip for data the
 client already fetches.
@@ -1348,25 +1348,25 @@ new lookups to an endpoint the frontend polls.
 | File | Change |
 |------|--------|
 | **`wilab/config_validation.py`** | **New.** `Severity`, `ValidationIssue`, `ValidationReport`, `ValidationContext`, the `@rule` registry with per-rule exception isolation, `validate_config_file()` with phase 2/3↔4 de-duplication, the rule set of [§5.6](#56-the-rule-set), the ordered renderer |
-| [wilab/config.py](wilab/config.py) | `Capability`, `CapabilityKind`, `CapabilityType`, `CapabilityDef`, `CAPABILITY_REGISTRY`, `GROUPS_REQUIRING_ONE`, the v1 assertion, `normalise_capability_id()`; `NetworkEntry.capabilities` (required) + `capability_set`; `AppConfig.capabilities_for()`; existing `field_validator`s **moved out**; `load_config()` validates (lazy import) and logs the capability matrix |
-| [main.py](main.py) | `argparse`: `--config`, `--validate-config`, `--check-hardware`; exit codes 0/1/2 |
-| [wilab/reservation.py](wilab/reservation.py) | `DeviceSpec`, `Sequence`-typed constructor, `create()` signature, `_select()`, `_soonest_expiry()` → `Optional[float]` + filter, `Optional` on `NoDeviceAvailableError`, `UnknownDeviceError`, `CapabilityUnsatisfiableError` |
-| [wilab/api/routes/reservation.py](wilab/api/routes/reservation.py) | Request fields + validator, error mapping, null-safe 409 body, UTC alignment, `capabilities` in response |
-| [wilab/api/routes/status.py](wilab/api/routes/status.py) | `networks[].capabilities`, `capabilities_catalogue`, `/debug` parity |
-| [wilab/api/dependencies.py](wilab/api/dependencies.py) | Build the `DeviceSpec` list for the manager |
-| [Makefile](Makefile) | `validate-config` target + `help` entry |
-| [install/02-install-stages/](install/) | New stage running the validator after the venv exists, before `03-enable.sh` |
-| [install/systemd/wi-lab.service.template](install/systemd/wi-lab.service.template) | `StartLimitIntervalSec` / `StartLimitBurst` — see [§10.1](#101-systemd-restart-loop-on-a-bad-config) |
-| [config.example.yaml](config.example.yaml) | Complete `capabilities` block per device + explanatory comments |
-| [tests/test.config.yaml](tests/test.config.yaml) | Multiple devices, every key present (see [§12.1](#121-teststestconfigyaml)) |
-| [wilab/api/\_\_init\_\_.py](wilab/api/__init__.py) | **No change** — see [§4.5](#45-what-is-deliberately-absent) |
-| [requirements.txt](requirements.txt) | **No change** — no new dependency |
+| [wilab/config.py](../wilab/config.py) | `Capability`, `CapabilityKind`, `CapabilityType`, `CapabilityDef`, `CAPABILITY_REGISTRY`, `GROUPS_REQUIRING_ONE`, the v1 assertion, `normalise_capability_id()`; `NetworkEntry.capabilities` (required) + `capability_set`; `AppConfig.capabilities_for()`; existing `field_validator`s **moved out**; `load_config()` validates (lazy import) and logs the capability matrix |
+| [main.py](../main.py) | `argparse`: `--config`, `--validate-config`, `--check-hardware`; exit codes 0/1/2 |
+| [wilab/reservation.py](../wilab/reservation.py) | `DeviceSpec`, `Sequence`-typed constructor, `create()` signature, `_select()`, `_soonest_expiry()` → `Optional[float]` + filter, `Optional` on `NoDeviceAvailableError`, `UnknownDeviceError`, `CapabilityUnsatisfiableError` |
+| [wilab/api/routes/reservation.py](../wilab/api/routes/reservation.py) | Request fields + validator, error mapping, null-safe 409 body, UTC alignment, `capabilities` in response |
+| [wilab/api/routes/status.py](../wilab/api/routes/status.py) | `networks[].capabilities`, `capabilities_catalogue`, `/debug` parity |
+| [wilab/api/dependencies.py](../wilab/api/dependencies.py) | Build the `DeviceSpec` list for the manager |
+| [Makefile](../Makefile) | `validate-config` target + `help` entry |
+| [install/02-install-stages/](../install/) | New stage running the validator after the venv exists, before `03-enable.sh` |
+| [install/systemd/wi-lab.service.template](../install/systemd/wi-lab.service.template) | `StartLimitIntervalSec` / `StartLimitBurst` — see [§10.1](#101-systemd-restart-loop-on-a-bad-config) |
+| [config.example.yaml](../config.example.yaml) | Complete `capabilities` block per device + explanatory comments |
+| [tests/test.config.yaml](../tests/test.config.yaml) | Multiple devices, every key present (see [§12.1](#121-teststestconfigyaml)) |
+| [wilab/api/\_\_init\_\_.py](../wilab/api/__init__.py) | **No change** — see [§4.5](#45-what-is-deliberately-absent) |
+| [requirements.txt](../requirements.txt) | **No change** — no new dependency |
 
 ---
 
 ## 8. Technical Design — Frontend
 
-### 8.1 Models — [frontend/src/app/models/network.models.ts](frontend/src/app/models/network.models.ts)
+### 8.1 Models — [frontend/src/app/models/network.models.ts](../frontend/src/app/models/network.models.ts)
 
 ```ts
 export type CapabilityId = string;          // deliberately open, not a union type
@@ -1579,7 +1579,7 @@ is precisely what constraints C2 and C3 forbid.
 
 ### 10.1 systemd: restart loop on a bad config
 
-[install/systemd/wi-lab.service.template](install/systemd/wi-lab.service.template) ships
+[install/systemd/wi-lab.service.template](../install/systemd/wi-lab.service.template) ships
 `Restart=always` with `RestartSec=10s` and **no start-limit override**. A configuration
 error is permanent by nature, so with this unit the service would exit, restart ten
 seconds later, exit again, and loop indefinitely — flooding the journal with the same
@@ -1991,14 +1991,14 @@ was not realistic.
 
 | File | What |
 |------|------|
-| [config.example.yaml](config.example.yaml) | Complete `capabilities` block on all three devices + a comment block listing the valid ids, stating that **every key is mandatory**, that **no auto-detection** is performed, and that the file is **never modified** by Wi-Lab |
-| [README.md](README.md) | Configuration snippet with capabilities; a **Validating the configuration** section documenting `--validate-config`, `--check-hardware` and the exit codes; API example showing a capability-driven reservation; upgrade note |
-| [CHANGELOG.md](CHANGELOG.md) | `### ⚠️ Breaking Changes` for mandatory complete configuration; `### ✨ Features` for capabilities, selection, validator and CLI; `### 🐛 Bug Fixes` for the unlimited-reservation `next_available_*` hole and the naive-vs-UTC timestamp; `### 🔧 Maintenance` for the allocation change and the validators moved out of Pydantic |
-| [docs/networking.md](docs/networking.md) | Capabilities are an administrative declaration, not a hardware probe; how they relate to `band` at AP creation; the new host-route overlap check |
-| [docs/swagger.md](docs/swagger.md) | New request/response fields; the nullable `next_available_*` |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | "Service does not start: configuration validation failed" — how to read the report, `--validate-config` as the first diagnostic step, and the `failed` vs `auto-restart` unit state after [§10.1](#101-systemd-restart-loop-on-a-bad-config) |
-| [docs/readme-dev.md](docs/readme-dev.md) | `make validate-config`; how to add a validation rule and a capability; the deferred-import requirement of [§5.10](#510-module-boundaries) |
-| [docs/unit-testing.md](docs/unit-testing.md) | The two config fixtures and what each is for; the new frontend test setup |
+| [config.example.yaml](../config.example.yaml) | Complete `capabilities` block on all three devices + a comment block listing the valid ids, stating that **every key is mandatory**, that **no auto-detection** is performed, and that the file is **never modified** by Wi-Lab |
+| [README.md](../README.md) | Configuration snippet with capabilities; a **Validating the configuration** section documenting `--validate-config`, `--check-hardware` and the exit codes; API example showing a capability-driven reservation; upgrade note |
+| [CHANGELOG.md](../CHANGELOG.md) | `### ⚠️ Breaking Changes` for mandatory complete configuration; `### ✨ Features` for capabilities, selection, validator and CLI; `### 🐛 Bug Fixes` for the unlimited-reservation `next_available_*` hole and the naive-vs-UTC timestamp; `### 🔧 Maintenance` for the allocation change and the validators moved out of Pydantic |
+| [docs/networking.md](../docs/networking.md) | Capabilities are an administrative declaration, not a hardware probe; how they relate to `band` at AP creation; the new host-route overlap check |
+| [docs/swagger.md](../docs/swagger.md) | New request/response fields; the nullable `next_available_*` |
+| [docs/troubleshooting.md](../docs/troubleshooting.md) | "Service does not start: configuration validation failed" — how to read the report, `--validate-config` as the first diagnostic step, and the `failed` vs `auto-restart` unit state after [§10.1](#101-systemd-restart-loop-on-a-bad-config) |
+| [docs/readme-dev.md](../docs/readme-dev.md) | `make validate-config`; how to add a validation rule and a capability; the deferred-import requirement of [§5.10](#510-module-boundaries) |
+| [docs/unit-testing.md](../docs/unit-testing.md) | The two config fixtures and what each is for; the new frontend test setup |
 | `TODOs/` | Move this document to `TODOs/completed/` once implemented, per the existing convention |
 
 ---
@@ -2116,7 +2116,7 @@ Deliberately **not** part of this proposal — listed so the design leaves room 
   `docs/` would keep documentation from drifting.
 * **Scarcity-weighted selection.** [§3.2](#32-rejected-refinement-documented-for-the-future).
 * **Capability-aware queueing.** "Notify me when a 5 GHz device frees up" — needs the
-  event/SSE work in [TODOs/realtime-events.md](TODOs/realtime-events.md). This is also
+  event/SSE work in [TODOs/realtime-events.md](realtime-events.md). This is also
   the natural home for a better answer to the all-unlimited 409 case.
 * **Multi-device reservations.** Booking two antennas in one call (roaming/handover
   tests) — a substantially different reservation model.
@@ -2127,7 +2127,7 @@ Deliberately **not** part of this proposal — listed so the design leaves room 
   door, which constraint C2 rules out.
 * **Runtime config reload.** Capabilities are read once at startup; editing
   `config.yaml` needs a service restart. Related to
-  [TODOs/startup-recovery.md](TODOs/startup-recovery.md).
+  [TODOs/startup-recovery.md](startup-recovery.md).
 * **Enforcing capabilities at AP creation.** `POST /interface/{rid}/network` could
   reject a `band` the reserved device does not declare, as a second line of defence
   behind the frontend filtering. Cheap to add, worth a follow-up.
