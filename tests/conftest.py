@@ -17,6 +17,63 @@ def config():
     return load_config(TEST_CONFIG_PATH)
 
 
+@pytest.fixture
+def valid_config():
+    """A complete, valid configuration as a plain dict.
+
+    Every key the schema knows about is present, because the validator requires it.
+    Tests mutate a copy of this to isolate one problem at a time.
+    """
+    return {
+        "auth_token": "unit-test-token",
+        "api_port": 8080,
+        "max_timeout": 86400,
+        "min_timeout": 60,
+        "allow_unlimited_reservation": False,
+        "dhcp_base_network": "192.168.120.0/24",
+        "upstream_interface": "auto",
+        "country_code": "IT",
+        "dns_server": "192.168.10.21",
+        "internet_enabled_by_default": True,
+        "cors_origins": [],
+        "networks": [
+            {
+                "interface": "wls16",
+                "display_name": "bench-antenna-1",
+                "capabilities": {"2.4ghz": True, "5ghz": True},
+            }
+        ],
+    }
+
+
+@pytest.fixture
+def write_config(tmp_path, valid_config):
+    """Write a config file built from the valid baseline.
+
+    Usage:
+        path = write_config()                                  # valid
+        path = write_config({"min_timeout": 5})                # one field changed
+        path = write_config(remove=["country_code"])           # one key missing
+    """
+    import copy
+
+    import yaml as _yaml
+
+    def _write(overrides=None, remove=None, name="config.yaml", raw_text=None):
+        target = tmp_path / name
+        if raw_text is not None:
+            target.write_text(raw_text, encoding="utf-8")
+            return str(target)
+        data = copy.deepcopy(valid_config)
+        for key in remove or []:
+            data.pop(key, None)
+        data.update(overrides or {})
+        target.write_text(_yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        return str(target)
+
+    return _write
+
+
 @pytest.fixture(autouse=True)
 def _test_config_env(monkeypatch):
     """Point load_config() to the test config and reset cached dependency singletons."""

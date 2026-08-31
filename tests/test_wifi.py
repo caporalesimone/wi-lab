@@ -75,7 +75,10 @@ class TestSubnetResolution:
     def test_get_subnet_fallback_calculation(self):
         """Test sequential allocation increments third octet."""
         cfg = load_config()
-        cfg.networks.append(NetworkEntry(interface='wlan1', display_name='extra'))
+        cfg.networks.append(NetworkEntry(
+            interface='wlan1', display_name='extra',
+            capabilities={'2.4ghz': True, '5ghz': False},
+        ))
         mgr = NetworkManager(cfg)
         first = mgr._get_subnet('wls16')
         second = mgr._get_subnet('wlan1')

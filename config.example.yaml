@@ -130,6 +130,24 @@ country_code: "IT"
 #   - display_name: Human-readable label for the device (required)
 #                  Example: "bench-antenna-1"
 #
+#   - capabilities: What this device may be used for (required).
+#                   Wi-Lab NEVER probes the hardware to fill these in and NEVER edits this
+#                   file: capabilities are your declaration, not a measurement. You may
+#                   legitimately declare "5ghz": false on a dual-band adapter to reserve
+#                   that band for another bench.
+#
+#                   Valid ids: 2.4ghz, 5ghz
+#                   EVERY id must be declared on EVERY device — a missing key is an error,
+#                   not a silent false. At least one band must be true, or the device
+#                   could never host an access point.
+#
+#                   Reservations can request capabilities; Wi-Lab then assigns the LEAST
+#                   capable device that satisfies the request, so a dual-band adapter
+#                   stays free for whoever actually needs 5 GHz.
+#
+# Validate this file at any time, without starting the service:
+#   python3 main.py --validate-config
+#
 # For WiFi interface discovery:
 #   List interfaces: iw dev
 #   Check AP mode support: iw list | grep -A 5 "Supported interface modes"
@@ -138,9 +156,18 @@ country_code: "IT"
 networks:
   - interface: "wlxbc071dc527d6"
     display_name: "bench-antenna-1"
+    capabilities:
+      "2.4ghz": true
+      "5ghz": false
 
   - interface: "wlx7820512451b4"
     display_name: "bench-antenna-2"
+    capabilities:
+      "2.4ghz": true
+      "5ghz": true
 
   - interface: "wlx782051245264"
     display_name: "bench-antenna-3"
+    capabilities:
+      "2.4ghz": true
+      "5ghz": true
