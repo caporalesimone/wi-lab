@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
+from ...config import CAPABILITY_REGISTRY
 from ...wifi.manager import NetworkManager
 from ...reservation import ReservationManager
 from ...api.dependencies import get_config, get_manager, get_reservation_manager
@@ -111,9 +112,15 @@ async def system_status(
 
     # Add networks with reservation info, checks, and rest of data
     networks_info = []
+    # Counts for the capability catalogue, accumulated in the same pass: both come from
+    # data already in hand, so the catalogue costs this endpoint no extra lookups.
+    total_by_cap: dict[str, int] = {cap.value: 0 for cap in CAPABILITY_REGISTRY}
+    free_by_cap: dict[str, int] = {cap.value: 0 for cap in CAPABILITY_REGISTRY}
+
     for n in config.networks:
         entry: dict = {"display_name": n.display_name, "interface": n.interface}
-        if reservation_mgr.is_device_reserved(n.device_id):
+        reserved = reservation_mgr.is_device_reserved(n.device_id)
+        if reserved:
             entry["reserved"] = True
             # Find the reservation for this device to report remaining time
             for r in reservation_mgr.all_active():
@@ -123,8 +130,34 @@ async def system_status(
         else:
             entry["reserved"] = False
             entry["reservation_remaining_seconds"] = None
+
+        # Enabled ids only, sorted: the wire carries facts, not the administrator's
+        # `false` entries, and sorting keeps responses byte-stable and diffable.
+        caps = config.capabilities_for(n.device_id)
+        entry["capabilities"] = caps
+        for cap_id in caps:
+            total_by_cap[cap_id] += 1
+            if not reserved:
+                free_by_cap[cap_id] += 1
         networks_info.append(entry)
     status_data["networks"] = networks_info
+
+    # Iterating the registry (not the union of device sets) keeps the order stable and
+    # label ownership in one place, so a new capability reaches the UI with no frontend
+    # release. A capability no device enables is omitted: offering a filter that can
+    # never match is worse than not offering it, and requesting it anyway yields the
+    # more precise 422.
+    status_data["capabilities_catalogue"] = [
+        {
+            "id": cap.value,
+            "label": definition.label,
+            "kind": definition.kind.value,
+            "total_devices": total_by_cap[cap.value],
+            "available_devices": free_by_cap[cap.value],
+        }
+        for cap, definition in CAPABILITY_REGISTRY.items()
+        if total_by_cap[cap.value] > 0
+    ]
     status_data["reservation_policy"] = {
         "min_seconds": config.min_timeout,
         "max_seconds": config.max_timeout,
@@ -242,6 +275,7 @@ async def debug_info(
                 {
                     "display_name": n.display_name,
                     "interface": n.interface,
+                    "capabilities": config.capabilities_for(n.device_id),
                     "reservation_id": next(
                         (r.reservation_id for r in reservation_mgr.all_active()
                          if r.device_id == n.device_id),

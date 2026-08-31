@@ -3,15 +3,20 @@
 import logging
 from datetime import datetime, timezone
 
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field, field_validator
 
 from ...api.auth import require_token
 from ...api.dependencies import get_config, get_manager, get_reservation_manager
-from ...config import AppConfig
-from ...reservation import ReservationManager, NoDeviceAvailableError
+from ...config import AppConfig, Capability, normalise_capability_id
+from ...reservation import (
+    CapabilityUnsatisfiableError,
+    NoDeviceAvailableError,
+    ReservationManager,
+    UnknownDeviceError,
+)
 from ...wifi.manager import NetworkManager
 
 logger = logging.getLogger(__name__)
@@ -26,6 +31,24 @@ class ReservationCreateRequest(BaseModel):
         ..., description="Reservation duration in seconds (0 = unlimited, if allowed by config)",
         json_schema_extra={"example": 3600}
     )
+    required_capabilities: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Capabilities the assigned device must provide. When omitted or empty, any "
+            "device is acceptable. Wi-Lab assigns the least capable matching free device, "
+            "so scarce multi-band hardware stays available for requests that need it."
+        ),
+        json_schema_extra={"example": ["2.4ghz"]},
+    )
+    interface: Optional[str] = Field(
+        default=None,
+        description=(
+            "Pin a specific managed device by interface name. When omitted, Wi-Lab "
+            "selects the best match. May be combined with required_capabilities, which "
+            "then act as a guard rail on the pinned device."
+        ),
+        json_schema_extra={"example": "wlxbc071dc527d6"},
+    )
 
     @field_validator("duration_seconds")
     @classmethod
@@ -36,6 +59,26 @@ class ReservationCreateRequest(BaseModel):
             )
         return v
 
+    @field_validator("required_capabilities")
+    @classmethod
+    def validate_capability_ids(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        """Canonicalise and validate ids against the same registry the config uses.
+
+        Normalisation goes through the shared normalise_capability_id(), so the file and
+        the wire cannot drift on "5GHz". The result is de-duplicated and sorted, which
+        makes the endpoint independent of client-side ordering.
+        """
+        if v is None:
+            return v
+        canonical = [normalise_capability_id(c) for c in v]
+        unknown = sorted({c for c in canonical if c not in Capability.ids()})
+        if unknown:
+            raise ValueError(
+                f"Unknown capabilities: {', '.join(unknown)}. "
+                f"Valid: {', '.join(Capability.ids())}"
+            )
+        return sorted(set(canonical))
+
 
 class ReservationResponse(BaseModel):
     reservation_id: str
@@ -43,6 +86,12 @@ class ReservationResponse(BaseModel):
     interface: str
     expires_at: Optional[str] = Field(None, description="Expiration datetime (yyyy-mm-dd HH:MM:SS), null if unlimited")
     expires_in: Optional[int] = Field(None, description="Seconds remaining until expiry, null if unlimited")
+    capabilities: List[str] = Field(
+        default_factory=list,
+        description="Capabilities the assigned device provides. Lets a client know what "
+                    "it actually got without cross-referencing /status.",
+        json_schema_extra={"example": ["2.4ghz"]},
+    )
 
 
 def _display_name_for(device_id: str, config: AppConfig) -> str:
@@ -61,7 +110,10 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
     responses={
         200: {"description": "Device reserved successfully"},
         401: {"description": "Unauthorized"},
-        409: {"description": "All devices are currently reserved"},
+        404: {"description": "The pinned interface is not managed by Wi-Lab"},
+        409: {"description": "Matching devices exist but all are reserved (transient)"},
+        422: {"description": "Invalid duration, unknown capability, or no device can "
+                             "ever provide the requested capabilities (permanent)"},
     },
 )
 async def create_reservation(
@@ -91,13 +143,43 @@ async def create_reservation(
                 detail=f"duration_seconds must be at most {config.max_timeout} seconds",
             )
 
+    required = frozenset(Capability(c) for c in (req.required_capabilities or []))
     try:
-        r = mgr.create(duration)
+        # Conversion must stay after validation: an unknown id would otherwise raise
+        # ValueError here and surface as a 500 instead of a 422.
+        r = mgr.create(duration, required_capabilities=required, device_id=req.interface)
+    except UnknownDeviceError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown interface '{req.interface}'",
+        )
+    except CapabilityUnsatisfiableError as exc:
+        # 422, not 409: no amount of waiting adds capabilities to the pool, so the
+        # client must change the request. The frontend keys its retry countdown off
+        # 409 and must not start one here.
+        if exc.device_id is not None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "Device does not provide the requested capabilities",
+                    "interface": exc.device_id,
+                    "missing": sorted(c.value for c in exc.missing),
+                },
+            )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "No device provides the requested capabilities",
+                "requested": sorted(c.value for c in required),
+                "available_capabilities": exc.available,
+            },
+        )
     except NoDeviceAvailableError as exc:
         raise HTTPException(
             status_code=409,
             detail={
                 "error": "No device available",
+                "requested_capabilities": sorted(c.value for c in required),
                 # Both null when every matching device is held by an unlimited
                 # reservation: there is no scheduled release to report.
                 # tz=timezone.utc to match _build_response(): without it this field was
@@ -127,6 +209,7 @@ def _build_response(r, config: AppConfig) -> ReservationResponse:
             if r.expires_at is not None else None
         ),
         expires_in=r.expires_in,
+        capabilities=config.capabilities_for(r.device_id),
     )
 
 

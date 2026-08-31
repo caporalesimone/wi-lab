@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, Path
 from ..config import AppConfig, load_config
 from ..wifi.manager import NetworkManager
 from ..wifi.channels import ChannelManager
-from ..reservation import ReservationManager, Reservation
+from ..reservation import DeviceSpec, ReservationManager, Reservation
 from ..network.qos import QosManager
 from ..network.qos_profile import QosProfileManager
 
@@ -29,8 +29,18 @@ def get_manager(config: AppConfig = Depends(get_config)) -> NetworkManager:
 def get_reservation_manager(config: AppConfig = Depends(get_config)) -> ReservationManager:
     global _reservation_manager
     if _reservation_manager is None:
-        device_ids = [n.device_id for n in config.networks]
-        _reservation_manager = ReservationManager(device_ids)
+        # Capabilities come straight from the validated config: no resolution step, no
+        # cache, no startup hook to coordinate with, because nothing is ever inferred
+        # from the hardware.
+        devices = [
+            DeviceSpec(
+                device_id=n.device_id,
+                capabilities=frozenset(n.capability_set),
+                index=i,
+            )
+            for i, n in enumerate(config.networks)
+        ]
+        _reservation_manager = ReservationManager(devices)
     return _reservation_manager
 
 
