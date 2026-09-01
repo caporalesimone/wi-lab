@@ -520,7 +520,7 @@ New module: **`wilab/config_validation.py`**.
 | Goal | Consequence for the implementation |
 |------|-----------------------------------|
 | **Report everything, fail once** | No fail-fast anywhere in the pipeline; every phase runs and accumulates issues |
-| **Precise paths** | `networks[1].capabilities.5ghz`, not "invalid networks" — the administrator must find the line without guessing |
+| **Precise paths** | `networks[1].capabilities["5ghz"]`, not "invalid networks" — the administrator must find the line without guessing |
 | **Actionable hints** | Every issue carries a concrete fix, not just a complaint |
 | **Runnable standalone** | Pure function of the file; no managers constructed, no server started |
 | **Runnable off-bench** | Hardware checks are a separate opt-in phase ([§5.3](#53-validation-phases)) |
@@ -541,7 +541,7 @@ class Severity(str, Enum):
 
 @dataclass(frozen=True)
 class ValidationIssue:
-    path: str                    # "networks[1].capabilities.5ghz"
+    path: str                    # 'networks[1].capabilities["5ghz"]'
     message: str                 # what is wrong
     severity: Severity = Severity.ERROR
     hint: str | None = None      # how to fix it
@@ -759,7 +759,7 @@ Wi-Lab configuration validation FAILED
 File: /opt/wilab/config.yaml
 3 error(s), 1 warning(s)
 
-ERROR   networks[0].capabilities.5ghz
+ERROR   networks[0].capabilities["5ghz"]
         Missing required capability key.
         → Add '"5ghz": true' or '"5ghz": false' under networks[0].capabilities
 
@@ -2402,6 +2402,7 @@ Recorded so a later reader does not mistake them for oversights.
 | 7 | Capability tests live in `tests/test_reservation_capabilities.py`, not `test_reservation.py` | That file is already 800+ lines and covers the reservation lifecycle; allocation policy is a separate concern. |
 | 8 | The install stage is `02-validate-config.sh`, sharing the `02` prefix with `02-systemd.sh` | The orchestrator's `find` piped through `sort -V` orders it after systemd and before `03-enable.sh`, which is what matters. Renumbering the later stages would churn their `INSTALL_STAGE_NN_DONE` state keys for no gain. |
 | 9 | Card capability chips reuse `.status-chip` rather than defining their own rule | See the SCSS budget in §18.5. A standalone rule broke the production build. |
+| 10 | Capability keys are bracket-quoted in issue paths — `networks[0].capabilities["2.4ghz"]`, not `.2.4ghz` | The id contains a dot, so the dotted form reads as three nested keys and cannot be told apart from real nesting. The quoted form is unambiguous and shows how the key must be written in YAML, so the report doubles as an example. `_capability_path()` and `_loc_to_path()` both produce it and a test asserts they agree — phase 4 is de-duplicated against phases 2/3 by exact path string, so a drift would report the same fault twice. |
 
 ### 18.5 Open decisions
 

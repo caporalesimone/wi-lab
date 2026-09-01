@@ -112,7 +112,7 @@ class TestPresence:
     def test_missing_single_capability_key(self, write_config):
         nets = [{"interface": "wls16", "display_name": "a", "capabilities": {"2.4ghz": True}}]
         report = validate_config_file(write_config({"networks": nets}))
-        assert "networks[0].capabilities.5ghz" in error_paths(report)
+        assert 'networks[0].capabilities["5ghz"]' in error_paths(report)
 
     def test_capability_key_normalisation(self, write_config):
         """'5GHz' and ' 2.4ghz ' are the same keys as their canonical forms."""
@@ -153,7 +153,7 @@ class TestUnknownKeys:
         nets = valid_config["networks"]
         nets[0]["capabilities"]["5ghzz"] = True
         report = validate_config_file(write_config({"networks": nets}))
-        issue = next(i for i in report.issues if i.path == "networks[0].capabilities.5ghzz")
+        issue = next(i for i in report.issues if i.path == 'networks[0].capabilities["5ghzz"]')
         assert "5ghz" in (issue.hint or "")
 
 
@@ -241,7 +241,7 @@ class TestCapabilityGroupRule:
         nets[0]["capabilities"] = {"2.4ghz": "yes", "5ghz": False}
         report = validate_config_file(write_config({"networks": nets}))
         assert "networks[0].capabilities" in error_paths(report)          # group rule fired
-        assert "networks[0].capabilities.2.4ghz" in error_paths(report)   # type error too
+        assert 'networks[0].capabilities["2.4ghz"]' in error_paths(report)  # type error too
 
     def test_rule_is_generic_not_band_specific(self, write_config, valid_config, monkeypatch):
         """Capabilities with group=None may all be false without tripping the group rule.
@@ -550,6 +550,47 @@ class TestRendering:
         for issue in report.issues:
             assert secret not in issue.message
             assert secret not in (issue.hint or "")
+
+
+class TestCapabilityPaths:
+    """A capability id contains a dot, so its path segment is bracket-quoted."""
+
+    def test_missing_key_path_is_bracket_quoted(self, write_config, valid_config):
+        nets = valid_config["networks"]
+        del nets[0]["capabilities"]["2.4ghz"]
+        report = validate_config_file(write_config({"networks": nets}))
+        assert 'networks[0].capabilities["2.4ghz"]' in error_paths(report)
+        assert "networks[0].capabilities.2.4ghz" not in error_paths(report)
+
+    def test_pydantic_and_presence_agree_on_the_path(self, write_config, valid_config):
+        """The invariant de-duplication rests on.
+
+        Phase 4 is filtered against phases 2/3 by exact path string, so the two renderers
+        -- _capability_path() and _loc_to_path() -- must produce byte-identical output. If
+        they drift, one problem is reported twice and the report stops being trustworthy.
+        """
+        from wilab.config_validation import _capability_path, _loc_to_path
+
+        for cap_id in Capability.ids():
+            assert _capability_path(0, cap_id) == _loc_to_path(
+                ("networks", 0, "capabilities", cap_id)
+            )
+
+    def test_a_type_error_is_reported_once(self, write_config, valid_config):
+        """A bad capability value trips Pydantic; it must not also appear from phase 2/3."""
+        nets = valid_config["networks"]
+        nets[0]["capabilities"] = {"2.4ghz": "yes", "5ghz": True}
+        report = validate_config_file(write_config({"networks": nets}))
+        hits = [i for i in report.issues if i.path == 'networks[0].capabilities["2.4ghz"]']
+        assert len(hits) == 1, [i.path for i in report.issues]
+
+    def test_report_renders_the_quoted_form(self, write_config, valid_config):
+        """The path doubles as an example: this is how the key must be written in YAML."""
+        nets = valid_config["networks"]
+        del nets[0]["capabilities"]["2.4ghz"]
+        text = validate_config_file(write_config({"networks": nets})).render()
+        assert 'capabilities["2.4ghz"]' in text
+        text.encode("ascii")
 
 
 class TestReportModel:

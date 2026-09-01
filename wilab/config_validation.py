@@ -368,7 +368,7 @@ def _check_presence(raw: Dict[str, Any]) -> List[ValidationIssue]:
         for cap in CAPABILITY_REGISTRY:
             if cap.value not in declared:
                 issues.append(ValidationIssue(
-                    path=f"networks[{idx}].capabilities.{cap.value}",
+                    path=_capability_path(idx, cap.value),
                     message="Missing required capability key.",
                     hint=(
                         f"Add '\"{cap.value}\": true' or '\"{cap.value}\": false' "
@@ -376,6 +376,24 @@ def _check_presence(raw: Dict[str, Any]) -> List[ValidationIssue]:
                     ),
                 ))
     return issues
+
+
+# Fields whose keys are data rather than schema. Their keys are bracket-quoted in paths.
+_MAPPING_FIELDS = frozenset({"capabilities"})
+
+
+def _capability_path(net_index: int, cap_id: Any) -> str:
+    """Path of one capability key inside a network entry.
+
+    Bracket-quoted rather than dotted, because capability ids contain dots: the naive
+    ``networks[0].capabilities.2.4ghz`` reads as three nested keys and cannot be told apart
+    from a genuine nesting. The quoted form is unambiguous and mirrors how the key has to be
+    written in the YAML file, so the report doubles as an example.
+
+    Every producer of such a path goes through here or through ``_loc_to_path``, which must
+    agree with it: phase 4 is de-duplicated against phases 2/3 by exact path string.
+    """
+    return f'networks[{net_index}].capabilities["{cap_id}"]'
 
 
 # ==================================================================================================
@@ -416,7 +434,7 @@ def _check_unknown_keys(raw: Dict[str, Any]) -> List[ValidationIssue]:
         for key in caps:
             if normalise_capability_id(key) not in valid_caps:
                 issues.append(ValidationIssue(
-                    path=f"networks[{idx}].capabilities.{key}",
+                    path=_capability_path(idx, key),
                     message=f"Unknown capability '{key}'.",
                     hint=f"Valid capabilities: {', '.join(valid_caps)}",
                 ))
@@ -429,13 +447,23 @@ def _check_unknown_keys(raw: Dict[str, Any]) -> List[ValidationIssue]:
 
 
 def _loc_to_path(loc: Tuple[Any, ...]) -> str:
-    """Render a Pydantic error location as a configuration path."""
+    """Render a Pydantic error location as a configuration path.
+
+    Keys of a free-form mapping are bracket-quoted, so that a type error on a capability
+    lands on exactly the path ``_capability_path()`` produces. The two must agree: phase 4
+    is de-duplicated against phases 2/3 by exact path string, and a mismatch would report
+    the same problem twice.
+    """
     parts: List[str] = []
+    previous: Any = None
     for item in loc:
         if isinstance(item, int):
             parts.append(f"[{item}]")
+        elif previous in _MAPPING_FIELDS:
+            parts.append(f'["{item}"]')
         else:
             parts.append(f".{item}" if parts else str(item))
+        previous = item
     return "".join(parts)
 
 
@@ -935,13 +963,15 @@ _CAP_ORDER = {cap.value: i for i, cap in enumerate(CAPABILITY_REGISTRY)}
 
 _NET_PATH_RE = re.compile(r"^networks\[(\d+)\](?:\.(.+))?$")
 _INDEXED_TOP_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\[(\d+)\]$")
+# Matches "capabilities" on its own and "capabilities[\"<id>\"]" for one key.
+_CAP_PATH_RE = re.compile(r'^capabilities(?:\["(.*)"\])?$')
 
 
 def _sort_key(issue: ValidationIssue) -> Tuple[int, int, int, int, int, str]:
     """Order issues by position in the schema, so the report reads like the file.
 
-    Capability ids contain dots ("2.4ghz"), so paths are matched structurally rather than
-    split on ".".
+    Paths are matched structurally, never split on ".": capability ids contain dots, which
+    is also why ``_capability_path()`` bracket-quotes them.
     """
     path = issue.path
 
@@ -951,10 +981,15 @@ def _sort_key(issue: ValidationIssue) -> Tuple[int, int, int, int, int, str]:
         remainder = match.group(2)
         if remainder is None:
             return (1, _TOP_ORDER["networks"], net_index, -1, -1, path)
-        if remainder == "capabilities" or remainder.startswith("capabilities."):
+        cap_match = _CAP_PATH_RE.match(remainder)
+        if cap_match:
             field_rank = _NET_ORDER.get("capabilities", 99)
-            cap_id = remainder[len("capabilities."):] if "." in remainder else ""
-            cap_rank = _CAP_ORDER.get(normalise_capability_id(cap_id), 99) if cap_id else -1
+            cap_id = cap_match.group(1)
+            # None = the block itself, which sorts before any single key within it.
+            cap_rank = (
+                -1 if cap_id is None
+                else _CAP_ORDER.get(normalise_capability_id(cap_id), 99)
+            )
             return (1, _TOP_ORDER["networks"], net_index, field_rank, cap_rank, path)
         return (1, _TOP_ORDER["networks"], net_index, _NET_ORDER.get(remainder, 99), -1, path)
 
