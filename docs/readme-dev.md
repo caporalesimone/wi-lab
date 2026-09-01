@@ -76,16 +76,38 @@ nano <local-config-file>
 ```yaml
 auth_token: "dev-token-12345"
 api_port: 8080
+cors_origins: []
+
+max_timeout: 86400
+min_timeout: 60
+allow_unlimited_reservation: false
 
 dhcp_base_network: "192.168.120.0/24"
 upstream_interface: "auto"
 dns_server: "192.168.10.1"
 internet_enabled_by_default: true
+country_code: "IT"
 
 networks:
   - interface: "wlx782051245264"  # Your WiFi interface
     display_name: "bench-antenna-1"
+    capabilities:
+      "2.4ghz": true
+      "5ghz": true
 ```
+
+**Every key is mandatory** — the validator refuses a file with anything missing, and
+`load_config()` exits rather than start on one. Check the file before running anything:
+
+```bash
+make validate-config                                 # through the venv
+python3 main.py --validate-config                    # structure, types and values
+python3 main.py --validate-config --check-hardware   # also interfaces and host routes
+```
+
+Exit codes are `0` valid, `1` invalid, `2` unreadable. `--validate-config` constructs no
+manager, starts no server and touches no interface — that property is asserted by
+`tests/test_cli.py`, so it stays safe to run on a production host.
 
 ---
 
@@ -112,7 +134,7 @@ Once running:
 - **API Docs:** `http://localhost:8080/docs`
 - **Alternative Docs:** `http://localhost:8080/redoc`
 
-See [docs/swagger.md](docs/swagger.md) for complete API testing guide.
+See [docs/swagger.md](swagger.md) for complete API testing guide.
 
 ---
 
@@ -120,7 +142,7 @@ See [docs/swagger.md](docs/swagger.md) for complete API testing guide.
 
 ### Running Tests
 
-For complete testing documentation, see [docs/unit-testing.md](docs/unit-testing.md).
+For complete testing documentation, see [docs/unit-testing.md](unit-testing.md).
 
 Preferred commands (via Makefile):
 
@@ -163,6 +185,9 @@ make test-local-quick
 # Generate coverage report
 make test-local-cov
 
+# Validate config.yaml without starting anything
+make validate-config
+
 # Check code style with ruff
 make lint
 
@@ -177,7 +202,7 @@ make clean-venv
 ```
 
 Use `make help` to view the complete and always-updated list of available targets.
-See [Makefile](Makefile)
+See [Makefile](../Makefile)
 
 ---
 
@@ -260,6 +285,101 @@ The project follows clean separation of concerns:
 
 ---
 
+## Extending the Configuration
+
+### Adding a validation rule
+
+Rules live in `wilab/config_validation.py` and are registered with the `@rule` decorator.
+One function, one problem, yielding zero or more `ValidationIssue`s:
+
+```python
+@rule(scope="dns_server")
+def check_dns_server_is_not_the_gateway(ctx: ValidationContext) -> Iterable[ValidationIssue]:
+    value = _get_str(ctx.raw, "dns_server")
+    if value is None:
+        return                      # presence is already reported elsewhere
+    if value == "0.0.0.0":
+        yield ValidationIssue(
+            path="dns_server",
+            message="0.0.0.0 is not a usable DNS server.",
+            hint="Use your LAN resolver or a public one such as 208.67.222.222.",
+        )
+```
+
+Four things to respect:
+
+| Rule | Why |
+|------|-----|
+| **Be defensive about the input** | Rules run on the raw parsed YAML, so a value may be missing, `None`, or the wrong type entirely. Return quietly instead of raising; another rule already owns "this key is missing" and "this key is the wrong type" |
+| **Always give a `hint`** | The report has to be enough on its own. An error without a next action sends the operator to the source |
+| **ASCII only** | The report is printed to consoles with legacy code pages and to journald under `LANG=C`. A typographic arrow raises `UnicodeEncodeError` there and passes every test, because pytest captures in UTF-8 |
+| **Never echo a secret** | `auth_token` values are scrubbed from the rendered report; do not defeat that by quoting the value back |
+
+Pass `hardware=True` for a rule that inspects the machine — an interface, a route table.
+Those run only under `--check-hardware` (and always at startup), which is what keeps
+`--validate-config` usable on a laptop and in CI.
+
+**Hardware rules must import their helpers inside the function body, never at module
+level:**
+
+```python
+@rule(scope="networks[].interface", hardware=True)
+def check_interfaces_exist(ctx):
+    from ..wifi.interface import validate_interface   # deferred, on purpose
+```
+
+This is not a style preference. `tests/conftest.py` monkeypatches `validate_interface` and
+`execute_command` so the suite never shells out to `iw` or `ip`; a module-level import
+binds the original function at import time and silently defeats that patch, making every
+config-loading test hit the real hardware. `test_conftest_monkeypatch_reaches_the_validator`
+fails if someone "tidies" the import to the top of the file.
+
+Rules replace the Pydantic `field_validator`s the models used to carry. Keeping both would
+mean two reporting paths with different formatting, and Pydantic stops at the first error
+per field while the whole point of the validator is to report everything at once.
+
+### Adding a capability
+
+A capability is one enum member plus one registry entry in `wilab/config.py`:
+
+```python
+class Capability(str, Enum):
+    BAND_24GHZ = "2.4ghz"
+    BAND_5GHZ = "5ghz"
+    BAND_6GHZ = "6ghz"          # new
+
+CAPABILITY_REGISTRY = {
+    ...
+    Capability.BAND_6GHZ: CapabilityDef(
+        id=Capability.BAND_6GHZ,
+        label="6 GHz",
+        kind=CapabilityKind.RADIO,
+        group="band",
+    ),
+}
+```
+
+Everything else follows automatically: the required-key manifest, the validator's hints,
+the reservation request validator, the selection algorithm, the `/status` catalogue and
+the frontend picker all read the registry rather than a hard-coded list.
+
+Two consequences to be aware of:
+
+- **It is a breaking configuration change.** Every device must declare every id, so every
+  existing `config.yaml` becomes invalid until the new key is added. Announce it in the
+  CHANGELOG under `⚠️ Breaking Changes` and lean on `--validate-config` for the upgrade.
+- **`group` carries meaning.** A capability in a group listed in `GROUPS_REQUIRING_ONE`
+  (currently `band`) participates in the "at least one enabled" check. A future policy
+  capability such as `change-ssid` would simply carry no group and be exempt.
+
+Only boolean, matchable capabilities are supported. `CapabilityType.INTEGER` and
+`matchable=False` exist in the model as documented extension points, and an import-time
+guard in `wilab/config.py` **raises** if either is used — the selection algorithm would
+mis-allocate devices otherwise. It raises rather than asserts because `assert` is stripped
+under `python -O`.
+
+---
+
 ## Setup State Contract (Phase 1)
 
 The installer now initializes a shared machine-readable state file for all setup
@@ -288,7 +408,7 @@ stages.
 
 ### Available Helpers
 
-Defined in [install/common.sh](install/common.sh):
+Defined in [install/common.sh](../install/common.sh):
 
 - `state_init`
 - `state_set KEY VALUE`
@@ -297,7 +417,7 @@ Defined in [install/common.sh](install/common.sh):
 
 ### Current Bootstrap Behavior
 
-At installer start, [install.sh](install.sh) initializes the state file and sets:
+At installer start, [install.sh](../install.sh) initializes the state file and sets:
 
 - `INSTALL_RUN_STARTED=1`
 - `INSTALL_RUN_STARTED_AT=<UTC ISO timestamp>`
@@ -373,6 +493,7 @@ Keep documentation focused on workflows and behavior rather than internal file p
 
 ### Before Committing
 
+- ✅ Configuration still validates: `make validate-config`
 - ✅ Code style passes: `make lint` (or auto-fix with `make lint-fix`)
 - ✅ Type checking passes: `make type-check` (warnings expected during transition)
 - ✅ All tests pass: `make test-local`

@@ -10,9 +10,10 @@ Typical use-cases: automated wireless testing, RF/antenna benchmarking, classroo
 
 1. **Multiple WiFi interfaces** — each USB adapter is declared in `config.yaml` and managed independently.
 2. **Reservation system** — before touching an interface you acquire a time-limited (or unlimited) reservation token via the API. The token is an 8-char hex string; when it expires the AP is torn down automatically.
-3. **One AP per interface** — while reserved, you can create a WiFi network (hostapd), configure DHCP (dnsmasq), enable/disable Internet (iptables NAT), and adjust TX power — all via REST calls.
-4. **Web frontend** — an Angular SPA shows every interface as a card (available / owned / occupied), lets you reserve, configure, and monitor networks from the browser. The auth token is entered at runtime via a login dialog.
-5. **Web API** — every operation is also available programmatically (`/api/v1/…`), with full Swagger UI at `http://<host>:8080/docs`. Useful for scripting, SDKs, or CI integration.
+3. **Device capabilities** — each adapter declares in `config.yaml` what it may be used for (currently the `2.4ghz` and `5ghz` bands). A reservation can ask for the capabilities it needs and Wi-Lab assigns the **least capable device that satisfies the request**, so a dual-band adapter stays free for whoever actually needs 5 GHz.
+4. **One AP per interface** — while reserved, you can create a WiFi network (hostapd), configure DHCP (dnsmasq), enable/disable Internet (iptables NAT), and adjust TX power — all via REST calls.
+5. **Web frontend** — an Angular SPA shows every interface as a card (available / owned / occupied), lets you reserve, configure, and monitor networks from the browser. The auth token is entered at runtime via a login dialog.
+6. **Web API** — every operation is also available programmatically (`/api/v1/…`), with full Swagger UI at `http://<host>:8080/docs`. Useful for scripting, SDKs, or CI integration.
 
 ---
 
@@ -38,11 +39,17 @@ cd wi-lab
 
 # 2. Copy and edit configuration
 cp config.example.yaml config.yaml
-nano config.yaml          # set auth_token, networks[].interface, dhcp_base_network, dns_server
+nano config.yaml          # set auth_token, networks[].interface + capabilities, dhcp_base_network, dns_server
 
-# 3. Install (creates venv, installs deps, builds frontend, enables systemd service)
+# 3. Check the configuration before installing (optional - the installer does it too)
+python3 main.py --validate-config
+
+# 4. Install (creates venv, installs deps, builds frontend, enables systemd service)
 sudo bash install.sh
 ```
+
+The installer **aborts before enabling the service** if `config.yaml` does not validate,
+so a bad configuration can never leave a half-installed system behind.
 
 After installation Wi-Lab is running on port **8080** and will autostart on reboot.
 Open `http://<host>:8080` for the web UI or `http://<host>:8080/docs` for the Swagger API.
@@ -64,6 +71,7 @@ Key sections:
 ```yaml
 auth_token: "change-me"                 # Bearer token for API authentication
 api_port: 8080
+cors_origins: []                        # [] disables CORS; otherwise list allowed origins
 
 # Reservation timeouts
 max_timeout: 86400                      # 24 h
@@ -81,11 +89,82 @@ country_code: "IT"                      # WiFi regulatory domain
 networks:
   - interface: "wlxbc071dc527d6"
     display_name: "bench-antenna-1"
+    capabilities:
+      "2.4ghz": true
+      "5ghz": false                     # a 2.4-only adapter
   - interface: "wlx7820512451b4"
     display_name: "bench-antenna-2"
+    capabilities:
+      "2.4ghz": true
+      "5ghz": true                      # dual-band
 ```
 
+**Every key is mandatory.** Wi-Lab validates `config.yaml` at startup and refuses to
+start if anything is missing or wrong — it never guesses a value and never edits the file.
+
+### Device capabilities
+
+`capabilities` is your **declaration** of what an adapter may be used for. Wi-Lab never
+probes the hardware to fill it in, so you can legitimately declare `"5ghz": false` on a
+dual-band adapter to keep that band for another bench.
+
+| Rule | Meaning |
+|------|---------|
+| Valid ids | `2.4ghz`, `5ghz` |
+| Every id on every device | A missing key is an error, not a silent `false` |
+| At least one `true` | A device with no enabled band could never host an access point |
+
+When a reservation requests capabilities, Wi-Lab picks the **least capable free device**
+that satisfies them. With no capabilities requested, any free device will do — and the
+same "least capable first" rule applies, so scarce dual-band hardware is left alone
+whenever a simpler adapter would do.
+
 > **Warning:** `dhcp_base_network` must use a subnet different from your host LAN. A conflict will break host networking and may require a physical reboot.
+
+---
+
+## Validating the Configuration
+
+`config.yaml` can be checked at any time, on any machine, without starting the service:
+
+```bash
+python3 main.py --validate-config                  # structure, types and values
+python3 main.py --validate-config --check-hardware  # also: interfaces exist, no subnet clash
+make validate-config                                # the same, through the venv
+```
+
+The validator reports **every** problem in one pass, each with the fix, so a file can be
+completed in a single editing session:
+
+```
+Wi-Lab configuration validation FAILED
+File: /opt/wilab/config.yaml
+2 error(s), 0 warning(s)
+
+ERROR   networks[0].capabilities
+        Missing required key.
+        -> Add a capabilities block declaring: 2.4ghz, 5ghz
+
+ERROR   cors_origins
+        Missing required key.
+        -> Add 'cors_origins: []' to disable CORS, or list the allowed origins
+```
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Valid (warnings may still be printed) |
+| `1` | Invalid — see the report |
+| `2` | The file could not be read or parsed at all |
+
+`--validate-config` starts no server, touches no interface and changes nothing, so it is
+safe to run on a production host. `--check-hardware` adds the checks that need the real
+machine (interfaces present, `dhcp_base_network` not colliding with a host route); omit it
+to validate on a laptop or in CI. Starting the service normally always runs both.
+
+> **Upgrading from 3.0.x?** `capabilities`, `cors_origins` and
+> `allow_unlimited_reservation` are now required. Run `--validate-config`, fix everything
+> it lists, and restart. Capability values have to be typed by hand on purpose — see
+> [TODOs/completed/device-capabilities.md](TODOs/completed/device-capabilities.md).
 
 ---
 
@@ -104,6 +183,9 @@ Testing (Local - uses venv):
   make test-local        Run all tests with verbose output
   make test-local-quick  Run tests with minimal output
   make test-local-cov    Run tests with coverage report (HTML)
+
+Configuration:
+  make validate-config   Validate config.yaml and exit (no service started)
 
 Code Quality:
   make lint              Run ruff linter
@@ -138,8 +220,21 @@ curl -X POST http://localhost:8080/api/v1/device-reservation \
 #   "interface": "wlxbc071dc527d6",
 #   "display_name": "bench-antenna-1",
 #   "expires_at": "2026-04-16T15:15:00Z",
-#   "expires_in": 900
+#   "expires_in": 900,
+#   "capabilities": ["2.4ghz"]
 # }
+
+# 1b. ...or ask for a device that can do 5 GHz
+curl -X POST http://localhost:8080/api/v1/device-reservation \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"duration_seconds": 900, "required_capabilities": ["5ghz"]}'
+
+# 1c. ...or pin one specific adapter
+curl -X POST http://localhost:8080/api/v1/device-reservation \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"duration_seconds": 900, "interface": "wlx7820512451b4"}'
 
 # 2. Create a WiFi network on the reserved device
 curl -X POST http://localhost:8080/api/v1/network/a1b2c3d4 \
@@ -147,6 +242,17 @@ curl -X POST http://localhost:8080/api/v1/network/a1b2c3d4 \
   -H "Content-Type: application/json" \
   -d '{"ssid": "TestNetwork", "channel": 6, "band": "2.4ghz", "encryption": "wpa2", "password": "mypassword"}'
 ```
+
+`GET /api/v1/status` lists the capabilities of every device plus a catalogue of what the
+lab as a whole can offer, so a client can decide what to ask for before reserving.
+
+A reservation request that cannot be satisfied is answered precisely:
+
+| Status | Meaning |
+|--------|---------|
+| `404` | The pinned `interface` is not managed by Wi-Lab |
+| `409` | Matching devices exist but are all reserved — **retry later**; the body carries `next_available_in` (`null` when every holder has an unlimited reservation) |
+| `422` | No device can *ever* provide what was asked — **change the request** |
 
 For the full endpoint reference, open **Swagger UI** at `http://<host>:8080/docs` or **ReDoc** at `http://<host>:8080/redoc`.
 
@@ -164,13 +270,17 @@ Detailed guides live in the `docs/` folder:
 | [troubleshooting.md](docs/troubleshooting.md) | Common issues, diagnostics scripts, debugging |
 | [readme-dev.md](docs/readme-dev.md) | Developer setup and contribution workflow |
 
-Planned features and ideas are tracked in the `TODOs/` folder.
+Planned features and ideas are tracked in the `TODOs/` folder; the design documents of
+features already shipped live in `TODOs/completed/`.
 
 ---
 
 ## Troubleshooting
 
 See [docs/troubleshooting.md](docs/troubleshooting.md) for common issues (interface compatibility, subnet conflicts, service failures, API errors) and the diagnostic scripts in `diagnostics/troubleshooting/`.
+
+If the service does not start at all, run `python3 main.py --validate-config` first: a
+configuration error is the most common cause and the report says exactly what to fix.
 
 ---
 

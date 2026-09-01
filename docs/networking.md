@@ -106,6 +106,38 @@ dhcp_base_network: "192.168.120.0/24"
 dhcp_base_network: "192.168.10.0/24"
 ```
 
+### Automatic Detection (3.1.0)
+
+Since 3.1.0 this conflict is **detected before anything is started**. The configuration
+validator computes the `/24` it would allocate to each managed device — sequential from
+`dhcp_base_network`, one per device — and compares every one of them against the host's
+own routing table (`ip route`):
+
+```bash
+python3 main.py --validate-config --check-hardware
+```
+
+```
+ERROR   dhcp_base_network
+        Planned WiFi subnet 192.168.10.0/24 overlaps the existing host route 192.168.10.0/24.
+        -> A collision breaks host networking and can drop your SSH session. Pick a range your host does not route.
+```
+
+This check runs automatically every time the service starts, so a collision now stops the
+service with a readable report instead of taking the host's networking down with it. It
+is part of the **hardware phase**, which means:
+
+- It needs the real machine, so it is skipped by a plain `--validate-config` — that form
+  stays usable on a laptop or in CI where there is no meaningful route table.
+- It checks **all** planned subnets, not just the base one. A base of `192.168.9.0/24`
+  with three devices allocates `.9`, `.10` and `.11`, and a host on `192.168.10.x` is
+  still a conflict.
+- If `ip route` cannot be read the check stays silent rather than guessing: an unreadable
+  route table is not a configuration error.
+
+The manual check above is still worth doing when planning a deployment — the validator
+tells you that a range collides, not which range to pick instead.
+
 ---
 
 ## Diagnostics and Monitoring
@@ -220,6 +252,46 @@ cp config.yaml config.yaml.backup
 sudo cp /etc/systemd/system/wi-lab.service /etc/systemd/system/wi-lab.service.backup
 ```
 
+### Device Capabilities and Bands
+
+Each managed device declares in `config.yaml` which bands it may be used for:
+
+```yaml
+networks:
+  - interface: "wlxbc071dc527d6"
+    display_name: "bench-antenna-1"
+    capabilities:
+      "2.4ghz": true
+      "5ghz": false
+```
+
+**This is a declaration, never a probe.** Wi-Lab does not query the driver, does not run
+`iw phy channels`, and never edits `config.yaml` to fill anything in. The values are an
+administrative statement of what the adapter *may* be used for on this bench, which is not
+the same thing as what its silicon can do — declaring `"5ghz": false` on a dual-band
+adapter to reserve that band for another bench is a legitimate and supported choice. A
+missing key is an error, not a silent `false`, and a device with no enabled band is
+rejected because it could never host an access point.
+
+**How this relates to `band` at AP creation.** The two use the same vocabulary
+(`2.4ghz`, `5ghz`) deliberately, so no mapping layer exists between them:
+
+| Layer | What happens |
+|-------|--------------|
+| Reservation | A request may ask for capabilities; Wi-Lab assigns the least capable free device that provides them |
+| Frontend | The band dropdown in the network form only offers bands the reserved device declares, and defaults to one it can serve |
+| AP creation | `band` selects the channel range and the hostapd hardware mode as before |
+
+The declaration is not yet enforced at AP creation: `POST` of a network with a `band` the
+reserved device does not declare is currently rejected only by the frontend, not by the
+API. Enforcing it server-side is a planned second line of defence.
+
+Capabilities have **no effect on subnets, NAT or iptables** — a device's `/24` is still
+allocated from `dhcp_base_network` by its position in the `networks` list, regardless of
+what it declares.
+
+---
+
 ### Reservation-Driven Timeout
 
 Network lifetime is controlled by device reservations. When a reservation
@@ -237,8 +309,10 @@ This ensures networks don't run indefinitely and prevents orphaned rules.
 
 Before deploying Wi-Lab to production:
 
+- [ ] `python3 main.py --validate-config --check-hardware` exits 0
 - [ ] Verified host subnet: `ip addr show | grep "inet "`
 - [ ] Set WiFi subnet to different range (e.g., `192.168.120.0/24`)
+- [ ] Declared `capabilities` on every device, matching what each adapter may be used for
 - [ ] Tested network creation and deletion
 - [ ] Verified SSH remains accessible during tests
 - [ ] Set up monitoring of service logs

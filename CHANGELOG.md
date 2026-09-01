@@ -6,12 +6,37 @@ All notable changes to Wi-Lab are documented in this file.
 
 ## [Unreleased]
 
+---
+
+## [3.1.0] - 2026-09-01
+
+Devices now declare what they can do, and reservations can ask for it.
+Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device-capabilities.md).
+
+### ⚠️ Breaking Changes
+
+- **`config.yaml` must be completed before upgrading.** Every key is now mandatory, including the new `capabilities` block on each device. Run `python3 main.py --validate-config`, fix everything it lists, then restart. The service will not start on an incomplete file.
+
+### ✨ Features
+
+- **Device capabilities** — each device declares the bands it may be used for (`2.4ghz`, `5ghz`) in `config.yaml`.
+- **Capability-based reservations** — ask for what you need (`required_capabilities`) and get the least capable device that provides it, so dual-band adapters stay free for those who need them. You can also pin one specific device with `interface`.
+- **Configuration validator** — `python3 main.py --validate-config` (or `make validate-config`) checks the file without starting anything and lists every problem at once, with the fix. Add `--check-hardware` to also verify adapters and subnets. The installer runs it before enabling the service.
+- **Capabilities in the web UI and API** — capability chips on every device card, a reservation dialog to pick capabilities or a specific device, band choices limited to what the reserved device supports, and capability data in `/status` and the reservation responses.
+
+### 🐛 Bug Fixes
+
+- Reservation timestamps in "no device available" responses were shown in the server's local time instead of UTC.
+- When all devices were held by unlimited reservations, the UI showed a countdown that never elapsed. It now says there is no scheduled release.
+
 ### 🔧 Maintenance
 
+- With no capabilities requested, the assigned device is now the least capable free one rather than the first in configuration order.
 - **hostapd regulatory compliance** — The generated hostapd configuration now enables `ieee80211d=1` (advertise country code and apply the regulatory domain) on all bands, and `ieee80211h=1` (DFS/TPC) on 5 GHz where regulatory rules require it.
 
 ### ✅ Tests
 
+- 152 new tests covering the capability registry, the validator, the CLI, device selection and the extended API.
 - Added `TestHostapdConfigGeneration` covering the presence of `ieee80211d` on all bands and the band-dependent handling of `ieee80211h` (enabled on 5 GHz, absent on 2.4 GHz).
 
 ---

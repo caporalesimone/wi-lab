@@ -59,12 +59,18 @@ open htmlcov/index.html
 
 The test suite includes:
 - **conftest.py** - Shared fixtures and configuration
-- **test_config.py** - Configuration loading/validation tests
+- **test_config.py** - Configuration loading and model tests
+- **test_config_validation.py** - The configuration validator: rules, aggregation, reporting, and the 3.0 -> 3.1 migration path
+- **test_cli.py** - `main.py` argument parsing, exit codes, and the guarantee that `--validate-config` starts nothing
 - **test_api.py** - API endpoint tests
+- **test_reservation.py** - Reservation lifecycle
+- **test_reservation_capabilities.py** - Capability-based device selection
 - **test_commands.py** - Shell command wrapper tests
 - **test_dhcp.py** - DHCP server tests
 - **test_nat.py** - NAT rules tests
 - **test_isolation.py** - Network isolation tests
+- **test_channels.py** - Channel and band handling
+- **test_qos.py**, **test_qos_profile.py** - Traffic shaping and QoS profiles
 - **test_wifi.py** - WiFi interface/hostapd tests
 
 ### Test Categories
@@ -74,6 +80,67 @@ The test suite includes:
 **WiFi Tests:** Test hostapd control and interface management
 **Network Tests:** Test DHCP, NAT, and iptables rules
 **Command Tests:** Test subprocess wrapper functions
+
+---
+
+## Configuration Fixtures
+
+Configuration is involved in almost every test, so it comes from two deliberately
+different places. Picking the wrong one is the most common way to write a test that
+passes for the wrong reason.
+
+### `tests/test.config.yaml` — the shared, valid, on-disk config
+
+The file the whole suite loads through `CONFIG_PATH`. It is a **complete and valid**
+configuration, run through the same validator as a production file, so it doubles as a
+worked example of what a good `config.yaml` looks like.
+
+It declares **three deliberately asymmetric devices**, which is what makes capability
+selection testable at all:
+
+| Index | Interface | Capabilities | Role in the tests |
+|-------|-----------|--------------|-------------------|
+| 0 | `wls16` | 2.4 + 5 GHz | Dual band; keeps index 0 and subnet `192.168.120.0/24` |
+| 1 | `wls17` | 2.4 GHz only | The minimal device a 2.4 GHz request must prefer |
+| 2 | `wls18` | 2.4 + 5 GHz | A second dual-band device, so the tie-break has something to break |
+
+Two things to keep in mind when editing it:
+
+- **Never reorder the list.** `wls16` must stay first: subnets are allocated by position,
+  and assertions across `test_api.py`, `test_channels.py` and `test_qos_profile.py` expect
+  `192.168.120.0/24` for index 0. Append new devices at the end.
+- **Adding a device changes counts elsewhere.** Anything asserting "how many networks"
+  has to be updated in the same change.
+
+### The `write_config` fixture — a private, broken config per test
+
+Validator tests need *invalid* files, and a single shared broken fixture would force every
+test to cross-reference someone else's faults. Instead `write_config` builds one from the
+known-good `valid_config` baseline in `tmp_path`, so each test states its own fault:
+
+```python
+def test_min_timeout_floor(write_config):
+    report = validate_config_file(write_config({"min_timeout": 5}))
+    assert "min_timeout" in [i.path for i in report.errors]
+
+def test_missing_key_is_reported(write_config):
+    report = validate_config_file(write_config(remove=["country_code"]))
+    assert "country_code" in [i.path for i in report.errors]
+
+def test_broken_yaml(write_config):
+    report = validate_config_file(write_config(raw_text="auth_token: [unclosed\n"))
+    assert report.unreadable
+```
+
+| Argument | Effect |
+|----------|--------|
+| *(none)* | A valid config — useful for asserting that a rule does **not** fire |
+| `{"key": value}` | Override one field |
+| `remove=["key"]` | Drop one key |
+| `raw_text="..."` | Write arbitrary text, for malformed YAML and encoding cases |
+
+**Which one to use:** `test.config.yaml` when the test needs a working system;
+`write_config` when the test is about the configuration itself.
 
 ---
 
@@ -272,12 +339,27 @@ class TestNetworkCreation:
 # Use fixtures provided by conftest.py
 @pytest.fixture
 def config():
-    """Loaded configuration object."""
-    
+    """Loaded configuration object (from tests/test.config.yaml)."""
+
+@pytest.fixture
+def valid_config():
+    """A complete, valid configuration as a plain dict, to mutate."""
+
+@pytest.fixture
+def write_config():
+    """Write a config file built from that baseline. See Configuration Fixtures."""
+
 @pytest.fixture
 def mock_subprocess():
     """Mocked subprocess for command testing."""
 ```
+
+Two autouse fixtures apply to every test whether you ask for them or not: one points
+`CONFIG_PATH` at `tests/test.config.yaml` and resets the cached dependency singletons, the
+other neutralises every operation that would need root or real hardware. The second is why
+hardware validation rules must import their helpers **inside** the function body — a
+module-level import binds the original before the patch and quietly puts real `iw` and
+`ip` calls back into the suite.
 
 ---
 

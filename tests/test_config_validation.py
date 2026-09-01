@@ -9,7 +9,7 @@ Covers TODOs/device-capabilities.md §12.2.
 import pytest
 import yaml
 
-from wilab.config import CAPABILITY_REGISTRY, CapabilityDef, CapabilityKind
+from wilab.config import CAPABILITY_REGISTRY, Capability, CapabilityDef, CapabilityKind
 from wilab.config_validation import (
     EXAMPLE_AUTH_TOKEN,
     Severity,
@@ -523,3 +523,91 @@ class TestReportModel:
         assert report.ok is False
         assert len(report.errors) == 1
         assert len(report.warnings) == 1
+
+
+# ==================================================================================================
+# Migration — a v3.0 configuration file
+# ==================================================================================================
+
+
+class TestV30Migration:
+    """The upgrade path of TODOs/completed/device-capabilities.md §11.1, as a test.
+
+    A configuration written for 3.0.0 predates ``capabilities``, ``cors_origins`` and
+    ``allow_unlimited_reservation``. The promise made to the administrator is that one
+    ``--validate-config`` run lists *every* missing key with a usable hint, so the file
+    can be completed in a single editing pass instead of a restart-fix-restart loop.
+    Covers §12.8.
+    """
+
+    V30_KEYS = (
+        "auth_token", "api_port", "max_timeout", "min_timeout", "dhcp_base_network",
+        "upstream_interface", "dns_server", "internet_enabled_by_default", "country_code",
+    )
+
+    @pytest.fixture
+    def v30_config_path(self, tmp_path, valid_config):
+        """A complete, valid 3.0.0 config: no capabilities, and the 3.1 keys absent."""
+        data = {k: valid_config[k] for k in self.V30_KEYS}
+        data["networks"] = [
+            {"interface": "wls16", "display_name": "bench-antenna-1"},
+            {"interface": "wls17", "display_name": "bench-antenna-2"},
+        ]
+        target = tmp_path / "v30.config.yaml"
+        target.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        return str(target)
+
+    def test_reports_exactly_the_expected_errors(self, v30_config_path):
+        """Exactly the new keys, one issue each, nothing else and nothing twice."""
+        report = validate_config_file(v30_config_path)
+        assert report.unreadable is False
+        assert report.ok is False
+        assert error_paths(report) == [
+            "allow_unlimited_reservation",
+            "networks[0].capabilities",
+            "networks[1].capabilities",
+            "cors_origins",
+        ], report.render()
+
+    def test_every_error_carries_an_actionable_hint(self, v30_config_path):
+        """The report has to be enough on its own: no hint means a trip to the docs."""
+        report = validate_config_file(v30_config_path)
+        for issue in report.errors:
+            assert issue.hint, f"{issue.path} has no hint"
+        capability_hints = [
+            i.hint for i in report.errors if i.path.endswith(".capabilities")
+        ]
+        assert capability_hints, "the capabilities errors disappeared"
+        for hint in capability_hints:
+            for cap_id in Capability.ids():
+                assert cap_id in hint, f"hint does not name '{cap_id}': {hint}"
+
+    def test_completing_the_file_as_the_report_directs_makes_it_valid(
+        self, tmp_path, valid_config
+    ):
+        """The other half of the promise: doing what the report says is sufficient."""
+        data = {k: valid_config[k] for k in self.V30_KEYS}
+        data["allow_unlimited_reservation"] = False
+        data["cors_origins"] = []
+        data["networks"] = [
+            {
+                "interface": "wls16",
+                "display_name": "bench-antenna-1",
+                "capabilities": {c: True for c in Capability.ids()},
+            },
+        ]
+        target = tmp_path / "migrated.config.yaml"
+        target.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        report = validate_config_file(str(target))
+        assert report.ok, report.render()
+
+    def test_capabilities_are_not_defaulted_in(self, v30_config_path):
+        """Constraint C2: a missing block is an error, never a silent dual-band device.
+
+        Defaulting would reintroduce exactly the mis-assignment this feature removes, so
+        the file must stay unusable until an administrator declares the values by hand.
+        """
+        from wilab.config import load_config
+
+        with pytest.raises(SystemExit):
+            load_config(v30_config_path)
