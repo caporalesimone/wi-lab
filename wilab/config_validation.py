@@ -48,6 +48,29 @@ MIN_TIMEOUT_FLOOR = 10
 _ORIGIN_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://[^/\s]+$")
 _COUNTRY_CODE_RE = re.compile(r"^[A-Z]{2}$")
 
+# Values an operator reaches for when asked "which regulatory domain?" that are not
+# countries. Each would either be refused by "iw reg set" or silently leave the radio on
+# the restrictive world domain, so naming the mistake beats reporting a bad shape.
+# Only the shape can be checked in general -- an unassigned but well-formed code such as
+# "XY" still passes -- but these three are the ones people actually type.
+# "JP" is deliberately absent: DFS-JP is a region name, yet JP is also Japan, so it is valid.
+_NOT_A_COUNTRY = {
+    "ETSI": (
+        "a DFS region, not a country. The kernel derives the region from the country "
+        "code -- the regulatory database holds entries like \"country IT: DFS-ETSI\" -- "
+        "so it cannot be set here."
+    ),
+    "FCC": (
+        "a DFS region, not a country. The kernel derives the region from the country "
+        "code -- the regulatory database holds entries like \"country US: DFS-FCC\" -- "
+        "so it cannot be set here."
+    ),
+    "EU": (
+        "not a country. There is no EU-wide regulatory domain in the wireless database, "
+        "so this would leave the radio on the restrictive world domain."
+    ),
+}
+
 
 # ==================================================================================================
 # ISSUE MODEL
@@ -587,6 +610,19 @@ def check_country_code(ctx: ValidationContext) -> Iterable[ValidationIssue]:
     value = _get_str(ctx.raw, "country_code")
     if value is None:
         return
+
+    # Checked before the shape rule, because "EU" is well-formed and would otherwise pass.
+    canonical = value.strip().upper()
+    reason = _NOT_A_COUNTRY.get(canonical)
+    if reason is not None:
+        yield ValidationIssue(
+            path="country_code",
+            message=f"'{value}' is not a country code.",
+            hint=f"{canonical} is {reason} Name the actual country instead, "
+                 "e.g. \"IT\", \"DE\", \"US\".",
+        )
+        return
+
     if not _COUNTRY_CODE_RE.match(value):
         yield ValidationIssue(
             path="country_code",

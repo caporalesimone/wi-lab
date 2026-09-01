@@ -359,10 +359,52 @@ class TestScalarRules:
         report = validate_config_file(write_config({"dns_server": "8.8.8"}))
         assert "dns_server" in error_paths(report)
 
-    @pytest.mark.parametrize("code", ["italy", "it", "ITA", ""])
+    @pytest.mark.parametrize("code", ["italy", "it", "ITA", "", "ETSI", "FCC", "EU"])
     def test_invalid_country_code(self, write_config, code):
         report = validate_config_file(write_config({"country_code": code}))
         assert "country_code" in error_paths(report)
+
+    @pytest.mark.parametrize("code", ["ETSI", "etsi", "FCC", " fcc "])
+    def test_dfs_region_gets_a_hint_naming_the_mistake(self, write_config, code):
+        """A DFS region is the plausible wrong answer, so say why it is wrong.
+
+        'iw reg get' prints the region next to the country, which is where the idea that
+        ETSI is settable comes from. "Two uppercase letters" would not correct it.
+        """
+        report = validate_config_file(write_config({"country_code": code}))
+        issue = next(i for i in report.errors if i.path == "country_code")
+        assert issue.hint is not None
+        assert "DFS region" in issue.hint
+        assert "not a country" in issue.hint
+
+    @pytest.mark.parametrize("code", ["EU", "eu", " EU "])
+    def test_eu_is_rejected_despite_being_well_formed(self, write_config, code):
+        """The shape check alone would pass EU, and it is the pan-European trap.
+
+        No EU entry exists in the wireless regulatory database, so 'iw reg set EU' leaves
+        the radio on the world domain and the mistake only surfaces as a 5 GHz channel
+        that will not come up.
+        """
+        report = validate_config_file(write_config({"country_code": code}))
+        issue = next(i for i in report.errors if i.path == "country_code")
+        assert issue.hint is not None
+        assert "no EU-wide regulatory domain" in issue.hint
+
+    def test_jp_is_a_country_not_just_a_dfs_region(self, write_config):
+        """JP names both a DFS region and Japan; the country must stay valid."""
+        report = validate_config_file(write_config({"country_code": "JP"}))
+        assert "country_code" not in error_paths(report)
+
+    @pytest.mark.parametrize("code", ["XY", "ZZ"])
+    def test_unassigned_but_well_formed_codes_still_pass(self, write_config, code):
+        """Documents the known limit, which config.example.yaml warns about.
+
+        Wi-Lab checks the shape, not membership of ISO 3166-1: shipping a country table
+        would duplicate the kernel's regulatory database and go stale against it. Only the
+        handful of values operators actually mistype are named explicitly.
+        """
+        report = validate_config_file(write_config({"country_code": code}))
+        assert "country_code" not in error_paths(report)
 
     @pytest.mark.parametrize("port", [0, 65536, -1])
     def test_api_port_out_of_range(self, write_config, port):
