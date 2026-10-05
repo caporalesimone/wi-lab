@@ -1,0 +1,42 @@
+name: Release API docs
+
+# When a GitHub release is published, attach a self-contained API documentation bundle:
+#   wi-lab-api-docs-<version>.zip  ->  openapi.json, swagger.html, redoc.html
+# The HTML files need no server and no network. Run it manually (workflow_dispatch) to get
+# the bundle as a workflow artifact without touching any release.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # upload the zip to the release
+
+jobs:
+  api-docs:
+    name: Build and attach the API docs bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Generate the bundle
+        run: python scripts/export_api_docs.py --out api-docs
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" api-docs/wi-lab-api-docs-*.zip --clobber
+      - name: Keep as a workflow artifact (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-docs
+          path: api-docs/wi-lab-api-docs-*.zip

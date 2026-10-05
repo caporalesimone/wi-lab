@@ -136,6 +136,25 @@ Once running:
 
 See [docs/swagger.md](swagger.md) for complete API testing guide.
 
+### Offline API documentation bundle
+
+To read the API documentation without running the service (and without any adapter),
+generate a self-contained bundle:
+
+```bash
+python scripts/export_api_docs.py --out api-docs
+```
+
+It writes `openapi.json`, `swagger.html`, `redoc.html` and
+`wi-lab-api-docs-<version>.zip` containing the three. The HTML files embed the schema and
+the Swagger UI / ReDoc code, so they open with a double click and need no network (the
+renderers are downloaded once, at generation time, from pinned versions). "Try it out" is
+disabled in `swagger.html` because there is no server behind it.
+
+The same bundle is built on every pull request (CI artifact `api-docs`) and attached to
+every GitHub release as `wi-lab-api-docs-<version>.zip`
+(`.github/workflows/release-docs.yml`; it can also be run manually from the Actions tab).
+
 ---
 
 ## Testing
