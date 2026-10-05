@@ -15,10 +15,49 @@ from ...version import __version__
 router = APIRouter(tags=["System"])
 
 
+_STATUS_EXAMPLE = {
+    "version": "4.0.0",
+    "status": "ok",
+    "active_networks": 1,
+    "networks": [
+        {
+            "display_name": "bench-antenna-1",
+            "interface": "wlxbc071dc527d6",
+            "capabilities": ["2.4ghz", "5ghz"],
+            "reserved": True,
+            "reservation_remaining_seconds": 842,
+        },
+        {
+            "display_name": "bench-antenna-2",
+            "interface": "wlx7820512451b4",
+            "capabilities": ["2.4ghz"],
+            "reserved": False,
+            "reservation_remaining_seconds": None,
+        },
+    ],
+    "capabilities_catalogue": [
+        {"id": "2.4ghz", "label": "2.4 GHz", "kind": "radio",
+         "total_devices": 2, "available_devices": 1},
+        {"id": "5ghz", "label": "5 GHz", "kind": "radio",
+         "total_devices": 1, "available_devices": 0},
+    ],
+    "reservation_policy": {"min_seconds": 60, "max_seconds": 86400, "allow_unlimited": False},
+    "checks": {
+        "dnsmasq": {"running": True, "instances": 1},
+        "iptables_nat": {"configured": True, "errors": []},
+        "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
+    },
+}
+
+
 @router.get(
     "/status",
+    summary="System status",
     responses={
-        200: {"description": "System status retrieved successfully"},
+        200: {
+            "description": "System status retrieved successfully",
+            "content": {"application/json": {"example": _STATUS_EXAMPLE}},
+        },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
     },
 )
@@ -34,9 +73,16 @@ async def system_status(
     Returns:
         dict: Contains:
             - version: Software version
-            - networks: List of managed interfaces
             - status: Overall health (ok|degraded|standby)
             - active_networks: Number of active networks
+            - networks: One entry per managed device: `display_name`, `interface`,
+              `capabilities` (enabled ones, sorted), `reserved` and
+              `reservation_remaining_seconds` (null when free or unlimited)
+            - capabilities_catalogue: What the lab can offer, one entry per capability
+              that at least one device has: `id`, `label`, `kind`, `total_devices`,
+              `available_devices` (free right now). Build your requests from this list
+              rather than hard-coding ids
+            - reservation_policy: `min_seconds`, `max_seconds`, `allow_unlimited`
             - checks: Component health details
     """
     status_data: dict[str, Any] = {
@@ -169,6 +215,7 @@ async def system_status(
 
 @router.get(
     "/debug",
+    summary="Debug information",
     responses={
         200: {"description": "Debug information retrieved successfully"},
         401: {"description": "Unauthorized (missing or invalid auth token)"},
@@ -190,7 +237,8 @@ async def debug_info(
     Performance: 150-600ms depending on network count
     
     Returns:
-        dict: Complete system debug information.
+        dict: Complete system debug information. Each managed interface includes its
+        `capabilities` and the `reservation_id` currently holding it, if any.
     """
     # === DETERMINE OVERALL STATUS ===
     has_active_networks = len(manager.active) > 0

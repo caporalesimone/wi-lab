@@ -343,3 +343,18 @@ class TestOpenApiCompatibility:
         assert sorted(body["required"]) == ["duration_seconds", "required_capabilities"]
         assert "required_capabilities" in body["properties"]
         assert "interface" not in body["properties"]
+
+    def test_reservation_endpoint_is_documented_with_examples(self, client):
+        schema = client.get("/openapi.json").json()
+        op = schema["paths"]["/api/v1/device-reservation"]["post"]
+        assert {"any_device", "needs_5ghz"} <= set(
+            op["requestBody"]["content"]["application/json"]["examples"]
+        )
+        examples = {
+            code: op["responses"][str(code)]["content"]["application/json"] for code in (200, 409, 422)
+        }
+        assert "example" in examples[200]
+        assert {"release_scheduled", "unlimited_holders"} <= set(examples[409]["examples"])
+        assert {"missing_field", "unsatisfiable"} <= set(examples[422]["examples"])
+        response = schema["components"]["schemas"]["ReservationResponse"]
+        assert "capabilities" in response["required"]
