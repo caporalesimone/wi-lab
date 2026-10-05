@@ -3,7 +3,7 @@
 Kept out of test_reservation.py, which is already long and covers the lifecycle rather
 than the allocation policy.
 
-Covers TODOs/device-capabilities.md §12.5 and §12.6.
+Covers TODOs/completed/device-capabilities.md §12.5 and §12.6.
 """
 
 import threading

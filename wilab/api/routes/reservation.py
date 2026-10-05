@@ -55,7 +55,7 @@ class ReservationCreateRequest(BaseModel):
     def validate_non_negative(cls, v: int) -> int:
         if v < 0:
             raise ValueError(
-                "duration_seconds must be 0 (unlimited) or >= min_timeout"
+                "duration_seconds must not be negative (use 0 for unlimited)"
             )
         return v
 
@@ -122,7 +122,7 @@ async def create_reservation(
     mgr: ReservationManager = Depends(get_reservation_manager),
     _auth: bool = Depends(require_token),
 ):
-    """Reserve the first available device for the given duration."""
+    """Reserve a device for the given duration, choosing the least capable match."""
     # Validate duration against config bounds
     duration = req.duration_seconds
     if duration == 0:

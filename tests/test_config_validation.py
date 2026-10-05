@@ -3,7 +3,7 @@
 The validator is a pure function of a file, so these tests build inputs by mutating a
 known-good baseline (the ``write_config`` fixture) and assert on the resulting report.
 
-Covers TODOs/device-capabilities.md §12.2.
+Covers TODOs/completed/device-capabilities.md §12.2.
 """
 
 import pytest

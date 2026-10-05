@@ -4,7 +4,7 @@ Validates ``config.yaml`` against the schema and a set of semantic rules, report
 **every** problem in a single pass so an administrator can fix a configuration in one
 editing session instead of a restart-fix-restart loop.
 
-Design constraints (TODOs/device-capabilities.md §5):
+Design constraints (TODOs/completed/device-capabilities.md §5):
 
 * **Pure.** This module reads the configuration file and writes nothing. Wi-Lab never
   modifies the administrator's configuration.

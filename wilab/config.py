@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # ("this antenna may be used for 5 GHz"), not measurements, and future capabilities such as
 # "change-ssid" or "max-clients" have no hardware counterpart at all.
 #
-# See TODOs/device-capabilities.md §2.1 and §4.2.
+# See TODOs/completed/device-capabilities.md §2.1 and §4.2.
 
 
 class Capability(str, Enum):
@@ -108,7 +108,7 @@ _unsupported = [
 if _unsupported:
     raise RuntimeError(
         "v1 supports only boolean, matchable capabilities; unsupported: "
-        f"{', '.join(_unsupported)}. See TODOs/device-capabilities.md §3.1 before adding one."
+        f"{', '.join(_unsupported)}. See TODOs/completed/device-capabilities.md §3.1 before adding one."
     )
 del _unsupported
 
@@ -129,7 +129,7 @@ def normalise_capability_id(raw: object) -> str:
 #
 # These models are typed containers. Semantic rules (ranges, cross-field constraints, required
 # keys) live in wilab/config_validation.py so that every problem is reported through one
-# formatter, in one pass. See TODOs/device-capabilities.md §4.3 and §5.6.
+# formatter, in one pass. See TODOs/completed/device-capabilities.md §4.3 and §5.6.
 
 
 class NetworkEntry(BaseModel):

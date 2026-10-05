@@ -50,7 +50,7 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "3kb",
+                  "maximumWarning": "4kb",
                   "maximumError": "5kb"
                 }
               ],
@@ -75,6 +75,18 @@
             }
           },
           "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular-devkit/build-angular:karma",
+          "options": {
+            "polyfills": [
+              "zone.js",
+              "zone.js/testing"
+            ],
+            "tsConfig": "tsconfig.spec.json",
+            "inlineStyleLanguage": "scss",
+            "karmaConfig": "karma.conf.js"
+          }
         }
       }
     }

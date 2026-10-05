@@ -4,7 +4,7 @@
 file and prints a report, and does nothing else. Several tests below exist specifically to
 keep it that way.
 
-Covers TODOs/device-capabilities.md §12.3.
+Covers TODOs/completed/device-capabilities.md §12.3.
 """
 
 import os

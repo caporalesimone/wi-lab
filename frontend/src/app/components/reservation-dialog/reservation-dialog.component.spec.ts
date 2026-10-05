@@ -5,12 +5,8 @@
  * decides what the request payload contains and whether Reserve is enabled at all. That is
  * the first logic in this frontend worth testing directly.
  *
- * NOTE — not runnable yet. This project has no Angular test infrastructure: angular.json
- * declares no `test` target, there is no tsconfig.spec.json, and karma/jasmine are absent
- * from package.json. Adding them means changing package.json, and the Docker build runs
- * `npm ci`, which fails if package-lock.json is not regenerated in the same commit. Wiring
- * this up is therefore listed as bench work in
- * TODOs/device-capabilities.md §12.9.
+ * Run with `npm test` (Karma + Jasmine; set CHROME_BIN, or pass
+ * `--browsers=ChromeHeadlessCI --watch=false` for a headless run).
  *
  * The component is instantiated directly rather than through TestBed, so these tests need
  * only a test runner and no Angular testing harness.

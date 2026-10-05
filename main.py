@@ -104,11 +104,11 @@ def run_server(config_path: str) -> int:
         raise SystemExit(f"Failed to compute subnets: {exc}") from exc
 
     app = create_app()
-    logger.info("Starting REST API server on 0.0.0.0:8080")
-    logger.info("Visit http://localhost:8080/docs for Swagger UI")
+    logger.info(f"Starting REST API server on 0.0.0.0:{config.api_port}")
+    logger.info(f"Visit http://localhost:{config.api_port}/docs for Swagger UI")
 
     uvicorn.run(
-        app, host="0.0.0.0", port=8080,
+        app, host="0.0.0.0", port=config.api_port,
         server_header=False, headers=[("x-app-version", __version__)],
     )
     return EXIT_OK

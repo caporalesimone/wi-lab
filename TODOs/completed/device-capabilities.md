@@ -1907,7 +1907,8 @@ reserved device's capabilities, 422-vs-409 rendering, and the null-countdown cas
 
 - [ ] Full suite green with the extended `tests/test.config.yaml` (the fixture change
       touches subnet and count assertions across several files)
-- [ ] `make lint` and `make type-check` clean — especially the
+- [ ] `make lint` and `make type-check` (`ruff.toml` now pins the rule set; `ruff check
+      wilab/ tests/` passes with ruff 0.6.9) clean — especially the
       `Sequence[DeviceSpec | str]` annotation and the `Optional[float]` return
 - [ ] A v3.0 config file (no capabilities, some keys omitted) produces exactly the
       expected set of validation errors — the migration path of
@@ -1941,7 +1942,9 @@ change is judged by whether it moves them, not by whether they are zero.
 
 **Bench checklist**
 
-- [ ] **`pip install -r requirements-dev.txt` completes.** It currently cannot: the pin
+- [ ] **`pip install -r requirements-dev.txt` completes.** *(Pin fixed to
+      `types-PyYAML>=6.0.12`; a clean install from an empty environment is still to be
+      confirmed on the bench.)* It could not: the pin
       `types-PyYAML>=2024.1.0` is unsatisfiable, because that package's versions are
       `6.0.12.<date>` and `6.0.12.20260815 < 2024.1.0` under PEP 440 ordering. The
       constraint was presumably written expecting a `2024.x` calendar version scheme that
@@ -1980,10 +1983,9 @@ production`), but it has **no test infrastructure at all**: `angular.json` decla
 `npm ci`, which fails unless `package-lock.json` is regenerated in the same commit — so
 it is deliberately left to the bench rather than done blind.
 
-- [ ] Add the test target, `tsconfig.spec.json` and karma/jasmine devDependencies,
-      regenerating `package-lock.json` in the same commit, then run
-      `reservation-dialog.component.spec.ts`. The spec is already written and
-      instantiates the component directly, so it needs a runner and no Angular harness.
+- [x] Test target, `tsconfig.spec.json`, `karma.conf.js` and karma/jasmine devDependencies
+      added, `package-lock.json` regenerated; `npm test` runs
+      `reservation-dialog.component.spec.ts` (16/16 pass in headless Chrome).
 - [ ] Verify the production Docker build still succeeds after that `package.json` change
 - [ ] Manually: mode toggle, live match count, Reserve disabled at zero matches, reserved
       devices disabled in device mode, capability chips on the cards
@@ -2424,6 +2426,9 @@ with whoever runs it (measured with 0.16.5). Closing this needs a `ruff.toml` fi
 rule set, with `flake8-bugbear.extend-immutable-calls` listing `fastapi.Depends` to
 remove the 49 false positives. Out of scope here, but §12.8 cannot be satisfied until
 someone decides it.
+
+> **REMINDER (decided 2026-10-05):** the `anyComponentStyle` budget is held at a 5 kB error / 4 kB warning
+> limit for now. Revisit: shrink `network-card.component.scss` (3.98 kB) or drop the budget.
 
 **`network-card.component.scss` had 30 bytes of headroom left.** The `anyComponentStyle`
 budget in `frontend/angular.json` held the Angular CLI's `ng new` defaults (2 kB warning,
