@@ -358,3 +358,11 @@ class TestOpenApiCompatibility:
         assert {"missing_field", "unsatisfiable"} <= set(examples[422]["examples"])
         response = schema["components"]["schemas"]["ReservationResponse"]
         assert "capabilities" in response["required"]
+
+    def test_system_is_the_first_group_in_the_documentation(self, client):
+        """Swagger UI, ReDoc and the exported bundle all follow this order."""
+        schema = client.get("/openapi.json").json()
+        names = [t["name"] for t in schema["tags"]]
+        assert names[0] == "System"
+        used = {tag for ops in schema["paths"].values() for op in ops.values() for tag in op.get("tags", [])}
+        assert used <= set(names), f"tags missing from OPENAPI_TAGS: {used - set(names)}"

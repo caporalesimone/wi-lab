@@ -65,8 +65,26 @@ async def lifespan(app: FastAPI):
         pass
 
 
+# Order of the groups in Swagger UI and ReDoc (live /docs, /redoc and the exported bundle all
+# read this list). System comes first: it is where a client starts (version, health, and the
+# capabilities the lab offers).
+OPENAPI_TAGS = [
+    {"name": "System", "description": "Version, health checks and the capabilities the lab offers."},
+    {"name": "Reservation", "description": "Reserve a device by stating the capabilities you need, then release it."},
+    {"name": "Network", "description": "Create, inspect and stop the WiFi network on a reserved device."},
+    {"name": "Internet", "description": "Enable or disable Internet access for a reserved device's network."},
+    {"name": "TX Power", "description": "Read and set the transmit power of a reserved device."},
+    {"name": "QoS Profiles", "description": "Simulate network conditions with profiles or static QoS parameters."},
+]
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Wi-Lab", version=__version__, lifespan=lifespan)
+    app = FastAPI(
+        title="Wi-Lab",
+        version=__version__,
+        lifespan=lifespan,
+        openapi_tags=OPENAPI_TAGS,
+    )
 
     # Configure CORS if origins are specified in config
     config = get_config()
@@ -150,6 +168,7 @@ def create_app() -> FastAPI:
             version=app.version,
             routes=app.routes,
             description=app.description,
+            tags=app.openapi_tags,
         )
         try:
             paths = openapi_schema.get("paths", {})
