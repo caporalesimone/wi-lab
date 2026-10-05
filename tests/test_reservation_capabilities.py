@@ -373,3 +373,9 @@ class TestOpenApiCompatibility:
         assert all(len(t.get("description", "")) > 40 for t in tags), [
             t["name"] for t in tags if len(t.get("description", "")) <= 40
         ]
+
+    def test_live_docs_page_puts_group_descriptions_below_the_title(self, client):
+        resp = client.get("/docs")
+        assert resp.status_code == 200
+        assert "swagger-ui" in resp.text
+        assert ".opblock-tag small" in resp.text

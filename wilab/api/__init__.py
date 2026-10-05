@@ -6,9 +6,11 @@ import threading
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.openapi.utils import get_openapi
 
+from .docs_style import SWAGGER_UI_EXTRA_CSS
 from .dependencies import get_channel_manager, get_config, get_manager
 from .routes import router as api_router
 from ..version import __version__
@@ -135,6 +137,7 @@ def create_app() -> FastAPI:
         version=__version__,
         lifespan=lifespan,
         openapi_tags=OPENAPI_TAGS,
+        docs_url=None,  # served below, with the extra stylesheet
     )
 
     # Configure CORS if origins are specified in config
@@ -170,6 +173,18 @@ def create_app() -> FastAPI:
         else:
             detail = "Request validation failed"
         return JSONResponse(status_code=422, content={"detail": detail})
+
+    @app.get("/docs", include_in_schema=False)
+    async def swagger_ui() -> HTMLResponse:
+        page = get_swagger_ui_html(
+            openapi_url=app.openapi_url or "/openapi.json",
+            title=f"{app.title} - Swagger UI",
+            oauth2_redirect_url=None,
+        )
+        html = bytes(page.body).decode("utf-8").replace(
+            "</head>", f"<style>{SWAGGER_UI_EXTRA_CSS}</style></head>", 1
+        )
+        return HTMLResponse(html)
 
     # Include API router
     app.include_router(api_router)

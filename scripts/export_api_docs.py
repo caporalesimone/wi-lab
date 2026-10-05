@@ -99,7 +99,11 @@ def css_safe(css: str) -> str:
 
 
 def swagger_html(spec_json: str, title: str) -> str:
+    sys.path.insert(0, str(ROOT))
+    from wilab.api.docs_style import SWAGGER_UI_EXTRA_CSS
+
     js, css = fetch(SWAGGER_JS_URL), fetch(SWAGGER_CSS_URL)
+    css += SWAGGER_UI_EXTRA_CSS
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
