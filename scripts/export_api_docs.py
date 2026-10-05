@@ -54,6 +54,30 @@ def fetch(url: str) -> str:
         return resp.read().decode("utf-8")
 
 
+def dereference(node: object, root: dict, _stack: tuple = ()) -> object:
+    """Return ``node`` with every local ``$ref`` replaced by the schema it points to.
+
+    Swagger UI resolves ``#/components/...`` references relative to the address of the page.
+    For a page opened from disk that address is ``file:///.../swagger.html``, which the
+    browser refuses to fetch, so every request/response schema fails with "Could not resolve
+    reference". Inlining the references removes the lookup altogether. ``openapi.json`` itself
+    keeps its references; only the embedded copy is flattened.
+    """
+    if isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/"):
+            if ref in _stack:
+                raise ValueError(f"circular reference {ref}; cannot be inlined")
+            target: object = root
+            for part in ref[2:].split("/"):
+                target = target[part.replace("~1", "/").replace("~0", "~")]  # type: ignore[index]
+            return dereference(target, root, _stack + (ref,))
+        return {k: dereference(v, root, _stack) for k, v in node.items()}
+    if isinstance(node, list):
+        return [dereference(v, root, _stack) for v in node]
+    return node
+
+
 def js_safe(code: str) -> str:
     """Make a JavaScript bundle safe inside an inline <script> element.
 
@@ -139,7 +163,9 @@ def main() -> int:
 
     files = {
         "openapi.json": spec_json + "\n",
-        "swagger.html": swagger_html(json.dumps(schema, ensure_ascii=False), title),
+        "swagger.html": swagger_html(
+            json.dumps(dereference(schema, schema), ensure_ascii=False), title
+        ),
         "redoc.html": redoc_html(json.dumps(schema, ensure_ascii=False), title),
     }
     for name, content in files.items():

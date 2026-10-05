@@ -18,10 +18,10 @@ jobs:
     name: Build and attach the API docs bundle
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name || github.ref }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -36,7 +36,7 @@ jobs:
         run: gh release upload "${{ github.event.release.tag_name }}" api-docs/wi-lab-api-docs-*.zip --clobber
       - name: Keep as a workflow artifact (manual runs)
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: api-docs
           path: api-docs/wi-lab-api-docs-*.zip

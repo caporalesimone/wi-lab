@@ -10,8 +10,8 @@ jobs:
     name: Backend (lint, types, tests, config validation)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -34,8 +34,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -50,7 +50,7 @@ jobs:
     name: Frontend container image build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build frontend/Dockerfile
         run: docker build -t wi-lab-frontend:ci frontend
 
@@ -58,8 +58,8 @@ jobs:
     name: API docs bundle (builds; downloadable from the run)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -67,7 +67,7 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Generate openapi.json, swagger.html and redoc.html
         run: python scripts/export_api_docs.py --out api-docs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: api-docs
           path: api-docs/wi-lab-api-docs-*.zip
