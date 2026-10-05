@@ -436,3 +436,15 @@ class TestBandIsEnforcedByDeclaration:
         monkeypatch.setattr(ChannelManager, "validate_channel", must_not_run)
         rid = reserve(client, token, required_capabilities=["2.4ghz"]).json()["reservation_id"]
         assert self.create_network(client, token, rid, "5ghz", 36).status_code == 422
+
+    def test_possible_capability_values_are_documented(self, client):
+        schema = client.get("/openapi.json").json()
+        field = schema["components"]["schemas"]["ReservationCreateRequest"]["properties"][
+            "required_capabilities"
+        ]
+        assert field["items"]["enum"] == ["2.4ghz", "5ghz"]
+        assert "`2.4ghz`" in field["description"] and "`5ghz`" in field["description"]
+        op = schema["paths"]["/api/v1/device-reservation"]["post"]
+        examples = op["requestBody"]["content"]["application/json"]["examples"]
+        first = next(iter(examples.values()))
+        assert first["value"]["required_capabilities"] == ["2.4ghz", "5ghz"]

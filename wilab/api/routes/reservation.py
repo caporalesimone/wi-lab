@@ -25,6 +25,14 @@ router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
 
 # ---- Request / Response models ----
 
+# Lists the possible values as an enum for the items of required_capabilities, generated
+# from the registry so the documentation cannot drift from what the server accepts.
+_CAPABILITIES_SCHEMA_EXTRA: Dict[str, Any] = {
+    "items": {"type": "string", "enum": Capability.ids()},
+    "example": ["2.4ghz", "5ghz"],
+}
+
+
 class ReservationCreateRequest(BaseModel):
     # Unknown fields are rejected, not ignored: a client that still sends the removed
     # `interface` must be told, not left believing it pinned a device.
@@ -38,11 +46,17 @@ class ReservationCreateRequest(BaseModel):
         ...,
         description=(
             "Capabilities the assigned device must provide. REQUIRED: a client must state "
-            "what it needs. An empty list explicitly means \"any device\". Wi-Lab assigns "
+            "what it needs. An empty list explicitly means \"any device\". "
+            "Possible values: "
+            "`2.4ghz` (the device can operate an access point in the 2.4 GHz band) and "
+            "`5ghz` (the same, in the 5 GHz band). "
+            "List several to require all of them: `[2.4ghz, 5ghz]` selects a dual-band "
+            "device. Values are case-insensitive and duplicates are ignored. Wi-Lab assigns "
             "the least capable matching free device, so scarce multi-band hardware stays "
-            "available for requests that need it."
+            "available for requests that need it. `GET /status` lists the capabilities the "
+            "lab offers."
         ),
-        json_schema_extra={"example": ["2.4ghz"]},
+        json_schema_extra=_CAPABILITIES_SCHEMA_EXTRA,
     )
 
     @field_validator("duration_seconds")
@@ -116,27 +130,35 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
 # ---- Endpoints ----
 
 _RESERVATION_REQUEST_EXAMPLES: Dict[str, Any] = {
-    "any_device": {
-        "summary": "Any device",
-        "description": "No requirement: `required_capabilities` is mandatory but may be empty. "
-                       "Wi-Lab assigns the least capable free device.",
-        "value": {"duration_seconds": 900, "required_capabilities": []},
+    # The first example is the one Swagger UI pre-fills in "Try it out".
+    "dual_band": {
+        "summary": "I need both 2.4 GHz and 5 GHz",
+        "description": "The device must provide every listed capability, so only a dual-band "
+                       "device can be assigned.",
+        "value": {"duration_seconds": 3600, "required_capabilities": ["2.4ghz", "5ghz"]},
     },
     "needs_5ghz": {
         "summary": "I need 5 GHz",
         "description": "Only a device with 5 GHz enabled can be assigned.",
         "value": {"duration_seconds": 3600, "required_capabilities": ["5ghz"]},
     },
-    "dual_band": {
-        "summary": "I need both bands",
-        "description": "The device must provide every listed capability.",
-        "value": {"duration_seconds": 3600, "required_capabilities": ["2.4ghz", "5ghz"]},
+    "needs_2_4ghz": {
+        "summary": "I need 2.4 GHz",
+        "description": "Any device with 2.4 GHz can be assigned; Wi-Lab prefers the one that "
+                       "offers nothing more, keeping dual-band devices free.",
+        "value": {"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
+    },
+    "any_device": {
+        "summary": "Any device",
+        "description": "No requirement: `required_capabilities` is mandatory but may be empty. "
+                       "Wi-Lab assigns the least capable free device.",
+        "value": {"duration_seconds": 900, "required_capabilities": []},
     },
     "unlimited": {
         "summary": "Unlimited reservation",
         "description": "`duration_seconds: 0`, accepted only when `allow_unlimited_reservation` "
                        "is true in config.yaml. Must be released manually.",
-        "value": {"duration_seconds": 0, "required_capabilities": ["2.4ghz"]},
+        "value": {"duration_seconds": 0, "required_capabilities": ["2.4ghz", "5ghz"]},
     },
 }
 
@@ -237,6 +259,9 @@ async def create_reservation(
     device. It assigns the **least capable free device** that provides every requested
     capability (ties go to the first in `config.yaml`), so multi-band adapters stay free for
     requests that really need them. You cannot ask for a specific antenna.
+
+    Possible capabilities: **`2.4ghz`** and **`5ghz`** (the bands a device can operate an
+    access point in). List both to require a dual-band device.
 
     Both `duration_seconds` and `required_capabilities` are **mandatory** (`[]` means "any
     device"); a request missing either is rejected with 422 listing every missing field.
