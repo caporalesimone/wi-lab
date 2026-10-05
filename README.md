@@ -232,12 +232,6 @@ curl -X POST http://localhost:8080/api/v1/device-reservation \
   -H "Content-Type: application/json" \
   -d '{"duration_seconds": 900, "required_capabilities": ["5ghz"]}'
 
-# 1c. ...or pin one specific adapter
-curl -X POST http://localhost:8080/api/v1/device-reservation \
-  -H "Authorization: Bearer change-me" \
-  -H "Content-Type: application/json" \
-  -d '{"duration_seconds": 900, "required_capabilities": [], "interface": "wlx7820512451b4"}'
-
 # 2. Create a WiFi network on the reserved device
 curl -X POST http://localhost:8080/api/v1/network/a1b2c3d4 \
   -H "Authorization: Bearer change-me" \
@@ -245,7 +239,8 @@ curl -X POST http://localhost:8080/api/v1/network/a1b2c3d4 \
   -d '{"ssid": "TestNetwork", "channel": 6, "band": "2.4ghz", "encryption": "wpa2", "password": "mypassword"}'
 ```
 
-`GET /api/v1/status` lists the capabilities of every device plus a catalogue of what the
+You never choose the antenna: Wi-Lab assigns the least capable free device that provides
+what you asked for. `GET /api/v1/status` lists the capabilities of every device plus a catalogue of what the
 lab as a whole can offer, so a client can decide what to ask for before reserving.
 
 A reservation request that cannot be satisfied is answered precisely:
@@ -253,7 +248,6 @@ A reservation request that cannot be satisfied is answered precisely:
 | Status | Meaning |
 |--------|---------|
 | `422` (missing field) | `duration_seconds` or `required_capabilities` is absent — the body lists every missing field |
-| `404` | The pinned `interface` is not managed by Wi-Lab |
 | `409` | Matching devices exist but are all reserved — **retry later**; the body carries `next_available_in` (`null` when every holder has an unlimited reservation) |
 | `422` | No device can *ever* provide what was asked — **change the request** |
 

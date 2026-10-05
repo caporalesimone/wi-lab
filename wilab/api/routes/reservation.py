@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ...api.auth import require_token
 from ...api.dependencies import get_config, get_manager, get_reservation_manager
@@ -15,7 +15,6 @@ from ...reservation import (
     CapabilityUnsatisfiableError,
     NoDeviceAvailableError,
     ReservationManager,
-    UnknownDeviceError,
 )
 from ...wifi.manager import NetworkManager
 
@@ -27,6 +26,10 @@ router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
 # ---- Request / Response models ----
 
 class ReservationCreateRequest(BaseModel):
+    # Unknown fields are rejected, not ignored: a client that still sends the removed
+    # `interface` must be told, not left believing it pinned a device.
+    model_config = ConfigDict(extra="forbid")
+
     duration_seconds: int = Field(
         ..., description="Reservation duration in seconds (0 = unlimited, if allowed by config)",
         json_schema_extra={"example": 3600}
@@ -40,15 +43,6 @@ class ReservationCreateRequest(BaseModel):
             "available for requests that need it."
         ),
         json_schema_extra={"example": ["2.4ghz"]},
-    )
-    interface: Optional[str] = Field(
-        default=None,
-        description=(
-            "Pin a specific managed device by interface name. When omitted, Wi-Lab "
-            "selects the best match. May be combined with required_capabilities, which "
-            "then act as a guard rail on the pinned device."
-        ),
-        json_schema_extra={"example": "wlxbc071dc527d6"},
     )
 
     @field_validator("duration_seconds")
@@ -109,7 +103,6 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
     responses={
         200: {"description": "Device reserved successfully"},
         401: {"description": "Unauthorized"},
-        404: {"description": "The pinned interface is not managed by Wi-Lab"},
         409: {"description": "Matching devices exist but all are reserved (transient)"},
         422: {"description": "Missing or invalid field (duration_seconds and required_capabilities "
                              "are mandatory), unknown capability, or no device can "
@@ -147,25 +140,11 @@ async def create_reservation(
     try:
         # Conversion must stay after validation: an unknown id would otherwise raise
         # ValueError here and surface as a 500 instead of a 422.
-        r = mgr.create(duration, required_capabilities=required, device_id=req.interface)
-    except UnknownDeviceError:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Unknown interface '{req.interface}'",
-        )
+        r = mgr.create(duration, required_capabilities=required)
     except CapabilityUnsatisfiableError as exc:
         # 422, not 409: no amount of waiting adds capabilities to the pool, so the
         # client must change the request. The frontend keys its retry countdown off
         # 409 and must not start one here.
-        if exc.device_id is not None:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error": "Device does not provide the requested capabilities",
-                    "interface": exc.device_id,
-                    "missing": sorted(c.value for c in exc.missing),
-                },
-            )
         raise HTTPException(
             status_code=422,
             detail={

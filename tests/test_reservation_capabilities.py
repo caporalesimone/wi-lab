@@ -19,7 +19,6 @@ from wilab.reservation import (
     DeviceSpec,
     NoDeviceAvailableError,
     ReservationManager,
-    UnknownDeviceError,
 )
 
 C24 = Capability.BAND_24GHZ
@@ -155,41 +154,6 @@ class TestCapacityVersusImpossibility:
             mgr.create(3600)
         with pytest.raises(NoDeviceAvailableError):
             mgr.create(60, required_capabilities={C5})
-
-
-class TestPinnedDevice:
-    def test_pinning_a_free_device_succeeds(self):
-        mgr = ReservationManager(_pool(*STANDARD_POOL))
-        assert mgr.create(60, device_id="dual_b").device_id == "dual_b"
-
-    def test_pinning_overrides_minimality(self):
-        mgr = ReservationManager(_pool(*STANDARD_POOL))
-        assert mgr.create(60, device_id="dual_a").device_id == "dual_a"
-
-    def test_unknown_device(self):
-        mgr = ReservationManager(_pool(*STANDARD_POOL))
-        with pytest.raises(UnknownDeviceError):
-            mgr.create(60, device_id="not-a-device")
-
-    def test_pinned_device_lacking_a_capability(self):
-        mgr = ReservationManager(_pool(*STANDARD_POOL))
-        with pytest.raises(CapabilityUnsatisfiableError) as exc_info:
-            mgr.create(60, required_capabilities={C5}, device_id="only24")
-        assert exc_info.value.device_id == "only24"
-        assert exc_info.value.missing == frozenset({C5})
-
-    def test_pinned_device_with_satisfied_capabilities(self):
-        mgr = ReservationManager(_pool(*STANDARD_POOL))
-        assert mgr.create(60, required_capabilities={C24}, device_id="dual_a").device_id == "dual_a"
-
-    def test_pinned_busy_device_reports_its_own_eta(self):
-        """Not the pool's soonest: the caller pinned this device and wants its expiry."""
-        mgr = ReservationManager(_pool(*STANDARD_POOL))
-        mgr.create(30, device_id="only24")     # frees up sooner
-        mgr.create(3600, device_id="dual_a")
-        with pytest.raises(NoDeviceAvailableError) as exc_info:
-            mgr.create(60, device_id="dual_a")
-        assert exc_info.value.next_available_in > 60
 
 
 class TestCapabilityConcurrency:
@@ -333,6 +297,15 @@ class TestRequiredFields:
         )
         assert resp.status_code == 422
 
+    def test_choosing_a_device_is_not_possible(self, client, token):
+        """`interface` was removed: it is rejected, not silently ignored."""
+        resp = self.post(
+            client, token,
+            {"duration_seconds": 3600, "required_capabilities": [], "interface": "wls18"},
+        )
+        assert resp.status_code == 422
+        assert "interface" in resp.json()["detail"]
+
     def test_a_rejected_request_reserves_nothing(self, client, token):
         self.post(client, token, {"duration_seconds": 3600})
         status = client.get("/api/v1/status", headers={"Authorization": token}).json()
@@ -362,32 +335,6 @@ class TestReservationApiErrors:
         detail = reserve(client, token, required_capabilities=["5ghz"]).json()["detail"]
         assert detail["next_available_in"] > 60
 
-    def test_pinned_interface_succeeds(self, client, token):
-        body = reserve(client, token, interface="wls18").json()
-        assert body["interface"] == "wls18"
-
-    def test_unknown_interface_is_404(self, client, token):
-        """404, not 422, so a client can tell 'no such device' from 'cannot serve you'."""
-        resp = reserve(client, token, interface="wlan99")
-        assert resp.status_code == 404
-        assert "wlan99" in resp.json()["detail"]
-
-    def test_pinned_busy_interface_is_409(self, client, token):
-        reserve(client, token, interface="wls18", duration_seconds=3600)
-        resp = reserve(client, token, interface="wls18")
-        assert resp.status_code == 409
-
-    def test_pinned_interface_lacking_the_capability_is_422(self, client, token):
-        resp = reserve(client, token, interface="wls17", required_capabilities=["5ghz"])
-        assert resp.status_code == 422
-        detail = resp.json()["detail"]
-        assert detail["interface"] == "wls17"
-        assert detail["missing"] == ["5ghz"]
-
-    def test_pinned_interface_with_satisfied_capability(self, client, token):
-        resp = reserve(client, token, interface="wls16", required_capabilities=["5ghz"])
-        assert resp.status_code == 200
-
 
 class TestOpenApiCompatibility:
     def test_schema_generates_and_required_capabilities_is_mandatory(self, client):
@@ -395,4 +342,4 @@ class TestOpenApiCompatibility:
         body = schema["components"]["schemas"]["ReservationCreateRequest"]
         assert sorted(body["required"]) == ["duration_seconds", "required_capabilities"]
         assert "required_capabilities" in body["properties"]
-        assert "interface" in body["properties"]
+        assert "interface" not in body["properties"]

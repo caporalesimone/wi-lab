@@ -39,14 +39,6 @@ class NoDeviceAvailableError(Exception):
         return max(0, int(self.next_available_at - time.time()))
 
 
-class UnknownDeviceError(Exception):
-    """A specific device was requested by name and Wi-Lab does not manage it."""
-
-    def __init__(self, device_id: str) -> None:
-        self.device_id = device_id
-        super().__init__(f"Unknown device '{device_id}'")
-
-
 class CapabilityUnsatisfiableError(Exception):
     """No configured device can ever satisfy the request.
 
@@ -58,22 +50,15 @@ class CapabilityUnsatisfiableError(Exception):
         available: Capability ids present across ALL configured devices, free or not.
             Computed over the whole pool precisely because that is what makes the
             failure permanent.
-        device_id: Set when a specific device was pinned and lacks the capabilities,
-            so the API can say which device rather than talking about the pool.
-        missing: The subset the pinned device does not provide.
     """
 
     def __init__(
         self,
         requested: Iterable[Capability],
         available: Iterable[str],
-        device_id: Optional[str] = None,
-        missing: Iterable[Capability] = (),
     ) -> None:
         self.requested: FrozenSet[Capability] = frozenset(requested)
         self.available: List[str] = sorted(available)
-        self.device_id = device_id
-        self.missing: FrozenSet[Capability] = frozenset(missing)
         super().__init__("No device provides the requested capabilities")
 
 
@@ -123,7 +108,6 @@ class ReservationManager:
             devices: Managed devices, in declaration order.
         """
         self._devices: List[DeviceSpec] = list(devices)
-        self._by_id: Dict[str, DeviceSpec] = {d.device_id: d for d in self._devices}
         self._reservations: Dict[str, Reservation] = {}   # reservation_id -> Reservation
         self._device_to_rid: Dict[str, str] = {}           # device_id -> reservation_id
         self._lock = threading.Lock()
@@ -136,21 +120,18 @@ class ReservationManager:
         self,
         duration_seconds: int,
         required_capabilities: Iterable[Capability] = (),
-        device_id: Optional[str] = None,
     ) -> Reservation:
-        """Reserve the best matching device.
+        """Reserve the least capable free device that satisfies the requirements.
 
         Args:
             duration_seconds: How long to hold the reservation (0 = unlimited).
             required_capabilities: Capabilities the assigned device must provide.
                 Empty means "no requirement".
-            device_id: Pin a specific device instead of selecting one.
 
         Returns:
             The newly created Reservation.
 
         Raises:
-            UnknownDeviceError: ``device_id`` is not managed by Wi-Lab.
             CapabilityUnsatisfiableError: No configured device provides the requested
                 capabilities (permanent - retrying will not help).
             NoDeviceAvailableError: Matching devices exist but all are reserved
@@ -161,10 +142,7 @@ class ReservationManager:
         with self._lock:
             self._purge_expired()
 
-            if device_id is not None:
-                chosen = self._resolve_pinned(device_id, required)
-            else:
-                chosen = self._resolve_best(required)
+            chosen = self._resolve_best(required)
 
             reservation_id = secrets.token_hex(RESERVATION_TOKEN_BYTES)
             now = time.time()
@@ -236,25 +214,6 @@ class ReservationManager:
     # ------------------------------------------------------------------
     # Internal helpers (caller must hold self._lock)
     # ------------------------------------------------------------------
-
-    def _resolve_pinned(self, device_id: str, required: FrozenSet[Capability]) -> DeviceSpec:
-        """Resolve an explicitly requested device, or raise the precise reason it cannot."""
-        spec = self._by_id.get(device_id)
-        if spec is None:
-            raise UnknownDeviceError(device_id)
-        missing = required - spec.capabilities
-        if missing:
-            raise CapabilityUnsatisfiableError(
-                requested=required,
-                available=self._all_capability_ids(),
-                device_id=device_id,
-                missing=missing,
-            )
-        if device_id in self._device_to_rid:
-            # The ETA is this device's own expiry: the caller pinned it, so when some
-            # other device frees up is irrelevant to them.
-            raise NoDeviceAvailableError(self._soonest_expiry(among={device_id}))
-        return spec
 
     def _resolve_best(self, required: FrozenSet[Capability]) -> DeviceSpec:
         """Select the least capable device that satisfies `required`, or raise."""

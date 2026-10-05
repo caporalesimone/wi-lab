@@ -40,7 +40,6 @@ client written against 3.x, which sends only `duration_seconds`, is rejected wit
 |-------|------|-------|
 | `duration_seconds` | `int` | **Required.** `0` = unlimited, when allowed by config |
 | `required_capabilities` | `string[]` | **Required.** Capabilities the assigned device must provide; `[]` explicitly means any device. `null` is rejected |
-| `interface` | `string` \| `null` | Optional. Pin one specific managed device. May be combined with `required_capabilities`, which then act as a guard rail on the pinned device |
 
 Capability ids are case-insensitive and whitespace-tolerant (`"5GHz"` is accepted); the
 list is de-duplicated and sorted before use, so the outcome does not depend on the order
@@ -63,7 +62,6 @@ at once:
 
 | Status | When | Body |
 |--------|------|------|
-| `404` | The pinned `interface` is not managed by Wi-Lab | `detail` is a string |
 | `409` | Matching devices exist but are all reserved — **transient**, retry later | `detail` object with `error`, `requested_capabilities`, `next_available_at`, `next_available_in` |
 | `422` | Missing required field, invalid duration, unknown capability id, or **no device can ever** provide what was asked — permanent, change the request | `detail` object (see below) or a string for duration errors |
 
@@ -72,7 +70,7 @@ matching device is held by an unlimited reservation: there is no scheduled relea
 there is nothing to report and a client must not count down to it. `next_available_at` is
 rendered in **UTC** (`yyyy-mm-dd HH:MM:SS`), like every other timestamp in the API.
 
-The `422` body distinguishes two cases:
+The `422` body for an unsatisfiable request:
 
 ```jsonc
 // The pool as a whole cannot serve the request
@@ -81,15 +79,6 @@ The `422` body distinguishes two cases:
     "error": "No device provides the requested capabilities",
     "requested": ["5ghz"],
     "available_capabilities": ["2.4ghz"]   // union over ALL configured devices
-  }
-}
-
-// A specific pinned device cannot serve it
-{
-  "detail": {
-    "error": "Device does not provide the requested capabilities",
-    "interface": "wlxbc071dc527d6",
-    "missing": ["5ghz"]
   }
 }
 ```

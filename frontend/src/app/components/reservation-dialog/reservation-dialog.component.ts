@@ -5,11 +5,8 @@ import { MatDialogRef, MatDialogModule, MAT_DIALOG_DATA } from '@angular/materia
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
-import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatIconModule } from '@angular/material/icon';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatRadioModule } from '@angular/material/radio';
-import { MatChipsModule } from '@angular/material/chips';
 import {
   CapabilityId,
   CapabilityInfo,
@@ -17,15 +14,13 @@ import {
   ReservationRequest
 } from '../../models/network.models';
 
-export type SelectionMode = 'capability' | 'device';
-
 export interface ReservationDialogData {
   allowUnlimited: boolean;
   minSeconds: number;
   maxSeconds: number;
   /** From status.capabilities_catalogue — labels and counts are owned by the backend. */
   capabilities: CapabilityInfo[];
-  /** From status.networks — used for the device list and the live match count. */
+  /** From status.networks — used for the live match count. */
   devices: InterfaceInfo[];
 }
 
@@ -51,11 +46,8 @@ const KIND_LABELS: Record<string, string> = {
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
-    MatButtonToggleModule,
     MatIconModule,
-    MatCheckboxModule,
-    MatRadioModule,
-    MatChipsModule
+    MatCheckboxModule
   ],
   templateUrl: './reservation-dialog.component.html',
   styleUrl: './reservation-dialog.component.scss'
@@ -79,30 +71,10 @@ export class ReservationDialogComponent {
     this.capabilities = data?.capabilities ?? [];
     this.devices = data?.devices ?? [];
     this.form = this.formBuilder.group({
-      mode: ['capability' as SelectionMode],
       selectedCapabilities: [[] as CapabilityId[]],
-      selectedInterface: [null as string | null],
       unlimited: [false],
       duration_seconds: [3600, [Validators.required, Validators.min(this.minSeconds), Validators.max(this.maxSeconds)]]
     });
-  }
-
-  // ---- Selection mode ----
-
-  public get mode(): SelectionMode {
-    return this.form.get('mode')?.value as SelectionMode;
-  }
-
-  /**
-   * Clear the other mode's control on every switch, so the emitted request can never
-   * carry both required_capabilities and interface.
-   */
-  public onModeChange(): void {
-    if (this.mode === 'capability') {
-      this.form.get('selectedInterface')?.setValue(null);
-    } else {
-      this.form.get('selectedCapabilities')?.setValue([]);
-    }
   }
 
   // ---- Capability picker ----
@@ -170,21 +142,7 @@ export class ReservationDialogComponent {
     return `${n} device${n === 1 ? '' : 's'} match${n === 1 ? 'es' : ''} your selection`;
   }
 
-  // ---- Device picker ----
-
-  public capabilitiesOf(device: InterfaceInfo): CapabilityId[] {
-    return device.capabilities;
-  }
-
-  public labelFor(id: CapabilityId): string {
-    return this.capabilities.find(c => c.id === id)?.label ?? id;
-  }
-
-  public get selectedInterface(): string | null {
-    return this.form.get('selectedInterface')?.value ?? null;
-  }
-
-  // ---- Duration (unchanged behaviour) ----
+  // ---- Duration ----
 
   public get durationMinutes(): number {
     return Math.floor((this.form.get('duration_seconds')?.value || 0) / 60);
@@ -223,9 +181,7 @@ export class ReservationDialogComponent {
     if (!durationOk) {
       return false;
     }
-    return this.mode === 'capability'
-      ? this.matchingDeviceCount > 0
-      : this.selectedInterface !== null;
+    return this.matchingDeviceCount > 0;
   }
 
   public onSubmit(): void {
@@ -233,15 +189,11 @@ export class ReservationDialogComponent {
       return;
     }
     // required_capabilities is mandatory on the API: always sent, empty meaning "any
-    // device". `interface` is sent only in device mode, so a request never carries a
-    // capability selection and a pinned device from different modes.
+    // device". The client states only what it needs; Wi-Lab picks the device.
     const request: ReservationRequest = {
       duration_seconds: this.isUnlimited ? 0 : this.form.get('duration_seconds')!.value,
-      required_capabilities: this.mode === 'capability' ? this.selectedCapabilities : []
+      required_capabilities: this.selectedCapabilities
     };
-    if (this.mode === 'device' && this.selectedInterface) {
-      request.interface = this.selectedInterface;
-    }
     this.dialogRef.close(request);
   }
 

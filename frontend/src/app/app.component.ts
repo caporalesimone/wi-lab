@@ -265,7 +265,7 @@ export class AppComponent implements OnInit, OnDestroy {
         // 422 with a capability error is PERMANENT: no antenna in the lab provides the
         // requested combination, so retrying cannot help and no countdown must start.
         if (raw && raw.status === 422 && typeof detail === 'object' && detail?.error) {
-          const missing: string[] = detail.missing ?? detail.requested ?? [];
+          const missing: string[] = detail.requested ?? [];
           const suffix = missing.length ? ` (${missing.join(', ')})` : '';
           this.snackBar.open(`${detail.error}${suffix}`, 'Close', {
             duration: 8000,

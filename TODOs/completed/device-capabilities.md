@@ -59,7 +59,7 @@ Three concrete problems follow:
 | # | Problem | Consequence |
 |---|---------|-------------|
 | P1 | The reservation API cannot express *what the user needs* | A user who needs 5 GHz can be assigned a 2.4-only antenna. The reservation succeeds and the failure only surfaces later, at `POST /interface/{rid}/network`, when hostapd cannot start on the requested band. |
-| P2 | The reservation API cannot express *which device the user wants* | Reserving a specific physical antenna (e.g. the one already cabled into an anechoic chamber) is impossible. The only workaround is to reserve repeatedly and release until the right device is handed out. |
+| P2 | *(Not pursued — see [§18.8](#188-revision--choosing-a-specific-antenna-was-removed))* The reservation API cannot express *which device the user wants* | Reserving a specific physical antenna is impossible. Originally addressed by an `interface` field; removed before release, because Wi-Lab should manage allocation on its own. |
 | P3 | Allocation wastes scarce resources | Declaration order decides everything. A user needing only 2.4 GHz can consume the single dual-band adapter, blocking a colleague who genuinely needs 5 GHz, while a 2.4-only adapter sits idle. |
 
 **Goal of this proposal:** let each device declare a set of *capabilities*, let the
@@ -155,18 +155,15 @@ driven by one report, not a restart-fix-restart loop.
 
 ### 2.4 User-facing behaviour
 
-Three ways to reserve, all through the same endpoint:
+The client states **only what it needs**; Wi-Lab always chooses the antenna. There is no
+way to request a specific device (that option was designed, built and then removed — see
+[§18.8](#188-revision--choosing-a-specific-antenna-was-removed)).
 
-**A. Capability-driven (recommended, the normal path)**
+**A. With requirements**
 The user states *what they need* — e.g. "2.4 GHz only". The system picks the best
 device on their behalf, preferring the least capable one that fits.
 
-**B. Device-driven (explicit override)**
-The user states *which antenna they want* by interface name. The system reserves that
-one or fails with a precise reason. Capability requirements, if also supplied, are
-verified against that device.
-
-**C. No preference (scripting)**
+**B. No preference (scripting)**
 `required_capabilities` is sent **empty**. Equivalent to "no requirements": any free
 device is acceptable, and the least capable free one is assigned. Since 4.0.0 this is
 stated explicitly: leaving the field out is an error, not a synonym.
@@ -198,8 +195,7 @@ Pool:
 ### 2.6 The "Reserve Device" flow in the UI
 
 Pressing **Reserve Device** must not immediately allocate. The dialog collects, in a
-single screen: the **selection mode** (`By capability` / `By device`), the **choice**
-itself, and the **duration** (unchanged). A live line reports how many devices match,
+single screen: the **capabilities** needed and the **duration** (unchanged). A live line reports how many devices match,
 and **Reserve** is disabled when none do — turning P1 from a late, confusing hostapd
 failure into an immediate, pre-submit validation.
 
@@ -283,16 +279,10 @@ protect *rare* capabilities more aggressively than plain cardinality. With only 
 capabilities the two formulas agree on every case, so v1 uses the simple count. Revisit
 if/when the capability set grows past ~4 members.
 
-### 3.3 Forced-device path
+### 3.3 Forced-device path — removed
 
-When `interface` is supplied, the algorithm is bypassed entirely:
-
-```
-d = lookup(interface)                       # 404 if not managed by Wi-Lab
-assert R ⊆ capabilities(d)                  # 422 if the forced device lacks them
-assert d is free                            # 409, with d's own expiry
-reserve(d)
-```
+An earlier draft let the request name a device (`interface`) and bypassed the algorithm.
+It was removed in 4.0.0; see [§18.8](#188-revision--choosing-a-specific-antenna-was-removed).
 
 ### 3.4 Concurrency and TOCTOU
 
@@ -1031,16 +1021,14 @@ Validation notes:
 * Duplicates are removed and the list is sorted: `["5ghz","2.4ghz","5ghz"]` and
   `["2.4ghz","5ghz"]` are the same request, which makes the endpoint's behaviour
   independent of client-side ordering and makes tests deterministic.
-* `interface` **and** `required_capabilities` together are **allowed**: the
-  capabilities are then a precondition on the forced device, not a search filter. This
-  is useful for scripts that pin a device but still want a guard rail.
+* The request model **forbids unknown fields** (`extra="forbid"`): a client that still
+  sends the removed `interface` gets a `422` naming it, instead of being ignored.
 * `duration_seconds` validation is untouched.
 
 > **`required_capabilities` is mandatory** (revised in 4.0.0; the first draft kept it
 > optional). A client that does not say what it needs is not given a silent guess: it is
 > rejected with `422` and `Missing required field(s): required_capabilities`, listing
 > every missing field at once. `null` is rejected too; `[]` is the explicit "any device".
-> `interface` stays optional because it is the alternative mode, not a missing answer.
 > See [D16](#15-design-decisions--rejected-alternatives).
 
 Request examples:
@@ -1051,12 +1039,7 @@ curl -X POST http://localhost:8080/api/v1/device-reservation \
   -H "Authorization: Bearer change-me" -H "Content-Type: application/json" \
   -d '{"duration_seconds": 900, "required_capabilities": ["5ghz"]}'
 
-# B. device-driven
-curl -X POST http://localhost:8080/api/v1/device-reservation \
-  -H "Authorization: Bearer change-me" -H "Content-Type: application/json" \
-  -d '{"duration_seconds": 900, "required_capabilities": [], "interface": "wlxbc071dc527d6"}'
-
-# C. no preference — explicit empty list
+# B. no preference — explicit empty list
 curl -X POST http://localhost:8080/api/v1/device-reservation \
   -H "Authorization: Bearer change-me" -H "Content-Type: application/json" \
   -d '{"duration_seconds": 900, "required_capabilities": []}'
@@ -1095,7 +1078,7 @@ Add `capabilities` to `interfaces.managed[]` entries for troubleshooting parity 
 | Endpoint | Change | Breaking? |
 |----------|--------|-----------|
 | `GET /api/v1/status` | +`networks[].capabilities`, +`capabilities_catalogue` | No (additive; always present) |
-| `POST /api/v1/device-reservation` | +`required_capabilities` (**required**), +`interface` (optional) | **Yes** — a request without `required_capabilities` is rejected |
+| `POST /api/v1/device-reservation` | +`required_capabilities` (**required**) | **Yes** — a request without `required_capabilities` is rejected |
 | `GET /api/v1/device-reservation/{rid}` | +`capabilities` in response | No (additive) |
 | `GET /api/v1/debug` | +`capabilities` in managed interfaces | No (additive) |
 | — | **no new endpoints** | — |
@@ -1124,7 +1107,6 @@ class DeviceSpec:
 class ReservationManager:
     def __init__(self, devices: Sequence[DeviceSpec]) -> None:
         self._devices: list[DeviceSpec] = list(devices)
-        self._by_id = {d.device_id: d for d in self._devices}
         ...
 ```
 
@@ -1139,17 +1121,14 @@ def create(
     self,
     duration_seconds: int,
     required_capabilities: frozenset[Capability] = frozenset(),
-    device_id: Optional[str] = None,
 ) -> Reservation:
-    """Reserve the best matching device.
+    """Reserve the least capable free device that satisfies the requirements.
 
     Args:
         duration_seconds: Reservation duration (0 = unlimited).
         required_capabilities: Capabilities the device must provide.
-        device_id: Force a specific device instead of automatic selection.
 
     Raises:
-        UnknownDeviceError:           device_id is not managed by Wi-Lab.
         CapabilityUnsatisfiableError: no *configured* device offers the requested
                                       capabilities (permanent — retrying will not help).
         NoDeviceAvailableError:       matching devices exist but all are reserved
@@ -1175,10 +1154,6 @@ def _select(self, required: frozenset[Capability]) -> Optional[DeviceSpec]:
 #### Exceptions
 
 ```python
-class UnknownDeviceError(Exception):
-    """The requested device_id is not in the configured pool."""
-
-
 class CapabilityUnsatisfiableError(Exception):
     """No configured device can ever satisfy the request. Permanent.
 
@@ -1187,9 +1162,6 @@ class CapabilityUnsatisfiableError(Exception):
         available: union of capabilities across ALL configured devices — not just
             the free ones. This is what makes the error permanent: adding time does
             not add capabilities to the pool.
-        device_id: set when a specific device was forced and lacks the capabilities,
-            so the route can render the more precise body of §9.1 without a fourth
-            exception type.
     """
 ```
 
@@ -1267,18 +1239,10 @@ startup hook to coordinate with.
 validation block above it is untouched.
 
 ```python
-required = frozenset(Capability(c) for c in (req.required_capabilities or []))
+required = frozenset(Capability(c) for c in req.required_capabilities)
 try:
-    r = mgr.create(duration, required_capabilities=required, device_id=req.interface)
-except UnknownDeviceError:
-    raise HTTPException(404, detail=f"Unknown interface '{req.interface}'")
+    r = mgr.create(duration, required_capabilities=required)
 except CapabilityUnsatisfiableError as exc:
-    if exc.device_id is not None:
-        raise HTTPException(422, detail={
-            "error": "Device does not provide the requested capabilities",
-            "interface": exc.device_id,
-            "missing": sorted(c.value for c in exc.missing),
-        })
     raise HTTPException(422, detail={
         "error": "No device provides the requested capabilities",
         "requested": sorted(c.value for c in required),
@@ -1442,22 +1406,13 @@ Template structure (Angular Material, matching the existing dialog style):
 ```
 ┌─ Reserve Device ───────────────────────── [ 01h 00m 00s ] ─┐
 │                                                            │
-│  ( ● By capability )  ( ○ By device )    <- button-toggle  │
-│                                                            │
-│  ── mode = capability ──────────────────────────────────── │
 │  RADIO                                                     │
 │   [x] 2.4 GHz          1 of 2 devices free                 │
 │   [ ] 5 GHz            0 of 1 devices free                 │
 │  POLICY            (section appears only when populated)   │
 │   ⓘ 1 device matches your selection                        │
 │                                                            │
-│  ── mode = device ──────────────────────────────────────── │
-│   ( ● ) bench-antenna-1   wlxbc071dc527d6                  │
-│         [2.4 GHz]                              ● free      │
-│   ( ○ ) bench-antenna-2   wlx7820512451b4                  │
-│         [2.4 GHz] [5 GHz]                      ○ reserved  │  <- disabled
 │                                                            │
-│  ── always ─────────────────────────────────────────────── │
 │  Duration (seconds) [ 3600 ]                               │
 │  *Valid value from 60s to 86400s ( 24h 00m 00s )           │
 │  [ ] Unlimited reservation (no expiry)                     │
@@ -1472,24 +1427,19 @@ Behaviour:
   kind has at least one entry. With the v1 registry only `RADIO` appears, so the header
   is hidden when there is exactly one group — the grouping code is still there, ready
   for the first policy capability.
-* Switching mode clears the other mode's control, so the emitted request never carries
-  both `required_capabilities` and `interface`.
 * `matchingDeviceCount` is a getter over the injected `devices` array:
   `devices.filter(d => !d.reserved && selected.every(c => d.capabilities.includes(c))).length`.
   It reports **feasibility only** — it deliberately does **not** predict *which* device
   will be assigned. Reimplementing the minimality tie-break in TypeScript would create
   a second copy of the allocation rule that silently drifts from the backend.
-* **Reserve** is disabled when `matchingDeviceCount === 0` (capability mode) or when no
-  device is selected (device mode).
-* `onSubmit()` emits only the fields relevant to the active mode.
-* **Accessibility:** the mode toggle needs an `aria-label`, the capability checkbox list
-  a `role="group"` with a labelled heading, and the device list must be a real
-  `mat-radio-group` so arrow keys work. The existing dialog is keyboard-navigable and
-  this one must not regress that.
+* **Reserve** is disabled when `matchingDeviceCount === 0`.
+* `onSubmit()` always emits `required_capabilities` (empty = any device) and the duration.
+* **Accessibility:** the capability checkbox list needs a `role="group"` with a labelled
+  heading. The existing dialog is keyboard-navigable and this one must not regress that.
 
-Capability mode with **zero boxes ticked** is legal and means "no requirement" —
+Ticking **no boxes** is legal and means "no requirement" —
 identical to today's behaviour, mapped to case C of
-[§2.4](#24-user-facing-behaviour).
+[§2.4](#24-user-facing-behaviour) (sent as `required_capabilities: []`).
 
 ### 8.3 `app.component.ts`
 
@@ -1544,22 +1494,12 @@ themselves are unchanged.
 | No configured device offers the requested capability set | 422 | `{error, requested, available_capabilities}` | **Permanent** — do not retry, tell the user |
 | Matching devices exist, all reserved, at least one timed | 409 | `{error, next_available_at, next_available_in, requested_capabilities}` | **Transient** — retry after countdown |
 | Matching devices exist, all held by **unlimited** reservations | 409 | same shape, `next_available_*` = `null` | **Transient but unscheduled** — show a static message, no countdown |
-| `interface` not managed by Wi-Lab | 404 | `Unknown interface '<name>'` | Fix the request |
-| Forced `interface` lacks required capabilities | 422 | `{error, interface, missing}` | Permanent for that device |
-| Forced `interface` currently reserved | 409 | `next_available_*` **of that device** (may be `null`) | Transient — retry or drop the pin |
 | Duration out of policy bounds | 422 | unchanged | unchanged |
 
 The **422 vs 409 split is the load-bearing distinction**: 422 means *"this will never
 work"*, 409 means *"this will work later"*. The frontend already branches on 409 to
 start a countdown timer; conflating the two would make the UI count down toward an
 availability that never arrives.
-
-> **Why 404 and not 422 for an unknown `interface`?** It is a body field, and FastAPI
-> convention would make it a 422. 404 is chosen deliberately so a client can distinguish
-> *"you named a device that does not exist"* from *"the device exists but cannot serve
-> you"* **by status code alone**, without parsing `detail`. The review considered the
-> alternative and kept 404; the reasoning is recorded here so it is not silently
-> "corrected" later.
 
 ### 9.2 Startup (configuration)
 
@@ -1693,7 +1633,7 @@ The assigned device is the *least capable free device* that satisfies the reques
 declaration order as the tie-break — also for `required_capabilities: []`. Given a pool
 of `[dual, 2.4-only]`, an unqualified request gets the 2.4-only adapter and the scarce
 dual-band one stays free for those who ask for 5 GHz. A 3.x client that relied on "first
-free in configuration order" must pin a device with `interface` or state its needs.
+free in configuration order" must state its needs with `required_capabilities`.
 
 *Rejected alternative:* keep strict declaration order for requests with no capability
 requirement. Two allocation policies would coexist, and unattended scripts would be the
@@ -1838,10 +1778,6 @@ capability adds rows rather than test functions:
 - [ ] Mixed timed + unlimited → the timed expiry is reported
 - [ ] No configured device satisfies the set → `CapabilityUnsatisfiableError` with
       `available` = union over **all** devices, not only the free ones
-- [ ] Forced `device_id`: success; unknown → `UnknownDeviceError`; busy →
-      `NoDeviceAvailableError` with **that device's** expiry; missing capability →
-      `CapabilityUnsatisfiableError` with `device_id` and `missing` populated
-- [ ] Forced `device_id` + satisfied `required_capabilities` → success
 
 **Compatibility & concurrency**
 - [ ] N threads calling `create()` with the same requirements never double-assign a
@@ -1871,8 +1807,7 @@ capability adds rows rather than test functions:
       fields `null`
 - [ ] `next_available_at` is UTC-formatted and consistent with the value returned by
       `GET /device-reservation/{rid}` for the same reservation
-- [ ] Forced `interface` → 200 / 404 / 409 / 422 per [§9.1](#91-runtime-api), one test each
-- [ ] `interface` + incompatible `required_capabilities` → 422 with `missing` populated
+- [ ] A request carrying the removed `interface` field → 422 naming it
 - [ ] `GET /device-reservation/{rid}` includes `capabilities`
 - [ ] `GET /debug` managed interfaces include `capabilities`
 - [ ] **OpenAPI schema**: `/openapi.json` still generates, the new request fields are
@@ -1893,7 +1828,7 @@ continuing to rely entirely on manual checks:
 - [ ] Unlimited checkbox still produces `duration_seconds: 0`
 
 Remaining manual verification: capability grouping by kind, disabled Reserve at zero
-matches, disabled reserved devices in device mode, band dropdown filtered by the
+matches, band dropdown filtered by the
 reserved device's capabilities, 422-vs-409 rendering, and the null-countdown case.
 
 ### 12.8 End-to-end / regression
@@ -1980,8 +1915,8 @@ it is deliberately left to the bench rather than done blind.
       added, `package-lock.json` regenerated; `npm test` runs
       `reservation-dialog.component.spec.ts` (16/16 pass in headless Chrome).
 - [ ] Verify the production Docker build still succeeds after that `package.json` change
-- [ ] Manually: mode toggle, live match count, Reserve disabled at zero matches, reserved
-      devices disabled in device mode, capability chips on the cards
+- [ ] Manually: live match count, Reserve disabled at zero matches, capability chips on the
+      cards
 - [ ] Band dropdown in the network form limited to the reserved device's capabilities,
       and defaulting to a band that device can actually serve
 - [ ] Error rendering: a 422 capability error shows a message and starts **no** countdown;
@@ -2102,7 +2037,7 @@ was not realistic.
 **Phase 4 — Reservation core** *(~2 h)*
 - [ ] `DeviceSpec` dataclass
 - [ ] `Sequence[DeviceSpec]` constructor
-- [ ] `UnknownDeviceError`, `CapabilityUnsatisfiableError` (with `available`, `device_id`, `missing`)
+- [ ] `CapabilityUnsatisfiableError` (with `available`)
 - [ ] `_select()` replacing `_first_available()`
 - [ ] `_soonest_expiry(among=...)` returning `Optional[float]`
 - [ ] `NoDeviceAvailableError.next_available_at/_in` → `Optional`
@@ -2111,7 +2046,7 @@ was not realistic.
 **Phase 5 — API layer** *(~1.5 h)*
 - [ ] `ReservationCreateRequest` new fields + registry-backed validator (normalise, de-dup, sort)
 - [ ] `ReservationResponse.capabilities` via `AppConfig.capabilities_for()`
-- [ ] Error mapping in `create_reservation()`, including the forced-device 422 body
+- [ ] Error mapping in `create_reservation()`, including the 422 body for an unsatisfiable set
 - [ ] Null-safe 409 body + UTC alignment of `next_available_at`
 - [ ] `/status`: `networks[].capabilities` + `capabilities_catalogue`
 - [ ] `/debug` parity
@@ -2195,9 +2130,9 @@ Cannot be performed on a Windows workstation. Full list and rationale in
 | D14 | The tie-break is **explicit**, though `min()` already provides it | Makes the property intentional and testable, and survives a refactor to `sorted()` or a parallel scan | Rely on `min()` returning the first minimum — correct today, silently fragile |
 | D15 | The minimality rule also applies when no capabilities are requested | One allocation policy is easier to explain, test and reason about; protects scarce hardware from clients that state no requirement | Two policies — unattended CI scripts would be the ones burning dual-band adapters |
 | D16 | Config keys are mandatory **and so is `required_capabilities`** (revised for 4.0.0; originally optional) | A client that does not say what it needs must not be handed a guess; a clear 4xx beats an unclear behaviour. A 3.x client fails fast and visibly instead of intermittently getting a device without its band | Keep it optional with a default (the first draft) — silent mis-allocation for clients that never learned about capabilities |
-| D17 | `interface` and `required_capabilities` may be combined | The capabilities act as a guard rail on a pinned device | Mutual exclusion (422) — rejects a legitimate, safer request |
+| D17 | *(Removed in 4.0.0)* `interface` and `required_capabilities` could be combined | The `interface` field no longer exists — [§18.8](#188-revision--choosing-a-specific-antenna-was-removed) | — |
 | D18 | Unsatisfiable → 422, all-busy → 409 | 422 = "never going to work", 409 = "works later". The countdown timer is driven by 409 and must not fire on a permanent failure | One status for both — the UI counts down toward an availability that never arrives |
-| D19 | Unknown `interface` → **404**, not 422 | Lets a client distinguish "no such device" from "device cannot serve you" by status alone, without parsing `detail` ([§9.1](#91-runtime-api)) | 422 for every body-field problem — more RFC-consistent, less useful to the client |
+| D19 | *(Removed in 4.0.0)* Unknown `interface` → 404 | The `interface` field no longer exists | — |
 | D20 | `next_available_*` become **nullable** rather than reporting `0` | "Available now" is false when every holder is unlimited, and it makes the UI busy-loop | Keep returning `time.time()` — preserves the type, lies to the client |
 | D21 | Capabilities are **not** stored on `Reservation` | They belong to the device, not the booking; a lookup avoids a second source of truth | Denormalise into the dataclass — faster, but stale |
 | D22 | `Sequence[DeviceSpec]` constructor only (revised for 4.0.0; the first draft also accepted `str`) | No compatibility shim to keep alive; tests use `device_specs()` | `Sequence[DeviceSpec]` — kept ~46 test call sites unchanged at the cost of a second code path |
@@ -2324,7 +2259,7 @@ outstanding** — see [§18.3](#183-remaining--wi-7-bench-validation-2-h).
 | bug fix | `6a8ca70` | `next_available_*` null when every holder is unlimited |
 | WI-4 (phases 4+5) | `0e278bc` | `DeviceSpec`, `_select()`, the two new exceptions, request/response fields, `/status` catalogue, 42 tests |
 | refactor | `d42528b` | Configuration parsed once at startup instead of twice |
-| WI-5 (phase 6) | `728ef7f` | Reservation dialog with capability/device modes, card chips, band filtering |
+| WI-5 (phase 6) | `728ef7f` | Reservation dialog (capability picker; the device mode was later removed, §18.8), card chips, band filtering |
 | WI-6 (phase 7) | this commit | README, CHANGELOG, the five `docs/` files, the migration test, version bump to 4.0.0 |
 
 **Suite state:** 545 collected, 531 passed. The 2 failures and 12 errors are pre-existing
@@ -2341,9 +2276,9 @@ Completed on **2026-09-01**. What each item became:
 - [x] **`README.md`** — capabilities in *How It Works* and in the configuration snippet;
       a *Device capabilities* subsection; a new *Validating the Configuration* section with
       the exit-code table and the upgrade note; `--validate-config` in *Quick Start*;
-      `make validate-config` in the Makefile listing; capability-driven and pinned-device
-      API examples plus the 404/409/422 table
-- [x] **`CHANGELOG.md`** — `[4.0.0] - 2026-09-01`, deliberately short and user-facing, with
+      `make validate-config` in the Makefile listing; capability-driven API examples
+      plus the 409/422 table
+- [x] **`CHANGELOG.md`** — `[4.0.0] - 2026-10-05`, deliberately short and user-facing, with
       `⚠️ Breaking Changes`, `✨ Features`, `🐛 Bug Fixes`, `🔧 Maintenance` and `✅ Tests`,
       pointing here for the design detail. The `[Unreleased]` hostapd entries folded into
       the release
@@ -2464,7 +2399,7 @@ kept as history):
 
 | Area | Before | Now |
 |---|---|---|
-| `POST /device-reservation` | `required_capabilities` and `interface` optional | `required_capabilities` **required** (`[]` = any device); `interface` optional. A missing field gives `422` `Missing required field(s): ...`, all fields listed at once |
+| `POST /device-reservation` | `required_capabilities` and `interface` optional | `required_capabilities` **required** (`[]` = any device); `interface` removed in §18.8. A missing field gives `422` `Missing required field(s): ...`, all fields listed at once |
 | `ReservationManager` | accepted `DeviceSpec` or plain `str` | `DeviceSpec` only; tests use `tests/helpers.py::device_specs()` |
 | Frontend | tolerated a backend without capabilities (`?? []`, optional TS fields, "all bands" fallback in the network form) | requires the 4.0.0 API; fields are mandatory in the models; the reservation dialog always sends `required_capabilities` |
 | Version | 3.1.0 | 4.0.0 (`VERSION`, `frontend/package.json`, lockfile) |
@@ -2472,6 +2407,23 @@ kept as history):
 
 Internal `ReservationManager.create()` still defaults `required_capabilities` to empty:
 the contract is enforced at the HTTP boundary, where a client can get it wrong.
+
+### 18.8 Revision — choosing a specific antenna was removed
+
+Decided **2026-10-05**, before any release. The first design let a request name an
+antenna (`interface`) and bypass the allocation algorithm. It was removed: for now Wi-Lab
+manages allocation entirely on its own, and **the client states only the capabilities it
+needs**. With all antennas in one location and differing only in the bands they support,
+nothing strictly requires naming one; a difference the capabilities cannot express (a
+chipset, a cable, an attenuator) would be better modelled as a new capability than as a
+device name. If a real need appears, the feature can be reintroduced.
+
+Removed everywhere: the `interface` request field, the 404 for an unknown interface, the
+pinned-device 422 body (`interface`, `missing`), `UnknownDeviceError`,
+`ReservationManager.create(device_id=...)`, and the "By device" mode of the reservation
+dialog. Sections §2.4, §3.3, §6, §7, §8.2 and §9.1 above were updated accordingly; D17 and
+D19 are retired. The request model now **forbids unknown fields**, so a client that still
+sends `interface` gets `422` naming it rather than being silently ignored.
 
 ## 19. Migration from older versions
 
@@ -2490,9 +2442,9 @@ restart. The service refuses to start on an incomplete file.
 1. **Add `required_capabilities` to every `POST /device-reservation`.** List what you
    need (`["5ghz"]`), or send `[]` for "any device". Omitting it, or sending `null`, is
    rejected.
-2. **Handle the new error cases** (404, the two kinds of 422, 409 with `null` ETA below).
-3. **Stop assuming which device you get.** Read `interface` and `capabilities` from the
-   response, or pin a device with `interface`.
+2. **Handle the new error cases** (the 422 variants and 409 with a `null` ETA, below).
+3. **Stop assuming which device you get.** You cannot choose the antenna: state what you
+   need and read `interface` and `capabilities` from the response.
 4. Create the network with a `band` the device supports; the web UI enforces this, **the
    API does not**.
 
@@ -2505,11 +2457,10 @@ restart. The service refuses to start on an incomplete file.
 # 4.0.0
 -d '{"duration_seconds": 3600, "required_capabilities": []}'       # any device
 -d '{"duration_seconds": 3600, "required_capabilities": ["5ghz"]}' # needs 5 GHz
--d '{"duration_seconds": 3600, "required_capabilities": [], "interface": "wlx..."}'  # pin
 ```
 
-`interface` is optional and can be combined with `required_capabilities`, which then act
-as a guard on the pinned device. Ids are case-insensitive; duplicates are ignored.
+Ids are case-insensitive; duplicates are ignored. **Any other field is rejected** (for
+example `interface`): you cannot choose the antenna.
 
 ### Reservation flow
 
@@ -2522,13 +2473,13 @@ POST /device-reservation {duration}  ->  200 device | 409 all busy
 Now: state what you need.
 
 ```
-POST /device-reservation {duration, required_capabilities, interface?}
+POST /device-reservation {duration, required_capabilities}
   200  -> use response.interface / response.capabilities
   409  -> TRANSIENT: matching devices busy. Retry after next_available_in
           (null = no scheduled release: do not start a countdown)
-  422  -> missing field, unknown capability, or PERMANENT: no device provides this.
+  422  -> missing or unknown field, unknown capability, or PERMANENT: no device
+          provides this.
           Change the request, never retry it unchanged
-  404  -> the pinned interface is unknown
 ```
 
 Treat 409 and 422 differently: waiting fixes the first and can never fix the second.
@@ -2548,14 +2499,13 @@ All additive; existing fields are untouched.
 | Status | 3.x | 4.0.0 |
 |---|---|---|
 | 409 no device free | `{"error", "next_available_at", "next_available_in"}`; `next_available_at` in the **server's local time**; "now" when every holder was unlimited | adds `requested_capabilities`. `next_available_at` is **UTC**. Both `next_available_*` are `null` when every matching device is held by an unlimited reservation. The ETA covers only devices that match the request |
-| 422 | duration out of range / unlimited not allowed (string `detail`) | unchanged, plus: **missing required field(s)** (string `detail`, all listed); unknown capability id; no device can ever provide the set (`detail`: `error`, `requested`, `available_capabilities`); pinned device lacks a capability (`detail`: `error`, `interface`, `missing`) |
-| 404 | — | `POST` with an `interface` Wi-Lab does not manage |
+| 422 | duration out of range / unlimited not allowed (string `detail`) | unchanged, plus: **missing required field(s)** (string `detail`, all listed); unknown field; unknown capability id; no device can ever provide the set (`detail`: `error`, `requested`, `available_capabilities`) |
 
 ### Behaviour change
 
 With `required_capabilities: []` you get the **least capable** free device, not the first
 in configuration order, so dual-band adapters stay free for requests that need them. A
-script that assumed "first device" must pin one with `interface` or state its needs.
+script that assumed "first device" must state its needs with `required_capabilities`.
 
 ### Example
 

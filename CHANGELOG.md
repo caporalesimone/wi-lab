@@ -26,9 +26,9 @@ Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device
 ### ✨ Features
 
 - **Device capabilities** — each device declares the bands it may be used for (`2.4ghz`, `5ghz`) in `config.yaml`.
-- **Capability-based reservations** — state what you need (`required_capabilities`) and get the least capable device that provides it, so dual-band adapters stay free for those who need them. You can also pin one specific device with `interface`. A request that omits `required_capabilities` is rejected.
+- **Capability-based reservations** — state what you need (`required_capabilities`) and get the least capable device that provides it, so dual-band adapters stay free for those who need them. The client states only the capabilities; Wi-Lab always picks the device, and there is no way to request a specific antenna. A request that omits `required_capabilities`, or sends any unknown field such as `interface`, is rejected.
 - **Configuration validator** — `python3 main.py --validate-config` (or `make validate-config`) checks the file without starting anything and lists every problem at once, with the fix. Add `--check-hardware` to also verify adapters and subnets. The installer runs it before enabling the service.
-- **Capabilities in the web UI and API** — capability chips on every device card, a reservation dialog to pick capabilities or a specific device, band choices limited to what the reserved device supports, and capability data in `/status` and the reservation responses.
+- **Capabilities in the web UI and API** — capability chips on every device card, a reservation dialog to pick the capabilities you need, band choices limited to what the reserved device supports, and capability data in `/status` and the reservation responses.
 
 ### 🐛 Bug Fixes
 

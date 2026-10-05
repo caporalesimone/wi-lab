@@ -49,10 +49,8 @@ export interface StatusResponse {
 
 export interface ReservationRequest {
   duration_seconds: number;
-  /** Capabilities the assigned device must provide. Mandatory; an empty list means "any device". */
+  /** Capabilities the assigned device must provide. Mandatory; an empty list means "any device". Wi-Lab picks the device. */
   required_capabilities: CapabilityId[];
-  /** Pin a specific device by interface name. Omitted means "let Wi-Lab choose". */
-  interface?: string;
 }
 
 export interface ReservationResponse {

@@ -79,30 +79,6 @@ describe('ReservationDialogComponent', () => {
       component.toggleCapability('2.4ghz', true);
       expect(component.matchingDeviceCount).toBe(0);
     });
-
-    it('counts every free device when nothing is selected', () => {
-      const { component } = makeDialog();
-      expect(component.matchingDeviceCount).toBe(2);
-    });
-  });
-
-  describe('mode switching', () => {
-    it('clears the device selection when returning to capability mode', () => {
-      const { component } = makeDialog();
-      component.form.get('mode')!.setValue('device');
-      component.form.get('selectedInterface')!.setValue('wls16');
-      component.form.get('mode')!.setValue('capability');
-      component.onModeChange();
-      expect(component.selectedInterface).toBeNull();
-    });
-
-    it('clears the capability selection when switching to device mode', () => {
-      const { component } = makeDialog();
-      component.toggleCapability('5ghz', true);
-      component.form.get('mode')!.setValue('device');
-      component.onModeChange();
-      expect(component.selectedCapabilities).toEqual([]);
-    });
   });
 
   describe('payload', () => {
@@ -112,22 +88,11 @@ describe('ReservationDialogComponent', () => {
       expect(closed[0]).toEqual({ duration_seconds: 3600, required_capabilities: [] });
     });
 
-    it('sends required_capabilities and no interface in capability mode', () => {
+    it('sends the selected capabilities and nothing else to choose a device', () => {
       const { component, closed } = makeDialog();
       component.toggleCapability('5ghz', true);
       component.onSubmit();
       expect(closed[0]).toEqual({ duration_seconds: 3600, required_capabilities: ['5ghz'] });
-    });
-
-    it('sends the interface with an empty required_capabilities in device mode', () => {
-      const { component, closed } = makeDialog();
-      component.form.get('mode')!.setValue('device');
-      component.onModeChange();
-      component.form.get('selectedInterface')!.setValue('wls17');
-      component.onSubmit();
-      expect(closed[0]).toEqual({
-        duration_seconds: 3600, required_capabilities: [], interface: 'wls17'
-      });
     });
 
     it('still produces duration_seconds 0 for an unlimited reservation', () => {
@@ -145,15 +110,6 @@ describe('ReservationDialogComponent', () => {
         devices: DEVICES.map(d => ({ ...d, reserved: true }))
       });
       expect(component.canSubmit).toBe(false);
-    });
-
-    it('is false in device mode until a device is picked', () => {
-      const { component } = makeDialog();
-      component.form.get('mode')!.setValue('device');
-      component.onModeChange();
-      expect(component.canSubmit).toBe(false);
-      component.form.get('selectedInterface')!.setValue('wls16');
-      expect(component.canSubmit).toBe(true);
     });
 
     it('is false when the duration is out of policy bounds', () => {
