@@ -65,6 +65,7 @@ The test suite includes:
 - **test_api.py** - API endpoint tests
 - **test_reservation.py** - Reservation lifecycle
 - **test_reservation_capabilities.py** - Capability-based device selection
+- **test_reservation_pool.py** - Allocation on a ten-antenna pool (dual band, 2.4-only, 5-only, interleaved): tightest fit, mixed demand, release and reuse, a randomized check against a reference model, and many simultaneous reservations
 - **test_commands.py** - Shell command wrapper tests
 - **test_dhcp.py** - DHCP server tests
 - **test_nat.py** - NAT rules tests
