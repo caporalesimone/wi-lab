@@ -18,6 +18,7 @@ Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device
 ### ⚠️ Breaking Changes
 
 - **`POST /api/v1/device-reservation` now requires `required_capabilities`.** A request without it (every 3.x client) is rejected with `422` and `Missing required field(s): required_capabilities`. Send the capabilities you need, or `[]` for "any device". There is no compatibility mode: a client must say what it needs instead of being handed whichever device is free.
+- **Bands are enforced by the server.** `POST /interface/{reservation_id}/network` with a `band` the reserved device does not declare (`dual` needs both) is refused at once with `422`, without probing the hardware: what `config.yaml` declares is what the device provides.
 - **Allocation policy.** The assigned device is the *least capable* free one that satisfies the request, not the first in configuration order.
 - **`config.yaml` must be completed before upgrading.** Every key is now mandatory, including the new `capabilities` block on each device. Run `python3 main.py --validate-config`, fix everything it lists, then restart. The service will not start on an incomplete file.
 - **`next_available_at` in `409` responses is UTC** (it was the server's local time), and `next_available_*` are `null` when every matching device is held by an unlimited reservation.

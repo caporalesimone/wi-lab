@@ -212,6 +212,12 @@ creation dialog uses them to restrict the `band` dropdown
 (`['2.4ghz', '5ghz', 'dual']`): a 2.4-only device offers only `2.4ghz`, a dual-band
 device offers all three. No extra API call is needed.
 
+**The server enforces it too (4.0.0).** The declaration in `config.yaml` is authoritative:
+a device declared 2.4 GHz-only provides only 2.4 GHz. `POST /interface/{rid}/network` with a
+`band` the device does not declare (`dual` needs both) is answered **immediately with 422**,
+before any hardware check; the adapter is never probed to see whether it could do more.
+The UI filtering is a convenience on top, not the safeguard.
+
 ---
 
 ## 3. Selection Algorithm
@@ -2235,9 +2241,7 @@ Deliberately **not** part of this proposal — listed so the design leaves room 
 * **Runtime config reload.** Capabilities are read once at startup; editing
   `config.yaml` needs a service restart. Related to
   [TODOs/startup-recovery.md](../startup-recovery.md).
-* **Enforcing capabilities at AP creation.** `POST /interface/{rid}/network` could
-  reject a `band` the reserved device does not declare, as a second line of defence
-  behind the frontend filtering. Cheap to add, worth a follow-up.
+* ~~**Enforcing capabilities at AP creation.**~~ Done in 4.0.0: see §2.7.
 
 ---
 
@@ -2445,8 +2449,9 @@ restart. The service refuses to start on an incomplete file.
 2. **Handle the new error cases** (the 422 variants and 409 with a `null` ETA, below).
 3. **Stop assuming which device you get.** You cannot choose the antenna: state what you
    need and read `interface` and `capabilities` from the response.
-4. Create the network with a `band` the device supports; the web UI enforces this, **the
-   API does not**.
+4. Create the network with a `band` the device provides (see `capabilities` in your
+   reservation; `dual` needs both). The API enforces it: any other band is refused at once
+   with `422`, and the hardware is not consulted.
 
 ### The request that breaks
 

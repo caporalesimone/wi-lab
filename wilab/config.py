@@ -113,6 +113,17 @@ if _unsupported:
 del _unsupported
 
 
+def capabilities_for_band(band: str) -> Set[Capability]:
+    """Capabilities a device must declare to operate an AP in ``band``.
+
+    ``dual`` needs both bands. The declaration in config.yaml is authoritative: a device that
+    does not declare a band cannot be used for it, whatever the hardware could do.
+    """
+    if band == "dual":
+        return {Capability.BAND_24GHZ, Capability.BAND_5GHZ}
+    return {Capability(band)}
+
+
 def normalise_capability_id(raw: object) -> str:
     """Canonical form of a capability id.
 

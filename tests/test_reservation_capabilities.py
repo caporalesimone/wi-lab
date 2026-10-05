@@ -387,3 +387,52 @@ class TestOpenApiCompatibility:
         for method in ("get", "post"):
             op = schema["paths"]["/api/v1/interface/{reservation_id}/txpower"][method]
             assert "not guaranteed" in op["description"]
+
+
+class TestBandIsEnforcedByDeclaration:
+    """A band the device does not declare is refused at once, before any hardware check."""
+
+    @pytest.fixture
+    def no_ap(self, monkeypatch):
+        """Accepting a band must not try to start hostapd/dnsmasq in a unit test."""
+        from wilab.wifi.manager import NetworkManager
+
+        monkeypatch.setattr(NetworkManager, "start_network", lambda self, *a, **k: None)
+
+    @staticmethod
+    def create_network(client, token, rid, band, channel):
+        return client.post(
+            f"/api/v1/interface/{rid}/network",
+            headers={"Authorization": token},
+            json={"ssid": "T", "channel": channel, "band": band,
+                  "encryption": "open", "internet_enabled": False, "tx_power_level": 4},
+        )
+
+    def test_5ghz_on_a_2_4_only_device_is_422(self, client, token):
+        rid = reserve(client, token, required_capabilities=["2.4ghz"]).json()["reservation_id"]
+        resp = self.create_network(client, token, rid, "5ghz", 36)
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert "5ghz" in detail and "provides 2.4ghz" in detail
+
+    def test_dual_needs_both_bands(self, client, token):
+        rid = reserve(client, token, required_capabilities=["2.4ghz"]).json()["reservation_id"]
+        assert self.create_network(client, token, rid, "dual", 6).status_code == 422
+
+    def test_a_declared_band_is_accepted(self, client, token, no_ap):
+        rid = reserve(client, token, required_capabilities=["5ghz"]).json()["reservation_id"]
+        assert self.create_network(client, token, rid, "5ghz", 36).status_code == 200
+
+    def test_dual_band_device_accepts_dual(self, client, token, no_ap):
+        rid = reserve(client, token, required_capabilities=["5ghz"]).json()["reservation_id"]
+        assert self.create_network(client, token, rid, "dual", 6).status_code == 200
+
+    def test_the_hardware_is_not_consulted_for_an_undeclared_band(self, client, token, monkeypatch):
+        from wilab.wifi.channels import ChannelManager
+
+        def must_not_run(*args, **kwargs):
+            raise AssertionError("channel validation reached the hardware")
+
+        monkeypatch.setattr(ChannelManager, "validate_channel", must_not_run)
+        rid = reserve(client, token, required_capabilities=["2.4ghz"]).json()["reservation_id"]
+        assert self.create_network(client, token, rid, "5ghz", 36).status_code == 422

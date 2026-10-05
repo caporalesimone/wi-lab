@@ -280,11 +280,13 @@ rejected because it could never host an access point.
 |-------|--------------|
 | Reservation | A request may ask for capabilities; Wi-Lab assigns the least capable free device that provides them |
 | Frontend | The band dropdown in the network form only offers bands the reserved device declares, and defaults to one it can serve |
-| AP creation | `band` selects the channel range and the hostapd hardware mode as before |
+| AP creation | `band` must be a band the device declares (otherwise `422`); it then selects the channel range and the hostapd hardware mode |
 
-The declaration is not yet enforced at AP creation: `POST` of a network with a `band` the
-reserved device does not declare is currently rejected only by the frontend, not by the
-API. Enforcing it server-side is a planned second line of defence.
+The declaration is **enforced at AP creation**: `POST /interface/{reservation_id}/network`
+with a `band` the reserved device does not declare (`dual` needs both) is refused at once
+with `422`, without looking at the hardware. The configuration is authoritative: a device
+declared 2.4 GHz-only provides only 2.4 GHz, even if the adapter could do more. The frontend
+filters the band dropdown the same way, purely as a convenience.
 
 Capabilities have **no effect on subnets, NAT or iptables** — a device's `/24` is still
 allocated from `dhcp_base_network` by its position in the `networks` list, regardless of

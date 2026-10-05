@@ -6,12 +6,13 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel, Field
 
+from ...config import AppConfig, Capability, capabilities_for_band
 from ...models import NetworkCreateRequest, NetworkStatus
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager
 from ...wifi.channels import ChannelManager
 from ...api.auth import require_token
-from ...api.dependencies import get_manager, get_channel_manager, resolve_reservation
+from ...api.dependencies import get_config, get_manager, get_channel_manager, resolve_reservation
 
 router = APIRouter(prefix="/interface", tags=["Network"])
 
@@ -31,10 +32,17 @@ router = APIRouter(prefix="/interface", tags=["Network"])
         404: {"description": "Reservation not found or expired"},
         409: {"description": "Network already active; stop it first"},
         422: {
-            "description": "Validation failed (body, unsupported channel, or disabled channel)",
+            "description": "Validation failed (body, band not provided by the reserved device, "
+                           "unsupported channel, or disabled channel)",
             "content": {
                 "application/json": {
                     "examples": {
+                        "band_not_provided": {
+                            "summary": "Band not declared for the reserved device in config.yaml",
+                            "value": {"detail": "Band '5ghz' is not available on this device: it "
+                                                "provides 2.4ghz. Reserve a device with the "
+                                                "'5ghz' capability."},
+                        },
                         "body_validation": {
                             "summary": "Invalid request body",
                             "value": {"detail": "Channel 99 is not a valid WiFi channel for band 5ghz"},
@@ -72,12 +80,18 @@ async def start_network(
     ),
     manager: NetworkManager = Depends(get_manager),
     channel_mgr: ChannelManager = Depends(get_channel_manager),
+    config: AppConfig = Depends(get_config),
 ):
     """
     Create and start a WiFi network in AP (access point) mode.
 
     Requires a valid reservation token. The network lifetime is bounded
     by the reservation expiry.
+
+    The `band` must be one the reserved device declares in `config.yaml` (`dual` needs both).
+    This is decided by the declaration alone and answered immediately with 422: the hardware
+    is never probed to see whether it could do more. Check the `capabilities` returned by the
+    reservation to know which bands you can ask for.
 
     Args:
         reservation: Active reservation (resolved from path token).
@@ -87,6 +101,20 @@ async def start_network(
         dict: Simple confirmation message.
     """
     device_id = reservation.device_id
+
+    # The configuration is authoritative: a band the device does not declare is refused at
+    # once, without looking at the hardware.
+    declared = set(config.capabilities_for(device_id))
+    missing = capabilities_for_band(req.band) - {Capability(c) for c in declared}
+    if missing:
+        offered = ", ".join(sorted(declared)) or "no band"
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Band '{req.band}' is not available on this device: it provides {offered}. "
+                f"Reserve a device with the '{sorted(c.value for c in missing)[0]}' capability."
+            ),
+        )
 
     # Validate channel against real hardware capabilities
     try:

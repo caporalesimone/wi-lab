@@ -97,8 +97,10 @@ OPENAPI_TAGS = [
         "name": "Network",
         "description": (
             "The WiFi access point on your reserved device. Create it with an SSID, band, channel "
-            "and security settings, inspect it (status, connected clients) or stop it. List the "
-            "channels the device can actually use before choosing one. The network is stopped "
+            "and security settings, inspect it (status, connected clients) or stop it. The band must "
+            "be one your device provides (see the `capabilities` of your reservation): anything "
+            "else is refused at once. List the channels the device can actually use before "
+            "choosing one. The network is stopped "
             "automatically when the reservation expires or is released."
         ),
     },

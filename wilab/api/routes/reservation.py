@@ -244,7 +244,7 @@ async def create_reservation(
 
     Read `interface` and `capabilities` from the response to know what you got, then use
     `reservation_id` with the other endpoints. Creating a network on a band the device does
-    not provide is not prevented by this endpoint: check `capabilities` first.
+    not provide is refused later (422), so check `capabilities` first.
 
     - **409** means *wait* (matching devices busy); **422** means *change the request*.
     """

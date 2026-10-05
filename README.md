@@ -237,6 +237,8 @@ curl -X POST http://localhost:8080/api/v1/network/a1b2c3d4 \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"ssid": "TestNetwork", "channel": 6, "band": "2.4ghz", "encryption": "wpa2", "password": "mypassword"}'
+# The band must be one the reserved device provides (its "capabilities" in the reservation
+# response); anything else is refused at once with 422
 ```
 
 You never choose the antenna: Wi-Lab assigns the least capable free device that provides
