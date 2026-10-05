@@ -25,6 +25,11 @@ def execute_command(cmd: List[str], check: bool = True, timeout: float = 8.0) ->
     Raises:
         CommandError: If command fails and check=True
     """
+    if not cmd:
+        # subprocess raises a different exception per platform for an empty argument list
+        # (IndexError on POSIX, OSError on Windows); make it one defined error.
+        raise CommandError("Empty command")
+
     try:
         effective_timeout = max(5.0, timeout)
 

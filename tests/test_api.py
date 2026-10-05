@@ -103,8 +103,17 @@ class TestStatusEndpoint:
         assert len(data['version']) > 0
         assert isinstance(data['networks'], list)
     
-    def test_status_health_checks(self, client, valid_token):
+    def test_status_health_checks(self, client, valid_token, monkeypatch):
         """Test status includes all health checks."""
+        # Independent of the operating system: no real `ip` or iptables is consulted.
+        from wilab.api.routes import status as status_module
+        from wilab.network.nat import NatManager
+
+        monkeypatch.setattr(NatManager, "get_upstream_interface", lambda self: "eth0")
+        monkeypatch.setattr(
+            status_module, "execute_command",
+            lambda *a, **k: "2: eth0: <BROADCAST,UP> state UP inet 10.0.0.2/24",
+        )
         resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         data = resp.json()
         

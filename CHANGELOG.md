@@ -42,6 +42,7 @@ Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device
 - `api_port` from `config.yaml` is now honoured (the server was always listening on 8080).
 - **Known limitation: TX power.** TX power control could not be made to work with the USB dongles tested so far; correct operation of the `txpower` endpoints is not guaranteed for now (flagged in the API documentation).
 - Every test run now ends with a coverage report, locally and in CI (where it is also posted in the job summary). New tests cover API error paths, authentication edge cases, degraded health and frontend serving.
+- The whole test suite now passes on Windows as well as on Linux. `execute_command([])` raises one defined `CommandError` on every platform (it was `IndexError` on Linux and `OSError` on Windows), and the status test no longer depends on a real `ip` command.
 - Fixed: an unknown `/api/...` path answered `200 null` when the web frontend is served; it is now a proper `404`.
 - CI housekeeping: the documentation artifact expires after 1 day inside pull requests (release attachments never expire), and a last CI job keeps only the 3 most recent runs of each pull request (it only runs when a pull request is active; nothing is scheduled).
 - Every GitHub release now carries `wi-lab-api-docs-<version>.zip`: `openapi.json` plus self-contained `swagger.html` and `redoc.html` that open offline (`scripts/export_api_docs.py`).
