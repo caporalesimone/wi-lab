@@ -155,6 +155,13 @@ The same bundle is built on every pull request (CI artifact `api-docs`) and atta
 every GitHub release as `wi-lab-api-docs-<version>.zip`
 (`.github/workflows/release-docs.yml`; it can also be run manually from the Actions tab).
 
+**Retention.** Inside a pull request the `api-docs` artifact expires after 1 day; on `main` it
+keeps the repository default. The release attachment is a release asset, not an artifact, and
+never expires. A daily workflow (`cleanup-pr-runs.yml`, script `scripts/cleanup_pr_runs.py`)
+deletes pull-request workflow runs older than 24 hours, always keeping the 3 most recent runs of
+each pull request; runs on `main`, releases and manual runs are never touched. Run it manually
+from the Actions tab with "dry run" ticked to see what it would delete.
+
 ---
 
 ## Testing

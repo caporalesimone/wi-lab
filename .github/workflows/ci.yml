@@ -71,3 +71,6 @@ jobs:
         with:
           name: api-docs
           path: api-docs/wi-lab-api-docs-*.zip
+          # Short-lived inside a pull request; runs on main keep the repository default.
+          # (Release attachments are not artifacts and never expire - see release-docs.yml.)
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 90 }}
