@@ -8,8 +8,9 @@ older document, this file wins; the design document
 
 ## Working with the maintainer
 
-- The maintainer writes in **Italian**: answer in Italian. Code, comments, docs, commit messages
-  and API text are in **English**.
+- Code, APIs, documentation, commit messages and everything else written into the repository must
+  be **strictly in English**.
+- Only when replying to a request, use the language the request was written in.
 - Commit and push when the maintainer asks (or asks for pipeline results); after a push, check the
   GitHub pipeline (`gh pr checks <n>`) and report the result. Work happens on the feature branch and
   the open pull request, never directly on `main`.
