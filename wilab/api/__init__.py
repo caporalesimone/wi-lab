@@ -69,12 +69,63 @@ async def lifespan(app: FastAPI):
 # read this list). System comes first: it is where a client starts (version, health, and the
 # capabilities the lab offers).
 OPENAPI_TAGS = [
-    {"name": "System", "description": "Version, health checks and the capabilities the lab offers."},
-    {"name": "Reservation", "description": "Reserve a device by stating the capabilities you need, then release it."},
-    {"name": "Network", "description": "Create, inspect and stop the WiFi network on a reserved device."},
-    {"name": "Internet", "description": "Enable or disable Internet access for a reserved device's network."},
-    {"name": "TX Power", "description": "Read and set the transmit power of a reserved device."},
-    {"name": "QoS Profiles", "description": "Simulate network conditions with profiles or static QoS parameters."},
+    {
+        "name": "System",
+        "description": (
+            "Where a client starts. **`/status`** reports the software version, overall health, "
+            "every managed device with its capabilities and whether it is reserved, the "
+            "**capability catalogue** (what the lab can offer, and how many devices are free for "
+            "each) and the reservation limits (minimum, maximum, unlimited allowed). Build your "
+            "reservation requests from it. **`/debug`** is a slow, detailed dump for "
+            "troubleshooting: do not poll it."
+        ),
+    },
+    {
+        "name": "Reservation",
+        "description": (
+            "Every other operation needs a **reservation**. State which capabilities you need "
+            "(for example `5ghz`; `[]` means any device) and for how long; Wi-Lab picks the device "
+            "and returns a `reservation_id`, which identifies you in all the other endpoints. "
+            "Reservations expire on their own, unless unlimited reservations are enabled and you "
+            "asked for one. **409** means every suitable device is busy (retry later); **422** "
+            "means the request is wrong or no device will ever provide what you asked."
+        ),
+    },
+    {
+        "name": "Network",
+        "description": (
+            "The WiFi access point on your reserved device. Create it with an SSID, band, channel "
+            "and security settings, inspect it (status, connected clients) or stop it. List the "
+            "channels the device can actually use before choosing one. The network is stopped "
+            "automatically when the reservation expires or is released."
+        ),
+    },
+    {
+        "name": "Internet",
+        "description": (
+            "Control whether the clients of your network can reach the Internet (NAT "
+            "forwarding). A new network follows the lab default; enable or disable it at any "
+            "time, for example to test how a device behaves when offline."
+        ),
+    },
+    {
+        "name": "TX Power",
+        "description": (
+            "Read or change the transmit power of your device, on a scale of **1 (lowest) to 4 "
+            "(highest)**, while its network is active. Useful for range and roaming tests. The "
+            "request is rejected if the hardware does not apply the requested level."
+        ),
+    },
+    {
+        "name": "QoS Profiles",
+        "description": (
+            "Simulate real-world network conditions on your network: bandwidth limits, packet "
+            "loss, delay and jitter. Pick a **profile** from the catalogue (an ordered sequence "
+            "of timed steps such as a 4G tunnel or a satellite link, played in a loop, bounced, "
+            "once or held on the last step), or send fixed parameters. The network must be "
+            "active; stopping the profile removes the traffic shaping."
+        ),
+    },
 ]
 
 

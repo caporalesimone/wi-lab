@@ -366,3 +366,10 @@ class TestOpenApiCompatibility:
         assert names[0] == "System"
         used = {tag for ops in schema["paths"].values() for op in ops.values() for tag in op.get("tags", [])}
         assert used <= set(names), f"tags missing from OPENAPI_TAGS: {used - set(names)}"
+
+    def test_every_group_has_a_description(self, client):
+        """The text shown under each group heading in Swagger UI and ReDoc."""
+        tags = client.get("/openapi.json").json()["tags"]
+        assert all(len(t.get("description", "")) > 40 for t in tags), [
+            t["name"] for t in tags if len(t.get("description", "")) <= 40
+        ]
