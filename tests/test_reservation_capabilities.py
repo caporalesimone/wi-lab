@@ -9,6 +9,7 @@ Covers TODOs/completed/device-capabilities.md §12.5 and §12.6.
 import threading
 
 import pytest
+from helpers import device_specs
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -57,6 +58,7 @@ def token():
 
 def reserve(client, token, **body):
     body.setdefault("duration_seconds", 60)
+    body.setdefault("required_capabilities", [])
     return client.post(
         "/api/v1/device-reservation",
         headers={"Authorization": token},
@@ -102,24 +104,19 @@ class TestSelectionRules:
             mgr.delete(r.reservation_id)
 
     def test_most_capable_first_still_yields_the_minimal_device(self):
-        """The pool order where the new rule differs from the old first-free one.
+        """With [dual, 2.4-only], an unqualified request gets the 2.4-only adapter.
 
-        With [dual, 2.4-only] the previous implementation returned the dual-band adapter
-        for an unqualified request; minimality returns the 2.4-only one, leaving the
-        scarce hardware free. This is the intentional behaviour change of §11.2.
+        Minimality, not declaration order, decides: the scarce dual-band hardware stays
+        free. This is the intentional allocation policy of §11.2.
         """
         mgr = ReservationManager(_pool(("dual", {C24, C5}), ("only24", {C24})))
         assert mgr.create(60).device_id == "only24"
 
-    def test_capability_less_pool_behaves_as_before(self):
-        """Legacy construction from plain strings: first free, declaration order."""
-        mgr = ReservationManager(["dev0", "dev1"])
+    def test_capability_less_pool_hands_out_in_declaration_order(self):
+        """Equal capabilities tie-break on declaration order."""
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
         assert mgr.create(60).device_id == "dev0"
         assert mgr.create(60).device_id == "dev1"
-
-    def test_mixed_sequence_is_accepted(self):
-        mgr = ReservationManager([DeviceSpec("a", frozenset({C24}), 0), "b"])
-        assert {d.device_id for d in mgr._devices} == {"a", "b"}
 
 
 class TestCapacityVersusImpossibility:
@@ -287,16 +284,10 @@ class TestReservationApiSelection:
         assert body["interface"] == "wls16"
         assert body["capabilities"] == ["2.4ghz", "5ghz"]
 
-    def test_legacy_body_still_works(self, client, token):
-        resp = reserve(client, token)
+    def test_empty_list_means_any_device_and_gets_the_least_capable(self, client, token):
+        resp = reserve(client, token, required_capabilities=[])
         assert resp.status_code == 200
-        assert resp.json()["capabilities"]
-
-    def test_empty_list_behaves_like_omitting_the_field(self, client, token):
-        with_empty = reserve(client, token, required_capabilities=[]).json()["interface"]
-        client.delete("/api/v1/device-reservation", headers={"Authorization": token})
-        without = reserve(client, token).json()["interface"]
-        assert with_empty == without
+        assert resp.json()["interface"] == "wls17"
 
     def test_ids_are_case_insensitive_and_de_duplicated(self, client, token):
         resp = reserve(client, token, required_capabilities=["5GHz", " 5ghz ", "5ghz"])
@@ -309,6 +300,43 @@ class TestReservationApiSelection:
             f"/api/v1/device-reservation/{rid}", headers={"Authorization": token}
         ).json()
         assert got["capabilities"] == ["2.4ghz", "5ghz"]
+
+
+class TestRequiredFields:
+    """4.0.0: a 3.x client that omits a field is told which one, not given a guess."""
+
+    def post(self, client, token, body):
+        return client.post(
+            "/api/v1/device-reservation", headers={"Authorization": token}, json=body
+        )
+
+    @staticmethod
+    def missing_fields(resp):
+        prefix = "Missing required field(s): "
+        detail = resp.json()["detail"]
+        assert detail.startswith(prefix), detail
+        return set(detail[len(prefix):].split(", "))
+
+    def test_3x_body_without_required_capabilities_is_rejected(self, client, token):
+        resp = self.post(client, token, {"duration_seconds": 3600})
+        assert resp.status_code == 422
+        assert self.missing_fields(resp) == {"required_capabilities"}
+
+    def test_every_missing_field_is_listed_at_once(self, client, token):
+        resp = self.post(client, token, {})
+        assert resp.status_code == 422
+        assert self.missing_fields(resp) == {"duration_seconds", "required_capabilities"}
+
+    def test_null_required_capabilities_is_rejected(self, client, token):
+        resp = self.post(
+            client, token, {"duration_seconds": 3600, "required_capabilities": None}
+        )
+        assert resp.status_code == 422
+
+    def test_a_rejected_request_reserves_nothing(self, client, token):
+        self.post(client, token, {"duration_seconds": 3600})
+        status = client.get("/api/v1/status", headers={"Authorization": token}).json()
+        assert not any(n["reserved"] for n in status["networks"])
 
 
 class TestReservationApiErrors:
@@ -362,11 +390,9 @@ class TestReservationApiErrors:
 
 
 class TestOpenApiCompatibility:
-    def test_schema_still_generates_and_new_fields_are_optional(self, client):
+    def test_schema_generates_and_required_capabilities_is_mandatory(self, client):
         schema = client.get("/openapi.json").json()
         body = schema["components"]["schemas"]["ReservationCreateRequest"]
-        assert body["required"] == ["duration_seconds"], (
-            "the new request fields must stay optional; existing clients send neither"
-        )
+        assert sorted(body["required"]) == ["duration_seconds", "required_capabilities"]
         assert "required_capabilities" in body["properties"]
         assert "interface" in body["properties"]

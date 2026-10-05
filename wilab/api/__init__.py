@@ -85,7 +85,15 @@ def create_app() -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         errors = exc.errors()
-        if errors:
+        # A request that omits mandatory fields (e.g. a 3.x client calling a 4.x server)
+        # is told about ALL of them at once, so it can be fixed in one round trip.
+        missing = [
+            ".".join(str(p) for p in e["loc"] if p not in ("body", "query", "path"))
+            for e in errors if e.get("type") == "missing"
+        ]
+        if missing:
+            detail = f"Missing required field(s): {', '.join(missing)}"
+        elif errors:
             first = errors[0]
             loc_parts = [str(part) for part in first.get("loc", []) if part not in ("body", "query", "path")]
             msg = first.get("msg", "Request validation failed")

@@ -156,7 +156,7 @@ export class ReservationDialogComponent {
   public get matchingDeviceCount(): number {
     const required = this.selectedCapabilities;
     return this.devices.filter(
-      d => !d.reserved && required.every(c => (d.capabilities ?? []).includes(c))
+      d => !d.reserved && required.every(c => d.capabilities.includes(c))
     ).length;
   }
 
@@ -173,7 +173,7 @@ export class ReservationDialogComponent {
   // ---- Device picker ----
 
   public capabilitiesOf(device: InterfaceInfo): CapabilityId[] {
-    return device.capabilities ?? [];
+    return device.capabilities;
   }
 
   public labelFor(id: CapabilityId): string {
@@ -232,17 +232,14 @@ export class ReservationDialogComponent {
     if (!this.canSubmit) {
       return;
     }
+    // required_capabilities is mandatory on the API: always sent, empty meaning "any
+    // device". `interface` is sent only in device mode, so a request never carries a
+    // capability selection and a pinned device from different modes.
     const request: ReservationRequest = {
-      duration_seconds: this.isUnlimited ? 0 : this.form.get('duration_seconds')!.value
+      duration_seconds: this.isUnlimited ? 0 : this.form.get('duration_seconds')!.value,
+      required_capabilities: this.mode === 'capability' ? this.selectedCapabilities : []
     };
-    // Emit only the field belonging to the active mode. An empty capability list is
-    // omitted entirely: it means "no requirement", which is what leaving the field out
-    // already means to the API.
-    if (this.mode === 'capability') {
-      if (this.selectedCapabilities.length) {
-        request.required_capabilities = this.selectedCapabilities;
-      }
-    } else if (this.selectedInterface) {
+    if (this.mode === 'device' && this.selectedInterface) {
       request.interface = this.selectedInterface;
     }
     this.dialogRef.close(request);

@@ -60,7 +60,7 @@ open htmlcov/index.html
 The test suite includes:
 - **conftest.py** - Shared fixtures and configuration
 - **test_config.py** - Configuration loading and model tests
-- **test_config_validation.py** - The configuration validator: rules, aggregation, reporting, and the 3.0 -> 3.1 migration path
+- **test_config_validation.py** - The configuration validator: rules, aggregation, reporting, and the 3.x -> 4.0 migration path
 - **test_cli.py** - `main.py` argument parsing, exit codes, and the guarantee that `--validate-config` starts nothing
 - **test_api.py** - API endpoint tests
 - **test_reservation.py** - Reservation lifecycle

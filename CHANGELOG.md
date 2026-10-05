@@ -8,19 +8,25 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
-## [3.1.0] - 2026-09-01
+## [4.0.0] - 2026-10-05
 
-Devices now declare what they can do, and reservations can ask for it.
+Devices now declare what they can do, and every reservation states what it needs.
+This is a **breaking release** for API clients and for `config.yaml`.
 Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device-capabilities.md).
+**Upgrading an API client?** See [Migration from older versions](TODOs/completed/device-capabilities.md#19-migration-from-older-versions).
 
 ### ⚠️ Breaking Changes
 
+- **`POST /api/v1/device-reservation` now requires `required_capabilities`.** A request without it (every 3.x client) is rejected with `422` and `Missing required field(s): required_capabilities`. Send the capabilities you need, or `[]` for "any device". There is no compatibility mode: a client must say what it needs instead of being handed whichever device is free.
+- **Allocation policy.** The assigned device is the *least capable* free one that satisfies the request, not the first in configuration order.
 - **`config.yaml` must be completed before upgrading.** Every key is now mandatory, including the new `capabilities` block on each device. Run `python3 main.py --validate-config`, fix everything it lists, then restart. The service will not start on an incomplete file.
+- **`next_available_at` in `409` responses is UTC** (it was the server's local time), and `next_available_*` are `null` when every matching device is held by an unlimited reservation.
+- **Frontend/backend must match.** The web UI of 4.0.0 requires the 4.0.0 API (capabilities in `/status` and in reservation responses are no longer optional).
 
 ### ✨ Features
 
 - **Device capabilities** — each device declares the bands it may be used for (`2.4ghz`, `5ghz`) in `config.yaml`.
-- **Capability-based reservations** — ask for what you need (`required_capabilities`) and get the least capable device that provides it, so dual-band adapters stay free for those who need them. You can also pin one specific device with `interface`.
+- **Capability-based reservations** — state what you need (`required_capabilities`) and get the least capable device that provides it, so dual-band adapters stay free for those who need them. You can also pin one specific device with `interface`. A request that omits `required_capabilities` is rejected.
 - **Configuration validator** — `python3 main.py --validate-config` (or `make validate-config`) checks the file without starting anything and lists every problem at once, with the fix. Add `--check-hardware` to also verify adapters and subnets. The installer runs it before enabling the service.
 - **Capabilities in the web UI and API** — capability chips on every device card, a reservation dialog to pick capabilities or a specific device, band choices limited to what the reserved device supports, and capability data in `/status` and the reservation responses.
 
@@ -31,12 +37,14 @@ Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device
 
 ### 🔧 Maintenance
 
-- With no capabilities requested, the assigned device is now the least capable free one rather than the first in configuration order.
+- Removed the compatibility shims introduced while building the feature: optional request fields, "unknown capabilities" fallbacks in the web UI, and plain-string device pools in `ReservationManager`.
+- `api_port` from `config.yaml` is now honoured (the server was always listening on 8080).
+- Added a GitHub Actions pipeline (lint, type check, tests, frontend tests and build, container image build), a pinned `ruff.toml` and a working frontend test setup (`npm test`).
 - **hostapd regulatory compliance** — The generated hostapd configuration now enables `ieee80211d=1` (advertise country code and apply the regulatory domain) on all bands, and `ieee80211h=1` (DFS/TPC) on 5 GHz where regulatory rules require it.
 
 ### ✅ Tests
 
-- 152 new tests covering the capability registry, the validator, the CLI, device selection and the extended API.
+- New tests covering the capability registry, the validator, the CLI, device selection and the extended API.
 - Added `TestHostapdConfigGeneration` covering the presence of `ieee80211d` on all bands and the band-dependent handling of `ieee80211h` (enabled on 5 GHz, absent on 2.4 GHz).
 
 ---

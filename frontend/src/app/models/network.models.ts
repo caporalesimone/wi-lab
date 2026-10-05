@@ -22,8 +22,8 @@ export interface InterfaceInfo {
   interface: string;
   reserved: boolean;
   reservation_remaining_seconds: number | null;
-  /** Enabled capabilities only. Absent on responses from a pre-3.1 backend. */
-  capabilities?: CapabilityId[];
+  /** Enabled capabilities only. */
+  capabilities: CapabilityId[];
 }
 
 export interface ReservationPolicy {
@@ -39,7 +39,7 @@ export interface StatusResponse {
   active_networks: number;
   reservation_policy: ReservationPolicy;
   /** Capabilities at least one device provides, in backend registry order. */
-  capabilities_catalogue?: CapabilityInfo[];
+  capabilities_catalogue: CapabilityInfo[];
   checks: {
     dnsmasq: { running: boolean; instances: number };
     iptables_nat: { configured: boolean; errors: string[] };
@@ -49,8 +49,8 @@ export interface StatusResponse {
 
 export interface ReservationRequest {
   duration_seconds: number;
-  /** Capabilities the assigned device must provide. Omitted or empty means "any device". */
-  required_capabilities?: CapabilityId[];
+  /** Capabilities the assigned device must provide. Mandatory; an empty list means "any device". */
+  required_capabilities: CapabilityId[];
   /** Pin a specific device by interface name. Omitted means "let Wi-Lab choose". */
   interface?: string;
 }
@@ -61,9 +61,8 @@ export interface ReservationResponse {
   interface: string;
   expires_at: string | null;
   expires_in: number | null;
-  /** What the assigned device provides. Absent on reservations restored from a
-   *  localStorage entry written by an older frontend. */
-  capabilities?: CapabilityId[];
+  /** What the assigned device provides. */
+  capabilities: CapabilityId[];
 }
 
 export interface NetworkStatus {

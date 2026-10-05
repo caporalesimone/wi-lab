@@ -31,12 +31,13 @@ class ReservationCreateRequest(BaseModel):
         ..., description="Reservation duration in seconds (0 = unlimited, if allowed by config)",
         json_schema_extra={"example": 3600}
     )
-    required_capabilities: Optional[List[str]] = Field(
-        default=None,
+    required_capabilities: List[str] = Field(
+        ...,
         description=(
-            "Capabilities the assigned device must provide. When omitted or empty, any "
-            "device is acceptable. Wi-Lab assigns the least capable matching free device, "
-            "so scarce multi-band hardware stays available for requests that need it."
+            "Capabilities the assigned device must provide. REQUIRED: a client must state "
+            "what it needs. An empty list explicitly means \"any device\". Wi-Lab assigns "
+            "the least capable matching free device, so scarce multi-band hardware stays "
+            "available for requests that need it."
         ),
         json_schema_extra={"example": ["2.4ghz"]},
     )
@@ -61,15 +62,13 @@ class ReservationCreateRequest(BaseModel):
 
     @field_validator("required_capabilities")
     @classmethod
-    def validate_capability_ids(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+    def validate_capability_ids(cls, v: List[str]) -> List[str]:
         """Canonicalise and validate ids against the same registry the config uses.
 
         Normalisation goes through the shared normalise_capability_id(), so the file and
         the wire cannot drift on "5GHz". The result is de-duplicated and sorted, which
         makes the endpoint independent of client-side ordering.
         """
-        if v is None:
-            return v
         canonical = [normalise_capability_id(c) for c in v]
         unknown = sorted({c for c in canonical if c not in Capability.ids()})
         if unknown:
@@ -112,7 +111,8 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
         401: {"description": "Unauthorized"},
         404: {"description": "The pinned interface is not managed by Wi-Lab"},
         409: {"description": "Matching devices exist but all are reserved (transient)"},
-        422: {"description": "Invalid duration, unknown capability, or no device can "
+        422: {"description": "Missing or invalid field (duration_seconds and required_capabilities "
+                             "are mandatory), unknown capability, or no device can "
                              "ever provide the requested capabilities (permanent)"},
     },
 )
@@ -143,7 +143,7 @@ async def create_reservation(
                 detail=f"duration_seconds must be at most {config.max_timeout} seconds",
             )
 
-    required = frozenset(Capability(c) for c in (req.required_capabilities or []))
+    required = frozenset(Capability(c) for c in req.required_capabilities)
     try:
         # Conversion must stay after validation: an unknown id would otherwise raise
         # ValueError here and surface as a 500 instead of a 422.

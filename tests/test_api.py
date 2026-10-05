@@ -1,3 +1,4 @@
+from helpers import device_specs
 import pytest
 from fastapi.testclient import TestClient
 from wilab.api import create_app
@@ -38,13 +39,13 @@ def reservation_id(client, valid_token, monkeypatch):
     The resulting token maps to the first available device (wls16).
     """
     cfg = load_config()
-    rmgr = ReservationManager([n.device_id for n in cfg.networks])
+    rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
     monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
     resp = client.post(
         '/api/v1/device-reservation',
         headers={'Authorization': valid_token},
-        json={'duration_seconds': 3600},
+        json={'duration_seconds': 3600, 'required_capabilities': []},
     )
     assert resp.status_code == 200
     return resp.json()['reservation_id']
@@ -280,7 +281,7 @@ class TestAuthentication:
     
     def test_request_without_auth(self, client):
         """A protected endpoint rejects a request that carries no token."""
-        resp = client.post('/api/v1/device-reservation', json={'duration_seconds': 3600})
+        resp = client.post('/api/v1/device-reservation', json={'duration_seconds': 3600, 'required_capabilities': []})
         assert resp.status_code == 401
     
     def test_start_network_without_auth(self, client, reservation_id):
@@ -993,7 +994,7 @@ class TestReservationRequiredForOperations:
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 3600},
+            json={'duration_seconds': 3600, 'required_capabilities': []},
         )
         rid = resp.json()['reservation_id']
         client.delete(
@@ -1020,7 +1021,7 @@ class TestStatusReservationInfo:
     def test_status_networks_include_reservation_remaining(self, client, valid_token, monkeypatch):
         """Status API includes reservation_remaining_seconds for each device."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         # Before reservation: remaining should be None
@@ -1132,14 +1133,14 @@ class TestUnlimitedReservationAPI:
         """POST with duration_seconds=0 and allow_unlimited_reservation=true → 200."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
         monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 0},
+            json={'duration_seconds': 0, 'required_capabilities': []},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -1150,13 +1151,13 @@ class TestUnlimitedReservationAPI:
         """POST with duration_seconds=0 and allow_unlimited_reservation=false → 422."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', False)
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 0},
+            json={'duration_seconds': 0, 'required_capabilities': []},
         )
         assert resp.status_code == 422
 
@@ -1164,14 +1165,14 @@ class TestUnlimitedReservationAPI:
         """GET reservation returns expires_at/expires_in as null for unlimited."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
         monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         create_resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 0},
+            json={'duration_seconds': 0, 'required_capabilities': []},
         )
         assert create_resp.status_code == 200
         reservation_id = create_resp.json()['reservation_id']
@@ -1190,7 +1191,7 @@ class TestUnlimitedReservationAPI:
         cfg = load_config()
         manager = NetworkManager(cfg)
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
         monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
@@ -1198,7 +1199,7 @@ class TestUnlimitedReservationAPI:
         create_resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 0},
+            json={'duration_seconds': 0, 'required_capabilities': []},
         )
         assert create_resp.status_code == 200
         reservation_id = create_resp.json()['reservation_id']
@@ -1216,33 +1217,33 @@ class TestUnlimitedReservationAPI:
     def test_create_duration_below_min_timeout(self, client, valid_token, monkeypatch):
         """POST with duration_seconds < min_timeout (and != 0) → 422."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': cfg.min_timeout - 1},
+            json={'duration_seconds': cfg.min_timeout - 1, 'required_capabilities': []},
         )
         assert resp.status_code == 422
 
     def test_create_duration_above_max_timeout(self, client, valid_token, monkeypatch):
         """POST with duration_seconds > max_timeout → 422."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': cfg.max_timeout + 1},
+            json={'duration_seconds': cfg.max_timeout + 1, 'required_capabilities': []},
         )
         assert resp.status_code == 422
 
     def test_status_exposes_reservation_policy(self, client, valid_token, monkeypatch):
         """/status includes reservation_policy with min, max, and allow_unlimited."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
@@ -1258,7 +1259,7 @@ class TestUnlimitedReservationAPI:
         """/status shows reservation_remaining_seconds: null for unlimited."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
         monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
@@ -1266,7 +1267,7 @@ class TestUnlimitedReservationAPI:
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 0},
+            json={'duration_seconds': 0, 'required_capabilities': []},
         )
         assert resp.status_code == 200
 

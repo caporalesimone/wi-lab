@@ -106,9 +106,9 @@ dhcp_base_network: "192.168.120.0/24"
 dhcp_base_network: "192.168.10.0/24"
 ```
 
-### Automatic Detection (3.1.0)
+### Automatic Detection
 
-Since 3.1.0 this conflict is **detected before anything is started**. The configuration
+Since 4.0.0 this conflict is **detected before anything is started**. The configuration
 validator computes the `/24` it would allocate to each managed device — sequential from
 `dhcp_base_network`, one per device — and compares every one of them against the host's
 own routing table (`ip route`):

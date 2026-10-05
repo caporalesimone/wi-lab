@@ -41,7 +41,7 @@ export class NetworkFormDialogComponent {
   constructor(
     private formBuilder: FormBuilder,
     private dialogRef: MatDialogRef<NetworkFormDialogComponent>,
-    @Inject(MAT_DIALOG_DATA) public data: { netId: string; capabilities?: CapabilityId[] }
+    @Inject(MAT_DIALOG_DATA) public data: { netId: string; capabilities: CapabilityId[] }
   ) {
     // Generate dynamic SSID based on AP ID (e.g., "test-network-ap-01")
     const defaultSsid = `test-network-${this.data.netId}`;
@@ -116,15 +116,11 @@ export class NetworkFormDialogComponent {
    * Map declared capabilities onto selectable bands.
    *
    * 'dual' is offered only when the device declares both, since hostapd would otherwise
-   * be asked for a band the radio may not use. An empty or absent capability list falls
-   * back to the full set, so a pre-3.1 backend keeps working.
+   * be asked for a band the radio may not use. The backend guarantees every device declares
+   * at least one band, so there is no "unknown capabilities" fallback.
    */
-  public static bandsFor(capabilities?: CapabilityId[]): string[] {
-    const caps = capabilities ?? [];
-    if (caps.length === 0) {
-      return ['2.4ghz', '5ghz', 'dual'];
-    }
-    const bands = caps.filter(c => c === '2.4ghz' || c === '5ghz');
+  public static bandsFor(capabilities: CapabilityId[]): string[] {
+    const bands = capabilities.filter(c => c === '2.4ghz' || c === '5ghz');
     if (bands.includes('2.4ghz') && bands.includes('5ghz')) {
       bands.push('dual');
     }

@@ -630,7 +630,7 @@ class TestV30Migration:
 
     @pytest.fixture
     def v30_config_path(self, tmp_path, valid_config):
-        """A complete, valid 3.0.0 config: no capabilities, and the 3.1 keys absent."""
+        """A complete, valid 3.0.0 config: no capabilities, and the 4.0 keys absent."""
         data = {k: valid_config[k] for k in self.V30_KEYS}
         data["networks"] = [
             {"interface": "wls16", "display_name": "bench-antenna-1"},

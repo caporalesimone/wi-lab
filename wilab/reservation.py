@@ -11,7 +11,7 @@ import time
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Dict, FrozenSet, Iterable, List, Optional, Set, Union
+from typing import Dict, FrozenSet, Iterable, List, Optional, Set
 
 from .config import Capability
 
@@ -116,22 +116,13 @@ class Reservation:
 class ReservationManager:
     """In-memory reservation store with thread-safe operations."""
 
-    def __init__(self, devices: Sequence[Union[DeviceSpec, str]]) -> None:
+    def __init__(self, devices: Sequence[DeviceSpec]) -> None:
         """Build the pool.
 
         Args:
-            devices: Managed devices, in declaration order. A plain ``str`` is accepted
-                and becomes a capability-less device; this keeps the many existing call
-                sites that pass ``["dev0", "dev1"]`` working unchanged.
-
-        ``Sequence[DeviceSpec | str]`` rather than ``list[DeviceSpec] | list[str]``:
-        the union-of-lists form rejects a mixed list and narrows badly under mypy.
+            devices: Managed devices, in declaration order.
         """
-        self._devices: List[DeviceSpec] = [
-            d if isinstance(d, DeviceSpec)
-            else DeviceSpec(device_id=d, capabilities=frozenset(), index=i)
-            for i, d in enumerate(devices)
-        ]
+        self._devices: List[DeviceSpec] = list(devices)
         self._by_id: Dict[str, DeviceSpec] = {d.device_id: d for d in self._devices}
         self._reservations: Dict[str, Reservation] = {}   # reservation_id -> Reservation
         self._device_to_rid: Dict[str, str] = {}           # device_id -> reservation_id

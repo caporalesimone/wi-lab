@@ -161,10 +161,11 @@ safe to run on a production host. `--check-hardware` adds the checks that need t
 machine (interfaces present, `dhcp_base_network` not colliding with a host route); omit it
 to validate on a laptop or in CI. Starting the service normally always runs both.
 
-> **Upgrading from 3.0.x?** `capabilities`, `cors_origins` and
-> `allow_unlimited_reservation` are now required. Run `--validate-config`, fix everything
-> it lists, and restart. Capability values have to be typed by hand on purpose — see
-> [TODOs/completed/device-capabilities.md](TODOs/completed/device-capabilities.md).
+> **Upgrading from 3.x?** This is a breaking release. `capabilities`, `cors_origins` and
+> `allow_unlimited_reservation` are now required in `config.yaml`: run `--validate-config`,
+> fix everything it lists, and restart. Capability values have to be typed by hand on
+> purpose. API clients must also send `required_capabilities` — see
+> [Migration from older versions](TODOs/completed/device-capabilities.md#19-migration-from-older-versions).
 
 ---
 
@@ -208,11 +209,12 @@ Service Management (requires root):
 All requests require the header `Authorization: Bearer <auth_token>`.
 
 ```bash
-# 1. Reserve a device for 15 minutes (900 seconds)
+# 1. Reserve a device for 15 minutes (900 seconds). Both fields are mandatory:
+#    required_capabilities lists what you need, [] meaning "any device"
 curl -X POST http://localhost:8080/api/v1/device-reservation \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
-  -d '{"duration_seconds": 900}'
+  -d '{"duration_seconds": 900, "required_capabilities": []}'
 
 # Response:
 # {
@@ -234,7 +236,7 @@ curl -X POST http://localhost:8080/api/v1/device-reservation \
 curl -X POST http://localhost:8080/api/v1/device-reservation \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
-  -d '{"duration_seconds": 900, "interface": "wlx7820512451b4"}'
+  -d '{"duration_seconds": 900, "required_capabilities": [], "interface": "wlx7820512451b4"}'
 
 # 2. Create a WiFi network on the reserved device
 curl -X POST http://localhost:8080/api/v1/network/a1b2c3d4 \
@@ -250,6 +252,7 @@ A reservation request that cannot be satisfied is answered precisely:
 
 | Status | Meaning |
 |--------|---------|
+| `422` (missing field) | `duration_seconds` or `required_capabilities` is absent — the body lists every missing field |
 | `404` | The pinned `interface` is not managed by Wi-Lab |
 | `409` | Matching devices exist but are all reserved — **retry later**; the body carries `next_available_in` (`null` when every holder has an unlimited reservation) |
 | `422` | No device can *ever* provide what was asked — **change the request** |

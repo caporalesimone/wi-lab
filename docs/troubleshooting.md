@@ -99,7 +99,7 @@ journalctl -u wi-lab -n 60 --no-pager      # or here, if the status output is tr
 After fixing the file, re-run `--validate-config` until it prints OK, then
 `sudo systemctl restart wi-lab`.
 
-> **Upgrading from 3.0.x?** `capabilities`, `cors_origins` and
+> **Upgrading from 3.x?** `capabilities`, `cors_origins` and
 > `allow_unlimited_reservation` are now required and this is exactly what the report will
 > tell you. Capability values must be typed by hand — Wi-Lab never guesses them and never
 > edits your file. See [Configuration](../README.md#configuration).

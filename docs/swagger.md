@@ -28,23 +28,30 @@ Access interactive API testing and documentation at:
 
 ---
 
-## Device Capabilities (3.1.0)
+## Device Capabilities (4.0.0)
 
 Every managed device declares its capabilities in `config.yaml` — currently the bands
-`2.4ghz` and `5ghz`. These fields are **additive**: a client written against 3.0.x keeps
-working unchanged.
+`2.4ghz` and `5ghz`. Since 4.0.0 a reservation request **must** state what it needs: a
+client written against 3.x, which sends only `duration_seconds`, is rejected with `422`.
 
 ### `POST /api/v1/device-reservation` — request
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `duration_seconds` | `int` | Unchanged. `0` = unlimited, when allowed by config |
-| `required_capabilities` | `string[]` \| `null` | Capabilities the assigned device must provide. Omitted or empty means any device is acceptable |
-| `interface` | `string` \| `null` | Pin one specific managed device. May be combined with `required_capabilities`, which then act as a guard rail on the pinned device |
+| `duration_seconds` | `int` | **Required.** `0` = unlimited, when allowed by config |
+| `required_capabilities` | `string[]` | **Required.** Capabilities the assigned device must provide; `[]` explicitly means any device. `null` is rejected |
+| `interface` | `string` \| `null` | Optional. Pin one specific managed device. May be combined with `required_capabilities`, which then act as a guard rail on the pinned device |
 
 Capability ids are case-insensitive and whitespace-tolerant (`"5GHz"` is accepted); the
 list is de-duplicated and sorted before use, so the outcome does not depend on the order
 the client sent. An unknown id is rejected with `422`.
+
+A request missing either required field is answered with `422` and **every** missing field
+at once:
+
+```json
+{ "detail": "Missing required field(s): required_capabilities" }
+```
 
 ### `POST` / `GET /api/v1/device-reservation` — response
 
@@ -58,7 +65,7 @@ the client sent. An unknown id is rejected with `422`.
 |--------|------|------|
 | `404` | The pinned `interface` is not managed by Wi-Lab | `detail` is a string |
 | `409` | Matching devices exist but are all reserved — **transient**, retry later | `detail` object with `error`, `requested_capabilities`, `next_available_at`, `next_available_in` |
-| `422` | Invalid duration, unknown capability id, or **no device can ever** provide what was asked — permanent, change the request | `detail` object (see below) or a string for duration errors |
+| `422` | Missing required field, invalid duration, unknown capability id, or **no device can ever** provide what was asked — permanent, change the request | `detail` object (see below) or a string for duration errors |
 
 **`next_available_at` and `next_available_in` are nullable.** Both are `null` when every
 matching device is held by an unlimited reservation: there is no scheduled release, so

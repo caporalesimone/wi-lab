@@ -1,5 +1,6 @@
 """Tests for WiFi channel manager and available-channels API endpoint."""
 
+from helpers import device_specs
 import pytest
 from fastapi.testclient import TestClient
 from wilab.api import create_app
@@ -35,7 +36,7 @@ def valid_token():
 def reservation_id(client, valid_token, monkeypatch):
     """Create a reservation and return the reservation_id token."""
     cfg = load_config()
-    rmgr = ReservationManager([n.device_id for n in cfg.networks])
+    rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
     monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
     # Reset channel manager singleton so tests are isolated
     monkeypatch.setattr(dependencies, '_channel_manager', None, raising=False)
@@ -43,7 +44,7 @@ def reservation_id(client, valid_token, monkeypatch):
     resp = client.post(
         '/api/v1/device-reservation',
         headers={'Authorization': valid_token},
-        json={'duration_seconds': 3600},
+        json={'duration_seconds': 3600, 'required_capabilities': []},
     )
     assert resp.status_code == 200
     return resp.json()['reservation_id']

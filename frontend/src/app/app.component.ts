@@ -204,7 +204,7 @@ export class AppComponent implements OnInit, OnDestroy {
       next: (response) => {
         this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
         this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
-        this.capabilitiesCatalogue = response.capabilities_catalogue ?? [];
+        this.capabilitiesCatalogue = response.capabilities_catalogue;
         this.buildSlots(response.networks);
       }
     });
@@ -220,9 +220,7 @@ export class AppComponent implements OnInit, OnDestroy {
         occupiedByOther: !myRes && n.reserved,
         otherReservationSeconds: myRes ? null : n.reservation_remaining_seconds,
         myReservation: myRes,
-        // Defaulted: a pre-3.1 backend, or a reservation restored from localStorage
-        // written by an older frontend, carries no capabilities.
-        capabilities: n.capabilities ?? [],
+        capabilities: n.capabilities,
       };
     });
   }

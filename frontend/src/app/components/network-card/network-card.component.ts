@@ -41,8 +41,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   countdownSubscription?: Subscription;
   clientsCount = 0;
 
-  /** Capabilities the device declares. Undefined-safe: a reservation restored from a
-   *  localStorage entry written by an older frontend carries none. */
+  /** Capabilities the device declares. */
   public get capabilities(): CapabilityId[] {
     return this.slot?.capabilities ?? [];
   }

@@ -1,10 +1,10 @@
 # Reservation Improvement Proposal — Device Capabilities
 
 **Priority:** 1 (HIGH)
-**Status:** IMPLEMENTED in 3.1.0 — bench validation ([§12.9](#129-bench-validation--required-and-not-possible-on-a-windows-workstation)) still outstanding.
+**Status:** IMPLEMENTED in 4.0.0 (a breaking release; see [§18.7](#187-revision--the-release-became-400-and-the-compatibility-shims-were-removed)) — bench validation ([§12.9](#129-bench-validation--required-and-not-possible-on-a-windows-workstation)) still outstanding.
 **Read [§18](#18-implementation-status--remaining-work) first**: it records what is built,
 what is left, where the implementation deviated from this proposal, and the open decisions.
-**Target version:** 3.1.0
+**Target version:** 4.0.0 (originally planned as 4.0.0)
 **Estimated effort:** ~16–20 hours (see [§13](#13-implementation-checklist) for the per-phase breakdown)
 **Audience:** this document is written to be executed by an AI coding agent
 **Review:** reviewed from four angles — system architecture, software architecture, development, test. Findings folded into the relevant sections; traceability in [§16](#16-review-log).
@@ -31,6 +31,7 @@ what is left, where the implementation deviated from this proposal, and the open
 16. [Review Log](#16-review-log)
 17. [Out Of Scope / Future Extensions](#17-out-of-scope--future-extensions)
 18. [Implementation Status & Remaining Work](#18-implementation-status--remaining-work)
+19. [Migration from older versions](#19-migration-from-older-versions)
 
 ---
 
@@ -165,9 +166,10 @@ The user states *which antenna they want* by interface name. The system reserves
 one or fails with a precise reason. Capability requirements, if also supplied, are
 verified against that device.
 
-**C. No preference (legacy / scripting)**
-Neither field is supplied. Equivalent to "no requirements": any free device is
-acceptable, and the least capable free one is assigned.
+**C. No preference (scripting)**
+`required_capabilities` is sent **empty**. Equivalent to "no requirements": any free
+device is acceptable, and the least capable free one is assigned. Since 4.0.0 this is
+stated explicitly: leaving the field out is an error, not a synonym.
 
 ### 2.5 Worked example (the requester's scenario)
 
@@ -936,7 +938,7 @@ client already fetches.
 
 ```jsonc
 {
-  "version": "3.1.0",
+  "version": "4.0.0",
   "status": "standby",
   "networks": [
     {
@@ -988,12 +990,12 @@ Design notes:
 ```python
 class ReservationCreateRequest(BaseModel):
     duration_seconds: int
-    required_capabilities: Optional[List[str]] = Field(
-        default=None,
+    required_capabilities: List[str] = Field(
+        ...,                               # REQUIRED since 4.0.0; [] means "any device"
         description=(
-            "Capabilities the assigned device must provide. When omitted or empty, "
-            "any device is acceptable. The least capable matching free device is "
-            "assigned."
+            "Capabilities the assigned device must provide. Mandatory: an empty list "
+            "explicitly means any device is acceptable. The least capable matching "
+            "free device is assigned."
         ),
         json_schema_extra={"example": ["2.4ghz"]},
     )
@@ -1008,10 +1010,8 @@ class ReservationCreateRequest(BaseModel):
 
     @field_validator("required_capabilities")
     @classmethod
-    def validate_capability_ids(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+    def validate_capability_ids(cls, v: List[str]) -> List[str]:
         """Canonicalise and validate ids against the same registry as the config."""
-        if v is None:
-            return v
         canonical = [normalise_capability_id(c) for c in v]
         unknown = sorted({c for c in canonical if c not in Capability.ids()})
         if unknown:
@@ -1036,11 +1036,12 @@ Validation notes:
   is useful for scripts that pin a device but still want a guard rail.
 * `duration_seconds` validation is untouched.
 
-> Note the asymmetry with the config file: request fields stay **optional**, because an
-> API request is not a reviewed artefact. Mandatory completeness is a property of the
-> configuration ([§2.3](#23-declaration-is-mandatory-and-complete)), not of the wire
-> protocol — forcing every client to spell out `required_capabilities` would break every
-> existing script for no safety gain.
+> **`required_capabilities` is mandatory** (revised in 4.0.0; the first draft kept it
+> optional). A client that does not say what it needs is not given a silent guess: it is
+> rejected with `422` and `Missing required field(s): required_capabilities`, listing
+> every missing field at once. `null` is rejected too; `[]` is the explicit "any device".
+> `interface` stays optional because it is the alternative mode, not a missing answer.
+> See [D16](#15-design-decisions--rejected-alternatives).
 
 Request examples:
 
@@ -1053,9 +1054,14 @@ curl -X POST http://localhost:8080/api/v1/device-reservation \
 # B. device-driven
 curl -X POST http://localhost:8080/api/v1/device-reservation \
   -H "Authorization: Bearer change-me" -H "Content-Type: application/json" \
-  -d '{"duration_seconds": 900, "interface": "wlxbc071dc527d6"}'
+  -d '{"duration_seconds": 900, "required_capabilities": [], "interface": "wlxbc071dc527d6"}'
 
-# C. legacy — still valid, unchanged
+# C. no preference — explicit empty list
+curl -X POST http://localhost:8080/api/v1/device-reservation \
+  -H "Authorization: Bearer change-me" -H "Content-Type: application/json" \
+  -d '{"duration_seconds": 900, "required_capabilities": []}'
+
+# Rejected (3.x client): 422 "Missing required field(s): required_capabilities"
 curl -X POST http://localhost:8080/api/v1/device-reservation \
   -H "Authorization: Bearer change-me" -H "Content-Type: application/json" \
   -d '{"duration_seconds": 900}'
@@ -1088,8 +1094,8 @@ Add `capabilities` to `interfaces.managed[]` entries for troubleshooting parity 
 
 | Endpoint | Change | Breaking? |
 |----------|--------|-----------|
-| `GET /api/v1/status` | +`networks[].capabilities`, +`capabilities_catalogue` | No (additive) |
-| `POST /api/v1/device-reservation` | +`required_capabilities`, +`interface` (both optional) | No (optional) |
+| `GET /api/v1/status` | +`networks[].capabilities`, +`capabilities_catalogue` | No (additive; always present) |
+| `POST /api/v1/device-reservation` | +`required_capabilities` (**required**), +`interface` (optional) | **Yes** — a request without `required_capabilities` is rejected |
 | `GET /api/v1/device-reservation/{rid}` | +`capabilities` in response | No (additive) |
 | `GET /api/v1/debug` | +`capabilities` in managed interfaces | No (additive) |
 | — | **no new endpoints** | — |
@@ -1116,28 +1122,15 @@ class DeviceSpec:
 
 
 class ReservationManager:
-    def __init__(self, devices: Sequence[DeviceSpec | str]) -> None:
-        # Backward-compatible: a plain str becomes a capability-less device.
-        self._devices: list[DeviceSpec] = [
-            d if isinstance(d, DeviceSpec)
-            else DeviceSpec(device_id=d, capabilities=frozenset(), index=i)
-            for i, d in enumerate(devices)
-        ]
+    def __init__(self, devices: Sequence[DeviceSpec]) -> None:
+        self._devices: list[DeviceSpec] = list(devices)
         self._by_id = {d.device_id: d for d in self._devices}
         ...
 ```
 
-> **`Sequence[DeviceSpec | str]`, not `list[DeviceSpec] | list[str]`.** The union-of-lists
-> form does not admit a mixed list, and mypy narrows it awkwardly inside the
-> comprehension. `Sequence` of a union is both more permissive and cleaner to check —
-> this project runs `make type-check`, so the annotation has to hold up.
->
-> **Why keep the `str` form at all?** `ReservationManager(...)` is instantiated at
-> **~46 call sites in the test suite** (`tests/test_reservation.py`,
-> `tests/test_api.py`, `tests/test_channels.py`, `tests/test_qos_profile.py`), almost
-> all with `["dev0", "dev1"]`. The dual-form constructor keeps that diff at zero and
-> lets new capability tests opt into the richer form. This is an internal API, so the
-> compatibility shim costs three lines and buys a much smaller, more reviewable change.
+> **`DeviceSpec` only.** The first draft also accepted a plain `str` (a capability-less
+> device) to keep ~46 test call sites unchanged. That shim was removed in 4.0.0 along with
+> the other compatibility paths; tests build pools with `tests/helpers.py::device_specs()`.
 
 New/changed methods:
 
@@ -1397,7 +1390,7 @@ export interface StatusResponse {
 
 export interface ReservationRequest {
   duration_seconds: number;
-  required_capabilities?: CapabilityId[];   // NEW
+  required_capabilities: CapabilityId[];    // NEW, mandatory ([] = any device)
   interface?: string;                       // NEW
 }
 
@@ -1641,16 +1634,22 @@ configuration mistake into an outage.
 
 ---
 
-## 11. Backward Compatibility & Migration
+## 11. Compatibility & Migration
+
+**4.0.0 is a deliberate breaking release.** An earlier draft kept every change additive
+and optional so that 3.x clients would keep working. That was reversed: a client that
+never learned about capabilities and silently receives *some* device (possibly one that
+cannot do the band it needs) is a worse outcome than a clear error. There is no
+compatibility mode.
 
 | Aspect | Impact |
 |--------|--------|
 | Existing `config.yaml` | **Requires a one-time completion pass** — see [§11.1](#111-upgrading-an-existing-installation). Every schema key becomes mandatory, capabilities included. |
-| Existing API clients (`{"duration_seconds": N}`) | **Keep working.** Both new fields are optional; omitted means "no requirement". |
-| Existing responses | **Additive**, with two deliberate exceptions: `next_available_at` / `next_available_in` in a 409 body can now be `null` ([§7.1](#71-wilabreservationpy)), and `next_available_at` moves to UTC ([§7.3](#73-wilabapiroutesreservationpy)). Both are bug fixes; both need CHANGELOG entries. |
-| `ReservationManager(["a","b"])` internal calls | **Keep working** via the `Sequence[DeviceSpec | str]` constructor. |
-| Frontend `localStorage` reservations | Stored `ReservationResponse` objects from a previous version lack `capabilities`. `restoreReservations()` already re-validates each token against `GET /device-reservation/{rid}`, so the refreshed object carries the field. Treat `capabilities` as possibly-`undefined` and default to `[]`. |
-| Allocation outcome for capability-unaware clients | **Changes** — see [§11.2](#112-the-one-intentional-behaviour-change-in-allocation). |
+| Existing API clients (`{"duration_seconds": N}`) | **Rejected with `422`** (`Missing required field(s): required_capabilities`). Clients must send `required_capabilities`, `[]` meaning "any device". |
+| Responses | `capabilities` is always present on reservation responses, `networks[]` and `/debug`; `capabilities_catalogue` is always present on `/status`. In a 409 body `next_available_at` / `next_available_in` can be `null` ([§7.1](#71-wilabreservationpy)) and `next_available_at` is UTC ([§7.3](#73-wilabapiroutesreservationpy)). |
+| `ReservationManager(...)` | Takes `DeviceSpec` only; plain strings are no longer accepted. |
+| Frontend | Requires the 4.0.0 API; there are no "pre-capabilities backend" fallbacks. Reservations restored from `localStorage` are re-fetched from `GET /device-reservation/{rid}`, so they always carry `capabilities`. |
+| Allocation outcome | **Changes** — see [§11.2](#112-allocation-policy). |
 
 ### 11.1 Upgrading an existing installation
 
@@ -1688,23 +1687,17 @@ Call this out prominently in the CHANGELOG under `### ⚠️ Breaking Changes` a
 release notes: **`config.yaml` must be completed before upgrading**, and
 `--validate-config` is the tool that tells you exactly how.
 
-### 11.2 The one intentional behaviour change in allocation
+### 11.2 Allocation policy
 
-With `required_capabilities` omitted, the assigned device changes from *"first free in
-declaration order"* to *"least capable free device"*. Given a pool of `[2.4-only,
-dual, dual]` both rules pick `bench-antenna-1` — but with `[dual, 2.4-only]` the old
-rule returns the dual-band adapter and the new one returns the 2.4-only one.
+The assigned device is the *least capable free device* that satisfies the request, with
+declaration order as the tie-break — also for `required_capabilities: []`. Given a pool
+of `[dual, 2.4-only]`, an unqualified request gets the 2.4-only adapter and the scarce
+dual-band one stays free for those who ask for 5 GHz. A 3.x client that relied on "first
+free in configuration order" must pin a device with `interface` or state its needs.
 
-This is **deliberate and desirable**: it is exactly the "reserve the minimum necessary"
-principle applied consistently, and it protects scarce hardware even from clients that
-never learned about capabilities. The API contract never promised a specific device
-("reserve the first available device" is a description, not a guarantee), so this is
-not a breaking change — but it belongs in the CHANGELOG under `### 🔧 Maintenance`.
-
-*Rejected alternative:* make the omitted case keep strict declaration order for
-compatibility. This would mean two allocation policies coexisting, and legacy scripts —
-the ones most likely to be running unattended in CI — would be the ones burning the
-dual-band adapters. One rule for everyone is simpler to explain, test, and reason about.
+*Rejected alternative:* keep strict declaration order for requests with no capability
+requirement. Two allocation policies would coexist, and unattended scripts would be the
+ones burning the dual-band adapters.
 
 ---
 
@@ -1851,8 +1844,6 @@ capability adds rows rather than test functions:
 - [ ] Forced `device_id` + satisfied `required_capabilities` → success
 
 **Compatibility & concurrency**
-- [ ] Legacy `ReservationManager(["dev0", "dev1"])` behaves exactly as today
-- [ ] A mixed `Sequence` of `DeviceSpec` and `str` is accepted (type-level guarantee)
 - [ ] N threads calling `create()` with the same requirements never double-assign a
       device; extend the existing thread-safety test to a capability-filtered pool
 - [ ] Interleaved `create()` / `delete()` under contention leaves
@@ -1868,8 +1859,10 @@ capability adds rows rather than test functions:
 - [ ] A capability no device enables is **absent** from the catalogue
 - [ ] `POST /device-reservation` with `required_capabilities` returns the expected
       interface and echoes `capabilities`
-- [ ] Legacy body `{"duration_seconds": 900}` still returns 200
-- [ ] `required_capabilities: []` behaves identically to the field being omitted
+- [ ] A 3.x body `{"duration_seconds": 900}` is rejected: 422, `Missing required field(s):
+      required_capabilities`, and nothing is reserved
+- [ ] Every missing field is listed at once; `required_capabilities: null` is rejected
+- [ ] `required_capabilities: []` means any device and gets the least capable one
 - [ ] Mixed-case ids (`["5GHz"]`) accepted; duplicates de-duplicated
 - [ ] Unknown capability → 422 listing valid ids
 - [ ] Unsatisfiable set → 422 (**not** 409 — assert the status code explicitly)
@@ -1883,7 +1876,7 @@ capability adds rows rather than test functions:
 - [ ] `GET /device-reservation/{rid}` includes `capabilities`
 - [ ] `GET /debug` managed interfaces include `capabilities`
 - [ ] **OpenAPI schema**: `/openapi.json` still generates, the new request fields are
-      marked optional, and no previously-required field became required
+      `required_capabilities` is listed as required next to `duration_seconds`
 
 ### 12.7 Frontend
 
@@ -1909,7 +1902,7 @@ reserved device's capabilities, 422-vs-409 rendering, and the null-countdown cas
       touches subnet and count assertions across several files)
 - [ ] `make lint` and `make type-check` (`ruff.toml` now pins the rule set; `ruff check
       wilab/ tests/` passes with ruff 0.6.9) clean — especially the
-      `Sequence[DeviceSpec | str]` annotation and the `Optional[float]` return
+      `Sequence[DeviceSpec]` annotation and the `Optional[float]` return
 - [ ] A v3.0 config file (no capabilities, some keys omitted) produces exactly the
       expected set of validation errors — the migration path of
       [§11.1](#111-upgrading-an-existing-installation) as an executable test
@@ -2042,7 +2035,7 @@ timestamp ([§7.3](#73-wilabapiroutesreservationpy)) are pre-existing defects, n
 this feature. They have their own regression tests and their own CHANGELOG section
 (`### 🐛 Bug Fixes`). Landing them as two commits ahead of the capability work makes both
 the review and a future `git bisect` far easier, and they are independently
-cherry-pickable onto a maintenance branch if 3.1.0 slips.
+cherry-pickable onto a maintenance branch if 4.0.0 slips.
 
 **WI-5 — parallelisable once the API shape is frozen.** The frontend depends only on the
 response contracts of [§6](#6-technical-design--api), not on the backend implementation.
@@ -2108,7 +2101,7 @@ was not realistic.
 
 **Phase 4 — Reservation core** *(~2 h)*
 - [ ] `DeviceSpec` dataclass
-- [ ] `Sequence[DeviceSpec | str]` constructor
+- [ ] `Sequence[DeviceSpec]` constructor
 - [ ] `UnknownDeviceError`, `CapabilityUnsatisfiableError` (with `available`, `device_id`, `missing`)
 - [ ] `_select()` replacing `_first_available()`
 - [ ] `_soonest_expiry(among=...)` returning `Optional[float]`
@@ -2150,7 +2143,7 @@ here is only the cross-cutting work.
 - [ ] `make lint` + `make type-check` clean — blocked, see [§18.5](#185-open-decisions)
 - [ ] `install/03-tests/` still green with the new install stage — bench only
 - [x] Docs from [§14](#14-documentation-to-update)
-- [x] Version bump via `update_version.sh --bump-to 3.1.0`
+- [x] Version bump via `update_version.sh --bump-to 4.0.0`
 
 **Phase 8 — Bench validation (WI-7, Linux test bench only)** *(~2 h)*
 
@@ -2178,7 +2171,7 @@ Cannot be performed on a Windows workstation. Full list and rationale in
 | [docs/troubleshooting.md](../../docs/troubleshooting.md) | "Service does not start: configuration validation failed" — how to read the report, `--validate-config` as the first diagnostic step, and the `failed` vs `auto-restart` unit state after [§10.1](#101-systemd-restart-loop-on-a-bad-config) |
 | [docs/readme-dev.md](../../docs/readme-dev.md) | `make validate-config`; how to add a validation rule and a capability; the deferred-import requirement of [§5.10](#510-module-boundaries) |
 | [docs/unit-testing.md](../../docs/unit-testing.md) | The two config fixtures and what each is for; the new frontend test setup |
-| `TODOs/` | ✅ Moved to `TODOs/completed/` on release of 3.1.0, per the existing convention |
+| `TODOs/` | ✅ Moved to `TODOs/completed/` on release of 4.0.0, per the existing convention |
 
 ---
 
@@ -2200,14 +2193,14 @@ Cannot be performed on a Windows workstation. Full list and rationale in
 | D12 | Capability ids reuse the `band` vocabulary (`2.4ghz`, `5ghz`) | One vocabulary across config, reservation API and `NetworkCreateRequest.band` | New ids like `band_24` — a mapping layer with nothing to gain |
 | D13 | Selection = minimal surplus, tie-broken by declaration order | Implements "reserve the minimum necessary"; deterministic; degenerates exactly to today's behaviour on a homogeneous pool | Random pick (untestable); pure declaration order (wastes scarce hardware — P3) |
 | D14 | The tie-break is **explicit**, though `min()` already provides it | Makes the property intentional and testable, and survives a refactor to `sorted()` or a parallel scan | Rely on `min()` returning the first minimum — correct today, silently fragile |
-| D15 | The minimality rule also applies when no capabilities are requested | One allocation policy is easier to explain, test and reason about; protects scarce hardware even from legacy clients | Two policies — unattended CI scripts would be the ones burning dual-band adapters |
-| D16 | Config keys are mandatory but **API request fields stay optional** | A config file is a reviewed artefact; an API request is not | Symmetric strictness — a gratuitous breaking change to the wire protocol |
+| D15 | The minimality rule also applies when no capabilities are requested | One allocation policy is easier to explain, test and reason about; protects scarce hardware from clients that state no requirement | Two policies — unattended CI scripts would be the ones burning dual-band adapters |
+| D16 | Config keys are mandatory **and so is `required_capabilities`** (revised for 4.0.0; originally optional) | A client that does not say what it needs must not be handed a guess; a clear 4xx beats an unclear behaviour. A 3.x client fails fast and visibly instead of intermittently getting a device without its band | Keep it optional with a default (the first draft) — silent mis-allocation for clients that never learned about capabilities |
 | D17 | `interface` and `required_capabilities` may be combined | The capabilities act as a guard rail on a pinned device | Mutual exclusion (422) — rejects a legitimate, safer request |
 | D18 | Unsatisfiable → 422, all-busy → 409 | 422 = "never going to work", 409 = "works later". The countdown timer is driven by 409 and must not fire on a permanent failure | One status for both — the UI counts down toward an availability that never arrives |
 | D19 | Unknown `interface` → **404**, not 422 | Lets a client distinguish "no such device" from "device cannot serve you" by status alone, without parsing `detail` ([§9.1](#91-runtime-api)) | 422 for every body-field problem — more RFC-consistent, less useful to the client |
 | D20 | `next_available_*` become **nullable** rather than reporting `0` | "Available now" is false when every holder is unlimited, and it makes the UI busy-loop | Keep returning `time.time()` — preserves the type, lies to the client |
 | D21 | Capabilities are **not** stored on `Reservation` | They belong to the device, not the booking; a lookup avoids a second source of truth | Denormalise into the dataclass — faster, but stale |
-| D22 | `Sequence[DeviceSpec | str]` constructor | ~46 test call sites keep working unchanged, and the annotation survives mypy | `list[DeviceSpec] | list[str]` (rejects mixed lists, narrows badly) / a hard signature change (large mechanical test diff) |
+| D22 | `Sequence[DeviceSpec]` constructor only (revised for 4.0.0; the first draft also accepted `str`) | No compatibility shim to keep alive; tests use `device_specs()` | `Sequence[DeviceSpec]` — kept ~46 test call sites unchanged at the cost of a second code path |
 | D23 | `capabilities_for()` on `AppConfig`, not in a route module | Route modules must stay leaves of the dependency graph; `status.py` importing from `reservation.py` is a direction this codebase does not otherwise have | A shared helper in `routes/reservation.py` imported by `routes/status.py` |
 | D24 | Frontend shows a **match count**, not the predicted winner | Avoids reimplementing the selection rule in TypeScript, where it would drift | Client-side prediction of the assigned device — nicer UX, guaranteed to diverge |
 
@@ -2246,7 +2239,7 @@ a later reader can tell which non-obvious choices were deliberate.
 | # | Finding | Resolution |
 |---|---------|-----------|
 | DEV-1 | A module-level `from ..wifi.interface import validate_interface` in the validator would defeat `conftest.py:197`'s monkeypatch, making every config-loading test hit real `iw` | Deferred import mandated and covered by a test that fails if someone "tidies" it — [§5.10](#510-module-boundaries), [§12.2](#122-teststest_config_validationpy-new) |
-| DEV-2 | `list[DeviceSpec] \| list[str]` rejects mixed lists and narrows badly under mypy | `Sequence[DeviceSpec \| str]` — [§7.1](#71-wilabreservationpy), D22 |
+| DEV-2 | `list[DeviceSpec] \| list[str]` rejects mixed lists and narrows badly under mypy | Superseded: the `str` form was removed in 4.0.0 — [§7.1](#71-wilabreservationpy), D22 |
 | DEV-3 | `Capability(c)` in the route raises `ValueError` → 500 if it ever runs before validation | Ordering dependency documented; normalisation and rejection happen in the request validator — [§6.2](#62-post-apiv1device-reservation--extended-request), [§7.3](#73-wilabapiroutesreservationpy) |
 | DEV-4 | `available_capabilities` on the permanent error was unspecified as free-only or all | Defined as the union over **all** configured devices — that is what makes the error permanent — [§7.1](#71-wilabreservationpy) |
 | DEV-5 | Request-side duplicates and ordering made the endpoint's behaviour client-dependent and tests non-deterministic | Validator de-duplicates and sorts — [§6.2](#62-post-apiv1device-reservation--extended-request) |
@@ -2317,7 +2310,7 @@ Deliberately **not** part of this proposal — listed so the design leaves room 
 
 Recorded at the end of the implementation session on **2026-09-01**, on branch
 `feature/device-capabilities`. Everything that can be done off-bench is done: backend,
-frontend, documentation and the 3.1.0 version bump. **Only bench validation (WI-7) is
+frontend, documentation and the 4.0.0 version bump. **Only bench validation (WI-7) is
 outstanding** — see [§18.3](#183-remaining--wi-7-bench-validation-2-h).
 
 ### 18.1 What is built
@@ -2332,7 +2325,7 @@ outstanding** — see [§18.3](#183-remaining--wi-7-bench-validation-2-h).
 | WI-4 (phases 4+5) | `0e278bc` | `DeviceSpec`, `_select()`, the two new exceptions, request/response fields, `/status` catalogue, 42 tests |
 | refactor | `d42528b` | Configuration parsed once at startup instead of twice |
 | WI-5 (phase 6) | `728ef7f` | Reservation dialog with capability/device modes, card chips, band filtering |
-| WI-6 (phase 7) | this commit | README, CHANGELOG, the five `docs/` files, the migration test, version bump to 3.1.0 |
+| WI-6 (phase 7) | this commit | README, CHANGELOG, the five `docs/` files, the migration test, version bump to 4.0.0 |
 
 **Suite state:** 545 collected, 531 passed. The 2 failures and 12 errors are pre-existing
 and environmental (Windows workstation: no `ip`, no `iw`, no `wls16`). mypy is clean
@@ -2350,7 +2343,7 @@ Completed on **2026-09-01**. What each item became:
       the exit-code table and the upgrade note; `--validate-config` in *Quick Start*;
       `make validate-config` in the Makefile listing; capability-driven and pinned-device
       API examples plus the 404/409/422 table
-- [x] **`CHANGELOG.md`** — `[3.1.0] - 2026-09-01`, deliberately short and user-facing, with
+- [x] **`CHANGELOG.md`** — `[4.0.0] - 2026-09-01`, deliberately short and user-facing, with
       `⚠️ Breaking Changes`, `✨ Features`, `🐛 Bug Fixes`, `🔧 Maintenance` and `✅ Tests`,
       pointing here for the design detail. The `[Unreleased]` hostapd entries folded into
       the release
@@ -2358,10 +2351,10 @@ Completed on **2026-09-01**. What each item became:
       Validation Failed* as the first thing in *Common Issues*, with a real report, how to
       read it, the exit codes, and the `failed` versus `activating (auto-restart)`
       distinction; cross-referenced from *Quick Diagnostics*, *Issue 1* and *Getting Help*
-- [x] **`docs/swagger.md`** — *Device Capabilities (3.1.0)*: request and response fields,
+- [x] **`docs/swagger.md`** — *Device Capabilities (4.0.0)*: request and response fields,
       the nullable UTC `next_available_*`, both shapes of the 422 body, and the
       `/status` catalogue
-- [x] **`docs/networking.md`** — *Automatic Detection (3.1.0)* under the subnet-conflict
+- [x] **`docs/networking.md`** — *Automatic Detection (4.0.0)* under the subnet-conflict
       section, and *Device Capabilities and Bands* covering declaration-not-probe, the
       relation to `band` at AP creation, and the fact that capabilities do not touch
       subnets or NAT
@@ -2372,7 +2365,7 @@ Completed on **2026-09-01**. What each item became:
 - [x] **`docs/unit-testing.md`** — a *Configuration Fixtures* section contrasting
       `tests/test.config.yaml` with the `write_config` fixture, the three-device table, and
       the ordering constraint on the fixture
-- [x] **Version bump** — `update_version.sh --bump-to 3.1.0`; `VERSION` and
+- [x] **Version bump** — `update_version.sh --bump-to 4.0.0`; `VERSION` and
       `frontend/package.json` aligned
 - [x] **Migration test (§12.8)** — `TestV30Migration` in `tests/test_config_validation.py`:
       a v3.0-style file reports exactly `allow_unlimited_reservation`,
@@ -2387,7 +2380,7 @@ Not done, and deliberately so: `make lint` — see [§18.5](#185-open-decisions)
 **The only outstanding work.** The full list is
 [§12.9](#129-bench-validation--required-and-not-possible-on-a-windows-workstation), which
 also carries the `requirements-dev.txt` fix. Nothing there can be done off-bench, and
-3.1.0 should not be released until it is done.
+4.0.0 should not be released until it is done.
 
 ### 18.4 Deviations from this proposal, and why
 
@@ -2452,3 +2445,125 @@ Small findings that are worth not rediscovering.
   checkout. Listed in §12.9.
 * **The configuration was parsed twice on every boot** before `d42528b`, once by
   `run_server()` and once by `create_app()` through `get_config()`.
+
+
+---
+
+### 18.7 Revision — the release became 4.0.0 and the compatibility shims were removed
+
+Decided **2026-10-05**, after the implementation above. The feature was first built as an
+additive, backward-compatible 3.1.0. That was reversed: a 3.x client cannot say it needs
+5 GHz, so under 3.1.0 it silently received whichever device was free (the least capable
+one, which is the *worst* choice for it). A clear error is better than a behaviour the
+client cannot control.
+
+**3.1.0 was never released and no longer exists**; the work ships as **4.0.0**.
+
+What changed relative to §18.1–§18.6 (those sections describe the earlier build and are
+kept as history):
+
+| Area | Before | Now |
+|---|---|---|
+| `POST /device-reservation` | `required_capabilities` and `interface` optional | `required_capabilities` **required** (`[]` = any device); `interface` optional. A missing field gives `422` `Missing required field(s): ...`, all fields listed at once |
+| `ReservationManager` | accepted `DeviceSpec` or plain `str` | `DeviceSpec` only; tests use `tests/helpers.py::device_specs()` |
+| Frontend | tolerated a backend without capabilities (`?? []`, optional TS fields, "all bands" fallback in the network form) | requires the 4.0.0 API; fields are mandatory in the models; the reservation dialog always sends `required_capabilities` |
+| Version | 3.1.0 | 4.0.0 (`VERSION`, `frontend/package.json`, lockfile) |
+| Docs | additive wording | README, CHANGELOG, `docs/swagger.md`, §6, §7, §11, §12, D16, D22 and §19 rewritten |
+
+Internal `ReservationManager.create()` still defaults `required_capabilities` to empty:
+the contract is enforced at the HTTP boundary, where a client can get it wrong.
+
+## 19. Migration from older versions
+
+For API clients moving from **3.x to 4.0.0**. 4.0.0 is a **breaking release**: one
+request becomes stricter and is rejected if it is not updated, everything else is
+additive. There is no compatibility mode, and no endpoint was added or removed.
+
+### Before you upgrade (operators)
+
+`config.yaml` must be completed first: every key is mandatory, including a `capabilities`
+block on each device. Run `python3 main.py --validate-config`, fix what it lists, then
+restart. The service refuses to start on an incomplete file.
+
+### What an API client must do
+
+1. **Add `required_capabilities` to every `POST /device-reservation`.** List what you
+   need (`["5ghz"]`), or send `[]` for "any device". Omitting it, or sending `null`, is
+   rejected.
+2. **Handle the new error cases** (404, the two kinds of 422, 409 with `null` ETA below).
+3. **Stop assuming which device you get.** Read `interface` and `capabilities` from the
+   response, or pin a device with `interface`.
+4. Create the network with a `band` the device supports; the web UI enforces this, **the
+   API does not**.
+
+### The request that breaks
+
+```bash
+# 3.x                                        # 4.0.0 -> 422
+-d '{"duration_seconds": 3600}'              {"detail": "Missing required field(s): required_capabilities"}
+
+# 4.0.0
+-d '{"duration_seconds": 3600, "required_capabilities": []}'       # any device
+-d '{"duration_seconds": 3600, "required_capabilities": ["5ghz"]}' # needs 5 GHz
+-d '{"duration_seconds": 3600, "required_capabilities": [], "interface": "wlx..."}'  # pin
+```
+
+`interface` is optional and can be combined with `required_capabilities`, which then act
+as a guard on the pinned device. Ids are case-insensitive; duplicates are ignored.
+
+### Reservation flow
+
+Before: one call, whichever device was first free.
+
+```
+POST /device-reservation {duration}  ->  200 device | 409 all busy
+```
+
+Now: state what you need.
+
+```
+POST /device-reservation {duration, required_capabilities, interface?}
+  200  -> use response.interface / response.capabilities
+  409  -> TRANSIENT: matching devices busy. Retry after next_available_in
+          (null = no scheduled release: do not start a countdown)
+  422  -> missing field, unknown capability, or PERMANENT: no device provides this.
+          Change the request, never retry it unchanged
+  404  -> the pinned interface is unknown
+```
+
+Treat 409 and 422 differently: waiting fixes the first and can never fix the second.
+
+### Other endpoints and responses
+
+All additive; existing fields are untouched.
+
+| Endpoint | Change |
+|---|---|
+| `POST /device-reservation`, `GET /device-reservation/{id}` — response | adds `capabilities` (what the assigned device provides, e.g. `["2.4ghz"]`) |
+| `GET /status` | `networks[]` adds `capabilities`; new top-level `capabilities_catalogue`: `[{id, label, kind, total_devices, available_devices}]`, only capabilities at least one device has |
+| `GET /debug` | each managed interface adds `capabilities` |
+
+### Errors
+
+| Status | 3.x | 4.0.0 |
+|---|---|---|
+| 409 no device free | `{"error", "next_available_at", "next_available_in"}`; `next_available_at` in the **server's local time**; "now" when every holder was unlimited | adds `requested_capabilities`. `next_available_at` is **UTC**. Both `next_available_*` are `null` when every matching device is held by an unlimited reservation. The ETA covers only devices that match the request |
+| 422 | duration out of range / unlimited not allowed (string `detail`) | unchanged, plus: **missing required field(s)** (string `detail`, all listed); unknown capability id; no device can ever provide the set (`detail`: `error`, `requested`, `available_capabilities`); pinned device lacks a capability (`detail`: `error`, `interface`, `missing`) |
+| 404 | — | `POST` with an `interface` Wi-Lab does not manage |
+
+### Behaviour change
+
+With `required_capabilities: []` you get the **least capable** free device, not the first
+in configuration order, so dual-band adapters stay free for requests that need them. A
+script that assumed "first device" must pin one with `interface` or state its needs.
+
+### Example
+
+```bash
+curl -X POST http://HOST:8080/api/v1/device-reservation \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"duration_seconds": 3600, "required_capabilities": ["5ghz"]}'
+# -> {"reservation_id":"a1b2c3d4","interface":"wls16","capabilities":["2.4ghz","5ghz"], ...}
+```
+
+Field-level detail: [docs/swagger.md](../../docs/swagger.md); the README has more examples.

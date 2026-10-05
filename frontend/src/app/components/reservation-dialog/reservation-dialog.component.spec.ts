@@ -13,6 +13,7 @@
  */
 
 import { FormBuilder } from '@angular/forms';
+import { NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
 
 import { CapabilityInfo, InterfaceInfo } from '../../models/network.models';
 import { ReservationDialogComponent, ReservationDialogData } from './reservation-dialog.component';
@@ -79,13 +80,9 @@ describe('ReservationDialogComponent', () => {
       expect(component.matchingDeviceCount).toBe(0);
     });
 
-    it('treats a device with no declared capabilities as matching nothing specific', () => {
-      const { component } = makeDialog({
-        devices: [{ ...DEVICES[0], capabilities: undefined }]
-      });
-      expect(component.matchingDeviceCount).toBe(1);
-      component.toggleCapability('5ghz', true);
-      expect(component.matchingDeviceCount).toBe(0);
+    it('counts every free device when nothing is selected', () => {
+      const { component } = makeDialog();
+      expect(component.matchingDeviceCount).toBe(2);
     });
   });
 
@@ -109,26 +106,28 @@ describe('ReservationDialogComponent', () => {
   });
 
   describe('payload', () => {
-    it('omits both fields when nothing is required', () => {
+    it('always sends required_capabilities, empty meaning "any device"', () => {
       const { component, closed } = makeDialog();
       component.onSubmit();
-      expect(closed[0]).toEqual({ duration_seconds: 3600 });
+      expect(closed[0]).toEqual({ duration_seconds: 3600, required_capabilities: [] });
     });
 
-    it('sends only required_capabilities in capability mode', () => {
+    it('sends required_capabilities and no interface in capability mode', () => {
       const { component, closed } = makeDialog();
       component.toggleCapability('5ghz', true);
       component.onSubmit();
       expect(closed[0]).toEqual({ duration_seconds: 3600, required_capabilities: ['5ghz'] });
     });
 
-    it('sends only interface in device mode', () => {
+    it('sends the interface with an empty required_capabilities in device mode', () => {
       const { component, closed } = makeDialog();
       component.form.get('mode')!.setValue('device');
       component.onModeChange();
       component.form.get('selectedInterface')!.setValue('wls17');
       component.onSubmit();
-      expect(closed[0]).toEqual({ duration_seconds: 3600, interface: 'wls17' });
+      expect(closed[0]).toEqual({
+        duration_seconds: 3600, required_capabilities: [], interface: 'wls17'
+      });
     });
 
     it('still produces duration_seconds 0 for an unlimited reservation', () => {
@@ -136,7 +135,7 @@ describe('ReservationDialogComponent', () => {
       component.form.get('unlimited')!.setValue(true);
       component.onUnlimitedChange();
       component.onSubmit();
-      expect(closed[0]).toEqual({ duration_seconds: 0 });
+      expect(closed[0]).toEqual({ duration_seconds: 0, required_capabilities: [] });
     });
   });
 
@@ -185,5 +184,16 @@ describe('ReservationDialogComponent', () => {
       expect(component.capabilityGroups.map(g => g.kind)).toEqual(['radio', 'policy']);
       expect(component.showGroupHeadings).toBe(true);
     });
+  });
+});
+
+describe('NetworkFormDialogComponent.bandsFor', () => {
+  it('offers dual only when the device declares both bands', () => {
+    expect(NetworkFormDialogComponent.bandsFor(['2.4ghz', '5ghz'])).toEqual(['2.4ghz', '5ghz', 'dual']);
+  });
+
+  it('limits a single-band device to that band', () => {
+    expect(NetworkFormDialogComponent.bandsFor(['2.4ghz'])).toEqual(['2.4ghz']);
+    expect(NetworkFormDialogComponent.bandsFor(['5ghz'])).toEqual(['5ghz']);
   });
 });
