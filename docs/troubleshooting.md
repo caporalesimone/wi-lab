@@ -148,6 +148,9 @@ Scripts:
 
 ### Issue 5: TX Power Not Applied
 
+> ⚠️ **Known limitation:** TX power control could not be made to work with the USB dongles
+> tested so far, so correct operation is not guaranteed for now.
+
 Script:
 - [diagnostics/troubleshooting/issue_txpower_diagnosis.sh](../diagnostics/troubleshooting/issue_txpower_diagnosis.sh)
 

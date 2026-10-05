@@ -113,6 +113,8 @@ OPENAPI_TAGS = [
     {
         "name": "TX Power",
         "description": (
+            "⚠️ **Warning:** TX power control could not be made to work with the USB dongles "
+            "tested so far, so correct operation is **not guaranteed** for now. "
             "Read or change the transmit power of your device, on a scale of **1 (lowest) to 4 "
             "(highest)**, while its network is active. Useful for range and roaming tests. The "
             "request is rejected if the hardware does not apply the requested level."

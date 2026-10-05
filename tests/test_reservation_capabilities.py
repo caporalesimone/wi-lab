@@ -379,3 +379,11 @@ class TestOpenApiCompatibility:
         assert resp.status_code == 200
         assert "swagger-ui" in resp.text
         assert ".opblock-tag small" in resp.text
+
+    def test_tx_power_documentation_carries_the_hardware_warning(self, client):
+        schema = client.get("/openapi.json").json()
+        tag = next(t for t in schema["tags"] if t["name"] == "TX Power")
+        assert "not guaranteed" in tag["description"]
+        for method in ("get", "post"):
+            op = schema["paths"]["/api/v1/interface/{reservation_id}/txpower"][method]
+            assert "not guaranteed" in op["description"]
