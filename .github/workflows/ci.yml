@@ -8,7 +8,7 @@ on:
 jobs:
   backend:
     name: Backend (lint, types, tests, config validation)
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -29,7 +29,7 @@ jobs:
 
   frontend:
     name: Frontend (unit tests, production build)
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
@@ -48,7 +48,7 @@ jobs:
 
   frontend-container:
     name: Frontend container image build
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Build frontend/Dockerfile
@@ -56,7 +56,7 @@ jobs:
 
   api-docs:
     name: API docs bundle (builds; downloadable from the run)
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

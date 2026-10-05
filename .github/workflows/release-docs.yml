@@ -16,7 +16,7 @@ permissions:
 jobs:
   api-docs:
     name: Build and attach the API docs bundle
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
