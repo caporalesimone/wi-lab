@@ -13,8 +13,16 @@ TEST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'test.config.yaml')
 
 @pytest.fixture(scope="session")
 def config():
-    """Load test config once per test session."""
-    return load_config(TEST_CONFIG_PATH)
+    """Load test config once per test session.
+
+    Session scope means the function-scoped autouse mocks are not active yet, so the
+    hardware check in load_config() would look for the real wls16/wls17/wls18 adapters.
+    Patch the interface check for the duration of the load.
+    """
+    from wilab.wifi import interface
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(interface, "validate_interface", lambda iface: None)
+        return load_config(TEST_CONFIG_PATH)
 
 
 @pytest.fixture

@@ -279,10 +279,9 @@ class TestAuthentication:
     """Tests for authentication and authorization."""
     
     def test_request_without_auth(self, client):
-        """Test that request without auth token is rejected."""
-        resp = client.get('/api/v1/interfaces')
-        # GET /interfaces doesn't require auth, so should succeed
-        assert resp.status_code == 200
+        """A protected endpoint rejects a request that carries no token."""
+        resp = client.post('/api/v1/device-reservation', json={'duration_seconds': 3600})
+        assert resp.status_code == 401
     
     def test_start_network_without_auth(self, client, reservation_id):
         """Test that network creation without auth is rejected."""
