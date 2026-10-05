@@ -12,8 +12,10 @@ Wi-Lab uses pytest for comprehensive unit and integration testing. This document
 # Run all tests
 pytest tests/ -v
 
-# Run with coverage report
-pytest tests/ --cov=wilab --cov-report=html --cov-report=term
+# Every run ends with a coverage report on the terminal (configured in pytest.ini):
+# the files that are not fully covered, with the missing line numbers.
+# Add an HTML report too:
+pytest tests/ --cov-report=html          # open htmlcov/index.html
 
 # Run quick mode (less verbose)
 pytest tests/ -q
@@ -65,6 +67,7 @@ The test suite includes:
 - **test_api.py** - API endpoint tests
 - **test_reservation.py** - Reservation lifecycle
 - **test_reservation_capabilities.py** - Capability-based device selection
+- **test_api_errors.py** - Error mapping (409/404/500), authentication edge cases, degraded health report and frontend serving
 - **test_reservation_pool.py** - Allocation on a ten-antenna pool (dual band, 2.4-only, 5-only, interleaved): tightest fit, mixed demand, release and reuse, a randomized check against a reference model, and many simultaneous reservations
 - **test_commands.py** - Shell command wrapper tests
 - **test_dhcp.py** - DHCP server tests

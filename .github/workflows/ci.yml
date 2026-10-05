@@ -24,8 +24,11 @@ jobs:
         run: mypy wilab/ tests/
       - name: Validate the example configuration
         run: python main.py --validate-config --config config.example.yaml
-      - name: Tests
+      - name: Tests (prints the coverage report)
         run: python -m pytest
+      - name: Coverage summary
+        if: always()
+        run: python -m coverage report --format=markdown --skip-covered >> "$GITHUB_STEP_SUMMARY" || true
 
   frontend:
     name: Frontend (unit tests, production build)

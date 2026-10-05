@@ -3,7 +3,7 @@ from pathlib import Path
 import logging
 import threading
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -213,7 +213,9 @@ def create_app() -> FastAPI:
                 or full_path.startswith("docs/")
                 or full_path == "openapi.json"
             ):
-                return None
+                # An API or documentation path that no route matched: a real 404, not the
+                # 200 "null" that returning None would produce.
+                raise HTTPException(status_code=404, detail="Not Found")
 
             file_path = frontend_path / full_path
             if file_path.is_file():

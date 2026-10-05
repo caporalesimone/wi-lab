@@ -55,8 +55,8 @@ test-local-quick: venv
 	$(PYTEST) tests/ -q
 
 test-local-cov: venv
-	@echo "Running tests with coverage report..."
-	$(PYTEST) tests/ --cov=wilab --cov-report=html --cov-report=term
+	@echo "Running tests with the HTML coverage report (the terminal report is always printed)..."
+	$(PYTEST) tests/ --cov-report=html
 	@echo ""
 	@echo "✓ Coverage report generated in htmlcov/index.html"
 
