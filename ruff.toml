@@ -1,7 +1,0 @@
-# Pins the rule set so `make lint` gives the same result whatever ruff version is installed.
-# Without this file the default rules change between releases (0.16 flagged 412 issues,
-# mostly UP006/UP035/UP045 typing style, B008 on FastAPI's Depends() and BLE001).
-target-version = "py312"
-
-[lint]
-select = ["E4", "E7", "E9", "F"]

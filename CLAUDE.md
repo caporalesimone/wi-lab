@@ -23,6 +23,19 @@ older document, this file wins; the design document
   layer ("rendi il cambio netto"). Do not add backward-compatibility shims.
 - End a piece of work with what was fixed and what is **still to do**.
 
+## Repository layout
+
+- Repository root: only what tools or users expect there. `main.py` (entry point), `README.md`,
+  `CHANGELOG.md`, `LICENSE`, `CLAUDE.md`, `VERSION`, `Makefile`, `requirements*.txt`, `config.example.yaml`,
+  `pyproject.toml` (tool configuration), and the user-facing `install.sh` / `uninstall.sh`. Do not add
+  new scripts to the root.
+- `scripts/`: developer and operations scripts: `update_version.sh`, `export_api_docs.py`,
+  `cleanup_pr_runs.py`, `start-service.sh`, `stop-service.sh`. New helper scripts go here.
+- `install/`: the installer stages used by `install.sh`. `diagnostics/`: troubleshooting scripts for a
+  real machine. `docs/`: user and developer documentation. `TODOs/`: design proposals
+  (`TODOs/completed/` once released). `wilab/`: the backend. `frontend/`: the Angular UI. `tests/`: pytest.
+- Tests are run with pytest (or `make test-local`); there is no separate test-runner script.
+
 ## Product rules: devices, capabilities, reservations
 
 - A device declares its **capabilities** in `config.yaml` (`2.4ghz`, `5ghz`). The declaration is
@@ -63,8 +76,9 @@ older document, this file wins; the design document
 
 ## Versioning and documentation
 
-- Change the version only with `./update_version.sh --bump-to X.Y.Z` (`VERSION`,
-  `frontend/package.json`, and the lockfile).
+- Change the version only with `./scripts/update_version.sh --bump-to X.Y.Z`: it updates `VERSION`,
+  `frontend/package.json` and `frontend/package-lock.json` together and refuses a version that is not
+  greater than the current one. It can be run from any directory.
 - Every user-visible change goes in `CHANGELOG.md` (Breaking Changes first). Breaking changes for API
   clients are explained in section 19 "Migration from older versions" of the design document.
 - Keep README, `docs/`, `config.example.yaml`, Swagger text and the design document consistent with
@@ -75,11 +89,11 @@ older document, this file wins; the design document
 - Layers: API routes -> managers -> system commands. **No `subprocess` outside
   `wilab/network/commands.py`.** Type hints everywhere; `logging`, never `print` in production code.
 - Before committing: `ruff check wilab tests scripts`, `mypy wilab tests`, and the full test suite.
-  `ruff.toml` pins the rules (E4, E7, E9, F); do not rely on ruff's defaults.
+  `pyproject.toml` pins the ruff rules (E4, E7, E9, F); do not rely on ruff's defaults.
 - Add tests for every new behaviour. Tests never touch real hardware (`ip`, `iw`, hostapd, dnsmasq,
   iptables are replaced) and must be **OS independent**: the suite must pass on Windows and Linux.
   Shared helpers are in `tests/helpers.py` (`device_specs()` builds dual-band devices).
-- Every pytest run ends with a **coverage report** (configured in `pytest.ini`; HTML with
+- Every pytest run ends with a **coverage report** (configured in `pyproject.toml`; HTML with
   `--cov-report=html` or `make test-local-cov`). CI also posts it in the job summary. Keep coverage
   from dropping; prefer testing error paths of the API layer.
 - Reservation allocation is tested on a ten-antenna pool with simultaneous reservations
@@ -95,6 +109,19 @@ older document, this file wins; the design document
   error**. This is temporary: remind the maintainer to revisit it (shrink `network-card` SCSS, which
   is near 4 kB, or drop the budget) whenever styles or `angular.json` are touched.
 - Prefer existing Material components over new SCSS to stay inside the budget.
+
+## Tool configuration (`pyproject.toml`)
+
+- One file configures **pytest** (`[tool.pytest.ini_options]`: test paths, strict markers, coverage in
+  `addopts`), **ruff** (`[tool.ruff]`, rules under `[tool.ruff.lint]`) and **mypy** (`[tool.mypy]` with
+  the pydantic plugin, `[tool.pydantic-mypy]`). Change a tool's behaviour there, not on a command line.
+  Registering a pytest marker means adding it to `markers` (unknown markers fail the run).
+- It has **no `[project]` table on purpose**: the project is deployed from a checkout, not packaged. The
+  version has a single source, the `VERSION` file, changed only by `scripts/update_version.sh`; never
+  add a version to `pyproject.toml`. If packaging is ever needed, make `VERSION` and the script
+  follow it deliberately instead of keeping two sources.
+- Do not recreate `pytest.ini`, `ruff.toml` or `mypy.ini`: they take precedence over `pyproject.toml`
+  and would silently override it.
 
 ## CI / GitHub (`.github/workflows/`)
 

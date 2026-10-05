@@ -1839,7 +1839,7 @@ reserved device's capabilities, 422-vs-409 rendering, and the null-countdown cas
 
 - [ ] Full suite green with the extended `tests/test.config.yaml` (the fixture change
       touches subnet and count assertions across several files)
-- [ ] `make lint` and `make type-check` (`ruff.toml` now pins the rule set; `ruff check
+- [ ] `make lint` and `make type-check` (`pyproject.toml` now pins the rule set; `ruff check
       wilab/ tests/` passes with ruff 0.6.9) clean — especially the
       `Sequence[DeviceSpec]` annotation and the `Optional[float]` return
 - [ ] A v3.0 config file (no capabilities, some keys omitted) produces exactly the

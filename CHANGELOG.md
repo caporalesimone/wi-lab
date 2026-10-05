@@ -46,7 +46,7 @@ Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device
 - Fixed: an unknown `/api/...` path answered `200 null` when the web frontend is served; it is now a proper `404`.
 - CI housekeeping: the documentation artifact expires after 1 day inside pull requests (release attachments never expire), and a last CI job keeps only the 3 most recent runs of each pull request (it only runs when a pull request is active; nothing is scheduled).
 - Every GitHub release now carries `wi-lab-api-docs-<version>.zip`: `openapi.json` plus self-contained `swagger.html` and `redoc.html` that open offline (`scripts/export_api_docs.py`).
-- Added a GitHub Actions pipeline (lint, type check, tests, frontend tests and build, container image build), a pinned `ruff.toml` and a working frontend test setup (`npm test`).
+- Added a GitHub Actions pipeline (lint, type check, tests, frontend tests and build, container image build), tool configuration (pytest, ruff, mypy) gathered in one `pyproject.toml`, with the ruff rule set pinned and a working frontend test setup (`npm test`).
 - **hostapd regulatory compliance** — The generated hostapd configuration now enables `ieee80211d=1` (advertise country code and apply the regulatory domain) on all bands, and `ieee80211h=1` (DFS/TPC) on 5 GHz where regulatory rules require it.
 
 ### ✅ Tests

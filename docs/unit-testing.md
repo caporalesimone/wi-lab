@@ -12,7 +12,7 @@ Wi-Lab uses pytest for comprehensive unit and integration testing. This document
 # Run all tests
 pytest tests/ -v
 
-# Every run ends with a coverage report on the terminal (configured in pytest.ini):
+# Every run ends with a coverage report on the terminal (configured in pyproject.toml):
 # the files that are not fully covered, with the missing line numbers.
 # Add an HTML report too:
 pytest tests/ --cov-report=html          # open htmlcov/index.html
@@ -368,19 +368,6 @@ module-level import binds the original before the patch and quietly puts real `i
 ---
 
 ## CI/CD Integration
-
-### Using run-tests.sh
-
-```bash
-# The project includes a test runner script
-./run-tests.sh
-
-# This script typically:
-# 1. Sets up virtual environment if needed
-# 2. Runs pytest with standard options
-# 3. Generates coverage reports
-# 4. Returns appropriate exit code for CI/CD
-```
 
 ### Continuous Testing
 
