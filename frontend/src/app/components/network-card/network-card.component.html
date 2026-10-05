@@ -69,8 +69,9 @@
           <span class="label">Band:</span>
           <span class="value">{{ status?.band }}</span>
         </div>
-        <div class="info-row" *ngIf="status?.tx_power?.requested_level !== undefined && status?.tx_power?.requested_level !== null">
-          <span class="label">TX Power requested/reported:</span>
+        <div class="info-row" *ngIf="status?.tx_power?.requested_level !== undefined && status?.tx_power?.requested_level !== null"
+             title="TX power control could not be made to work with the USB dongles tested so far, so the reported level is not guaranteed.">
+          <span class="label">⚠️ TX Power requested/reported:</span>
           <span class="value">{{ status?.tx_power?.requested_level }}/{{ status?.tx_power?.reported_level ?? '-' }}</span>
         </div>
         <div class="clients-section">
