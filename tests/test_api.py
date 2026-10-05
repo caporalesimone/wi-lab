@@ -45,7 +45,7 @@ def reservation_id(client, valid_token, monkeypatch):
     resp = client.post(
         '/api/v1/device-reservation',
         headers={'Authorization': valid_token},
-        json={'duration_seconds': 3600, 'required_capabilities': []},
+        json={'duration_seconds': 3600, 'required_capabilities': ['2.4ghz']},
     )
     assert resp.status_code == 200
     return resp.json()['reservation_id']
@@ -281,7 +281,7 @@ class TestAuthentication:
     
     def test_request_without_auth(self, client):
         """A protected endpoint rejects a request that carries no token."""
-        resp = client.post('/api/v1/device-reservation', json={'duration_seconds': 3600, 'required_capabilities': []})
+        resp = client.post('/api/v1/device-reservation', json={'duration_seconds': 3600, 'required_capabilities': ['2.4ghz']})
         assert resp.status_code == 401
     
     def test_start_network_without_auth(self, client, reservation_id):
@@ -994,7 +994,7 @@ class TestReservationRequiredForOperations:
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 3600, 'required_capabilities': []},
+            json={'duration_seconds': 3600, 'required_capabilities': ['2.4ghz']},
         )
         rid = resp.json()['reservation_id']
         client.delete(
@@ -1140,7 +1140,7 @@ class TestUnlimitedReservationAPI:
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 0, 'required_capabilities': []},
+            json={'duration_seconds': 0, 'required_capabilities': ['2.4ghz']},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -1157,7 +1157,7 @@ class TestUnlimitedReservationAPI:
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 0, 'required_capabilities': []},
+            json={'duration_seconds': 0, 'required_capabilities': ['2.4ghz']},
         )
         assert resp.status_code == 422
 
@@ -1172,7 +1172,7 @@ class TestUnlimitedReservationAPI:
         create_resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 0, 'required_capabilities': []},
+            json={'duration_seconds': 0, 'required_capabilities': ['2.4ghz']},
         )
         assert create_resp.status_code == 200
         reservation_id = create_resp.json()['reservation_id']
@@ -1199,7 +1199,7 @@ class TestUnlimitedReservationAPI:
         create_resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 0, 'required_capabilities': []},
+            json={'duration_seconds': 0, 'required_capabilities': ['2.4ghz']},
         )
         assert create_resp.status_code == 200
         reservation_id = create_resp.json()['reservation_id']
@@ -1223,7 +1223,7 @@ class TestUnlimitedReservationAPI:
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': cfg.min_timeout - 1, 'required_capabilities': []},
+            json={'duration_seconds': cfg.min_timeout - 1, 'required_capabilities': ['2.4ghz']},
         )
         assert resp.status_code == 422
 
@@ -1236,7 +1236,7 @@ class TestUnlimitedReservationAPI:
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': cfg.max_timeout + 1, 'required_capabilities': []},
+            json={'duration_seconds': cfg.max_timeout + 1, 'required_capabilities': ['2.4ghz']},
         )
         assert resp.status_code == 422
 
@@ -1267,7 +1267,7 @@ class TestUnlimitedReservationAPI:
         resp = client.post(
             '/api/v1/device-reservation',
             headers={'Authorization': valid_token},
-            json={'duration_seconds': 0, 'required_capabilities': []},
+            json={'duration_seconds': 0, 'required_capabilities': ['2.4ghz']},
         )
         assert resp.status_code == 200
 

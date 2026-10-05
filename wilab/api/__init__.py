@@ -86,7 +86,7 @@ OPENAPI_TAGS = [
         "name": "Reservation",
         "description": (
             "Every other operation needs a **reservation**. State which capabilities you need "
-            "(`2.4ghz`, `5ghz`, or both; `[]` means any device) and for how long; Wi-Lab picks the device "
+            "(`2.4ghz`, `5ghz`, or both: at least one is required) and for how long; Wi-Lab picks the device "
             "and returns a `reservation_id`, which identifies you in all the other endpoints. "
             "Reservations expire on their own, unless unlimited reservations are enabled and you "
             "asked for one. **409** means every suitable device is busy (retry later); **422** "

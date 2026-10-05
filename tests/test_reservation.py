@@ -220,7 +220,7 @@ class TestReservationAPICreate:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -235,7 +235,7 @@ class TestReservationAPICreate:
     def test_create_reservation_requires_auth(self, client):
         resp = client.post(
             "/api/v1/device-reservation",
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 401
 
@@ -243,7 +243,7 @@ class TestReservationAPICreate:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 0, "required_capabilities": []},
+            json={"duration_seconds": 0, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 422
 
@@ -251,7 +251,7 @@ class TestReservationAPICreate:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": -10, "required_capabilities": []},
+            json={"duration_seconds": -10, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 422
 
@@ -264,13 +264,13 @@ class TestReservationAPICreate:
             client.post(
                 "/api/v1/device-reservation",
                 headers={"Authorization": valid_token},
-                json={"duration_seconds": 120, "required_capabilities": []},
+                json={"duration_seconds": 120, "required_capabilities": ["2.4ghz"]},
             )
         # Try one more — should get 409
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 409
         data = resp.json()["detail"]
@@ -288,7 +288,7 @@ class TestReservationAPIGet:
         create_resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = create_resp.json()["reservation_id"]
 
@@ -322,7 +322,7 @@ class TestReservationAPIDelete:
         create_resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = create_resp.json()["reservation_id"]
 
@@ -349,7 +349,7 @@ class TestReservationAPIDelete:
         create_resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = create_resp.json()["reservation_id"]
         client.delete(
@@ -393,7 +393,7 @@ class TestReservationAPIDeleteAll:
         client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         resp = client.delete(
             "/api/v1/device-reservation",
@@ -420,7 +420,7 @@ class TestReservationAPIDeleteAll:
         client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         client.delete(
             "/api/v1/device-reservation",
@@ -429,7 +429,7 @@ class TestReservationAPIDeleteAll:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 200
 
@@ -516,7 +516,7 @@ class TestReservationDeleteStopsNetwork:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = resp.json()["reservation_id"]
         device_id = resp.json()["interface"]
@@ -546,7 +546,7 @@ class TestReservationDeleteStopsNetwork:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = resp.json()["reservation_id"]
 
@@ -566,7 +566,7 @@ class TestReservationDeleteStopsNetwork:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = resp.json()["reservation_id"]
         device_id = resp.json()["interface"]
@@ -599,7 +599,7 @@ class TestReservationDeleteStopsNetwork:
         r1 = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         ).json()
 
         mgr = self._ensure_manager(client, valid_token)
@@ -627,7 +627,7 @@ class TestReservationDeleteStopsNetwork:
         client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600, "required_capabilities": []},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
 
         mgr = self._ensure_manager(client, valid_token)
@@ -664,14 +664,14 @@ class TestTimestampConsistency:
             client.post(
                 "/api/v1/device-reservation",
                 headers={"Authorization": valid_token},
-                json={"duration_seconds": 3600, "required_capabilities": []},
+                json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
             )
         expected = datetime.now(tz=timezone.utc) + timedelta(seconds=3600)
 
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 60, "required_capabilities": []},
+            json={"duration_seconds": 60, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 409
         rendered = resp.json()["detail"]["next_available_at"]
@@ -688,14 +688,14 @@ class TestTimestampConsistency:
             r = client.post(
                 "/api/v1/device-reservation",
                 headers={"Authorization": valid_token},
-                json={"duration_seconds": 3600, "required_capabilities": []},
+                json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
             )
             ids.append(r.json()["reservation_id"])
 
         refused = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 60, "required_capabilities": []},
+            json={"duration_seconds": 60, "required_capabilities": ["2.4ghz"]},
         )
         eta = refused.json()["detail"]["next_available_at"]
 
@@ -748,14 +748,14 @@ class TestUnlimitedReservationsHaveNoETA:
             r = client.post(
                 "/api/v1/device-reservation",
                 headers={"Authorization": token},
-                json={"duration_seconds": 0, "required_capabilities": []},
+                json={"duration_seconds": 0, "required_capabilities": ["2.4ghz"]},
             )
             assert r.status_code == 200, r.text
 
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": token},
-            json={"duration_seconds": 60, "required_capabilities": []},
+            json={"duration_seconds": 60, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 409
         detail = resp.json()["detail"]

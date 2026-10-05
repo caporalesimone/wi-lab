@@ -29,6 +29,7 @@ router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
 # from the registry so the documentation cannot drift from what the server accepts.
 _CAPABILITIES_SCHEMA_EXTRA: Dict[str, Any] = {
     "items": {"type": "string", "enum": Capability.ids()},
+    "minItems": 1,
     "example": ["2.4ghz", "5ghz"],
 }
 
@@ -46,7 +47,7 @@ class ReservationCreateRequest(BaseModel):
         ...,
         description=(
             "Capabilities the assigned device must provide. REQUIRED: a client must state "
-            "what it needs. An empty list explicitly means \"any device\". "
+            "what it needs: at least one capability must be listed. "
             "Possible values: "
             "`2.4ghz` (the device can operate an access point in the 2.4 GHz band) and "
             "`5ghz` (the same, in the 5 GHz band). "
@@ -71,12 +72,17 @@ class ReservationCreateRequest(BaseModel):
     @field_validator("required_capabilities")
     @classmethod
     def validate_capability_ids(cls, v: List[str]) -> List[str]:
-        """Canonicalise and validate ids against the same registry the config uses.
+        """Require at least one id, canonicalise and validate them against the registry.
 
         Normalisation goes through the shared normalise_capability_id(), so the file and
         the wire cannot drift on "5GHz". The result is de-duplicated and sorted, which
         makes the endpoint independent of client-side ordering.
         """
+        if not v:
+            raise ValueError(
+                "At least one capability is required. "
+                f"Choose from: {', '.join(Capability.ids())}"
+            )
         canonical = [normalise_capability_id(c) for c in v]
         unknown = sorted({c for c in canonical if c not in Capability.ids()})
         if unknown:
@@ -148,12 +154,6 @@ _RESERVATION_REQUEST_EXAMPLES: Dict[str, Any] = {
                        "offers nothing more, keeping dual-band devices free.",
         "value": {"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
     },
-    "any_device": {
-        "summary": "Any device",
-        "description": "No requirement: `required_capabilities` is mandatory but may be empty. "
-                       "Wi-Lab assigns the least capable free device.",
-        "value": {"duration_seconds": 900, "required_capabilities": []},
-    },
     "unlimited": {
         "summary": "Unlimited reservation",
         "description": "`duration_seconds: 0`, accepted only when `allow_unlimited_reservation` "
@@ -219,6 +219,11 @@ _RESERVATION_CREATE_RESPONSES: dict = {
                 "summary": "Unknown field, e.g. the removed `interface`",
                 "value": {"detail": "interface: Extra inputs are not permitted"},
             },
+            "empty_capabilities": {
+                "summary": "No capability requested",
+                "value": {"detail": "required_capabilities: Value error, At least one capability "
+                                    "is required. Choose from: 2.4ghz, 5ghz"},
+            },
             "unknown_capability": {
                 "summary": "Capability id that does not exist",
                 "value": {"detail": "required_capabilities: Value error, Unknown capabilities: "
@@ -263,9 +268,9 @@ async def create_reservation(
     Possible capabilities: **`2.4ghz`** and **`5ghz`** (the bands a device can operate an
     access point in). List both to require a dual-band device.
 
-    Both `duration_seconds` and `required_capabilities` are **mandatory** (`[]` means "any
-    device"); a request missing either is rejected with 422 listing every missing field.
-    Unknown fields are rejected too.
+    Both `duration_seconds` and `required_capabilities` are **mandatory**, and at least one
+    capability must be listed: a request missing a field, or with an empty list, is rejected
+    with 422. Unknown fields are rejected too.
 
     Read `interface` and `capabilities` from the response to know what you got, then use
     `reservation_id` with the other endpoints. Creating a network on a band the device does

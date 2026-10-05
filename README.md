@@ -115,9 +115,17 @@ dual-band adapter to keep that band for another bench.
 | At least one `true` | A device with no enabled band could never host an access point |
 
 When a reservation requests capabilities, Wi-Lab picks the **least capable free device**
-that satisfies them. With no capabilities requested, any free device will do — and the
-same "least capable first" rule applies, so scarce dual-band hardware is left alone
-whenever a simpler adapter would do.
+that satisfies them: the device with the **fewest extra capabilities**, so scarce dual-band
+hardware is left alone whenever a simpler adapter would do. A reservation must request at
+least one capability. Examples with a pool of a 5 GHz-only, a 2.4 GHz-only and a dual-band
+device:
+
+| You request | You get |
+|---|---|
+| `["5ghz"]` | the 5 GHz-only device if free, otherwise the dual-band one (its capabilities, both bands, are reported) |
+| `["2.4ghz"]` | the 2.4 GHz-only device if free, otherwise the dual-band one |
+| `["2.4ghz", "5ghz"]` | the dual-band device |
+| `["5ghz"]` when no device has 5 GHz | an error (`422`): it will never work, change the request |
 
 > **Warning:** `dhcp_base_network` must use a subnet different from your host LAN. A conflict will break host networking and may require a physical reboot.
 
@@ -210,11 +218,11 @@ All requests require the header `Authorization: Bearer <auth_token>`.
 
 ```bash
 # 1. Reserve a device for 15 minutes (900 seconds). Both fields are mandatory:
-#    required_capabilities lists what you need, [] meaning "any device"
+#    required_capabilities lists what you need (at least one: "2.4ghz" and/or "5ghz")
 curl -X POST http://localhost:8080/api/v1/device-reservation \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
-  -d '{"duration_seconds": 900, "required_capabilities": []}'
+  -d '{"duration_seconds": 900, "required_capabilities": ["2.4ghz"]}'
 
 # Response:
 # {

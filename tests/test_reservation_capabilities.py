@@ -57,7 +57,7 @@ def token():
 
 def reserve(client, token, **body):
     body.setdefault("duration_seconds", 60)
-    body.setdefault("required_capabilities", [])
+    body.setdefault("required_capabilities", ["2.4ghz"])
     return client.post(
         "/api/v1/device-reservation",
         headers={"Authorization": token},
@@ -116,6 +116,34 @@ class TestSelectionRules:
         mgr = ReservationManager(device_specs(["dev0", "dev1"]))
         assert mgr.create(60).device_id == "dev0"
         assert mgr.create(60).device_id == "dev1"
+
+
+class TestAssignmentRules:
+    """The four rules a user can rely on."""
+
+    def test_5ghz_only_device_is_assigned_for_5ghz(self):
+        mgr = ReservationManager(_pool(("only5", {C5})))
+        r = mgr.create(60, required_capabilities={C5})
+        assert r.device_id == "only5"
+
+    def test_dual_band_device_is_assigned_for_5ghz_and_reports_both(self):
+        pool = _pool(("dual", {C24, C5}))
+        mgr = ReservationManager(pool)
+        r = mgr.create(60, required_capabilities={C5})
+        assert r.device_id == "dual"
+        assert pool[0].capabilities == frozenset({C24, C5})
+
+    def test_requesting_a_band_no_device_has_is_an_error(self):
+        mgr = ReservationManager(_pool(("only5", {C5})))
+        with pytest.raises(CapabilityUnsatisfiableError) as exc:
+            mgr.create(60, required_capabilities={C24})
+        assert exc.value.available == ["5ghz"]
+
+    def test_the_device_with_fewest_extra_capabilities_is_preferred(self):
+        """5 GHz request, pool [dual, 5-only]: the 5-only one first, the dual when it is busy."""
+        mgr = ReservationManager(_pool(("dual", {C24, C5}), ("only5", {C5})))
+        assert mgr.create(60, required_capabilities={C5}).device_id == "only5"
+        assert mgr.create(60, required_capabilities={C5}).device_id == "dual"
 
 
 class TestCapacityVersusImpossibility:
@@ -248,10 +276,12 @@ class TestReservationApiSelection:
         assert body["interface"] == "wls16"
         assert body["capabilities"] == ["2.4ghz", "5ghz"]
 
-    def test_empty_list_means_any_device_and_gets_the_least_capable(self, client, token):
+    def test_an_empty_capability_list_is_rejected(self, client, token):
+        """The client must say what it needs: there is no "any device" request."""
         resp = reserve(client, token, required_capabilities=[])
-        assert resp.status_code == 200
-        assert resp.json()["interface"] == "wls17"
+        assert resp.status_code == 422
+        assert "At least one capability is required" in resp.json()["detail"]
+        assert "2.4ghz" in resp.json()["detail"] and "5ghz" in resp.json()["detail"]
 
     def test_ids_are_case_insensitive_and_de_duplicated(self, client, token):
         resp = reserve(client, token, required_capabilities=["5GHz", " 5ghz ", "5ghz"])
@@ -301,7 +331,7 @@ class TestRequiredFields:
         """`interface` was removed: it is rejected, not silently ignored."""
         resp = self.post(
             client, token,
-            {"duration_seconds": 3600, "required_capabilities": [], "interface": "wls18"},
+            {"duration_seconds": 3600, "required_capabilities": ["2.4ghz"], "interface": "wls18"},
         )
         assert resp.status_code == 422
         assert "interface" in resp.json()["detail"]
@@ -347,7 +377,7 @@ class TestOpenApiCompatibility:
     def test_reservation_endpoint_is_documented_with_examples(self, client):
         schema = client.get("/openapi.json").json()
         op = schema["paths"]["/api/v1/device-reservation"]["post"]
-        assert {"any_device", "needs_5ghz"} <= set(
+        assert {"dual_band", "needs_5ghz", "needs_2_4ghz"} <= set(
             op["requestBody"]["content"]["application/json"]["examples"]
         )
         examples = {

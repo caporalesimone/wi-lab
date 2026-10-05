@@ -39,7 +39,7 @@ client written against 3.x, which sends only `duration_seconds`, is rejected wit
 | Field | Type | Notes |
 |-------|------|-------|
 | `duration_seconds` | `int` | **Required.** `0` = unlimited, when allowed by config |
-| `required_capabilities` | `string[]` | **Required.** Capabilities the assigned device must provide; `[]` explicitly means any device. `null` is rejected |
+| `required_capabilities` | `string[]` | **Required, at least one.** Capabilities the assigned device must provide: `2.4ghz` and/or `5ghz`. An empty list and `null` are rejected |
 
 Capability ids are case-insensitive and whitespace-tolerant (`"5GHz"` is accepted); the
 list is de-duplicated and sorted before use, so the outcome does not depend on the order

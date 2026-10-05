@@ -44,7 +44,7 @@ def reservation_id(client, valid_token, monkeypatch):
     resp = client.post(
         '/api/v1/device-reservation',
         headers={'Authorization': valid_token},
-        json={'duration_seconds': 3600, 'required_capabilities': []},
+        json={'duration_seconds': 3600, 'required_capabilities': ['2.4ghz']},
     )
     assert resp.status_code == 200
     return resp.json()['reservation_id']

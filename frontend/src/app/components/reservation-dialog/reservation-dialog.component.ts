@@ -133,11 +133,12 @@ export class ReservationDialogComponent {
   }
 
   public get matchSummary(): string {
+    if (this.selectedCapabilities.length === 0) {
+      return 'Select at least one capability';
+    }
     const n = this.matchingDeviceCount;
     if (n === 0) {
-      return this.selectedCapabilities.length
-        ? 'No free device provides all the selected capabilities'
-        : 'No device is currently free';
+      return 'No free device provides all the selected capabilities';
     }
     return `${n} device${n === 1 ? '' : 's'} match${n === 1 ? 'es' : ''} your selection`;
   }
@@ -181,15 +182,17 @@ export class ReservationDialogComponent {
     if (!durationOk) {
       return false;
     }
-    return this.matchingDeviceCount > 0;
+    // At least one capability must be chosen: a request that says nothing about what is
+    // needed is not allowed.
+    return this.selectedCapabilities.length > 0 && this.matchingDeviceCount > 0;
   }
 
   public onSubmit(): void {
     if (!this.canSubmit) {
       return;
     }
-    // required_capabilities is mandatory on the API: always sent, empty meaning "any
-    // device". The client states only what it needs; Wi-Lab picks the device.
+    // required_capabilities is mandatory on the API and must name at least one capability.
+    // The client states only what it needs; Wi-Lab picks the device.
     const request: ReservationRequest = {
       duration_seconds: this.isUnlimited ? 0 : this.form.get('duration_seconds')!.value,
       required_capabilities: this.selectedCapabilities

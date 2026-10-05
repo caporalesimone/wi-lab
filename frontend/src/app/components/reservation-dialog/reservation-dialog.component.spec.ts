@@ -82,10 +82,10 @@ describe('ReservationDialogComponent', () => {
   });
 
   describe('payload', () => {
-    it('always sends required_capabilities, empty meaning "any device"', () => {
+    it('sends nothing when no capability is selected', () => {
       const { component, closed } = makeDialog();
       component.onSubmit();
-      expect(closed[0]).toEqual({ duration_seconds: 3600, required_capabilities: [] });
+      expect(closed).toEqual([]);
     });
 
     it('sends the selected capabilities and nothing else to choose a device', () => {
@@ -97,23 +97,34 @@ describe('ReservationDialogComponent', () => {
 
     it('still produces duration_seconds 0 for an unlimited reservation', () => {
       const { component, closed } = makeDialog();
+      component.toggleCapability('2.4ghz', true);
       component.form.get('unlimited')!.setValue(true);
       component.onUnlimitedChange();
       component.onSubmit();
-      expect(closed[0]).toEqual({ duration_seconds: 0, required_capabilities: [] });
+      expect(closed[0]).toEqual({ duration_seconds: 0, required_capabilities: ['2.4ghz'] });
     });
   });
 
   describe('canSubmit', () => {
+    it('is false until at least one capability is selected', () => {
+      const { component } = makeDialog();
+      expect(component.canSubmit).toBe(false);
+      expect(component.matchSummary).toBe('Select at least one capability');
+      component.toggleCapability('2.4ghz', true);
+      expect(component.canSubmit).toBe(true);
+    });
+
     it('is false when no free device matches', () => {
       const { component } = makeDialog({
         devices: DEVICES.map(d => ({ ...d, reserved: true }))
       });
+      component.toggleCapability('2.4ghz', true);
       expect(component.canSubmit).toBe(false);
     });
 
     it('is false when the duration is out of policy bounds', () => {
       const { component } = makeDialog();
+      component.toggleCapability('2.4ghz', true);
       component.form.get('duration_seconds')!.setValue(5);
       expect(component.canSubmit).toBe(false);
     });

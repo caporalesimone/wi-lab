@@ -533,7 +533,7 @@ class TestQosProfileAPI:
         resp = client.post(
             "/api/v1/device-reservation",
             headers=auth_headers,
-            json={"duration_seconds": 300, "required_capabilities": []},
+            json={"duration_seconds": 300, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 200, resp.text
         rid = resp.json()["reservation_id"]

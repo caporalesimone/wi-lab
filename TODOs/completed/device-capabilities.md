@@ -163,10 +163,10 @@ way to request a specific device (that option was designed, built and then remov
 The user states *what they need* — e.g. "2.4 GHz only". The system picks the best
 device on their behalf, preferring the least capable one that fits.
 
-**B. No preference (scripting)**
-`required_capabilities` is sent **empty**. Equivalent to "no requirements": any free
-device is acceptable, and the least capable free one is assigned. Since 4.0.0 this is
-stated explicitly: leaving the field out is an error, not a synonym.
+**There is no "no preference" request.** `required_capabilities` must list at least one
+capability: a client that does not know what it needs is not given a guess, and an empty
+list is rejected just like a missing field (revised in 4.0.0; an earlier draft let `[]`
+mean "any device").
 
 ### 2.5 Worked example (the requester's scenario)
 
@@ -987,11 +987,10 @@ Design notes:
 class ReservationCreateRequest(BaseModel):
     duration_seconds: int
     required_capabilities: List[str] = Field(
-        ...,                               # REQUIRED since 4.0.0; [] means "any device"
+        ...,                               # REQUIRED since 4.0.0, at least one item
         description=(
-            "Capabilities the assigned device must provide. Mandatory: an empty list "
-            "explicitly means any device is acceptable. The least capable matching "
-            "free device is assigned."
+            "Capabilities the assigned device must provide. Mandatory and non-empty. "
+            "The least capable matching free device is assigned."
         ),
         json_schema_extra={"example": ["2.4ghz"]},
     )
@@ -1034,7 +1033,8 @@ Validation notes:
 > **`required_capabilities` is mandatory** (revised in 4.0.0; the first draft kept it
 > optional). A client that does not say what it needs is not given a silent guess: it is
 > rejected with `422` and `Missing required field(s): required_capabilities`, listing
-> every missing field at once. `null` is rejected too; `[]` is the explicit "any device".
+> every missing field at once. `null` and the empty list are rejected too: at least one
+> capability must be named.
 > See [D16](#15-design-decisions--rejected-alternatives).
 
 Request examples:
@@ -1044,11 +1044,6 @@ Request examples:
 curl -X POST http://localhost:8080/api/v1/device-reservation \
   -H "Authorization: Bearer change-me" -H "Content-Type: application/json" \
   -d '{"duration_seconds": 900, "required_capabilities": ["5ghz"]}'
-
-# B. no preference — explicit empty list
-curl -X POST http://localhost:8080/api/v1/device-reservation \
-  -H "Authorization: Bearer change-me" -H "Content-Type: application/json" \
-  -d '{"duration_seconds": 900, "required_capabilities": []}'
 
 # Rejected (3.x client): 422 "Missing required field(s): required_capabilities"
 curl -X POST http://localhost:8080/api/v1/device-reservation \
@@ -1360,7 +1355,7 @@ export interface StatusResponse {
 
 export interface ReservationRequest {
   duration_seconds: number;
-  required_capabilities: CapabilityId[];    // NEW, mandatory ([] = any device)
+  required_capabilities: CapabilityId[];    // NEW, mandatory, at least one
   interface?: string;                       // NEW
 }
 
@@ -1438,14 +1433,14 @@ Behaviour:
   It reports **feasibility only** — it deliberately does **not** predict *which* device
   will be assigned. Reimplementing the minimality tie-break in TypeScript would create
   a second copy of the allocation rule that silently drifts from the backend.
-* **Reserve** is disabled when `matchingDeviceCount === 0`.
-* `onSubmit()` always emits `required_capabilities` (empty = any device) and the duration.
+* **Reserve** is disabled until at least one capability is ticked, and when
+  `matchingDeviceCount === 0`.
+* `onSubmit()` always emits `required_capabilities` (never empty) and the duration.
 * **Accessibility:** the capability checkbox list needs a `role="group"` with a labelled
   heading. The existing dialog is keyboard-navigable and this one must not regress that.
 
-Ticking **no boxes** is legal and means "no requirement" —
-identical to today's behaviour, mapped to case C of
-[§2.4](#24-user-facing-behaviour) (sent as `required_capabilities: []`).
+Ticking **no boxes** is not allowed: the summary line reads "Select at least one capability"
+and Reserve stays disabled.
 
 ### 8.3 `app.component.ts`
 
@@ -1591,7 +1586,7 @@ compatibility mode.
 | Aspect | Impact |
 |--------|--------|
 | Existing `config.yaml` | **Requires a one-time completion pass** — see [§11.1](#111-upgrading-an-existing-installation). Every schema key becomes mandatory, capabilities included. |
-| Existing API clients (`{"duration_seconds": N}`) | **Rejected with `422`** (`Missing required field(s): required_capabilities`). Clients must send `required_capabilities`, `[]` meaning "any device". |
+| Existing API clients (`{"duration_seconds": N}`) | **Rejected with `422`** (`Missing required field(s): required_capabilities`). Clients must send `required_capabilities` with at least one capability; an empty list is rejected too. |
 | Responses | `capabilities` is always present on reservation responses, `networks[]` and `/debug`; `capabilities_catalogue` is always present on `/status`. In a 409 body `next_available_at` / `next_available_in` can be `null` ([§7.1](#71-wilabreservationpy)) and `next_available_at` is UTC ([§7.3](#73-wilabapiroutesreservationpy)). |
 | `ReservationManager(...)` | Takes `DeviceSpec` only; plain strings are no longer accepted. |
 | Frontend | Requires the 4.0.0 API; there are no "pre-capabilities backend" fallbacks. Reservations restored from `localStorage` are re-fetched from `GET /device-reservation/{rid}`, so they always carry `capabilities`. |
@@ -1636,10 +1631,11 @@ release notes: **`config.yaml` must be completed before upgrading**, and
 ### 11.2 Allocation policy
 
 The assigned device is the *least capable free device* that satisfies the request, with
-declaration order as the tie-break — also for `required_capabilities: []`. Given a pool
-of `[dual, 2.4-only]`, an unqualified request gets the 2.4-only adapter and the scarce
-dual-band one stays free for those who ask for 5 GHz. A 3.x client that relied on "first
-free in configuration order" must state its needs with `required_capabilities`.
+declaration order as the tie-break. Given a pool of `[dual, 2.4-only]`, a `["2.4ghz"]`
+request gets the 2.4-only adapter and the scarce dual-band one stays free for those who ask
+for 5 GHz; with a pool `[dual, 5-only]` a `["5ghz"]` request gets the 5-only one first and
+the dual-band one when it is busy. A 3.x client that relied on "first free in configuration
+order" must state its needs with `required_capabilities`.
 
 *Rejected alternative:* keep strict declaration order for requests with no capability
 requirement. Two allocation policies would coexist, and unattended scripts would be the
@@ -1804,7 +1800,9 @@ capability adds rows rather than test functions:
 - [ ] A 3.x body `{"duration_seconds": 900}` is rejected: 422, `Missing required field(s):
       required_capabilities`, and nothing is reserved
 - [ ] Every missing field is listed at once; `required_capabilities: null` is rejected
-- [ ] `required_capabilities: []` means any device and gets the least capable one
+- [ ] `required_capabilities: []` is rejected with 422 ("At least one capability is required")
+- [ ] Pool `[5-only]`: `["5ghz"]` gets it; `["2.4ghz"]` is an error. Pool `[dual, 5-only]`: `["5ghz"]`
+      gets the 5-only device first, then the dual-band one
 - [ ] Mixed-case ids (`["5GHz"]`) accepted; duplicates de-duplicated
 - [ ] Unknown capability → 422 listing valid ids
 - [ ] Unsatisfiable set → 422 (**not** 409 — assert the status code explicitly)
@@ -1830,7 +1828,7 @@ continuing to rely entirely on manual checks:
 - [ ] `matchingDeviceCount` for: no selection, one capability, two capabilities, a
       selection nothing satisfies, all devices reserved
 - [ ] Mode switch clears the other control, so the payload never carries both fields
-- [ ] `onSubmit()` emits `{duration_seconds}` only, in capability mode with nothing ticked
+- [ ] Reserve is disabled, and `onSubmit()` emits nothing, with nothing ticked
 - [ ] Unlimited checkbox still produces `duration_seconds: 0`
 
 Remaining manual verification: capability grouping by kind, disabled Reserve at zero
@@ -2134,7 +2132,7 @@ Cannot be performed on a Windows workstation. Full list and rationale in
 | D12 | Capability ids reuse the `band` vocabulary (`2.4ghz`, `5ghz`) | One vocabulary across config, reservation API and `NetworkCreateRequest.band` | New ids like `band_24` — a mapping layer with nothing to gain |
 | D13 | Selection = minimal surplus, tie-broken by declaration order | Implements "reserve the minimum necessary"; deterministic; degenerates exactly to today's behaviour on a homogeneous pool | Random pick (untestable); pure declaration order (wastes scarce hardware — P3) |
 | D14 | The tie-break is **explicit**, though `min()` already provides it | Makes the property intentional and testable, and survives a refactor to `sorted()` or a parallel scan | Rely on `min()` returning the first minimum — correct today, silently fragile |
-| D15 | The minimality rule also applies when no capabilities are requested | One allocation policy is easier to explain, test and reason about; protects scarce hardware from clients that state no requirement | Two policies — unattended CI scripts would be the ones burning dual-band adapters |
+| D15 | The minimality rule: fewest extra capabilities wins | One allocation policy is easier to explain, test and reason about; protects scarce hardware from clients that state no requirement | Two policies — unattended CI scripts would be the ones burning dual-band adapters |
 | D16 | Config keys are mandatory **and so is `required_capabilities`** (revised for 4.0.0; originally optional) | A client that does not say what it needs must not be handed a guess; a clear 4xx beats an unclear behaviour. A 3.x client fails fast and visibly instead of intermittently getting a device without its band | Keep it optional with a default (the first draft) — silent mis-allocation for clients that never learned about capabilities |
 | D17 | *(Removed in 4.0.0)* `interface` and `required_capabilities` could be combined | The `interface` field no longer exists — [§18.8](#188-revision--choosing-a-specific-antenna-was-removed) | — |
 | D18 | Unsatisfiable → 422, all-busy → 409 | 422 = "never going to work", 409 = "works later". The countdown timer is driven by 409 and must not fire on a permanent failure | One status for both — the UI counts down toward an availability that never arrives |
@@ -2403,7 +2401,7 @@ kept as history):
 
 | Area | Before | Now |
 |---|---|---|
-| `POST /device-reservation` | `required_capabilities` and `interface` optional | `required_capabilities` **required** (`[]` = any device); `interface` removed in §18.8. A missing field gives `422` `Missing required field(s): ...`, all fields listed at once |
+| `POST /device-reservation` | `required_capabilities` and `interface` optional | `required_capabilities` **required**, at least one capability; `interface` removed in §18.8. A missing field gives `422` `Missing required field(s): ...`, all fields listed at once |
 | `ReservationManager` | accepted `DeviceSpec` or plain `str` | `DeviceSpec` only; tests use `tests/helpers.py::device_specs()` |
 | Frontend | tolerated a backend without capabilities (`?? []`, optional TS fields, "all bands" fallback in the network form) | requires the 4.0.0 API; fields are mandatory in the models; the reservation dialog always sends `required_capabilities` |
 | Version | 3.1.0 | 4.0.0 (`VERSION`, `frontend/package.json`, lockfile) |
@@ -2444,8 +2442,8 @@ restart. The service refuses to start on an incomplete file.
 ### What an API client must do
 
 1. **Add `required_capabilities` to every `POST /device-reservation`.** List what you
-   need (`["5ghz"]`), or send `[]` for "any device". Omitting it, or sending `null`, is
-   rejected.
+   need (`["5ghz"]`, `["2.4ghz", "5ghz"]`). Omitting it, sending `null` or an empty list
+   is rejected.
 2. **Handle the new error cases** (the 422 variants and 409 with a `null` ETA, below).
 3. **Stop assuming which device you get.** You cannot choose the antenna: state what you
    need and read `interface` and `capabilities` from the response.
@@ -2460,7 +2458,6 @@ restart. The service refuses to start on an incomplete file.
 -d '{"duration_seconds": 3600}'              {"detail": "Missing required field(s): required_capabilities"}
 
 # 4.0.0
--d '{"duration_seconds": 3600, "required_capabilities": []}'       # any device
 -d '{"duration_seconds": 3600, "required_capabilities": ["5ghz"]}' # needs 5 GHz
 ```
 
