@@ -79,8 +79,8 @@ older document, this file wins; the design document
 - Change the version only with `./scripts/update_version.sh --bump-to X.Y.Z`: it updates `VERSION`,
   `frontend/package.json` and `frontend/package-lock.json` together and refuses a version that is not
   greater than the current one. It can be run from any directory.
-- Every user-visible change goes in `CHANGELOG.md` (Breaking Changes first). Breaking changes for API
-  clients are explained in section 19 "Migration from older versions" of the design document.
+- Breaking changes for API clients are explained in section 19 "Migration from older versions" of the
+  design document.
 - Keep README, `docs/`, `config.example.yaml`, Swagger text and the design document consistent with
   the code in the same change. Do not leave a statement that is no longer true.
 
@@ -133,7 +133,7 @@ older document, this file wins; the design document
 - **Run retention:** only the **3 most recent runs of each pull request** are kept; older ones are
   deleted by the last CI job (`scripts/cleanup_pr_runs.py`), with no age rule. There is no cron: nothing
   must run while the project is idle. Runs on `main`, releases and manual runs are never deleted.
-- The `api-docs` artifact expires after **1 day in pull requests only**; on `main` it keeps the default.
+- The `wi-lab-api-docs-<version>` artifact expires after **1 day in pull requests only**; on `main` it keeps the default.
 - Do not add scheduled workflows without asking: the project has very little maintenance and
   resources must not be wasted.
 
@@ -142,3 +142,23 @@ older document, this file wins; the design document
 - Working-tree files use CRLF (Windows); some are LF. Preserve whatever a file already uses when editing
   (edits must not rewrite whole files). Git prints "LF will be replaced by CRLF" warnings: ignore them.
 - Generated output (`api-docs/`, `htmlcov/`, `.coverage`) is gitignored; never commit it.
+
+## Changelog (`CHANGELOG.md`)
+
+- **Where a change goes:** until a release is made, or unless the maintainer asks otherwise, every change
+  goes in the `[Unreleased]` section. If the version was already bumped during development (before the
+  pull request is merged), later changes go in that version. Only closing the PR and the branch ends a
+  version.
+- **`[Unreleased]` must not exist** when the work on the branch is finished: its entries belong to the
+  version.
+- **Format of a version:** `[x.y.z] - yyyy-mm-dd`. Whenever you edit a version that already has a date,
+  update the date to today.
+- **Sections**, in this order: Breaking Changes, Features, Bug Fixes, Maintenance, CI/CD, Tests. Write
+  only the sections that have something to say. Breaking Changes always come first.
+- **CI/CD** describes what changed in the pipelines and releases (workflows, artifacts, run retention),
+  as descriptive bullet points like every other section.
+- **Tests** are listed only for interesting changes or additions that give significant value. Never
+  list every test added: it is noise.
+- **Style:** short bullet points. The purpose is to let the user of the product understand what changes
+  in this release. Keep low-level, low-impact changes to the bare minimum. Do not say that a class or a
+  function changed: say what the change is for. Changes and additions to the API deserve more detail.

@@ -70,9 +70,14 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Generate openapi.json, swagger.html and redoc.html
         run: python scripts/export_api_docs.py --out api-docs
+      - name: Name the artifact after the zip (it carries the version)
+        id: bundle
+        run: |
+          zip=$(basename api-docs/wi-lab-api-docs-*.zip)
+          echo "name=${zip%.zip}" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
-          name: api-docs
+          name: ${{ steps.bundle.outputs.name }}
           path: api-docs/wi-lab-api-docs-*.zip
           # Short-lived inside a pull request; runs on main keep the repository default.
           # (Release attachments are not artifacts and never expire - see release-docs.yml.)

@@ -34,9 +34,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ github.event.release.tag_name }}" api-docs/wi-lab-api-docs-*.zip --clobber
+      - name: Name the artifact after the zip (it carries the version)
+        id: bundle
+        run: |
+          zip=$(basename api-docs/wi-lab-api-docs-*.zip)
+          echo "name=${zip%.zip}" >> "$GITHUB_OUTPUT"
       - name: Keep as a workflow artifact (manual runs)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
-          name: api-docs
+          name: ${{ steps.bundle.outputs.name }}
           path: api-docs/wi-lab-api-docs-*.zip

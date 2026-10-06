@@ -4,18 +4,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
-## [Unreleased]
-
-### 🐛 Bug Fixes
-
-- **Disabling Internet now also cuts the connections already open.** Before, `POST /interface/{reservation_id}/internet/disable` only removed the NAT rules, which apply to new connections: a download in progress went on to the end and only the next connection failed. Now Wi-Lab rejects the forwarded traffic of that network's interface (TCP gets a reset, so clients fail at once). Only the network being disabled is affected; the other networks keep their access and their connections. A network created with Internet disabled is blocked the same way.
-- `POST /interface/{reservation_id}/internet/disable` answers `500` when the block cannot be applied, instead of reporting success with Internet still reachable.
-- The shared `wilab-protect-existing` FORWARD rule (added when the FORWARD policy is `DROP`) is removed when no network has Internet access any more.
-- **Web UI:** right after loading the page, the reservation dialog offered no capability until the first status refresh, 10 seconds later. The first load now reads the capability catalogue too.
-
----
-
-## [4.0.0] - 2026-10-05
+## [4.0.0] - 2026-10-06
 
 Devices now declare what they can do, and every reservation states what it needs.
 This is a **breaking release** for API clients and for `config.yaml`.
@@ -24,42 +13,44 @@ Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device
 
 ### ⚠️ Breaking Changes
 
-- **`POST /api/v1/device-reservation` now requires `required_capabilities`.** A request without it (every 3.x client) is rejected with `422` and `Missing required field(s): required_capabilities`. Send at least one capability (`2.4ghz` and/or `5ghz`); an empty list is rejected too. There is no compatibility mode and no "any device" request: a client must say what it needs instead of being handed whichever device is free.
+- **`POST /api/v1/device-reservation` now requires `required_capabilities`.** A request without it (every 3.x client) is rejected with `422` and `Missing required field(s): required_capabilities`. Send at least one capability (`2.4ghz` and/or `5ghz`): an empty list is rejected too, and so is any unknown field such as `interface`. There is no compatibility mode and no "any device" request.
 - **Bands are enforced by the server.** `POST /interface/{reservation_id}/network` with a `band` the reserved device does not declare (`dual` needs both) is refused at once with `422`, without probing the hardware: what `config.yaml` declares is what the device provides.
 - **Allocation policy.** The assigned device is the *least capable* free one that satisfies the request, not the first in configuration order.
-- **`config.yaml` must be completed before upgrading.** Every key is now mandatory, including the new `capabilities` block on each device. Run `python3 main.py --validate-config`, fix everything it lists, then restart. The service will not start on an incomplete file.
-- **`next_available_at` in `409` responses is UTC** (it was the server's local time), and `next_available_*` are `null` when every matching device is held by an unlimited reservation.
-- **Frontend/backend must match.** The web UI of 4.0.0 requires the 4.0.0 API (capabilities in `/status` and in reservation responses are no longer optional).
+- **`config.yaml` must be completed before upgrading.** Every key is now mandatory, including the new `capabilities` block on each device. Run `python3 main.py --validate-config`, fix everything it lists, then restart: the service will not start on an incomplete file.
+- **`409` responses:** `next_available_at` is now UTC (it was the server's local time), and `next_available_*` are `null` when every matching device is held by an unlimited reservation.
+- **Frontend and backend must match.** The web UI of 4.0.0 requires the 4.0.0 API.
 
 ### ✨ Features
 
 - **Device capabilities** — each device declares the bands it may be used for (`2.4ghz`, `5ghz`) in `config.yaml`.
-- **Capability-based reservations** — state what you need (`required_capabilities`) and get the least capable device that provides it, so dual-band adapters stay free for those who need them. The client states only the capabilities; Wi-Lab always picks the device, and there is no way to request a specific antenna. A request that omits `required_capabilities`, or sends any unknown field such as `interface`, is rejected.
-- **Configuration validator** — `python3 main.py --validate-config` (or `make validate-config`) checks the file without starting anything and lists every problem at once, with the fix. Add `--check-hardware` to also verify adapters and subnets. The installer runs it before enabling the service.
-- **Capabilities in the web UI and API** — capability chips on every device card, a reservation dialog to pick the capabilities you need, band choices limited to what the reserved device supports, and capability data in `/status` and the reservation responses.
+- **Capability-based reservations** — state what you need and get the least capable device that provides it, so dual-band adapters stay free for those who need them. A client cannot pick a specific antenna.
+- **Configuration validator** — `python3 main.py --validate-config` (or `make validate-config`) checks the file without starting anything and lists every problem at once, with the fix. `--check-hardware` also verifies adapters and subnets. The installer runs it before enabling the service, and a subnet that collides with the host's network now stops the service instead of breaking the host's networking.
+- **Capabilities in the web UI and API** — capability chips on every device card, a reservation dialog to pick the capabilities you need, band choices limited to what the reserved device supports, and capability data in `/status` and in the reservation responses.
 
 ### 🐛 Bug Fixes
 
-- Reservation timestamps in "no device available" responses were shown in the server's local time instead of UTC.
+- **Disabling Internet now also cuts the connections already open.** Before, `POST /interface/{reservation_id}/internet/disable` only stopped new connections: a download in progress went on to the end. Now the network's traffic is rejected at once (TCP clients get a reset), and the call answers `500` if this cannot be done instead of reporting success. Only the network being disabled is affected, and a network created with Internet disabled is blocked the same way.
 - When all devices were held by unlimited reservations, the UI showed a countdown that never elapsed. It now says there is no scheduled release.
+- `api_port` from `config.yaml` is now honoured (the server was always listening on 8080).
+- An unknown `/api/...` path answered `200 null` when the web frontend is served; it is now a proper `404`.
 
 ### 🔧 Maintenance
 
-- Removed the compatibility shims introduced while building the feature: optional request fields, "unknown capabilities" fallbacks in the web UI, and plain-string device pools in `ReservationManager`.
-- `api_port` from `config.yaml` is now honoured (the server was always listening on 8080).
 - **Known limitation: TX power.** TX power control could not be made to work with the USB dongles tested so far; correct operation of the `txpower` endpoints is not guaranteed for now (flagged in the API documentation).
-- Every test run now ends with a coverage report, locally and in CI (where it is also posted in the job summary). New tests cover API error paths, authentication edge cases, degraded health and frontend serving.
-- The whole test suite now passes on Windows as well as on Linux. `execute_command([])` raises one defined `CommandError` on every platform (it was `IndexError` on Linux and `OSError` on Windows), and the status test no longer depends on a real `ip` command.
-- Fixed: an unknown `/api/...` path answered `200 null` when the web frontend is served; it is now a proper `404`.
-- CI housekeeping: the documentation artifact expires after 1 day inside pull requests (release attachments never expire), and a last CI job keeps only the 3 most recent runs of each pull request (it only runs when a pull request is active; nothing is scheduled).
-- Every GitHub release now carries `wi-lab-api-docs-<version>.zip`: `openapi.json` plus self-contained `swagger.html` and `redoc.html` that open offline (`scripts/export_api_docs.py`).
-- Added a GitHub Actions pipeline (lint, type check, tests, frontend tests and build, container image build), tool configuration (pytest, ruff, mypy) gathered in one `pyproject.toml`, with the ruff rule set pinned and a working frontend test setup (`npm test`).
-- **hostapd regulatory compliance** — The generated hostapd configuration now enables `ieee80211d=1` (advertise country code and apply the regulatory domain) on all bands, and `ieee80211h=1` (DFS/TPC) on 5 GHz where regulatory rules require it.
+- Access points now advertise their country code and apply the regulatory domain on all bands, and use DFS/TPC on 5 GHz where regulation requires it.
+- Test, lint and type-check tools are configured in a single `pyproject.toml`.
+
+### 🚀 CI/CD
+
+- **Pull request checks.** A GitHub Actions pipeline runs on every pull request and on `main`: lint, type check, tests with a coverage report in the job summary, example-config validation, frontend tests and production build, and the frontend container image build.
+- **Offline API documentation.** The pipeline builds a bundle with `openapi.json` and self-contained `swagger.html` and `redoc.html`, downloadable from the run. Every GitHub release carries it as `wi-lab-api-docs-<version>.zip`, a release asset that never expires.
+- **Short-lived artifacts.** In pull requests the documentation bundle expires after 1 day.
+- **Run cleanup.** Only the 3 most recent runs of each pull request are kept; older ones are deleted by a last pipeline job. Runs on `main`, releases and manual runs are never deleted, and nothing is scheduled, so nothing runs while the project is idle.
 
 ### ✅ Tests
 
-- New tests covering the capability registry, the validator, the CLI, device selection and the extended API.
-- Added `TestHostapdConfigGeneration` covering the presence of `ieee80211d` on all bands and the band-dependent handling of `ieee80211h` (enabled on 5 GHz, absent on 2.4 GHz).
+- Device allocation is tested on a ten-antenna pool with simultaneous reservations.
+- The whole test suite passes on Windows as well as on Linux, and every run ends with a coverage report.
 
 ---
 

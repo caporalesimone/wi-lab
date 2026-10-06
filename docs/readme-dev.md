@@ -151,11 +151,11 @@ the Swagger UI / ReDoc code, so they open with a double click and need no networ
 renderers are downloaded once, at generation time, from pinned versions). "Try it out" is
 disabled in `swagger.html` because there is no server behind it.
 
-The same bundle is built on every pull request (CI artifact `api-docs`) and attached to
+The same bundle is built on every pull request (CI artifact `wi-lab-api-docs-<version>`) and attached to
 every GitHub release as `wi-lab-api-docs-<version>.zip`
 (`.github/workflows/release-docs.yml`; it can also be run manually from the Actions tab).
 
-**Retention.** Inside a pull request the `api-docs` artifact expires after 1 day; on `main` it
+**Retention.** Inside a pull request the `wi-lab-api-docs-<version>` artifact expires after 1 day; on `main` it
 keeps the repository default. The release attachment is a release asset, not an artifact, and
 never expires. A last job of the CI (`cleanup-runs`, script `scripts/cleanup_pr_runs.py`)
 deletes the pull-request workflow runs of each pull request except its 3 most recent ones,
