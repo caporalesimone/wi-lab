@@ -31,6 +31,10 @@ async def get_tx_power(
     Get current TX power details for an active network.
 
     Requires a valid reservation token.
+
+    ⚠️ **Warning:** TX power control could not be made to work with the USB dongles tested
+    so far, so the values reported here are **not guaranteed** to reflect what the hardware
+    actually transmits.
     """
     try:
         return manager.get_tx_power_info(reservation.device_id)
@@ -60,6 +64,11 @@ async def set_tx_power(
     Set TX power level (1-4) for an active network.
 
     Requires a valid reservation token.
+
+    ⚠️ **Warning:** TX power control could not be made to work with the USB dongles tested
+    so far, so correct operation is **not guaranteed** for now. The request is validated
+    and sent to the adapter, but the hardware may ignore it; in that case the call fails
+    with 422 (requested level not applied).
     """
     if req.level not in VALID_TX_POWER_LEVELS:
         raise HTTPException(

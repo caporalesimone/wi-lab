@@ -13,8 +13,73 @@ TEST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'test.config.yaml')
 
 @pytest.fixture(scope="session")
 def config():
-    """Load test config once per test session."""
-    return load_config(TEST_CONFIG_PATH)
+    """Load test config once per test session.
+
+    Session scope means the function-scoped autouse mocks are not active yet, so the
+    hardware check in load_config() would look for the real wls16/wls17/wls18 adapters.
+    Patch the interface check for the duration of the load.
+    """
+    from wilab.wifi import interface
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(interface, "validate_interface", lambda iface: None)
+        return load_config(TEST_CONFIG_PATH)
+
+
+@pytest.fixture
+def valid_config():
+    """A complete, valid configuration as a plain dict.
+
+    Every key the schema knows about is present, because the validator requires it.
+    Tests mutate a copy of this to isolate one problem at a time.
+    """
+    return {
+        "auth_token": "unit-test-token",
+        "api_port": 8080,
+        "max_timeout": 86400,
+        "min_timeout": 60,
+        "allow_unlimited_reservation": False,
+        "dhcp_base_network": "192.168.120.0/24",
+        "upstream_interface": "auto",
+        "country_code": "IT",
+        "dns_server": "192.168.10.21",
+        "internet_enabled_by_default": True,
+        "cors_origins": [],
+        "networks": [
+            {
+                "interface": "wls16",
+                "display_name": "bench-antenna-1",
+                "capabilities": {"2.4ghz": True, "5ghz": True},
+            }
+        ],
+    }
+
+
+@pytest.fixture
+def write_config(tmp_path, valid_config):
+    """Write a config file built from the valid baseline.
+
+    Usage:
+        path = write_config()                                  # valid
+        path = write_config({"min_timeout": 5})                # one field changed
+        path = write_config(remove=["country_code"])           # one key missing
+    """
+    import copy
+
+    import yaml as _yaml
+
+    def _write(overrides=None, remove=None, name="config.yaml", raw_text=None):
+        target = tmp_path / name
+        if raw_text is not None:
+            target.write_text(raw_text, encoding="utf-8")
+            return str(target)
+        data = copy.deepcopy(valid_config)
+        for key in remove or []:
+            data.pop(key, None)
+        data.update(overrides or {})
+        target.write_text(_yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        return str(target)
+
+    return _write
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +99,7 @@ def _test_config_env(monkeypatch):
 def mock_network_operations(monkeypatch):
     """Auto-mock network operations that require root privileges."""
     from wilab.network import commands
+    from wilab.network import nat
     from wilab.wifi import interface
     from wilab.wifi import manager
     from wilab.wifi import channels
@@ -208,6 +274,16 @@ Band 2:
     monkeypatch.setattr(commands, "execute_iw", mock_execute_iw)
     monkeypatch.setattr(commands, "execute_tc", lambda args: "")
     monkeypatch.setattr(commands, "execute_command", mock_execute_command)
+
+    # nat imports execute_command directly: upstream discovery and rule checks (-C)
+    def mock_nat_execute_command(cmd, **kwargs):
+        if cmd[:2] == ["ip", "route"]:
+            return "default via 10.0.0.1 dev eth0"
+        if cmd[0] == "iptables" and "-C" in cmd:
+            raise commands.CommandError("Bad rule (does a matching rule exist in that chain?)")
+        return ""
+
+    monkeypatch.setattr(nat, "execute_command", mock_nat_execute_command)
 
     # Patch in channels module
     monkeypatch.setattr(channels, "execute_iw", mock_execute_iw)

@@ -1,0 +1,43 @@
+# Tool configuration for the whole project: pytest, ruff and mypy.
+#
+# There is deliberately NO [project] table. Wi-Lab is deployed from a checkout, not installed as a
+# package, and the version has a single source of truth: the VERSION file, changed only with
+# scripts/update_version.sh. Do not add a version here.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "-ra",
+    # Every run ends with a terminal coverage report; add --cov-report=html for the HTML one.
+    "--cov=wilab",
+    "--cov-report=term-missing:skip-covered",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "api: API tests",
+    "slow: Slow running tests",
+]
+
+[tool.ruff]
+# Pins the rule set so `make lint` gives the same result whatever ruff version is installed.
+# Without it the default rules change between releases (0.16 flagged 412 issues, mostly
+# UP006/UP035/UP045 typing style, B008 on FastAPI's Depends() and BLE001).
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = false
+init_typed = true
+warn_required_dynamic_aliases = false

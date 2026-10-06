@@ -1,8 +1,29 @@
+/**
+ * A capability id, e.g. '2.4ghz'.
+ *
+ * Deliberately a string alias and not a '2.4ghz' | '5ghz' union: the backend owns the
+ * registry, and a union would force a frontend release every time it gains an entry,
+ * defeating the point of the server-provided catalogue.
+ */
+export type CapabilityId = string;
+
+export interface CapabilityInfo {
+  id: CapabilityId;
+  /** Human label owned by the backend, so a new capability needs no frontend change. */
+  label: string;
+  /** 'radio' | 'policy' | future kinds. Used to group the picker. */
+  kind: string;
+  total_devices: number;
+  available_devices: number;
+}
+
 export interface InterfaceInfo {
   display_name: string;
   interface: string;
   reserved: boolean;
   reservation_remaining_seconds: number | null;
+  /** Enabled capabilities only. */
+  capabilities: CapabilityId[];
 }
 
 export interface ReservationPolicy {
@@ -17,6 +38,8 @@ export interface StatusResponse {
   networks: InterfaceInfo[];
   active_networks: number;
   reservation_policy: ReservationPolicy;
+  /** Capabilities at least one device provides, in backend registry order. */
+  capabilities_catalogue: CapabilityInfo[];
   checks: {
     dnsmasq: { running: boolean; instances: number };
     iptables_nat: { configured: boolean; errors: string[] };
@@ -26,6 +49,8 @@ export interface StatusResponse {
 
 export interface ReservationRequest {
   duration_seconds: number;
+  /** Capabilities the assigned device must provide. Mandatory and non-empty. Wi-Lab picks the device. */
+  required_capabilities: CapabilityId[];
 }
 
 export interface ReservationResponse {
@@ -34,6 +59,8 @@ export interface ReservationResponse {
   interface: string;
   expires_at: string | null;
   expires_in: number | null;
+  /** What the assigned device provides. */
+  capabilities: CapabilityId[];
 }
 
 export interface NetworkStatus {
@@ -86,6 +113,7 @@ export interface ClientInfo {
 
 export interface NoDeviceAvailableError {
   detail: string;
-  next_available_at: string;
-  next_available_in: number;
+  /** Null when every busy device is held by an unlimited reservation: no scheduled release. */
+  next_available_at: string | null;
+  next_available_in: number | null;
 }

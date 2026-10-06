@@ -200,6 +200,14 @@ class HostapdManager:
                     config_file
                 ], timeout=8.0)
             except CommandError as e:
+                if e.killed_by_signal:
+                    # A crash is not a configuration problem: say where to look
+                    raise HostapdError(
+                        f"hostapd crashed ({e.killed_by_signal}) while starting on {interface}. "
+                        "This is usually a driver or firmware fault of the adapter: check "
+                        "'dmesg | tail', then stop the service ('make stop') and run "
+                        "'make reload-drivers', or unplug and replug the adapter"
+                    ) from e
                 raise HostapdError(f"hostapd failed to start: {e}") from e
             
             # Verify process started

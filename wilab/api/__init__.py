@@ -3,12 +3,14 @@ from pathlib import Path
 import logging
 import threading
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.openapi.utils import get_openapi
 
+from .docs_style import SWAGGER_UI_EXTRA_CSS
 from .dependencies import get_channel_manager, get_config, get_manager
 from .routes import router as api_router
 from ..version import __version__
@@ -32,7 +34,13 @@ def _candidate_frontend_paths() -> list[Path]:
 async def lifespan(app: FastAPI):
     # Startup: instantiate manager so background expiry runs
     cfg = get_config()
-    get_manager(cfg)
+    mgr = get_manager(cfg)
+
+    # A previous run that crashed may have left its firewall rules behind
+    try:
+        mgr.nat_manager.remove_stale_rules()
+    except Exception as exc:
+        logger.warning("Could not clean up stale firewall rules: %s", exc)
 
     # Set regulatory domain before populating channel cache
     set_regulatory_domain(cfg.country_code)
@@ -65,8 +73,83 @@ async def lifespan(app: FastAPI):
         pass
 
 
+# Order of the groups in Swagger UI and ReDoc (live /docs, /redoc and the exported bundle all
+# read this list). System comes first: it is where a client starts (version, health, and the
+# capabilities the lab offers).
+OPENAPI_TAGS = [
+    {
+        "name": "System",
+        "description": (
+            "Where a client starts. **`/status`** reports the software version, overall health, "
+            "every managed device with its capabilities and whether it is reserved, the "
+            "**capability catalogue** (what the lab can offer, and how many devices are free for "
+            "each) and the reservation limits (minimum, maximum, unlimited allowed). Build your "
+            "reservation requests from it. **`/debug`** is a slow, detailed dump for "
+            "troubleshooting: do not poll it."
+        ),
+    },
+    {
+        "name": "Reservation",
+        "description": (
+            "Every other operation needs a **reservation**. State which capabilities you need "
+            "(`2.4ghz`, `5ghz`, or both: at least one is required) and for how long; Wi-Lab picks the device "
+            "and returns a `reservation_id`, which identifies you in all the other endpoints. "
+            "Reservations expire on their own, unless unlimited reservations are enabled and you "
+            "asked for one. **409** means every suitable device is busy (retry later); **422** "
+            "means the request is wrong or no device will ever provide what you asked."
+        ),
+    },
+    {
+        "name": "Network",
+        "description": (
+            "The WiFi access point on your reserved device. Create it with an SSID, band, channel "
+            "and security settings, inspect it (status, connected clients) or stop it. The band must "
+            "be one your device provides (see the `capabilities` of your reservation): anything "
+            "else is refused at once. List the channels the device can actually use before "
+            "choosing one. The network is stopped "
+            "automatically when the reservation expires or is released."
+        ),
+    },
+    {
+        "name": "Internet",
+        "description": (
+            "Control whether the clients of your network can reach the Internet (NAT "
+            "forwarding). A new network follows the lab default; enable or disable it at any "
+            "time, for example to test how a device behaves when offline. Disabling is "
+            "immediate: it also cuts the connections already open, and only for your network."
+        ),
+    },
+    {
+        "name": "TX Power",
+        "description": (
+            "⚠️ **Warning:** TX power control could not be made to work with the USB dongles "
+            "tested so far, so correct operation is **not guaranteed** for now. "
+            "Read or change the transmit power of your device, on a scale of **1 (lowest) to 4 "
+            "(highest)**, while its network is active. Useful for range and roaming tests. The "
+            "request is rejected if the hardware does not apply the requested level."
+        ),
+    },
+    {
+        "name": "QoS Profiles",
+        "description": (
+            "Simulate real-world network conditions on your network: bandwidth limits, packet "
+            "loss, delay and jitter. Pick a **profile** from the catalogue (an ordered sequence "
+            "of timed steps such as a 4G tunnel or a satellite link, played in a loop, bounced, "
+            "once or held on the last step), or send fixed parameters. The network must be "
+            "active; stopping the profile removes the traffic shaping."
+        ),
+    },
+]
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Wi-Lab", version=__version__, lifespan=lifespan)
+    app = FastAPI(
+        title="Wi-Lab",
+        version=__version__,
+        lifespan=lifespan,
+        openapi_tags=OPENAPI_TAGS,
+        docs_url=None,  # served below, with the extra stylesheet
+    )
 
     # Configure CORS if origins are specified in config
     config = get_config()
@@ -85,7 +168,15 @@ def create_app() -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         errors = exc.errors()
-        if errors:
+        # A request that omits mandatory fields (e.g. a 3.x client calling a 4.x server)
+        # is told about ALL of them at once, so it can be fixed in one round trip.
+        missing = [
+            ".".join(str(p) for p in e["loc"] if p not in ("body", "query", "path"))
+            for e in errors if e.get("type") == "missing"
+        ]
+        if missing:
+            detail = f"Missing required field(s): {', '.join(missing)}"
+        elif errors:
             first = errors[0]
             loc_parts = [str(part) for part in first.get("loc", []) if part not in ("body", "query", "path")]
             msg = first.get("msg", "Request validation failed")
@@ -93,6 +184,18 @@ def create_app() -> FastAPI:
         else:
             detail = "Request validation failed"
         return JSONResponse(status_code=422, content={"detail": detail})
+
+    @app.get("/docs", include_in_schema=False)
+    async def swagger_ui() -> HTMLResponse:
+        page = get_swagger_ui_html(
+            openapi_url=app.openapi_url or "/openapi.json",
+            title=f"{app.title} - Swagger UI",
+            oauth2_redirect_url=None,
+        )
+        html = bytes(page.body).decode("utf-8").replace(
+            "</head>", f"<style>{SWAGGER_UI_EXTRA_CSS}</style></head>", 1
+        )
+        return HTMLResponse(html)
 
     # Include API router
     app.include_router(api_router)
@@ -117,7 +220,9 @@ def create_app() -> FastAPI:
                 or full_path.startswith("docs/")
                 or full_path == "openapi.json"
             ):
-                return None
+                # An API or documentation path that no route matched: a real 404, not the
+                # 200 "null" that returning None would produce.
+                raise HTTPException(status_code=404, detail="Not Found")
 
             file_path = frontend_path / full_path
             if file_path.is_file():
@@ -142,6 +247,7 @@ def create_app() -> FastAPI:
             version=app.version,
             routes=app.routes,
             description=app.description,
+            tags=app.openapi_tags,
         )
         try:
             paths = openapi_schema.get("paths", {})

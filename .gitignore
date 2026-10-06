@@ -210,4 +210,6 @@ __marimo__/
 config.yaml
 
 #other files
-test-report.txt
+# Generated API documentation bundle (scripts/export_api_docs.py)
+api-docs/
+junit.xml

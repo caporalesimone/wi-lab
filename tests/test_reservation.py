@@ -1,5 +1,6 @@
 """Tests for device reservation module and API endpoints."""
 
+from helpers import device_specs
 import time
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +20,7 @@ class TestReservationManagerCreate:
     """Tests for reservation creation."""
 
     def test_create_reservation_returns_reservation(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
         r = mgr.create(3600)
         assert isinstance(r, Reservation)
         assert r.device_id == "dev0"
@@ -27,26 +28,26 @@ class TestReservationManagerCreate:
         assert len(r.reservation_id) == 8  # 4 bytes hex
 
     def test_create_reservation_assigns_first_available(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
         r1 = mgr.create(3600)
         r2 = mgr.create(3600)
         assert r1.device_id == "dev0"
         assert r2.device_id == "dev1"
 
     def test_create_reservation_unique_tokens(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
         r1 = mgr.create(3600)
         r2 = mgr.create(3600)
         assert r1.reservation_id != r2.reservation_id
 
     def test_create_reservation_no_device_available(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         mgr.create(3600)
         with pytest.raises(NoDeviceAvailableError, match="No device available"):
             mgr.create(3600)
 
     def test_no_device_available_has_eta(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         mgr.create(120)
         try:
             mgr.create(3600)
@@ -56,7 +57,7 @@ class TestReservationManagerCreate:
             assert exc.next_available_at > time.time()
 
     def test_eta_uses_soonest_expiry(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
         mgr.create(600)   # expires in 600s
         mgr.create(60)    # expires in 60s — soonest
         try:
@@ -67,7 +68,7 @@ class TestReservationManagerCreate:
             assert exc.next_available_in <= 65
 
     def test_simultaneous_expiries_non_negative(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(1)
         r.expires_at = time.time()  # about to expire
         try:
@@ -76,14 +77,14 @@ class TestReservationManagerCreate:
             assert exc.next_available_in >= 0
 
     def test_create_reservation_sets_expiry(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         before = time.time()
         r = mgr.create(120)
         after = time.time()
         assert before + 120 <= r.expires_at <= after + 120
 
     def test_create_reservation_expires_in_positive(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(3600)
         assert 3590 <= r.expires_in <= 3600
 
@@ -92,7 +93,7 @@ class TestReservationManagerGet:
     """Tests for fetching a reservation."""
 
     def test_get_valid_token(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(3600)
         fetched = mgr.get(r.reservation_id)
         assert fetched is not None
@@ -100,11 +101,11 @@ class TestReservationManagerGet:
         assert fetched.device_id == "dev0"
 
     def test_get_invalid_token(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         assert mgr.get("nonexistent") is None
 
     def test_get_expired_token_returns_none(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(1)
         # Force expiry
         r.expires_at = time.time() - 1
@@ -115,16 +116,16 @@ class TestReservationManagerDelete:
     """Tests for releasing a reservation."""
 
     def test_delete_valid_token(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(3600)
         assert mgr.delete(r.reservation_id) is True
 
     def test_delete_invalid_token(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         assert mgr.delete("nonexistent") is False
 
     def test_delete_frees_device(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(3600)
         mgr.delete(r.reservation_id)
         # Device should be available again
@@ -132,7 +133,7 @@ class TestReservationManagerDelete:
         assert r2.device_id == "dev0"
 
     def test_post_release_get_returns_none(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(3600)
         rid = r.reservation_id
         mgr.delete(rid)
@@ -143,29 +144,29 @@ class TestReservationManagerHelpers:
     """Tests for helper methods."""
 
     def test_device_for_valid(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(3600)
         assert mgr.device_for(r.reservation_id) == "dev0"
 
     def test_device_for_invalid(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         assert mgr.device_for("bad-token") is None
 
     def test_all_active(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
         mgr.create(3600)
         mgr.create(3600)
         active = mgr.all_active()
         assert len(active) == 2
 
     def test_is_device_reserved(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
         mgr.create(3600)
         assert mgr.is_device_reserved("dev0") is True
         assert mgr.is_device_reserved("dev1") is False
 
     def test_expired_reservation_auto_purged(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(1)
         r.expires_at = time.time() - 1  # Force expiry
         assert mgr.is_device_reserved("dev0") is False
@@ -194,6 +195,24 @@ def valid_token():
     return f"Bearer {cfg.auth_token}"
 
 
+@pytest.fixture
+def unlimited_client(write_config, monkeypatch):
+    """A client bound to a config that permits unlimited reservations.
+
+    The shared fixture sets allow_unlimited_reservation: false, so duration_seconds=0
+    is refused there; config.example.yaml ships it as true, which is what makes the
+    all-unlimited case reachable in the field.
+    """
+    path = write_config({"allow_unlimited_reservation": True}, name="unlimited.yaml")
+    monkeypatch.setenv("CONFIG_PATH", path)
+    dependencies._config = None
+    dependencies._manager = None
+    dependencies._reservation_manager = None
+    cfg = load_config(path)
+    app = create_app()
+    return TestClient(app), f"Bearer {cfg.auth_token}"
+
+
 class TestReservationAPICreate:
     """Tests for POST /api/v1/device-reservation."""
 
@@ -201,7 +220,7 @@ class TestReservationAPICreate:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -216,7 +235,7 @@ class TestReservationAPICreate:
     def test_create_reservation_requires_auth(self, client):
         resp = client.post(
             "/api/v1/device-reservation",
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 401
 
@@ -224,7 +243,7 @@ class TestReservationAPICreate:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 0},
+            json={"duration_seconds": 0, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 422
 
@@ -232,23 +251,26 @@ class TestReservationAPICreate:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": -10},
+            json={"duration_seconds": -10, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 422
 
     def test_full_capacity_returns_409_with_eta(self, client, valid_token):
         """All devices reserved returns 409 with next_available_at/in."""
-        # Config has 1 device (wls16), reserve it
-        client.post(
-            "/api/v1/device-reservation",
-            headers={"Authorization": valid_token},
-            json={"duration_seconds": 120},
-        )
-        # Try again — should get 409
+        # Drain the pool, whatever its size, so the test does not depend on the fixture
+        # having exactly one device.
+        status = client.get("/api/v1/status", headers={"Authorization": valid_token})
+        for _ in status.json()["networks"]:
+            client.post(
+                "/api/v1/device-reservation",
+                headers={"Authorization": valid_token},
+                json={"duration_seconds": 120, "required_capabilities": ["2.4ghz"]},
+            )
+        # Try one more — should get 409
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 409
         data = resp.json()["detail"]
@@ -266,7 +288,7 @@ class TestReservationAPIGet:
         create_resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = create_resp.json()["reservation_id"]
 
@@ -300,7 +322,7 @@ class TestReservationAPIDelete:
         create_resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = create_resp.json()["reservation_id"]
 
@@ -327,7 +349,7 @@ class TestReservationAPIDelete:
         create_resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = create_resp.json()["reservation_id"]
         client.delete(
@@ -345,13 +367,13 @@ class TestReservationManagerDeleteAll:
     """Tests for ReservationManager.delete_all()."""
 
     def test_delete_all_returns_count(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
         mgr.create(3600)
         mgr.create(3600)
         assert mgr.delete_all() == 2
 
     def test_delete_all_frees_devices(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         mgr.create(3600)
         assert mgr.delete_all() == 1
         # Device should be available again
@@ -359,7 +381,7 @@ class TestReservationManagerDeleteAll:
         assert r.device_id == "dev0"
 
     def test_delete_all_empty_returns_zero(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         assert mgr.delete_all() == 0
 
 
@@ -371,7 +393,7 @@ class TestReservationAPIDeleteAll:
         client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         resp = client.delete(
             "/api/v1/device-reservation",
@@ -398,7 +420,7 @@ class TestReservationAPIDeleteAll:
         client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         client.delete(
             "/api/v1/device-reservation",
@@ -407,7 +429,7 @@ class TestReservationAPIDeleteAll:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 200
 
@@ -422,26 +444,26 @@ class TestUnlimitedReservation:
 
     def test_create_unlimited_reservation(self):
         """Creating with duration_seconds=0 sets expires_at=None."""
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(0)
         assert r.expires_at is None
         assert r.duration_seconds == 0
 
     def test_unlimited_expires_in_is_none(self):
         """Unlimited reservation expires_in returns None."""
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(0)
         assert r.expires_in is None
 
     def test_unlimited_is_not_expired(self):
         """Unlimited reservation is never expired."""
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(device_specs(["dev0"]))
         r = mgr.create(0)
         assert r.is_expired is False
 
     def test_unlimited_not_purged(self):
         """Unlimited reservation is not purged by _purge_expired."""
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
         r_unlimited = mgr.create(0)
         r_timed = mgr.create(1)
         # Force the timed one to expire
@@ -452,7 +474,7 @@ class TestUnlimitedReservation:
 
     def test_soonest_expiry_ignores_unlimited(self):
         """_soonest_expiry excludes unlimited reservations."""
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
         mgr.create(0)  # unlimited
         r_timed = mgr.create(600)
         with mgr._lock:
@@ -460,13 +482,18 @@ class TestUnlimitedReservation:
         assert abs(soonest - r_timed.expires_at) < 2
 
     def test_soonest_expiry_all_unlimited(self):
-        """_soonest_expiry returns now when all reservations are unlimited."""
-        mgr = ReservationManager(["dev0"])
+        """_soonest_expiry returns None when every reservation is unlimited.
+
+        This test previously asserted the opposite - that the method returned "now" -
+        which is what the code did and what made the API answer "available now" about a
+        pool nothing was scheduled to leave. The assertion codified the defect, so it is
+        inverted here rather than deleted, to keep the case covered.
+        """
+        mgr = ReservationManager(device_specs(["dev0"]))
         mgr.create(0)
-        before = time.time()
         with mgr._lock:
             soonest = mgr._soonest_expiry()
-        assert soonest >= before
+        assert soonest is None
 
 
 # ======================================================================
@@ -489,7 +516,7 @@ class TestReservationDeleteStopsNetwork:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = resp.json()["reservation_id"]
         device_id = resp.json()["interface"]
@@ -519,7 +546,7 @@ class TestReservationDeleteStopsNetwork:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = resp.json()["reservation_id"]
 
@@ -539,7 +566,7 @@ class TestReservationDeleteStopsNetwork:
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
         rid = resp.json()["reservation_id"]
         device_id = resp.json()["interface"]
@@ -572,7 +599,7 @@ class TestReservationDeleteStopsNetwork:
         r1 = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         ).json()
 
         mgr = self._ensure_manager(client, valid_token)
@@ -600,7 +627,7 @@ class TestReservationDeleteStopsNetwork:
         client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
+            json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
         )
 
         mgr = self._ensure_manager(client, valid_token)
@@ -613,3 +640,124 @@ class TestReservationDeleteStopsNetwork:
         )
         assert resp.status_code == 200
         assert stopped == []
+
+
+class TestTimestampConsistency:
+    """Regression guard: every timestamp the API renders must be UTC.
+
+    The 409 handler used a naive datetime.fromtimestamp() while _build_response() used
+    tz=timezone.utc, so the same API reported two different clocks, differing by the
+    host's UTC offset. Only a machine running in UTC would have seen them agree.
+    """
+
+    def test_409_next_available_at_matches_the_real_utc_expiry(self, client, valid_token):
+        """Compare against the expected UTC instant, not merely "in the future".
+
+        A "> now" assertion has no teeth on a host east of UTC, where a local-time
+        rendering is simply further ahead. Comparing against the computed expiry catches
+        an offset in either direction.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        status = client.get("/api/v1/status", headers={"Authorization": valid_token})
+        for _ in status.json()["networks"]:
+            client.post(
+                "/api/v1/device-reservation",
+                headers={"Authorization": valid_token},
+                json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
+            )
+        expected = datetime.now(tz=timezone.utc) + timedelta(seconds=3600)
+
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 60, "required_capabilities": ["2.4ghz"]},
+        )
+        assert resp.status_code == 409
+        rendered = resp.json()["detail"]["next_available_at"]
+        parsed = datetime.strptime(rendered, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        assert abs((parsed - expected).total_seconds()) < 60, (
+            f"expected ~{expected}, got {parsed} - looks like a local-time rendering"
+        )
+
+    def test_409_and_get_reservation_agree_on_the_clock(self, client, valid_token):
+        """Both timestamps describe the same expiry, so they must be the same string."""
+        status = client.get("/api/v1/status", headers={"Authorization": valid_token})
+        ids = []
+        for _ in status.json()["networks"]:
+            r = client.post(
+                "/api/v1/device-reservation",
+                headers={"Authorization": valid_token},
+                json={"duration_seconds": 3600, "required_capabilities": ["2.4ghz"]},
+            )
+            ids.append(r.json()["reservation_id"])
+
+        refused = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 60, "required_capabilities": ["2.4ghz"]},
+        )
+        eta = refused.json()["detail"]["next_available_at"]
+
+        expiries = []
+        for rid in ids:
+            got = client.get(
+                f"/api/v1/device-reservation/{rid}",
+                headers={"Authorization": valid_token},
+            )
+            expiries.append(got.json()["expires_at"])
+        assert eta in expiries, "the 409 ETA must be one of the reservations' expiry times"
+
+
+class TestUnlimitedReservationsHaveNoETA:
+    """Regression guard: a pool held indefinitely has no next-available time.
+
+    _soonest_expiry() used to return time.time() when no active reservation had an
+    expiry, so the API answered "available now" (next_available_in: 0) about a pool
+    nothing was scheduled to leave. The frontend then started a countdown that fired
+    immediately and retried straight into another 409.
+
+    Reachable with the allow_unlimited_reservation: true shipped in
+    config.example.yaml.
+    """
+
+    def test_manager_reports_none_when_all_holders_are_unlimited(self):
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
+        mgr.create(0)
+        mgr.create(0)
+        with pytest.raises(NoDeviceAvailableError) as exc_info:
+            mgr.create(60)
+        assert exc_info.value.next_available_at is None
+        assert exc_info.value.next_available_in is None
+
+    def test_a_timed_holder_still_provides_an_eta(self):
+        """Mixed pool: the timed reservation is the one that will free up."""
+        mgr = ReservationManager(device_specs(["dev0", "dev1"]))
+        mgr.create(0)
+        mgr.create(3600)
+        with pytest.raises(NoDeviceAvailableError) as exc_info:
+            mgr.create(60)
+        assert exc_info.value.next_available_at is not None
+        assert 0 < exc_info.value.next_available_in <= 3600
+
+    def test_api_returns_null_rather_than_zero(self, unlimited_client):
+        """The wire contract: null, not 0. Zero means "now", which is false here."""
+        client, token = unlimited_client
+        status = client.get("/api/v1/status", headers={"Authorization": token})
+        for _ in status.json()["networks"]:
+            r = client.post(
+                "/api/v1/device-reservation",
+                headers={"Authorization": token},
+                json={"duration_seconds": 0, "required_capabilities": ["2.4ghz"]},
+            )
+            assert r.status_code == 200, r.text
+
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": token},
+            json={"duration_seconds": 60, "required_capabilities": ["2.4ghz"]},
+        )
+        assert resp.status_code == 409
+        detail = resp.json()["detail"]
+        assert detail["next_available_at"] is None
+        assert detail["next_available_in"] is None

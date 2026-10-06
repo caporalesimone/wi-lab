@@ -257,6 +257,13 @@ button {
   border-radius: 12px;
   white-space: nowrap;
 
+  &.capability-chip {
+    font-size: 0.68rem;
+    padding: 2px 7px;
+    background-color: rgba(0, 0, 0, 0.06);
+    color: rgba(0, 0, 0, 0.6);
+  }
+
   &.available-chip {
     background-color: #e3f2fd;
     color: #1565c0;
@@ -313,4 +320,12 @@ button {
   button {
     width: 100%;
   }
+}
+
+// Reuses .status-chip's shape (see above) with a smaller, muted variant, so the card
+// stylesheet stays inside its 4 kB budget.
+.capability-chips {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
 }

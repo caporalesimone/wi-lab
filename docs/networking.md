@@ -13,18 +13,18 @@ Wi-Lab manages WiFi Access Points by directly controlling network settings on th
 **What:** Enables `net.ipv4.ip_forward=1` globally  
 **When:** When NAT is enabled for a WiFi network  
 **Impact:** Allows routing between interfaces (required for Internet access)  
-**Reversible:** Yes - disabled when all networks are stopped
+**Reversible:** Not by Wi-Lab: it is set at runtime (`sysctl -w`, not persisted) and never switched off again, so it stays on until the host restarts or you set it back by hand
 
 ### 2. NAT Rules (iptables)
 
-**What:** Adds MASQUERADE rule in NAT table  
+**What:** Adds a MASQUERADE rule in NAT table, only for the subnet of that network  
 **When:** Network created with Internet access enabled  
-**Impact:** WiFi clients can reach external networks via upstream interface  
+**Impact:** The clients of that network can reach external networks via upstream interface  
 **Reversible:** Yes - removed when network stops
 
 ```bash
 # Example NAT rule
-iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE -m comment --comment wilab-nat-<device_id>
 ```
 
 ### 3. FORWARD Rules (iptables)
@@ -33,6 +33,30 @@ iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE
 **When:** When WiFi networks are created  
 **Impact:** Controls traffic routing between interfaces  
 **Reversible:** Yes - removed when networks stop
+
+With Internet enabled, a network has two ACCEPT rules (`wilab-forward-<device_id>`). When the
+FORWARD policy is `DROP`, a shared rule accepting established traffic (`wilab-protect-existing`)
+is inserted first; it is removed when no network has Internet access any more.
+
+With Internet disabled (at creation or later), the network's interface gets block rules
+(`wilab-block-<device_id>`) at the top of FORWARD, ahead of any ACCEPT:
+
+```bash
+iptables -I FORWARD 1 -i <wifi> -p tcp -j REJECT --reject-with tcp-reset
+iptables -I FORWARD 1 -i <wifi> -j REJECT --reject-with icmp-port-unreachable
+iptables -I FORWARD 1 -o <wifi> -j DROP
+```
+
+Removing the NAT rules alone is not enough: netfilter applies NAT to the first packet of a
+connection and keeps the translation in conntrack, so a connection already open (a download in
+progress) would keep working. The block rules cut those connections too. They match only the
+interface of the network being disabled: other networks keep their access and their connections.
+DHCP and DNS to the host are not affected (they go through INPUT, not FORWARD).
+
+All these rules carry a comment starting with `wilab-`. If the service crashes or is killed, the
+rules stay in the kernel; at the next start Wi-Lab removes every rule with such a comment from
+FORWARD and from the NAT table, and touches nothing else. To check by hand:
+`sudo iptables -S FORWARD | grep wilab`.
 
 ### 4. WiFi Interface State
 
@@ -56,18 +80,25 @@ Clients on one network **cannot** communicate with clients on other networks by 
 
 ### Specific Rule Application
 
-All iptables rules use specific source/destination filters to prevent affecting unrelated traffic:
+The NAT rule and the forwarding rules of a network are limited to that network (its subnet and its
+WiFi interface), so traffic that does not come from Wi-Lab is never translated or blocked by them:
 
 ```bash
 # Correctly scoped NAT rule
 iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o ens18 -j MASQUERADE
 
-# NOT a global MASQUERADE (which would be dangerous)
+# NOT a global MASQUERADE (which would translate the traffic of everything else too)
 ```
+
+Every rule is tagged with a `wilab-` comment, so Wi-Lab removes only its own rules.
 
 ### SSH Protection Considerations
 
-When network isolation is enabled, Wi-Lab adds rules to explicitly protect SSH connections. However, isolation is **currently disabled** to prevent unintended networking issues during development.
+The isolation rules are active: Wi-Lab drops forwarded traffic between the subnets of its own networks
+(`wilab-isolation`), and only between `192.168.x.0/24` subnets, so the host's own network is never
+affected. Your SSH session goes through INPUT, not FORWARD, so none of the FORWARD rules touches it.
+When the FORWARD policy is `DROP` (for instance with Docker), Wi-Lab also adds a rule that keeps
+accepting already established connections (`wilab-protect-existing`).
 
 ---
 
@@ -105,6 +136,38 @@ dhcp_base_network: "192.168.120.0/24"
 # ❌ WRONG (if host is on 192.168.10.x)
 dhcp_base_network: "192.168.10.0/24"
 ```
+
+### Automatic Detection
+
+Since 4.0.0 this conflict is **detected before anything is started**. The configuration
+validator computes the `/24` it would allocate to each managed device — sequential from
+`dhcp_base_network`, one per device — and compares every one of them against the host's
+own routing table (`ip route`):
+
+```bash
+python3 main.py --validate-config --check-hardware
+```
+
+```
+ERROR   dhcp_base_network
+        Planned WiFi subnet 192.168.10.0/24 overlaps the existing host route 192.168.10.0/24.
+        -> A collision breaks host networking and can drop your SSH session. Pick a range your host does not route.
+```
+
+This check runs automatically every time the service starts, so a collision now stops the
+service with a readable report instead of taking the host's networking down with it. It
+is part of the **hardware phase**, which means:
+
+- It needs the real machine, so it is skipped by a plain `--validate-config` — that form
+  stays usable on a laptop or in CI where there is no meaningful route table.
+- It checks **all** planned subnets, not just the base one. A base of `192.168.9.0/24`
+  with three devices allocates `.9`, `.10` and `.11`, and a host on `192.168.10.x` is
+  still a conflict.
+- If `ip route` cannot be read the check stays silent rather than guessing: an unreadable
+  route table is not a configuration error.
+
+The manual check above is still worth doing when planning a deployment — the validator
+tells you that a range collides, not which range to pick instead.
 
 ---
 
@@ -220,6 +283,48 @@ cp config.yaml config.yaml.backup
 sudo cp /etc/systemd/system/wi-lab.service /etc/systemd/system/wi-lab.service.backup
 ```
 
+### Device Capabilities and Bands
+
+Each managed device declares in `config.yaml` which bands it may be used for:
+
+```yaml
+networks:
+  - interface: "wlxbc071dc527d6"
+    display_name: "bench-antenna-1"
+    capabilities:
+      "2.4ghz": true
+      "5ghz": false
+```
+
+**This is a declaration, never a probe.** Wi-Lab does not query the driver, does not run
+`iw phy channels`, and never edits `config.yaml` to fill anything in. The values are an
+administrative statement of what the adapter *may* be used for on this bench, which is not
+the same thing as what its silicon can do — declaring `"5ghz": false` on a dual-band
+adapter to reserve that band for another bench is a legitimate and supported choice. A
+missing key is an error, not a silent `false`, and a device with no enabled band is
+rejected because it could never host an access point.
+
+**How this relates to `band` at AP creation.** The two use the same vocabulary
+(`2.4ghz`, `5ghz`) deliberately, so no mapping layer exists between them:
+
+| Layer | What happens |
+|-------|--------------|
+| Reservation | A request may ask for capabilities; Wi-Lab assigns the least capable free device that provides them |
+| Frontend | The band dropdown in the network form only offers bands the reserved device declares, and defaults to one it can serve |
+| AP creation | `band` must be a band the device declares (otherwise `422`); it then selects the channel range and the hostapd hardware mode |
+
+The declaration is **enforced at AP creation**: `POST /interface/{reservation_id}/network`
+with a `band` the reserved device does not declare (`dual` needs both) is refused at once
+with `422`, without looking at the hardware. The configuration is authoritative: a device
+declared 2.4 GHz-only provides only 2.4 GHz, even if the adapter could do more. The frontend
+filters the band dropdown the same way, purely as a convenience.
+
+Capabilities have **no effect on subnets, NAT or iptables** — a device's `/24` is still
+allocated from `dhcp_base_network` by its position in the `networks` list, regardless of
+what it declares.
+
+---
+
 ### Reservation-Driven Timeout
 
 Network lifetime is controlled by device reservations. When a reservation
@@ -237,8 +342,10 @@ This ensures networks don't run indefinitely and prevents orphaned rules.
 
 Before deploying Wi-Lab to production:
 
+- [ ] `python3 main.py --validate-config --check-hardware` exits 0
 - [ ] Verified host subnet: `ip addr show | grep "inet "`
 - [ ] Set WiFi subnet to different range (e.g., `192.168.120.0/24`)
+- [ ] Declared `capabilities` on every device, matching what each adapter may be used for
 - [ ] Tested network creation and deletion
 - [ ] Verified SSH remains accessible during tests
 - [ ] Set up monitoring of service logs
