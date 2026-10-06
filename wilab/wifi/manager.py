@@ -234,7 +234,7 @@ class NetworkManager:
         # Enable NAT if internet access is enabled
         if internet_enabled:
             try:
-                self.nat_manager.enable_nat(cfg_net.interface, device_id)
+                self.nat_manager.enable_nat(cfg_net.interface, device_id, subnet)
                 logger.info(f"NAT enabled for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to enable NAT for {device_id}: {e}")
@@ -242,7 +242,7 @@ class NetworkManager:
         else:
             # Reject forwarded traffic explicitly, as disable_internet does
             try:
-                self.nat_manager.disable_nat(cfg_net.interface, device_id)
+                self.nat_manager.disable_nat(cfg_net.interface, device_id, subnet)
                 logger.info(f"Internet blocked for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to block Internet for {device_id}: {e}")
@@ -254,7 +254,6 @@ class NetworkManager:
         except Exception as e:
             logger.error(f"Failed to apply isolation rules for {device_id}: {e}")
         #     # Don't fail network creation if isolation fails
-        logger.info(f"Isolation disabled for testing (network {device_id})")
         
         logger.info(f"Network {device_id} started successfully (expires at {expires_at_str})")
         
@@ -289,7 +288,9 @@ class NetworkManager:
         # Remove this network's NAT or block rules, whichever are in place
         if cfg_net:
             try:
-                self.nat_manager.release_network(cfg_net.interface, device_id)
+                self.nat_manager.release_network(
+                    cfg_net.interface, device_id, subnet or self._get_subnet(device_id)
+                )
             except Exception as e:
                 logger.error(f"Error removing NAT rules: {e}")
         
@@ -416,7 +417,7 @@ class NetworkManager:
         # Enable NAT if not already enabled
         if not st.internet_enabled:
             try:
-                self.nat_manager.enable_nat(cfg_net.interface, device_id)
+                self.nat_manager.enable_nat(cfg_net.interface, device_id, st.subnet or self._get_subnet(device_id))
                 logger.info(f"NAT rules applied for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to enable NAT: {e}")
@@ -457,7 +458,9 @@ class NetworkManager:
         
         # Always (re)apply: the call is idempotent and repairs a block that failed at creation
         try:
-            self.nat_manager.disable_nat(cfg_net.interface, device_id)
+            self.nat_manager.disable_nat(
+                cfg_net.interface, device_id, st.subnet or self._get_subnet(device_id)
+            )
             logger.info(f"NAT rules removed and Internet blocked for {device_id}")
         except Exception as e:
             logger.error(f"Failed to disable Internet: {e}")

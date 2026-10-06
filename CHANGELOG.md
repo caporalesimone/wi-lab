@@ -30,6 +30,8 @@ Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device
 ### 🐛 Bug Fixes
 
 - **Disabling Internet now also cuts the connections already open.** Before, `POST /interface/{reservation_id}/internet/disable` only stopped new connections: a download in progress went on to the end. Now the network's traffic is rejected at once (TCP clients get a reset), and the call answers `500` if this cannot be done instead of reporting success. Only the network being disabled is affected, and a network created with Internet disabled is blocked the same way.
+- **Firewall rules left by a crash are removed at startup.** If the service was killed or crashed, the NAT and forwarding rules of its networks stayed active (and could keep a network blocked or open) until someone removed them by hand. At every start Wi-Lab now removes all the rules it created, recognised by their `wilab-` comment, and leaves every other rule untouched.
+- **NAT is limited to the clients of each network.** The masquerade rule of a network now matches only its own subnet; before, it translated everything leaving the upstream interface, including traffic that does not come from Wi-Lab.
 - When all devices were held by unlimited reservations, the UI showed a countdown that never elapsed. It now says there is no scheduled release.
 - `api_port` from `config.yaml` is now honoured (the server was always listening on 8080).
 - An unknown `/api/...` path answered `200 null` when the web frontend is served; it is now a proper `404`.

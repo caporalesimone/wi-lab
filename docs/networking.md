@@ -13,18 +13,18 @@ Wi-Lab manages WiFi Access Points by directly controlling network settings on th
 **What:** Enables `net.ipv4.ip_forward=1` globally  
 **When:** When NAT is enabled for a WiFi network  
 **Impact:** Allows routing between interfaces (required for Internet access)  
-**Reversible:** Yes - disabled when all networks are stopped
+**Reversible:** Not by Wi-Lab: it is set at runtime (`sysctl -w`, not persisted) and never switched off again, so it stays on until the host restarts or you set it back by hand
 
 ### 2. NAT Rules (iptables)
 
-**What:** Adds MASQUERADE rule in NAT table  
+**What:** Adds a MASQUERADE rule in NAT table, only for the subnet of that network  
 **When:** Network created with Internet access enabled  
-**Impact:** WiFi clients can reach external networks via upstream interface  
+**Impact:** The clients of that network can reach external networks via upstream interface  
 **Reversible:** Yes - removed when network stops
 
 ```bash
 # Example NAT rule
-iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE -m comment --comment wilab-nat-<device_id>
+iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE -m comment --comment wilab-nat-<device_id>
 ```
 
 ### 3. FORWARD Rules (iptables)
@@ -53,6 +53,11 @@ progress) would keep working. The block rules cut those connections too. They ma
 interface of the network being disabled: other networks keep their access and their connections.
 DHCP and DNS to the host are not affected (they go through INPUT, not FORWARD).
 
+All these rules carry a comment starting with `wilab-`. If the service crashes or is killed, the
+rules stay in the kernel; at the next start Wi-Lab removes every rule with such a comment from
+FORWARD and from the NAT table, and touches nothing else. To check by hand:
+`sudo iptables -S FORWARD | grep wilab`.
+
 ### 4. WiFi Interface State
 
 **What:** Interface switched to AP mode  
@@ -75,18 +80,25 @@ Clients on one network **cannot** communicate with clients on other networks by 
 
 ### Specific Rule Application
 
-All iptables rules use specific source/destination filters to prevent affecting unrelated traffic:
+The NAT rule and the forwarding rules of a network are limited to that network (its subnet and its
+WiFi interface), so traffic that does not come from Wi-Lab is never translated or blocked by them:
 
 ```bash
 # Correctly scoped NAT rule
 iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o ens18 -j MASQUERADE
 
-# NOT a global MASQUERADE (which would be dangerous)
+# NOT a global MASQUERADE (which would translate the traffic of everything else too)
 ```
+
+Every rule is tagged with a `wilab-` comment, so Wi-Lab removes only its own rules.
 
 ### SSH Protection Considerations
 
-When network isolation is enabled, Wi-Lab adds rules to explicitly protect SSH connections. However, isolation is **currently disabled** to prevent unintended networking issues during development.
+The isolation rules are active: Wi-Lab drops forwarded traffic between the subnets of its own networks
+(`wilab-isolation`), and only between `192.168.x.0/24` subnets, so the host's own network is never
+affected. Your SSH session goes through INPUT, not FORWARD, so none of the FORWARD rules touches it.
+When the FORWARD policy is `DROP` (for instance with Docker), Wi-Lab also adds a rule that keeps
+accepting already established connections (`wilab-protect-existing`).
 
 ---
 

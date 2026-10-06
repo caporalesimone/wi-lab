@@ -34,7 +34,13 @@ def _candidate_frontend_paths() -> list[Path]:
 async def lifespan(app: FastAPI):
     # Startup: instantiate manager so background expiry runs
     cfg = get_config()
-    get_manager(cfg)
+    mgr = get_manager(cfg)
+
+    # A previous run that crashed may have left its firewall rules behind
+    try:
+        mgr.nat_manager.remove_stale_rules()
+    except Exception as exc:
+        logger.warning("Could not clean up stale firewall rules: %s", exc)
 
     # Set regulatory domain before populating channel cache
     set_regulatory_domain(cfg.country_code)
@@ -109,7 +115,8 @@ OPENAPI_TAGS = [
         "description": (
             "Control whether the clients of your network can reach the Internet (NAT "
             "forwarding). A new network follows the lab default; enable or disable it at any "
-            "time, for example to test how a device behaves when offline."
+            "time, for example to test how a device behaves when offline. Disabling is "
+            "immediate: it also cuts the connections already open, and only for your network."
         ),
     },
     {

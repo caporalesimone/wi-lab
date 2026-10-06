@@ -278,7 +278,7 @@ class TestInternetControl:
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
         
-        def mock_nat_enable(interface, device_id):
+        def mock_nat_enable(interface, device_id, subnet):
             pass  # Mock NAT enable
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
@@ -307,10 +307,10 @@ class TestInternetControl:
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
         
-        def mock_nat_enable(interface, device_id):
+        def mock_nat_enable(interface, device_id, subnet):
             pass  # Mock NAT enable
         
-        def mock_nat_disable(interface, device_id):
+        def mock_nat_disable(interface, device_id, subnet):
             pass  # Mock NAT disable
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
@@ -341,7 +341,7 @@ class TestInternetControl:
         calls = []
         for name in ('enable_nat', 'disable_nat', 'release_network'):
             monkeypatch.setattr(
-                mgr.nat_manager, name, lambda iface, dev, _name=name: calls.append((_name, iface, dev))
+                mgr.nat_manager, name, lambda iface, dev, subnet, _name=name: calls.append((_name, iface, dev, subnet))
             )
         req = NetworkCreateRequest(
             ssid='TestAP', channel=6, encryption='wpa2', password='testpass123',
@@ -352,7 +352,7 @@ class TestInternetControl:
 
     def test_a_network_created_without_internet_is_blocked(self, monkeypatch):
         mgr, calls = self._start(monkeypatch, internet_enabled=False)
-        assert calls == [('disable_nat', mgr.active['wls16'].interface, 'wls16')]
+        assert calls == [('disable_nat', mgr.active['wls16'].interface, 'wls16', mgr.active['wls16'].subnet)]
 
     def test_disable_internet_always_applies_the_block(self, monkeypatch):
         """Even when the state already says disabled, so a block that failed earlier is repaired."""
@@ -363,7 +363,7 @@ class TestInternetControl:
     def test_disable_internet_fails_when_the_block_cannot_be_applied(self, monkeypatch):
         mgr, _calls = self._start(monkeypatch, internet_enabled=True)
 
-        def fail(iface, dev):
+        def fail(iface, dev, subnet):
             raise RuntimeError("Cannot block Internet: iptables failed")
 
         monkeypatch.setattr(mgr.nat_manager, 'disable_nat', fail)

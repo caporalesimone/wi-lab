@@ -1,6 +1,7 @@
 """NAT and Internet forwarding management using iptables."""
 
 import logging
+import shlex
 from typing import List, Optional, Set
 from .commands import execute_command, execute_iptables, execute_sysctl
 
@@ -168,13 +169,14 @@ class NatManager:
         for rule in self._block_rules(wifi_interface, net_id):
             self._delete_rule(rule)
 
-    def enable_nat(self, wifi_interface: str, net_id: str) -> None:
+    def enable_nat(self, wifi_interface: str, net_id: str, subnet: str) -> None:
         """
         Enable NAT for a WiFi interface to allow Internet access.
         
         Args:
             wifi_interface: WiFi interface to enable NAT for (e.g., "wlan0")
             net_id: Network identifier for tracking rules (e.g., "ap-01")
+            subnet: CIDR subnet of the network: only its clients are translated (e.g., "192.168.120.0/24")
             
         Raises:
             RuntimeError: If iptables commands fail
@@ -205,6 +207,7 @@ class NatManager:
             # Add MASQUERADE rule (check if exists first to avoid duplicates)
             masquerade_rule = [
                 "POSTROUTING",
+                "-s", subnet,
                 "-o", upstream,
                 "-j", "MASQUERADE",
                 "-m", "comment",
@@ -214,6 +217,7 @@ class NatManager:
                 execute_iptables([
                     "-t", "nat",
                     "-A", "POSTROUTING",
+                    "-s", subnet,
                     "-o", upstream,
                     "-j", "MASQUERADE",
                     "-m", "comment",
@@ -281,7 +285,7 @@ class NatManager:
             logger.error(f"Failed to enable NAT for {net_id} ({wifi_interface}): {e}")
             raise RuntimeError(f"Cannot enable NAT: {e}") from e
     
-    def disable_nat(self, wifi_interface: str, net_id: str) -> None:
+    def disable_nat(self, wifi_interface: str, net_id: str, subnet: str) -> None:
         """
         Cut one network off the Internet, including the connections already open.
 
@@ -299,10 +303,10 @@ class NatManager:
         logger.info(f"Disabling Internet for {net_id} ({wifi_interface})")
         # Block first, so there is no window in which open connections still pass
         self._add_block_rules(wifi_interface, net_id)
-        self._remove_nat_rules(wifi_interface, net_id)
+        self._remove_nat_rules(wifi_interface, net_id, subnet)
         logger.info(f"Internet disabled for {net_id} ({wifi_interface})")
 
-    def release_network(self, wifi_interface: str, net_id: str) -> None:
+    def release_network(self, wifi_interface: str, net_id: str, subnet: str) -> None:
         """
         Remove every rule of one network (NAT and block rules), when the network stops.
 
@@ -311,10 +315,10 @@ class NatManager:
             net_id: Network identifier to match rules (e.g., "ap-01")
         """
         logger.info(f"Removing NAT and block rules for {net_id} ({wifi_interface})")
-        self._remove_nat_rules(wifi_interface, net_id)
+        self._remove_nat_rules(wifi_interface, net_id, subnet)
         self._remove_block_rules(wifi_interface, net_id)
 
-    def _remove_nat_rules(self, wifi_interface: str, net_id: str) -> None:
+    def _remove_nat_rules(self, wifi_interface: str, net_id: str, subnet: str) -> None:
         """
         Remove the NAT and FORWARD accept rules of one network (no error if they are absent).
 
@@ -334,6 +338,7 @@ class NatManager:
         # Rules carry a net_id-specific comment, so only this network's rules are removed
         self._delete_rule([
             "POSTROUTING",
+            "-s", subnet,
             "-o", upstream,
             "-j", "MASQUERADE",
             "-m", "comment",
@@ -359,6 +364,41 @@ class NatManager:
         ])
         logger.info(f"NAT rules removed for {net_id} ({wifi_interface})")
     
+    def remove_stale_rules(self) -> int:
+        """
+        Remove every rule Wi-Lab left behind (comment starting with ``wilab-``), at service start.
+
+        A crash or a kill skips the normal cleanup, and nothing remembers the rules after a
+        restart. Rules without the ``wilab-`` comment are never touched. Failures are logged,
+        never raised: starting the service must not depend on the firewall being readable.
+
+        Returns:
+            Number of rules removed
+        """
+        self._nat_networks.clear()
+        removed = 0
+        for table, chain in ((None, "FORWARD"), ("nat", "POSTROUTING")):
+            prefix = ["-t", table] if table else []
+            try:
+                listing = execute_command(["iptables", *prefix, "-S", chain])
+            except Exception as e:
+                logger.warning(f"Cannot list {chain} rules to remove stale ones: {e}")
+                continue
+            for line in listing.splitlines():
+                tokens = shlex.split(line)
+                if tokens[:1] != ["-A"] or not any(
+                    a == "--comment" and b.startswith("wilab-") for a, b in zip(tokens, tokens[1:])
+                ):
+                    continue
+                try:
+                    execute_iptables([*prefix, "-D", *tokens[1:]])
+                    removed += 1
+                except Exception as e:
+                    logger.warning(f"Cannot remove stale rule '{line}': {e}")
+        if removed:
+            logger.warning(f"Removed {removed} stale Wi-Lab firewall rule(s) left by a previous run")
+        return removed
+
     def flush_all_rules(self) -> None:
         """Flush all NAT and FORWARD rules (use with caution)."""
         logger.warning("Flushing all NAT and FORWARD rules")
