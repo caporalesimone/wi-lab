@@ -21,7 +21,8 @@ import {
   ReservationPolicy,
   ReservationRequest,
   ReservationResponse,
-  NoDeviceAvailableError
+  NoDeviceAvailableError,
+  StatusResponse
 } from './models/network.models';
 import { HttpErrorResponse } from '@angular/common/http';
 
@@ -184,11 +185,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.error = null;
     this.apiService.getStatus().subscribe({
       next: (response) => {
-        this.version = response.version;
-        this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
-        this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
-        this.title = `Wi-Lab Network Management - ${this.version}`;
-        this.buildSlots(response.networks);
+        this.applyStatus(response);
         this.loading = false;
       },
       error: (err) => {
@@ -201,13 +198,18 @@ export class AppComponent implements OnInit, OnDestroy {
   /** Silent refresh (no loading spinner). */
   private refreshStatus(): void {
     this.apiService.getStatus().subscribe({
-      next: (response) => {
-        this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
-        this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
-        this.capabilitiesCatalogue = response.capabilities_catalogue;
-        this.buildSlots(response.networks);
-      }
+      next: (response) => this.applyStatus(response)
     });
+  }
+
+  /** Apply a /status response. The first load and the polling share it, so they cannot diverge. */
+  private applyStatus(response: StatusResponse): void {
+    this.version = response.version;
+    this.title = `Wi-Lab Network Management - ${this.version}`;
+    this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
+    this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
+    this.capabilitiesCatalogue = response.capabilities_catalogue;
+    this.buildSlots(response.networks);
   }
 
   private buildSlots(networks: InterfaceInfo[]): void {
