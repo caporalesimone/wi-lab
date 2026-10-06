@@ -6,6 +6,12 @@ All notable changes to Wi-Lab are documented in this file.
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **Disabling Internet now also cuts the connections already open.** Before, `POST /interface/{reservation_id}/internet/disable` only removed the NAT rules, which apply to new connections: a download in progress went on to the end and only the next connection failed. Now Wi-Lab rejects the forwarded traffic of that network's interface (TCP gets a reset, so clients fail at once). Only the network being disabled is affected; the other networks keep their access and their connections. A network created with Internet disabled is blocked the same way.
+- `POST /interface/{reservation_id}/internet/disable` answers `500` when the block cannot be applied, instead of reporting success with Internet still reachable.
+- The shared `wilab-protect-existing` FORWARD rule (added when the FORWARD policy is `DROP`) is removed when no network has Internet access any more.
+
 ---
 
 ## [4.0.0] - 2026-10-05

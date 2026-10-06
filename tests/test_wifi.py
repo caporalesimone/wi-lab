@@ -332,6 +332,50 @@ class TestInternetControl:
         status = mgr.disable_internet('wls16')
         assert status.internet_enabled is False
     
+    def _start(self, monkeypatch, internet_enabled):
+        mgr = NetworkManager(load_config())
+        monkeypatch.setattr(mgr.dhcp_server, 'start', lambda *a, **kw: {'gateway': '192.168.10.1'})
+        monkeypatch.setattr(mgr.dhcp_server, 'stop', lambda *a, **kw: None)
+        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: {})
+        monkeypatch.setattr(mgr.hostapd_manager, 'stop', lambda *a, **kw: None)
+        calls = []
+        for name in ('enable_nat', 'disable_nat', 'release_network'):
+            monkeypatch.setattr(
+                mgr.nat_manager, name, lambda iface, dev, _name=name: calls.append((_name, iface, dev))
+            )
+        req = NetworkCreateRequest(
+            ssid='TestAP', channel=6, encryption='wpa2', password='testpass123',
+            band='2.4ghz', tx_power_level=4, internet_enabled=internet_enabled,
+        )
+        mgr.start_network('wls16', req)
+        return mgr, calls
+
+    def test_a_network_created_without_internet_is_blocked(self, monkeypatch):
+        mgr, calls = self._start(monkeypatch, internet_enabled=False)
+        assert calls == [('disable_nat', mgr.active['wls16'].interface, 'wls16')]
+
+    def test_disable_internet_always_applies_the_block(self, monkeypatch):
+        """Even when the state already says disabled, so a block that failed earlier is repaired."""
+        mgr, calls = self._start(monkeypatch, internet_enabled=False)
+        mgr.disable_internet('wls16')
+        assert [c[0] for c in calls] == ['disable_nat', 'disable_nat']
+
+    def test_disable_internet_fails_when_the_block_cannot_be_applied(self, monkeypatch):
+        mgr, _calls = self._start(monkeypatch, internet_enabled=True)
+
+        def fail(iface, dev):
+            raise RuntimeError("Cannot block Internet: iptables failed")
+
+        monkeypatch.setattr(mgr.nat_manager, 'disable_nat', fail)
+        with pytest.raises(RuntimeError, match="Cannot disable Internet"):
+            mgr.disable_internet('wls16')
+        assert mgr.active['wls16'].internet_enabled is True
+
+    def test_stopping_a_network_removes_its_rules_whatever_the_internet_state(self, monkeypatch):
+        mgr, calls = self._start(monkeypatch, internet_enabled=False)
+        mgr.stop_network('wls16')
+        assert calls[-1][0] == 'release_network' and calls[-1][2] == 'wls16'
+
     def test_internet_control_inactive_network(self):
         """Test that internet control on inactive network raises error."""
         cfg = load_config()

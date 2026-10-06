@@ -99,6 +99,7 @@ def _test_config_env(monkeypatch):
 def mock_network_operations(monkeypatch):
     """Auto-mock network operations that require root privileges."""
     from wilab.network import commands
+    from wilab.network import nat
     from wilab.wifi import interface
     from wilab.wifi import manager
     from wilab.wifi import channels
@@ -273,6 +274,16 @@ Band 2:
     monkeypatch.setattr(commands, "execute_iw", mock_execute_iw)
     monkeypatch.setattr(commands, "execute_tc", lambda args: "")
     monkeypatch.setattr(commands, "execute_command", mock_execute_command)
+
+    # nat imports execute_command directly: upstream discovery and rule checks (-C)
+    def mock_nat_execute_command(cmd, **kwargs):
+        if cmd[:2] == ["ip", "route"]:
+            return "default via 10.0.0.1 dev eth0"
+        if cmd[0] == "iptables" and "-C" in cmd:
+            raise commands.CommandError("Bad rule (does a matching rule exist in that chain?)")
+        return ""
+
+    monkeypatch.setattr(nat, "execute_command", mock_nat_execute_command)
 
     # Patch in channels module
     monkeypatch.setattr(channels, "execute_iw", mock_execute_iw)

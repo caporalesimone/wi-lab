@@ -89,6 +89,13 @@ class TestRuntimeErrorMapping:
         resp = client.post(f"{API}/interface/{rid}/internet/enable", headers=auth)
         assert resp.status_code == 500 and "iptables failed" in resp.json()["detail"]
 
+    def test_disabling_internet_reports_a_runtime_failure_as_500(self, client, auth, rid, monkeypatch):
+        monkeypatch.setattr(
+            NetworkManager, "disable_internet", raising(RuntimeError("Cannot disable Internet"))
+        )
+        resp = client.post(f"{API}/interface/{rid}/internet/disable", headers=auth)
+        assert resp.status_code == 500 and "Cannot disable Internet" in resp.json()["detail"]
+
     def test_channel_listing_failure_is_500(self, client, auth, rid, monkeypatch):
         monkeypatch.setattr(ChannelManager, "get_channels", raising(RuntimeError("iw not found")))
         resp = client.get(f"{API}/interface/{rid}/network/available-channels", headers=auth)

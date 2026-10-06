@@ -59,6 +59,14 @@ async def internet_enable(
         },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "Reservation not found or expired"},
+        500: {
+            "description": "The block rules could not be applied: Internet access was not disabled",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Cannot disable Internet: Cannot block Internet: iptables failed"}
+                }
+            },
+        },
     },
 )
 async def internet_disable(
@@ -67,7 +75,11 @@ async def internet_disable(
     manager: NetworkManager = Depends(get_manager),
 ):
     """
-    Disable Internet access for connected WiFi clients (remove NAT forwarding).
+    Disable Internet access for the WiFi clients of this network.
+
+    The cut is immediate and also applies to connections already open (a download in
+    progress fails instead of running to the end). Only this network is affected: the
+    clients of other networks keep their access and their connections.
 
     Requires a valid reservation token.
     """
@@ -77,3 +89,5 @@ async def internet_disable(
         return {"detail": f"Network {device_id} internet disabled successfully"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))

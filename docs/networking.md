@@ -24,7 +24,7 @@ Wi-Lab manages WiFi Access Points by directly controlling network settings on th
 
 ```bash
 # Example NAT rule
-iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE -m comment --comment wilab-nat-<device_id>
 ```
 
 ### 3. FORWARD Rules (iptables)
@@ -33,6 +33,25 @@ iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE
 **When:** When WiFi networks are created  
 **Impact:** Controls traffic routing between interfaces  
 **Reversible:** Yes - removed when networks stop
+
+With Internet enabled, a network has two ACCEPT rules (`wilab-forward-<device_id>`). When the
+FORWARD policy is `DROP`, a shared rule accepting established traffic (`wilab-protect-existing`)
+is inserted first; it is removed when no network has Internet access any more.
+
+With Internet disabled (at creation or later), the network's interface gets block rules
+(`wilab-block-<device_id>`) at the top of FORWARD, ahead of any ACCEPT:
+
+```bash
+iptables -I FORWARD 1 -i <wifi> -p tcp -j REJECT --reject-with tcp-reset
+iptables -I FORWARD 1 -i <wifi> -j REJECT --reject-with icmp-port-unreachable
+iptables -I FORWARD 1 -o <wifi> -j DROP
+```
+
+Removing the NAT rules alone is not enough: netfilter applies NAT to the first packet of a
+connection and keeps the translation in conntrack, so a connection already open (a download in
+progress) would keep working. The block rules cut those connections too. They match only the
+interface of the network being disabled: other networks keep their access and their connections.
+DHCP and DNS to the host are not affected (they go through INPUT, not FORWARD).
 
 ### 4. WiFi Interface State
 

@@ -288,17 +288,170 @@ class TestDisableNat:
             for call in iptables_calls
         )
     
-    def test_disable_nat_nonexistent_rules(self, monkeypatch):
-        """Test that disabling NAT doesn't fail if rules don't exist."""
+    def test_release_network_nonexistent_rules(self, monkeypatch):
+        """Test that removing a network's rules doesn't fail if they don't exist."""
         nat = NatManager(upstream_interface="eth0")
-        
+
         def mock_iptables(args):
             raise CommandError("iptables: Bad rule (does a matching rule exist in that chain?)")
-        
+
         monkeypatch.setattr("wilab.network.nat.execute_iptables", mock_iptables)
-        
+
         # Should not raise
-        nat.disable_nat("wlan0", "test-net")
+        nat.release_network("wlan0", "test-net")
+
+    def test_disable_nat_fails_if_the_block_cannot_be_applied(self, monkeypatch):
+        """Internet must not be reported as disabled when the block rules are missing."""
+        nat = NatManager(upstream_interface="eth0")
+
+        def mock_iptables(args):
+            raise CommandError("iptables failed")
+
+        monkeypatch.setattr("wilab.network.nat.execute_iptables", mock_iptables)
+
+        with pytest.raises(RuntimeError, match="Cannot block Internet"):
+            nat.disable_nat("wlan0", "test-net")
+
+
+class FakeIptables:
+    """In-memory iptables: enough of -A/-I/-D/-C/-S to check rule order and ownership."""
+
+    def __init__(self, forward_policy: str = "DROP"):
+        self.forward_policy = forward_policy
+        self.chains: dict = {}
+
+    def iptables(self, args):
+        args = list(args)
+        table = "filter"
+        if args[0] == "-t":
+            table, args = args[1], args[2:]
+        op, chain, rest = args[0], args[1], args[2:]
+        rules = self.chains.setdefault((table, chain), [])
+        if op == "-A":
+            rules.append(tuple(rest))
+        elif op == "-I":
+            rules.insert(int(rest[0]) - 1, tuple(rest[1:]))
+        elif op in ("-D", "-C"):
+            if tuple(rest) not in rules:
+                raise CommandError("Bad rule (does a matching rule exist in that chain?)")
+            if op == "-D":
+                rules.remove(tuple(rest))
+        return ""
+
+    def command(self, cmd, **kwargs):
+        if cmd[:2] == ["ip", "route"]:
+            return ""  # no default route
+        if cmd[1:] == ["-S", "FORWARD"]:
+            return f"-P FORWARD {self.forward_policy}\n"
+        return self.iptables(cmd[1:])
+
+    def rules(self, table: str = "filter", chain: str = "FORWARD") -> list:
+        return self.chains.get((table, chain), [])
+
+    def comments(self, table: str = "filter", chain: str = "FORWARD") -> list:
+        return [rule[rule.index("--comment") + 1] for rule in self.rules(table, chain)]
+
+
+@pytest.fixture
+def fake(monkeypatch):
+    fake = FakeIptables()
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", fake.iptables)
+    monkeypatch.setattr("wilab.network.nat.execute_command", fake.command)
+    monkeypatch.setattr("wilab.network.nat.execute_sysctl", lambda key, value=None: "")
+    return fake
+
+
+BLOCK_A = ["wilab-block-net-a"] * 3
+
+
+class TestDisableInternetCutsOpenConnections:
+    """Disabling Internet must stop established connections, on that network only."""
+
+    def test_block_rules_come_before_every_accept_for_established_traffic(self, fake):
+        nat = NatManager(upstream_interface="eth0")
+        nat.enable_nat("wlan0", "net-a")
+        nat.enable_nat("wlan1", "net-b")
+
+        nat.disable_nat("wlan0", "net-a")
+
+        forward = fake.rules()
+        assert fake.comments()[:4] == [*BLOCK_A, "wilab-protect-existing"]
+        assert forward[0][:7] == ("-i", "wlan0", "-p", "tcp", "-j", "REJECT", "--reject-with")
+        assert "tcp-reset" in forward[0]
+        assert forward[1][:4] == ("-i", "wlan0", "-j", "REJECT")
+        assert forward[2][:4] == ("-o", "wlan0", "-j", "DROP")
+
+    def test_other_networks_keep_their_access(self, fake):
+        nat = NatManager(upstream_interface="eth0")
+        nat.enable_nat("wlan0", "net-a")
+        nat.enable_nat("wlan1", "net-b")
+
+        nat.disable_nat("wlan0", "net-a")
+
+        assert fake.comments() == [
+            *BLOCK_A, "wilab-protect-existing", "wilab-forward-net-b", "wilab-forward-net-b"
+        ]
+        assert fake.comments("nat", "POSTROUTING") == ["wilab-nat-net-b"]
+        assert not any("wlan1" in rule for rule in fake.rules()[:3])
+
+    def test_the_shared_protect_rule_goes_with_the_last_network(self, fake):
+        nat = NatManager(upstream_interface="eth0")
+        nat.enable_nat("wlan0", "net-a")
+        nat.enable_nat("wlan1", "net-b")
+
+        nat.disable_nat("wlan0", "net-a")
+        nat.disable_nat("wlan1", "net-b")
+
+        assert "wilab-protect-existing" not in fake.comments()
+        assert fake.comments() == ["wilab-block-net-b"] * 3 + BLOCK_A
+        assert fake.comments("nat", "POSTROUTING") == []
+
+    def test_enabling_again_lifts_the_block(self, fake):
+        nat = NatManager(upstream_interface="eth0")
+        nat.enable_nat("wlan0", "net-a")
+        nat.disable_nat("wlan0", "net-a")
+
+        nat.enable_nat("wlan0", "net-a")
+
+        assert fake.comments() == ["wilab-protect-existing", "wilab-forward-net-a", "wilab-forward-net-a"]
+        assert fake.comments("nat", "POSTROUTING") == ["wilab-nat-net-a"]
+
+    def test_disabling_twice_does_not_duplicate_the_block(self, fake):
+        nat = NatManager(upstream_interface="eth0")
+        nat.enable_nat("wlan0", "net-a")
+
+        nat.disable_nat("wlan0", "net-a")
+        nat.disable_nat("wlan0", "net-a")
+
+        assert fake.comments() == BLOCK_A
+
+    def test_the_block_does_not_need_an_upstream_interface(self, fake):
+        """A network created without Internet is blocked even when there is no default route."""
+        nat = NatManager(upstream_interface="auto")
+
+        nat.disable_nat("wlan0", "net-a")
+
+        assert fake.comments() == BLOCK_A
+
+    def test_with_an_accept_policy_the_block_is_applied_too(self, fake):
+        fake.forward_policy = "ACCEPT"
+        nat = NatManager(upstream_interface="eth0")
+        nat.enable_nat("wlan0", "net-a")
+
+        nat.disable_nat("wlan0", "net-a")
+
+        assert fake.comments() == BLOCK_A
+
+    def test_stopping_a_network_removes_its_block_and_nothing_else(self, fake):
+        nat = NatManager(upstream_interface="eth0")
+        nat.enable_nat("wlan0", "net-a")
+        nat.enable_nat("wlan1", "net-b")
+        nat.disable_nat("wlan0", "net-a")
+
+        nat.release_network("wlan0", "net-a")
+
+        assert fake.comments() == ["wilab-protect-existing", "wilab-forward-net-b", "wilab-forward-net-b"]
+        assert fake.comments("nat", "POSTROUTING") == ["wilab-nat-net-b"]
 
 
 class TestFlushRules:
