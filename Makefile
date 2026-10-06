@@ -67,9 +67,10 @@ validate-config: venv
 	$(VENV)/bin/python main.py --validate-config
 	@echo "✓ Configuration valid"
 
-# Reload the kernel driver of the configured adapters (fixes a hung adapter firmware)
-reload-drivers: venv
-	@sudo $(PYTHON) main.py --reload-drivers
+# Reload the kernel driver of the configured adapters (fixes a hung adapter firmware); uses the
+# installed virtual environment, not the local .venv
+reload-drivers:
+	@sudo bash scripts/reload-drivers.sh
 
 # Code quality targets
 lint: venv

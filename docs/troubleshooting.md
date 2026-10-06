@@ -138,7 +138,7 @@ Wi-Lab refuses to do it while the service runs: turn all the networks off first.
 
 ```bash
 make stop
-make reload-drivers      # python3 main.py --reload-drivers, as root
+make reload-drivers      # as root, with the installed virtual environment (the service's Python)
 make start
 ```
 
