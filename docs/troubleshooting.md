@@ -126,6 +126,23 @@ Symptoms:
 Script:
 - [diagnostics/troubleshooting/issue_network_creation_fails.sh](../diagnostics/troubleshooting/issue_network_creation_fails.sh)
 
+**"hostapd crashed (SIGSEGV) while starting"** means hostapd itself died, which is almost always the
+adapter's driver or firmware and not the configuration. Confirm it:
+
+```bash
+sudo dmesg | tail -30      # look for "failed to download firmware" or "segfault ... in hostapd"
+```
+
+Reload the driver of the adapter (the module name is in the `dmesg` lines, e.g. `rtw88_8822bu`).
+This resets **every** adapter that uses that module, so do it while no network is in use:
+
+```bash
+sudo modprobe -r rtw88_8822bu    # unload the driver: this releases the adapters
+sudo modprobe rtw88_8822bu       # load it again: the adapters are detected and initialised anew
+```
+
+If it does not help, unplug and replug the adapter, or restart the host.
+
 ### Issue 3: Clients Cannot Connect
 
 Symptoms:
