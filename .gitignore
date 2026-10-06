@@ -212,3 +212,4 @@ config.yaml
 #other files
 # Generated API documentation bundle (scripts/export_api_docs.py)
 api-docs/
+junit.xml

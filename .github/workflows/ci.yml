@@ -25,10 +25,12 @@ jobs:
       - name: Validate the example configuration
         run: python main.py --validate-config --config config.example.yaml
       - name: Tests (prints the coverage report)
-        run: python -m pytest
-      - name: Coverage summary
+        run: python -m pytest --junitxml=junit.xml
+      - name: Test and coverage summary
         if: always()
-        run: python -m coverage report --format=markdown --skip-covered >> "$GITHUB_STEP_SUMMARY" || true
+        run: |
+          python scripts/ci_summary.py junit "Backend tests" junit.xml >> "$GITHUB_STEP_SUMMARY"
+          python -m coverage report --format=markdown --skip-covered >> "$GITHUB_STEP_SUMMARY" || true
 
   frontend:
     name: Frontend (unit tests, production build)
@@ -45,7 +47,13 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - name: Unit tests
-        run: npx ng test --watch=false --browsers=ChromeHeadlessCI
+        run: npx ng test --watch=false --code-coverage --browsers=ChromeHeadlessCI
+      - name: Test and coverage summary
+        if: always()
+        working-directory: .
+        run: |
+          python3 scripts/ci_summary.py karma "Frontend tests" frontend/test-results/summary.json >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/ci_summary.py coverage "Frontend coverage" frontend/coverage/coverage-summary.json >> "$GITHUB_STEP_SUMMARY"
       - name: Production build
         run: npm run build:prod
 
