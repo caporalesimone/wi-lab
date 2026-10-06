@@ -133,13 +133,19 @@ adapter's driver or firmware and not the configuration. Confirm it:
 sudo dmesg | tail -30      # look for "failed to download firmware" or "segfault ... in hostapd"
 ```
 
-Reload the driver of the adapter (the module name is in the `dmesg` lines, e.g. `rtw88_8822bu`).
-This resets **every** adapter that uses that module, so do it while no network is in use:
+Reload the driver of the adapters. This resets **every** adapter that uses the same driver, so
+Wi-Lab refuses to do it while the service runs: turn all the networks off first.
 
 ```bash
-sudo modprobe -r rtw88_8822bu    # unload the driver: this releases the adapters
-sudo modprobe rtw88_8822bu       # load it again: the adapters are detected and initialised anew
+make stop
+make reload-drivers      # python3 main.py --reload-drivers, as root
+make start
 ```
+
+For each driver of the adapters in `config.yaml` it unloads the module (`modprobe -r`, which
+releases the adapters), loads it again (`modprobe`, so the adapters are detected and initialised
+anew) and waits until the interfaces are back. A module shared by several adapters is reloaded
+once. To see which driver an adapter uses: `ethtool -i <interface>` (line `driver:`).
 
 If it does not help, unplug and replug the adapter, or restart the host.
 

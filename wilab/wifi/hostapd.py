@@ -205,7 +205,8 @@ class HostapdManager:
                     raise HostapdError(
                         f"hostapd crashed ({e.killed_by_signal}) while starting on {interface}. "
                         "This is usually a driver or firmware fault of the adapter: check "
-                        "'dmesg | tail', then reload the driver or unplug and replug the adapter"
+                        "'dmesg | tail', then stop the service ('make stop') and run "
+                        "'make reload-drivers', or unplug and replug the adapter"
                     ) from e
                 raise HostapdError(f"hostapd failed to start: {e}") from e
             

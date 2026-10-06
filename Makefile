@@ -4,7 +4,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help venv test-local test-local-quick test-local-cov clean-venv validate-config lint lint-fix type-check stop start restart build-frontend
+.PHONY: help venv test-local test-local-quick test-local-cov clean-venv validate-config reload-drivers lint lint-fix type-check stop start restart build-frontend
 
 # Default target: show help
 help:
@@ -34,6 +34,7 @@ help:
 	@echo "  make stop              Stop Wi-Lab systemd service"
 	@echo "  make start             Start Wi-Lab systemd service"
 	@echo "  make restart           Restart Wi-Lab systemd service"
+	@echo "  make reload-drivers    Reload the driver of the WiFi adapters (service must be stopped)"
 
 # Virtual environment setup
 venv: $(VENV)/bin/activate
@@ -65,6 +66,10 @@ validate-config: venv
 	@echo "Validating configuration..."
 	$(VENV)/bin/python main.py --validate-config
 	@echo "✓ Configuration valid"
+
+# Reload the kernel driver of the configured adapters (fixes a hung adapter firmware)
+reload-drivers: venv
+	@sudo $(PYTHON) main.py --reload-drivers
 
 # Code quality targets
 lint: venv

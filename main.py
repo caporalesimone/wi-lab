@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 EXIT_OK = 0
 EXIT_INVALID = 1
 EXIT_UNREADABLE = 2
+# --reload-drivers refused because the service is running
+EXIT_SERVICE_RUNNING = 3
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -42,6 +44,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="With --validate-config, also verify interfaces and host routes "
              "(always done when starting normally)",
     )
+    parser.add_argument(
+        "--reload-drivers",
+        action="store_true",
+        help="Reload the kernel driver of the configured adapters and exit (needs root, "
+             "and every network stopped). Use it when an adapter's firmware hangs or hostapd crashes",
+    )
     return parser
 
 
@@ -62,6 +70,49 @@ def validate_only(config_path: str, check_hardware: bool) -> int:
     if report.unreadable:
         return EXIT_UNREADABLE
     return EXIT_OK if report.ok else EXIT_INVALID
+
+
+def reload_drivers_only(config_path: str) -> int:
+    """Reload the driver of every configured adapter. Starts nothing.
+
+    Reloading a module resets every adapter that uses it, so it is refused while the service
+    runs: a network in use would be torn down under its users.
+    """
+    from wilab.config import AppConfig
+    from wilab.config_validation import validate_config_file
+    from wilab.network.drivers import reload_drivers, service_is_running
+
+    if service_is_running():
+        print(
+            "ERROR: Wi-Lab is running. Reloading a driver resets every adapter that uses it, "
+            "so all the networks must be turned off first.\n"
+            "       Stop the service ('make stop'), then run this command again.",
+            file=sys.stderr,
+        )
+        return EXIT_SERVICE_RUNNING
+
+    report = validate_config_file(config_path, check_hardware=False)
+    if not report.ok:
+        print(report.render(), end="")
+        return EXIT_UNREADABLE if report.unreadable else EXIT_INVALID
+
+    import yaml
+
+    with open(config_path, "r", encoding="utf-8-sig") as f:
+        interfaces = [n.interface for n in AppConfig(**(yaml.safe_load(f) or {})).networks]
+
+    failed = False
+    for result in reload_drivers(interfaces):
+        names = ", ".join(result.interfaces)
+        if result.ok:
+            print(f"OK      {result.module}: reloaded ({names})")
+        else:
+            failed = True
+            print(f"FAILED  {result.module}: {names}\n        {result.error}")
+    if failed:
+        return EXIT_INVALID
+    print("All drivers reloaded. Start the service with 'make start'.")
+    return EXIT_OK
 
 
 def run_server(config_path: str) -> int:
@@ -120,6 +171,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.validate_config:
         return validate_only(config_path, check_hardware=args.check_hardware)
+
+    if args.reload_drivers:
+        return reload_drivers_only(config_path)
 
     # Propagate an explicit --config to the FastAPI dependency layer, which resolves the
     # configuration from the environment.

@@ -208,6 +208,7 @@ Service Management (requires root):
   make stop              Stop Wi-Lab systemd service
   make start             Start Wi-Lab systemd service
   make restart           Restart Wi-Lab systemd service
+  make reload-drivers    Reload the driver of the WiFi adapters (service must be stopped)
 ```
 
 ---

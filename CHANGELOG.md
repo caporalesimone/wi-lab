@@ -25,6 +25,7 @@ Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device
 - **Device capabilities** — each device declares the bands it may be used for (`2.4ghz`, `5ghz`) in `config.yaml`.
 - **Capability-based reservations** — state what you need and get the least capable device that provides it, so dual-band adapters stay free for those who need them. A client cannot pick a specific antenna.
 - **Configuration validator** — `python3 main.py --validate-config` (or `make validate-config`) checks the file without starting anything and lists every problem at once, with the fix. `--check-hardware` also verifies adapters and subnets. The installer runs it before enabling the service, and a subnet that collides with the host's network now stops the service instead of breaking the host's networking.
+- **Reload the adapters' driver** — `make reload-drivers` (or `python3 main.py --reload-drivers`) unloads and loads again the kernel driver of the adapters in `config.yaml`, which fixes an adapter whose firmware hangs and makes hostapd crash. It refuses to run while the service is running, because it resets every adapter that uses the driver.
 - **Capabilities in the web UI and API** — capability chips on every device card, a reservation dialog to pick the capabilities you need, band choices limited to what the reserved device supports, and capability data in `/status` and in the reservation responses.
 
 ### 🐛 Bug Fixes
