@@ -79,9 +79,10 @@ jobs:
         with:
           name: ${{ steps.bundle.outputs.name }}
           path: api-docs/wi-lab-api-docs-*.zip
-          # Short-lived inside a pull request; runs on main keep the repository default.
+          # 90 days is the longest GitHub allows: artifacts cannot be kept indefinitely. In pull
+          # requests the cleanup job deletes old runs, and their artifacts, sooner.
           # (Release attachments are not artifacts and never expire - see release-docs.yml.)
-          retention-days: ${{ github.event_name == 'pull_request' && 1 || 90 }}
+          retention-days: 90
 
   cleanup-runs:
     # Housekeeping, only when a pull request is active (no schedule, so nothing runs while the

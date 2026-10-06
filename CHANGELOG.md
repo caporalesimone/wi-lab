@@ -44,8 +44,7 @@ Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device
 
 - **Pull request checks.** A GitHub Actions pipeline runs on every pull request and on `main`: lint, type check, tests with a coverage report in the job summary, example-config validation, frontend tests and production build, and the frontend container image build.
 - **Offline API documentation.** The pipeline builds a bundle with `openapi.json` and self-contained `swagger.html` and `redoc.html`, downloadable from the run. Every GitHub release carries it as `wi-lab-api-docs-<version>.zip`, a release asset that never expires.
-- **Short-lived artifacts.** In pull requests the documentation bundle expires after 1 day.
-- **Run cleanup.** Only the 3 most recent runs of each pull request are kept; older ones are deleted by a last pipeline job. Runs on `main`, releases and manual runs are never deleted, and nothing is scheduled, so nothing runs while the project is idle.
+- **Run cleanup.** Only the 3 most recent runs of each pull request are kept, each with its documentation bundle (kept for 90 days, the maximum GitHub allows); older runs and their artifacts are deleted by a last pipeline job. Runs on `main`, releases and manual runs are never deleted, and nothing is scheduled, so nothing runs while the project is idle.
 
 ### ✅ Tests
 

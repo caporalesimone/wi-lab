@@ -133,7 +133,8 @@ older document, this file wins; the design document
 - **Run retention:** only the **3 most recent runs of each pull request** are kept; older ones are
   deleted by the last CI job (`scripts/cleanup_pr_runs.py`), with no age rule. There is no cron: nothing
   must run while the project is idle. Runs on `main`, releases and manual runs are never deleted.
-- The `wi-lab-api-docs-<version>` artifact expires after **1 day in pull requests only**; on `main` it keeps the default.
+- The `wi-lab-api-docs-<version>` artifact is kept for **90 days** (the maximum GitHub allows; there is no
+  "forever"). In pull requests it goes away earlier, with its run, when the cleanup job deletes it.
 - Do not add scheduled workflows without asking: the project has very little maintenance and
   resources must not be wasted.
 
