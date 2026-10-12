@@ -314,7 +314,7 @@ rejected because it could never host an access point.
 | AP creation | `band` must be a band the device declares (otherwise `422`); it then selects the channel range and the hostapd hardware mode |
 
 The declaration is **enforced at AP creation**: `POST /interface/{reservation_id}/network`
-with a `band` the reserved device does not declare (`dual` needs both) is refused at once
+with a `band` the reserved device does not declare is refused at once
 with `422`, without looking at the hardware. The configuration is authoritative: a device
 declared 2.4 GHz-only provides only 2.4 GHz, even if the adapter could do more. The frontend
 filters the band dropdown the same way, purely as a convenience.

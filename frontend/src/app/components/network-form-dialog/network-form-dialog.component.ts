@@ -115,15 +115,11 @@ export class NetworkFormDialogComponent {
   /**
    * Map declared capabilities onto selectable bands.
    *
-   * 'dual' is offered only when the device declares both, since hostapd would otherwise
-   * be asked for a band the radio may not use. The backend guarantees every device declares
-   * at least one band, so there is no "unknown capabilities" fallback.
+   * A network uses a single band, so the choices are exactly the bands the device declares.
+   * The backend guarantees every device declares at least one band, so there is no
+   * "unknown capabilities" fallback.
    */
   public static bandsFor(capabilities: CapabilityId[]): string[] {
-    const bands = capabilities.filter(c => c === '2.4ghz' || c === '5ghz');
-    if (bands.includes('2.4ghz') && bands.includes('5ghz')) {
-      bands.push('dual');
-    }
-    return bands;
+    return capabilities.filter(c => c === '2.4ghz' || c === '5ghz');
   }
 }

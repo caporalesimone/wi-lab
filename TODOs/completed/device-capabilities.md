@@ -116,7 +116,7 @@ Version 1 ships exactly two capabilities:
 | `5ghz`   | `radio` | boolean | The device may operate an AP in the 5 GHz band |
 
 The identifiers are deliberately **identical to the values already accepted by the
-`band` field** of `NetworkCreateRequest` (`^(2\.4ghz|5ghz|dual)$`, see
+`band` field** of `NetworkCreateRequest` (`^(2\.4ghz|5ghz)$`, see
 [wilab/models.py](../../wilab/models.py)). One vocabulary, no translation layer, no mapping
 table.
 
@@ -209,12 +209,12 @@ without touching Angular code.
 
 The reservation response carries the capabilities of the assigned device. The network
 creation dialog uses them to restrict the `band` dropdown
-(`['2.4ghz', '5ghz', 'dual']`): a 2.4-only device offers only `2.4ghz`, a dual-band
-device offers all three. No extra API call is needed.
+(`['2.4ghz', '5ghz']`): a 2.4-only device offers only `2.4ghz`, a dual-band
+device offers both. A network uses a single band: there is no `dual` band. No extra API call is needed.
 
 **The server enforces it too (4.0.0).** The declaration in `config.yaml` is authoritative:
 a device declared 2.4 GHz-only provides only 2.4 GHz. `POST /interface/{rid}/network` with a
-`band` the device does not declare (`dual` needs both) is answered **immediately with 422**,
+`band` the device does not declare is answered **immediately with 422**,
 before any hardware check; the adapter is never probed to see whether it could do more.
 The UI filtering is a convenience on top, not the safeguard.
 
@@ -1467,14 +1467,12 @@ from `localStorage` written by a previous version.
 ### 8.5 Network form dialog
 
 Derive the band list from the reservation's capabilities instead of the hardcoded
-`bands = ['2.4ghz', '5ghz', 'dual']`:
+`bands = ['2.4ghz', '5ghz']`:
 
 ```ts
 get availableBands(): string[] {
   const caps = this.data.capabilities ?? [];
-  const bands = caps.filter(c => c === '2.4ghz' || c === '5ghz');
-  if (bands.includes('2.4ghz') && bands.includes('5ghz')) bands.push('dual');
-  return bands;
+  return caps.filter(c => c === '2.4ghz' || c === '5ghz');
 }
 ```
 
@@ -2448,7 +2446,7 @@ restart. The service refuses to start on an incomplete file.
 3. **Stop assuming which device you get.** You cannot choose the antenna: state what you
    need and read `interface` and `capabilities` from the response.
 4. Create the network with a `band` the device provides (see `capabilities` in your
-   reservation; `dual` needs both). The API enforces it: any other band is refused at once
+   reservation; `dual` does not exist: a network uses one band). The API enforces it: any other band is refused at once
    with `422`, and the hardware is not consulted.
 
 ### The request that breaks

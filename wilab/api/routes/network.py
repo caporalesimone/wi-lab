@@ -6,7 +6,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel, Field
 
-from ...config import AppConfig, Capability, capabilities_for_band
+from ...config import AppConfig
 from ...models import NetworkCreateRequest, NetworkStatus
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager
@@ -88,7 +88,8 @@ async def start_network(
     Requires a valid reservation token. The network lifetime is bounded
     by the reservation expiry.
 
-    The `band` must be one the reserved device declares in `config.yaml` (`dual` needs both).
+    The `band` (`2.4ghz` or `5ghz`) must be one the reserved device declares in `config.yaml`.
+    A network uses a single band: to run one on each band, reserve two devices.
     This is decided by the declaration alone and answered immediately with 422: the hardware
     is never probed to see whether it could do more. Check the `capabilities` returned by the
     reservation to know which bands you can ask for.
@@ -105,14 +106,13 @@ async def start_network(
     # The configuration is authoritative: a band the device does not declare is refused at
     # once, without looking at the hardware.
     declared = set(config.capabilities_for(device_id))
-    missing = capabilities_for_band(req.band) - {Capability(c) for c in declared}
-    if missing:
+    if req.band not in declared:
         offered = ", ".join(sorted(declared)) or "no band"
         raise HTTPException(
             status_code=422,
             detail=(
                 f"Band '{req.band}' is not available on this device: it provides {offered}. "
-                f"Reserve a device with the '{sorted(c.value for c in missing)[0]}' capability."
+                f"Reserve a device with the '{req.band}' capability."
             ),
         )
 

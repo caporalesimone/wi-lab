@@ -387,14 +387,9 @@ class TestIsValidChannelForBand:
         assert is_valid_channel_for_band(99, "5ghz") is False
         assert is_valid_channel_for_band(180, "5ghz") is False
 
-    def test_dual_accepts_24ghz(self):
-        assert is_valid_channel_for_band(6, "dual") is True
-
-    def test_dual_accepts_5ghz(self):
-        assert is_valid_channel_for_band(36, "dual") is True
-
-    def test_dual_rejects_invalid(self):
-        assert is_valid_channel_for_band(99, "dual") is False
+    def test_unknown_band_is_an_error(self):
+        with pytest.raises(ValueError, match="Unknown band"):
+            is_valid_channel_for_band(6, "dual")
 
     def test_channel_sets_include_169_173_177(self):
         """Channels 169, 173, 177 must be in the 5 GHz set."""

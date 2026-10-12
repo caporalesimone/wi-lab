@@ -71,7 +71,7 @@ class HostapdManager:
         # HW mode based on band
         if band == "5ghz":
             config_lines.append("hw_mode=a")
-        else:  # 2.4ghz or dual
+        else:  # 2.4ghz
             config_lines.append("hw_mode=g")
         
         # Hidden SSID

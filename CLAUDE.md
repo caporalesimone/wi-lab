@@ -56,7 +56,8 @@ older document, this file wins; the design document
   may be `null` when every holder is unlimited, `next_available_at` is UTC); `422` = the request is
   wrong or no device will ever satisfy it (permanent); never `409` for an impossible request.
 - **Bands are enforced by the server:** creating a network with a `band` the reserved device does not
-  declare (`dual` needs both) is refused at once with `422`, before touching the hardware.
+  declare is refused at once with `422`, before touching the hardware. `dual` does not exist as a band: a
+  network uses one band; to run one per band, reserve two devices.
 - TX power control did not work with the USB dongles tested so far: every place that exposes it
   (API docs, web UI, troubleshooting, CHANGELOG) carries the warning "not guaranteed". Keep it.
 

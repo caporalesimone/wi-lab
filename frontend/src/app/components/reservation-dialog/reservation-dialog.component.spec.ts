@@ -155,8 +155,8 @@ describe('ReservationDialogComponent', () => {
 });
 
 describe('NetworkFormDialogComponent.bandsFor', () => {
-  it('offers dual only when the device declares both bands', () => {
-    expect(NetworkFormDialogComponent.bandsFor(['2.4ghz', '5ghz'])).toEqual(['2.4ghz', '5ghz', 'dual']);
+  it('offers exactly the bands the device declares', () => {
+    expect(NetworkFormDialogComponent.bandsFor(['2.4ghz', '5ghz'])).toEqual(['2.4ghz', '5ghz']);
   });
 
   it('limits a single-band device to that band', () => {

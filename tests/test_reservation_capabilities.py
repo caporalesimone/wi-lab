@@ -445,17 +445,18 @@ class TestBandIsEnforcedByDeclaration:
         detail = resp.json()["detail"]
         assert "5ghz" in detail and "provides 2.4ghz" in detail
 
-    def test_dual_needs_both_bands(self, client, token):
-        rid = reserve(client, token, required_capabilities=["2.4ghz"]).json()["reservation_id"]
+    def test_dual_is_not_a_band(self, client, token):
+        """A network uses one band: `dual` no longer exists, even on a dual-band device."""
+        rid = reserve(client, token, required_capabilities=["2.4ghz", "5ghz"]).json()["reservation_id"]
         assert self.create_network(client, token, rid, "dual", 6).status_code == 422
 
     def test_a_declared_band_is_accepted(self, client, token, no_ap):
         rid = reserve(client, token, required_capabilities=["5ghz"]).json()["reservation_id"]
         assert self.create_network(client, token, rid, "5ghz", 36).status_code == 200
 
-    def test_dual_band_device_accepts_dual(self, client, token, no_ap):
-        rid = reserve(client, token, required_capabilities=["5ghz"]).json()["reservation_id"]
-        assert self.create_network(client, token, rid, "dual", 6).status_code == 200
+    def test_dual_band_device_accepts_either_band(self, client, token, no_ap):
+        rid = reserve(client, token, required_capabilities=["2.4ghz", "5ghz"]).json()["reservation_id"]
+        assert self.create_network(client, token, rid, "2.4ghz", 6).status_code == 200
 
     def test_the_hardware_is_not_consulted_for_an_undeclared_band(self, client, token, monkeypatch):
         from wilab.wifi.channels import ChannelManager

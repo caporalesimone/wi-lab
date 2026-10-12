@@ -4,7 +4,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
-## [4.0.0] - 2026-10-06
+## [4.0.0] - 2026-10-12
 
 Devices now declare what they can do, and every reservation states what it needs.
 This is a **breaking release** for API clients and for `config.yaml`.
@@ -14,7 +14,7 @@ Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device
 ### ⚠️ Breaking Changes
 
 - **`POST /api/v1/device-reservation` now requires `required_capabilities`.** A request without it (every 3.x client) is rejected with `422` and `Missing required field(s): required_capabilities`. Send at least one capability (`2.4ghz` and/or `5ghz`): an empty list is rejected too, and so is any unknown field such as `interface`. There is no compatibility mode and no "any device" request.
-- **Bands are enforced by the server.** `POST /interface/{reservation_id}/network` with a `band` the reserved device does not declare (`dual` needs both) is refused at once with `422`, without probing the hardware: what `config.yaml` declares is what the device provides.
+- **Bands are enforced by the server.** `POST /interface/{reservation_id}/network` with a `band` the reserved device does not declare is refused at once with `422`, without probing the hardware: what `config.yaml` declares is what the device provides.
 - **Allocation policy.** The assigned device is the *least capable* free one that satisfies the request, not the first in configuration order.
 - **`config.yaml` must be completed before upgrading.** Every key is now mandatory, including the new `capabilities` block on each device. Run `python3 main.py --validate-config`, fix everything it lists, then restart: the service will not start on an incomplete file.
 - **`409` responses:** `next_available_at` is now UTC (it was the server's local time), and `next_available_*` are `null` when every matching device is held by an unlimited reservation.
@@ -30,6 +30,7 @@ Design document: [TODOs/completed/device-capabilities.md](TODOs/completed/device
 
 ### 🐛 Bug Fixes
 
+- **The `dual` band was removed.** A network used to accept `band: dual`, but a radio serves one band at a time and it silently started a 2.4 GHz network (a 5 GHz channel passed validation and then hostapd failed). `band` now accepts only `2.4ghz` or `5ghz`; `dual` is a `422`, also on a dual-band device. To have a network on each band, reserve two devices. The web UI no longer offers it.
 - **Disabling Internet now also cuts the connections already open.** Before, `POST /interface/{reservation_id}/internet/disable` only stopped new connections: a download in progress went on to the end. Now the network's traffic is rejected at once (TCP clients get a reset), and the call answers `500` if this cannot be done instead of reporting success. Only the network being disabled is affected, and a network created with Internet disabled is blocked the same way.
 - **Firewall rules left by a crash are removed at startup.** If the service was killed or crashed, the NAT and forwarding rules of its networks stayed active (and could keep a network blocked or open) until someone removed them by hand. At every start Wi-Lab now removes all the rules it created, recognised by their `wilab-` comment, and leaves every other rule untouched.
 - **NAT is limited to the clients of each network.** The masquerade rule of a network now matches only its own subnet; before, it translated everything leaving the upstream interface, including traffic that does not come from Wi-Lab.
