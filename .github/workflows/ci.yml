@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (lint, types, tests, config validation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check wilab/ tests/
+      - name: Type check
+        run: mypy wilab/ tests/
+      - name: Validate the example configuration
+        run: python main.py --validate-config --config config.example.yaml
+      - name: Tests (prints the coverage report)
+        run: python -m pytest --junitxml=junit.xml
+      - name: Test and coverage summary
+        if: always()
+        run: |
+          python scripts/ci_summary.py junit "Backend tests" junit.xml >> "$GITHUB_STEP_SUMMARY"
+          python -m coverage report --format=markdown --skip-covered >> "$GITHUB_STEP_SUMMARY" || true
+
+  frontend:
+    name: Frontend (unit tests, production build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Unit tests
+        run: npx ng test --watch=false --code-coverage --browsers=ChromeHeadlessCI
+      - name: Test and coverage summary
+        if: always()
+        working-directory: .
+        run: |
+          python3 scripts/ci_summary.py karma "Frontend tests" frontend/test-results/summary.json >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/ci_summary.py coverage "Frontend coverage" frontend/coverage/coverage-summary.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Production build
+        run: npm run build:prod
+
+  frontend-container:
+    name: Frontend container image build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build frontend/Dockerfile
+        run: docker build -t wi-lab-frontend:ci frontend
+
+  api-docs:
+    name: API docs bundle (builds; downloadable from the run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Generate openapi.json, swagger.html and redoc.html
+        run: python scripts/export_api_docs.py --out api-docs
+      - name: Name the artifact after the zip (it carries the version)
+        id: bundle
+        run: |
+          zip=$(basename api-docs/wi-lab-api-docs-*.zip)
+          echo "name=${zip%.zip}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.bundle.outputs.name }}
+          path: api-docs/wi-lab-api-docs-*.zip
+          # 90 days is the longest GitHub allows: artifacts cannot be kept indefinitely. In pull
+          # requests the cleanup job deletes old runs, and their artifacts, sooner.
+          # (Release attachments are not artifacts and never expire - see release-docs.yml.)
+          retention-days: 90
+
+  cleanup-runs:
+    # Housekeeping, only when a pull request is active (no schedule, so nothing runs while the
+    # project is idle): keep only the 3 most recent runs of each pull request and delete the
+    # rest, however recent. Runs on main, releases and manual runs are never touched. Skipped for pull requests from forks, whose token cannot delete runs.
+    name: Clean up old pull request runs
+    needs: [backend, frontend, frontend-container, api-docs]
+    if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/cleanup_pr_runs.py --repo "${{ github.repository }}" --keep 3

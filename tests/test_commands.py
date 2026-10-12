@@ -190,7 +190,7 @@ class TestCommandEdgeCases:
     
     def test_empty_command_list(self):
         """Test handling of empty command list."""
-        with pytest.raises((CommandError, IndexError)):
+        with pytest.raises(CommandError, match="Empty command"):
             execute_command([])
     
     def test_command_with_pipes(self):

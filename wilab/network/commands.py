@@ -1,3 +1,4 @@
+import signal
 import subprocess
 import logging
 from typing import List, Optional
@@ -7,7 +8,20 @@ logger = logging.getLogger(__name__)
 
 class CommandError(Exception):
     """Exception raised when shell command execution fails."""
-    pass
+
+    def __init__(self, message: str, returncode: Optional[int] = None):
+        super().__init__(message)
+        self.returncode = returncode
+
+    @property
+    def killed_by_signal(self) -> Optional[str]:
+        """Name of the signal that killed the command (e.g. "SIGSEGV"), None otherwise."""
+        if self.returncode is None or self.returncode >= 0:
+            return None
+        try:
+            return signal.Signals(-self.returncode).name
+        except ValueError:
+            return f"signal {-self.returncode}"
 
 
 def execute_command(cmd: List[str], check: bool = True, timeout: float = 8.0) -> str:
@@ -25,6 +39,11 @@ def execute_command(cmd: List[str], check: bool = True, timeout: float = 8.0) ->
     Raises:
         CommandError: If command fails and check=True
     """
+    if not cmd:
+        # subprocess raises a different exception per platform for an empty argument list
+        # (IndexError on POSIX, OSError on Windows); make it one defined error.
+        raise CommandError("Empty command")
+
     try:
         effective_timeout = max(5.0, timeout)
 
@@ -41,7 +60,8 @@ def execute_command(cmd: List[str], check: bool = True, timeout: float = 8.0) ->
                 f"Command failed: {' '.join(cmd)}\nstderr: {result.stderr}"
             )
             raise CommandError(
-                f"Command '{cmd[0]}' failed with code {result.returncode}: {result.stderr}"
+                f"Command '{cmd[0]}' failed with code {result.returncode}: {result.stderr}",
+                returncode=result.returncode,
             )
         
         return result.stdout

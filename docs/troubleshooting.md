@@ -10,6 +10,8 @@ Run scripts from the repository root with `bash <script>`.
 
 ## Quick Diagnostics
 
+- **Configuration check — start here whenever the service will not start:**
+	- `python3 main.py --validate-config` (see [Issue 0](#issue-0-service-does-not-start--configuration-validation-failed))
 - Service status and Swagger reachability:
 	- [diagnostics/troubleshooting/check_service_status.sh](../diagnostics/troubleshooting/check_service_status.sh)
 - Service logs (modes: `tail`, `follow`, `boot`, `hour`, `errors`):
@@ -30,11 +32,87 @@ Run scripts from the repository root with `bash <script>`.
 
 ## Common Issues
 
+### Issue 0: Service Does Not Start — Configuration Validation Failed
+
+**Always check this first.** Wi-Lab validates `config.yaml` before doing anything else and
+refuses to start if it is incomplete or wrong. This is by far the most common cause of a
+service that will not come up, especially right after an upgrade.
+
+Symptoms:
+- `wi-lab.service` is `failed`
+- `systemctl status wi-lab` shows a `Wi-Lab configuration validation FAILED` report
+- Nothing was started, no interface was touched, no rule was installed
+
+Run the validator yourself — it is safe on a production host, starts no server and changes
+nothing:
+
+```bash
+cd /opt/wilab
+python3 main.py --validate-config                   # structure, types, values
+python3 main.py --validate-config --check-hardware   # also adapters and host routes
+```
+
+**How to read the report.** Every problem is listed in one pass, so the file can be fixed
+in a single editing session — there is no restart-fix-restart loop:
+
+```
+Wi-Lab configuration validation FAILED
+File: /opt/wilab/config.yaml
+1 error(s), 1 warning(s)
+
+WARNING api_port
+        api_port (80) is a privileged port.
+        -> Binding below 1024 requires root or CAP_NET_BIND_SERVICE.
+
+ERROR   networks[0].capabilities
+        Missing required key.
+        -> Add a capabilities block declaring: 2.4ghz, 5ghz
+```
+
+| Column | Meaning |
+|--------|---------|
+| `ERROR` / `WARNING` | Errors stop the service; warnings do not |
+| The path | Exactly where in the file, `networks[0]` being the first device |
+| The message | What is wrong |
+| The `->` line | What to do about it |
+
+Exit codes, for scripting and CI:
+
+| Code | Meaning |
+|------|---------|
+| `0` | Valid — warnings may still have been printed |
+| `1` | Invalid — see the report |
+| `2` | The file could not be read or parsed at all (missing, unreadable, broken YAML) |
+
+**Unit state: `failed`, not a restart loop.** The unit is configured with
+`StartLimitIntervalSec=300` / `StartLimitBurst=3`, so after three failed starts in five
+minutes systemd gives up and leaves it in `failed`. A configuration error cannot fix
+itself by being retried, and a unit stuck in `activating (auto-restart)` would hide the
+report under a wall of repeated journal entries. If you see `failed`, read the report; if
+you see `activating (auto-restart)`, the failure is something transient, not the config.
+
+```bash
+systemctl status wi-lab                    # the validation report is in the status output
+journalctl -u wi-lab -n 60 --no-pager      # or here, if the status output is truncated
+```
+
+After fixing the file, re-run `--validate-config` until it prints OK, then
+`sudo systemctl restart wi-lab`.
+
+> **Upgrading from 3.x?** `capabilities`, `cors_origins` and
+> `allow_unlimited_reservation` are now required and this is exactly what the report will
+> tell you. Capability values must be typed by hand — Wi-Lab never guesses them and never
+> edits your file. See [Configuration](../README.md#configuration).
+
 ### Issue 1: Service Fails to Start
+
+First rule out Issue 0 above — if the journal shows a validation report, that is the
+problem and no script will tell you more than the report already does.
 
 Symptoms:
 - `wi-lab.service` is failed/inactive
 - Swagger UI is not reachable
+- `systemctl status wi-lab` shows **no** validation report
 
 Script:
 - [diagnostics/troubleshooting/issue_service_fails_start.sh](../diagnostics/troubleshooting/issue_service_fails_start.sh)
@@ -47,6 +125,29 @@ Symptoms:
 
 Script:
 - [diagnostics/troubleshooting/issue_network_creation_fails.sh](../diagnostics/troubleshooting/issue_network_creation_fails.sh)
+
+**"hostapd crashed (SIGSEGV) while starting"** means hostapd itself died, which is almost always the
+adapter's driver or firmware and not the configuration. Confirm it:
+
+```bash
+sudo dmesg | tail -30      # look for "failed to download firmware" or "segfault ... in hostapd"
+```
+
+Reload the driver of the adapters. This resets **every** adapter that uses the same driver, so
+Wi-Lab refuses to do it while the service runs: turn all the networks off first.
+
+```bash
+make stop
+make reload-drivers      # as root, with the installed virtual environment (the service's Python)
+make start
+```
+
+For each driver of the adapters in `config.yaml` it unloads the module (`modprobe -r`, which
+releases the adapters), loads it again (`modprobe`, so the adapters are detected and initialised
+anew) and waits until the interfaces are back. A module shared by several adapters is reloaded
+once. To see which driver an adapter uses: `ethtool -i <interface>` (line `driver:`).
+
+If it does not help, unplug and replug the adapter, or restart the host.
 
 ### Issue 3: Clients Cannot Connect
 
@@ -69,6 +170,9 @@ Scripts:
 	- [diagnostics/troubleshooting/issue_manual_network_recovery.sh](../diagnostics/troubleshooting/issue_manual_network_recovery.sh)
 
 ### Issue 5: TX Power Not Applied
+
+> ⚠️ **Known limitation:** TX power control could not be made to work with the USB dongles
+> tested so far, so correct operation is not guaranteed for now.
 
 Script:
 - [diagnostics/troubleshooting/issue_txpower_diagnosis.sh](../diagnostics/troubleshooting/issue_txpower_diagnosis.sh)
@@ -113,8 +217,9 @@ For networking model and safeguards (no operational scripts), see [networking.md
 
 ## Getting Help
 
-1. Run [diagnostics/troubleshooting/check_service_status.sh](../diagnostics/troubleshooting/check_service_status.sh)
-2. Run [diagnostics/troubleshooting/view_service_logs.sh](../diagnostics/troubleshooting/view_service_logs.sh) with `errors`
-3. Run the issue-specific script from this document
-4. Check [swagger.md](swagger.md)
-5. If unresolved, open a GitHub issue with script outputs
+1. Run `python3 main.py --validate-config` from the install directory
+2. Run [diagnostics/troubleshooting/check_service_status.sh](../diagnostics/troubleshooting/check_service_status.sh)
+3. Run [diagnostics/troubleshooting/view_service_logs.sh](../diagnostics/troubleshooting/view_service_logs.sh) with `errors`
+4. Run the issue-specific script from this document
+5. Check [swagger.md](swagger.md)
+6. If unresolved, open a GitHub issue with script outputs

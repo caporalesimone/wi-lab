@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION_FILE="$(dirname "$0")/VERSION"
-PACKAGE_JSON="$(dirname "$0")/frontend/package.json"
+# The script lives in scripts/; every path is resolved from the repository root.
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION_FILE="$ROOT_DIR/VERSION"
+PACKAGE_JSON="$ROOT_DIR/frontend/package.json"
+PACKAGE_LOCK="$ROOT_DIR/frontend/package-lock.json"
 
 usage() {
     cat <<'EOF'
-Usage: ./update_version.sh [--bump-to X.Y.Z]
+Usage: ./scripts/update_version.sh [--bump-to X.Y.Z]
 
 Options:
   --bump-to X.Y.Z   Set the next version non-interactively
@@ -80,16 +83,24 @@ echo "$next" > "$VERSION_FILE"
 # Update version in frontend/package.json
 sed -i "s/\"version\": \"${current}\"/\"version\": \"${next}\"/" "$PACKAGE_JSON"
 
+# Update the package's own entries in package-lock.json (the top-level "version" and the
+# one of packages[""]). Only the first lines are touched: a dependency further down can
+# legitimately have the same version number.
+sed -i "1,12s/\"version\": \"${current}\"/\"version\": \"${next}\"/" "$PACKAGE_LOCK"
+
 version_file_value=$(tr -d '[:space:]' < "$VERSION_FILE")
 frontend_version=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$PACKAGE_JSON" | head -n 1)
+lock_version=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$PACKAGE_LOCK" | head -n 1)
 
 echo ""
 echo "Version updated: $current → $next"
 echo "  - $VERSION_FILE"
 echo "  - $PACKAGE_JSON"
+echo "  - $PACKAGE_LOCK"
 echo ""
 echo "Aligned versions:"
 echo "  VERSION: $version_file_value"
 echo "  frontend/package.json: $frontend_version"
+echo "  frontend/package-lock.json: $lock_version"
 echo ""
 echo "Remember to update CHANGELOG.md before committing!"

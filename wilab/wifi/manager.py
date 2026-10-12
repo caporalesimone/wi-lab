@@ -234,12 +234,19 @@ class NetworkManager:
         # Enable NAT if internet access is enabled
         if internet_enabled:
             try:
-                self.nat_manager.enable_nat(cfg_net.interface, device_id)
+                self.nat_manager.enable_nat(cfg_net.interface, device_id, subnet)
                 logger.info(f"NAT enabled for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to enable NAT for {device_id}: {e}")
                 # Don't fail network creation if NAT fails, just log
-        
+        else:
+            # Reject forwarded traffic explicitly, as disable_internet does
+            try:
+                self.nat_manager.disable_nat(cfg_net.interface, device_id, subnet)
+                logger.info(f"Internet blocked for {device_id}")
+            except Exception as e:
+                logger.error(f"Failed to block Internet for {device_id}: {e}")
+
         # Apply isolation rules to prevent inter-network traffic
         try:
             self.isolation_manager.add_network(subnet)
@@ -247,7 +254,6 @@ class NetworkManager:
         except Exception as e:
             logger.error(f"Failed to apply isolation rules for {device_id}: {e}")
         #     # Don't fail network creation if isolation fails
-        logger.info(f"Isolation disabled for testing (network {device_id})")
         
         logger.info(f"Network {device_id} started successfully (expires at {expires_at_str})")
         
@@ -279,12 +285,14 @@ class NetworkManager:
         except Exception as e:
             logger.error(f"Error stopping hostapd: {e}")
         
-        # Disable NAT if it was enabled
-        if device_id in self.active and self.active[device_id].internet_enabled and cfg_net:
+        # Remove this network's NAT or block rules, whichever are in place
+        if cfg_net:
             try:
-                self.nat_manager.disable_nat(cfg_net.interface, device_id)
+                self.nat_manager.release_network(
+                    cfg_net.interface, device_id, subnet or self._get_subnet(device_id)
+                )
             except Exception as e:
-                logger.error(f"Error disabling NAT: {e}")
+                logger.error(f"Error removing NAT rules: {e}")
         
         # Remove isolation rules
         if subnet:
@@ -409,7 +417,7 @@ class NetworkManager:
         # Enable NAT if not already enabled
         if not st.internet_enabled:
             try:
-                self.nat_manager.enable_nat(cfg_net.interface, device_id)
+                self.nat_manager.enable_nat(cfg_net.interface, device_id, st.subnet or self._get_subnet(device_id))
                 logger.info(f"NAT rules applied for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to enable NAT: {e}")
@@ -425,13 +433,17 @@ class NetworkManager:
 
     def disable_internet(self, device_id: str) -> NetworkStatus:
         """
-        Disable Internet access for a network (block NAT forwarding).
-        
+        Disable Internet access for a network, cutting also the connections already open.
+        Only this network is affected.
+
         Args:
             device_id: Device identifier (interface name)
-            
+
         Returns:
             Updated NetworkStatus
+
+        Raises:
+            RuntimeError: If the block rules cannot be applied (the state is left unchanged)
         """
         logger.info(f"Disabling Internet for network {device_id}")
         
@@ -444,15 +456,16 @@ class NetworkManager:
         if not cfg_net:
             raise ValueError("Unknown device_id")
         
-        # Disable NAT if currently enabled
-        if st.internet_enabled:
-            try:
-                self.nat_manager.disable_nat(cfg_net.interface, device_id)
-                logger.info(f"NAT rules removed for {device_id}")
-            except Exception as e:
-                logger.error(f"Failed to disable NAT: {e}")
-                # Continue anyway to update state
-        
+        # Always (re)apply: the call is idempotent and repairs a block that failed at creation
+        try:
+            self.nat_manager.disable_nat(
+                cfg_net.interface, device_id, st.subnet or self._get_subnet(device_id)
+            )
+            logger.info(f"NAT rules removed and Internet blocked for {device_id}")
+        except Exception as e:
+            logger.error(f"Failed to disable Internet: {e}")
+            raise RuntimeError(f"Cannot disable Internet: {e}") from e
+
         st.internet_enabled = False
         if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp is not None:
             st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))

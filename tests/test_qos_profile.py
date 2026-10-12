@@ -1,5 +1,6 @@
 """Tests for QoS Profile system (models, catalogue, manager, API)."""
 
+from helpers import device_specs
 import json
 import os
 import time
@@ -525,14 +526,14 @@ class TestQosProfileAPI:
         from wilab.config import load_config
 
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager(device_specs([n.device_id for n in cfg.networks]))
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         # Reserve a device
         resp = client.post(
             "/api/v1/device-reservation",
             headers=auth_headers,
-            json={"duration_seconds": 300},
+            json={"duration_seconds": 300, "required_capabilities": ["2.4ghz"]},
         )
         assert resp.status_code == 200, resp.text
         rid = resp.json()["reservation_id"]
