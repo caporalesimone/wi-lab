@@ -1,9 +1,13 @@
 import pytest
+import signal
 import time
+from types import SimpleNamespace
 from wilab.config import load_config, NetworkEntry
 from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
 from wilab.models import NetworkCreateRequest
 from wilab.network.commands import CommandError
+from wilab.network.dhcp import DhcpServerError
+from wilab.wifi import hostapd
 
 
 class TestNetworkManagerInit:
@@ -107,15 +111,24 @@ class TestNetworkLifecycle:
         # Mock the DHCP server start method to avoid system calls
         cfg = load_config()
         mgr = NetworkManager(cfg)
+        startup = []
         
         def mock_dhcp_start(*args, **kwargs):
+            startup.append("dhcp")
+            assert not mgr.active
             return {
                 'gateway': '192.168.120.1',
                 'dhcp_range': '192.168.120.10,192.168.120.250'
             }
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
-        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: {})
+        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda **kw: startup.append("ap"))
+
+        def assign_gateway(args):
+            startup.append("gateway")
+            assert args == ["addr", "add", "192.168.120.1/24", "dev", "wls16"]
+
+        monkeypatch.setattr("wilab.wifi.manager.execute_ip", assign_gateway)
         
         req = NetworkCreateRequest(
             ssid='TestAP',
@@ -127,6 +140,7 @@ class TestNetworkLifecycle:
         )
         
         status = mgr.start_network('wls16', req)
+        assert startup == ["ap", "gateway", "dhcp"]
         assert status.active is True
         assert status.ssid == 'TestAP'
         assert status.channel == 6
@@ -134,6 +148,174 @@ class TestNetworkLifecycle:
         assert status.band == '2.4ghz'
         assert status.subnet == '192.168.120.0/24'
         assert status.internet_enabled is True  # Default from config
+
+    @pytest.mark.parametrize("failure", ["ap", "readiness_timeout", "gateway", "dhcp"])
+    def test_partial_start_is_rolled_back(self, monkeypatch, tmp_path, failure):
+        mgr = NetworkManager(load_config())
+        device = "wls16"
+        events = []
+        monkeypatch.setattr(hostapd, "HOSTAPD_CONFIG_DIR", str(tmp_path))
+        reset_blocked = True
+
+        def ap_command(cmd, **kwargs):
+            if cmd[0] == "ip" and cmd[1:3] == ["link", "set"] and events and reset_blocked:
+                raise CommandError("reset failed")
+            return ""
+
+        def launch(cmd: list[str]) -> SimpleNamespace:
+            assert len(cmd) == 2 and cmd[0] == "hostapd"
+            events.append("ap")
+            if failure == "ap":
+                raise CommandError("launch failed")
+            return SimpleNamespace(stop=lambda: events.append("stop"))
+
+        def wait_until_ready(*args) -> None:
+            if failure == "readiness_timeout":
+                raise hostapd.HostapdError("AP not ready")
+
+        def assign_gateway(args):
+            events.append("gateway")
+            if failure == "gateway":
+                raise CommandError("address failed")
+
+        def start_dhcp(**kwargs):
+            events.append("dhcp")
+            mgr.dhcp_server._instances[device] = {"process_stopped": True}
+            raise DhcpServerError("DHCP failed")
+
+        def stop_dhcp(device_id):
+            mgr.dhcp_server._instances.pop(device_id, None)
+
+        monkeypatch.setattr(hostapd, "execute_command", ap_command)
+        monkeypatch.setattr(hostapd, "start_foreground", launch)
+        monkeypatch.setattr(mgr.hostapd_manager, "_wait_until_ready", wait_until_ready)
+        monkeypatch.setattr("wilab.wifi.manager.execute_ip", assign_gateway)
+        monkeypatch.setattr(mgr.dhcp_server, "start", start_dhcp)
+        monkeypatch.setattr(mgr.dhcp_server, "stop", stop_dhcp)
+
+        req = NetworkCreateRequest(
+            ssid="TestAP", channel=6, encryption="open", band="2.4ghz",
+            tx_power_level=4,
+        )
+        with pytest.raises(ValueError, match={
+            "ap": "launch failed", "readiness_timeout": "AP not ready",
+            "gateway": "address failed", "dhcp": "DHCP failed",
+        }[failure]):
+            mgr.start_network(device, req)
+        assert events == {
+            "ap": ["ap"], "readiness_timeout": ["ap", "stop"],
+            "gateway": ["ap", "gateway", "stop"],
+            "dhcp": ["ap", "gateway", "dhcp", "stop"],
+        }[failure]
+        assert not mgr.active
+        assert not mgr.dhcp_server.list_active()
+        with pytest.raises(RuntimeError, match="reset failed"):
+            mgr.release_device(device)
+        reset_blocked = False
+        mgr.release_device(device)
+        assert device not in mgr.hostapd_manager._instances
+        assert not list(tmp_path.glob("ap-*"))
+
+    @pytest.mark.parametrize(
+        "scenario, band, expected_attempts",
+        [
+            ("recover", "2.4ghz", 2),
+            ("second_crash", "2.4ghz", 2),
+            ("retry_timeout", "2.4ghz", 2),
+            ("cleanup_failed", "2.4ghz", 1),
+            ("budget_exhausted", "2.4ghz", 1),
+            ("reservation_expired", "2.4ghz", 1),
+            ("non_segfault", "2.4ghz", 1),
+            ("recover", "5ghz", 1),
+        ],
+    )
+    def test_startup_segfault_retry(
+        self, monkeypatch, tmp_path, scenario, band, expected_attempts,
+    ):
+        from wilab.network import commands
+        from wilab.wifi import manager
+
+        mgr = NetworkManager(load_config())
+        device = "wls16"
+        events = []
+        now = 0.0
+        expires_at = 110.0
+        monkeypatch.setattr(mgr, "_configure_networkmanager_unmanaged", lambda _: None)
+        monkeypatch.setattr(hostapd, "HOSTAPD_CONFIG_DIR", str(tmp_path))
+
+        def wait(seconds: float) -> None:
+            nonlocal now
+            now += seconds
+            events.append("wait")
+
+        monkeypatch.setattr(manager, "time", SimpleNamespace(
+            monotonic=lambda: now, time=lambda: 100.0 + now, sleep=wait,
+        ))
+
+        def advance_poll_clock(seconds: float) -> None:
+            nonlocal now
+            now += seconds
+
+        polling_clock = SimpleNamespace(
+            monotonic=lambda: now, sleep=advance_poll_clock,
+        )
+        monkeypatch.setattr(hostapd, "time", polling_clock)
+        monkeypatch.setattr(commands, "time", polling_clock)
+
+        def ap_command(cmd: list[str], **kwargs) -> str:
+            if cmd[:3] == ["ip", "link", "set"] and events[-1:] == ["stop"]:
+                events.append("rollback")
+                if scenario == "cleanup_failed":
+                    raise CommandError("reset failed")
+            return ""
+
+        def launch(cmd: list[str]) -> SimpleNamespace:
+            nonlocal now
+            events.append("ap")
+            code = None
+            if events.count("ap") == 1 or scenario == "second_crash":
+                now += 4.0 if scenario == "budget_exhausted" else 1.5
+                code = 1 if scenario == "non_segfault" else -signal.SIGSEGV
+            return SimpleNamespace(
+                poll=lambda: code, stop=lambda: events.append("stop"),
+            )
+
+        poll_readiness = mgr.hostapd_manager._wait_until_ready
+
+        def wait_until_ready(process, interface, *args) -> None:
+            if scenario == "retry_timeout":
+                poll_readiness(process, interface, *args)
+                return
+            mgr.hostapd_manager._check_process(process, interface)
+
+        monkeypatch.setattr(hostapd, "execute_command", ap_command)
+        monkeypatch.setattr(hostapd, "start_foreground", launch)
+        monkeypatch.setattr(mgr.hostapd_manager, "_wait_until_ready", wait_until_ready)
+        monkeypatch.setattr(manager, "execute_ip", lambda args: events.append("gateway"))
+        monkeypatch.setattr(mgr.dhcp_server, "start", lambda **kw: events.append("dhcp"))
+        req = NetworkCreateRequest(
+            ssid="TestAP", channel=6 if band == "2.4ghz" else 36,
+            encryption="open", band=band, tx_power_level=4,
+        )
+        if scenario == "reservation_expired":
+            expires_at = 101.5
+
+        if scenario == "recover" and expected_attempts == 2:
+            assert mgr.start_network(device, req, expires_at).active
+            assert events == ["ap", "stop", "rollback", "wait", "ap", "gateway", "dhcp"]
+            assert now == 2.25
+        else:
+            error = "AP not ready" if scenario == "retry_timeout" else "Failed to start AP"
+            with pytest.raises(ValueError, match=error):
+                mgr.start_network(device, req, expires_at)
+            assert not mgr.active
+            assert "gateway" not in events and "dhcp" not in events
+            assert (device in mgr.hostapd_manager._instances) == (scenario == "cleanup_failed")
+            if scenario == "retry_timeout":
+                assert now == 5.0
+                assert events == ["ap", "stop", "rollback", "wait", "ap", "stop", "rollback"]
+                assert not list(tmp_path.glob("ap-*"))
+        assert events.count("ap") == expected_attempts
     
     def test_start_network_with_internet_disabled(self, monkeypatch):
         """Test starting network with internet disabled."""
@@ -617,6 +799,37 @@ class TestTxPower:
             mgr.set_tx_power_level('wls16', 2)
 
         assert mgr.active['wls16'].tx_power_level == 4
+
+
+@pytest.mark.parametrize("state, interface, ssid, ready", [
+    ("DFS", "wlan0", "TestAP", False),
+    ("ENABLED", "wlan1", "TestAP", False),
+    ("ENABLED", "wlan0", "OtherAP", False),
+    ("ENABLED", "wlan0", "TestAP", True),
+])
+def test_hostapd_checks_ap_readiness(monkeypatch, tmp_path, state, interface, ssid, ready):
+    mgr = hostapd.HostapdManager()
+    (tmp_path / "wlan0").touch()
+    process = SimpleNamespace(poll=lambda: None)
+    now = 0.0
+
+    def sleep(seconds):
+        nonlocal now
+        now += seconds
+
+    def status(cmd, **kwargs):
+        assert cmd == ["hostapd_cli", "-p", str(tmp_path), "-i", "wlan0", "status"]
+        assert 0 < kwargs["timeout"] <= 0.3
+        return f"state={state}\nbss[0]={interface}\nssid[0]={ssid}\n"
+
+    monkeypatch.setattr(hostapd.time, "monotonic", lambda: now)
+    monkeypatch.setattr(hostapd.time, "sleep", sleep)
+    monkeypatch.setattr(hostapd, "execute_command", status)
+    if ready:
+        mgr._wait_until_ready(process, "wlan0", "TestAP", str(tmp_path), 0.3)
+    else:
+        with pytest.raises(hostapd.HostapdError, match="AP not ready"):
+            mgr._wait_until_ready(process, "wlan0", "TestAP", str(tmp_path), 0.3)
 
 
 class TestHostapdConfigGeneration:

@@ -5,9 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager
 from ...api.auth import require_token
-from ...api.dependencies import get_manager, resolve_reservation
+from ...api.dependencies import get_manager, hold_reservation, resolve_reservation, ReservationManagerDep
 
-router = APIRouter(prefix="/interface", tags=["Internet"])
+router = APIRouter(
+    prefix="/interface", tags=["Internet"],
+    responses={503: {"description": "Device cleanup failed; retry after resolving the error"}},
+)
 
 
 @router.post(
@@ -26,7 +29,8 @@ router = APIRouter(prefix="/interface", tags=["Internet"])
         500: {"description": "NAT configuration failed"},
     },
 )
-async def internet_enable(
+def internet_enable(
+    reservation_mgr: ReservationManagerDep,
     _auth: bool = Depends(require_token),
     reservation: Reservation = Depends(resolve_reservation),
     manager: NetworkManager = Depends(get_manager),
@@ -36,14 +40,15 @@ async def internet_enable(
 
     Requires a valid reservation token.
     """
-    device_id = reservation.device_id
-    try:
-        manager.enable_internet(device_id)
-        return {"detail": f"Network {device_id} internet enabled successfully"}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    with hold_reservation(reservation_mgr, reservation):
+        device_id = reservation.device_id
+        try:
+            manager.enable_internet(device_id)
+            return {"detail": f"Network {device_id} internet enabled successfully"}
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except RuntimeError as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post(
@@ -61,7 +66,8 @@ async def internet_enable(
         404: {"description": "Reservation not found or expired"},
     },
 )
-async def internet_disable(
+def internet_disable(
+    reservation_mgr: ReservationManagerDep,
     _auth: bool = Depends(require_token),
     reservation: Reservation = Depends(resolve_reservation),
     manager: NetworkManager = Depends(get_manager),
@@ -71,9 +77,10 @@ async def internet_disable(
 
     Requires a valid reservation token.
     """
-    device_id = reservation.device_id
-    try:
-        manager.disable_internet(device_id)
-        return {"detail": f"Network {device_id} internet disabled successfully"}
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    with hold_reservation(reservation_mgr, reservation):
+        device_id = reservation.device_id
+        try:
+            manager.disable_internet(device_id)
+            return {"detail": f"Network {device_id} internet disabled successfully"}
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))

@@ -189,11 +189,10 @@ class QosProfileManager:
         ap.stop_event.set()
         if ap.thread is not None:
             ap.thread.join(timeout=5)
+            if ap.thread.is_alive():
+                raise RuntimeError(f"QoS profile on {interface} did not stop")
 
-        try:
-            qos_manager.clear_qos(interface)
-        except Exception as exc:
-            logger.warning("Failed to clear QoS on %s: %s", interface, exc)
+        qos_manager.clear_qos(interface)
 
         with self._lock:
             self._active.pop(interface, None)

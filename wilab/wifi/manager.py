@@ -6,21 +6,42 @@ from ipaddress import IPv4Network
 from datetime import datetime, timezone
 import re
 import threading
+import secrets
+from collections.abc import Callable
+from _thread import RLock
 from ..config import AppConfig
 from ..models import NetworkCreateRequest, NetworkStatus, ClientInfo, NetworkTxPower
 from ..network.dhcp import DhcpServer, DhcpServerError
 from ..network.nat import NatManager
 from ..network.isolation import IsolationManager
-from .hostapd import HostapdManager, HostapdError
+from ..network.qos import QosManager
+from ..network.qos_profile import QosProfileManager
+from .hostapd import HostapdManager, HostapdError, HostapdRadioFailure, HostapdSegfault
+from .recovery import RadioRecovery
+from .watchdog import NetworkWatchdog
+from ..reservation import Reservation, ReservationManager
 from .channels import ChannelManager
 from .interface import validate_interface_exists, validate_interface_wireless, validate_interface_ap_mode, InterfaceError
-from ..network.commands import execute_iw, execute_command, CommandError
+from ..network.commands import (
+    CommandError, command_deadline, execute_command, execute_ip, execute_iw,
+)
 
 logger = logging.getLogger(__name__)
+
+STARTUP_RETRY_BUDGET = 5.0
+STARTUP_RETRY_DELAY = 0.75
+MIN_RETRY_ATTEMPT_TIME = 0.75
 
 
 class TxPowerMismatchError(Exception):
     """Raised when reported TX power does not match the requested level."""
+
+
+class StartupFailure(ValueError):
+    def __init__(self, message: str, *, radio: bool = False, cleanup_failed: bool = False):
+        super().__init__(message)
+        self.radio = radio
+        self.cleanup_failed = cleanup_failed
 
 
 class NetworkManager:
@@ -34,8 +55,14 @@ class NetworkManager:
         self.hostapd_manager = HostapdManager()
         self.isolation_manager = IsolationManager()
         self._channel_manager = ChannelManager()
-        self.qos_manager: object | None = None  # injected by dependencies
-        self._lock = threading.Lock()
+        self.qos_manager: QosManager | None = None
+        self.qos_profile_manager: QosProfileManager | None = None
+        self._device_locks = {n.device_id: threading.RLock() for n in config.networks}
+        self._device_locks_guard = threading.Lock()
+        self._firewall_lock = threading.Lock()
+        self.expire_reservations: Callable[[], None] | None = None
+        self.recovery = RadioRecovery(self)
+        self.watchdog = NetworkWatchdog(self)
         # Background expiry checker to auto-stop networks at timeout
         self._expiry_thread = threading.Thread(target=self._expiry_loop, daemon=True)
         self._expiry_thread.start()
@@ -80,8 +107,71 @@ class NetworkManager:
         octets[2] = str(third_octet)
         return '.'.join(octets) + '/24'
 
+    def device_lock(self, device_id: str) -> RLock:
+        """Serialize lifecycle operations only for this device."""
+        with self._device_locks_guard:
+            lock = self._device_locks.get(device_id)
+            if lock is None:
+                lock = self._device_locks[device_id] = threading.RLock()
+            return lock
+
+    def release_device(self, device_id: str) -> None:
+        """Stop all tracked resources before a device can be reassigned."""
+        with self.device_lock(device_id):
+            if (
+                device_id in self.active
+                or device_id in self.hostapd_manager._instances
+                or device_id in self.dhcp_server.list_active()
+            ):
+                self.stop_network(device_id)
+            if device_id in self.active:
+                raise RuntimeError(f"Network {device_id} is still active")
+
     def start_network(
-        self, device_id: str, req: NetworkCreateRequest, expires_at_timestamp: float | None = None
+        self, device_id: str, req: NetworkCreateRequest,
+        expires_at_timestamp: float | None = None, *, allow_internal_retry: bool = True,
+    ) -> NetworkStatus:
+        with self.device_lock(device_id):
+            return self._start_network(device_id, req, expires_at_timestamp, allow_internal_retry)
+
+    def quarantine_radio(
+        self, reservations: ReservationManager, reservation: Reservation, *, radio_fault: bool,
+        band: str, channel: int,
+    ) -> None:
+        device = reservation.device_id
+        port = next(n.usb_recovery_port for n in self.config.networks if n.device_id == device)
+        if not radio_fault or self.config.upstream_interface == device:
+            port = None
+        reservations.quarantine(reservation, recovering=port is not None)
+        if port is not None:
+            try:
+                self.recovery.schedule(reservations, device, port, band, channel)
+            except RuntimeError:
+                reservations.finish_recovery(device, recovered=False)
+                logger.exception("Could not schedule USB recovery for %s", device)
+
+    def probe_recovered_radio(self, device: str, band: str, channel: int) -> None:
+        """Verify AP and DHCP startup without publishing a user network or enabling NAT."""
+        subnet = self._get_subnet(device)
+        net = IPv4Network(subnet)
+        try:
+            self.hostapd_manager.start(
+                net_id=device, interface=device, ssid=f"wilab-check-{secrets.token_hex(4)}",
+                channel=channel, encryption="wpa2", password=secrets.token_hex(24),
+                hidden=True, band=band, country_code=self.config.country_code,
+            )
+            execute_ip(["addr", "add", f"{net[1]}/{net.prefixlen}", "dev", device])
+            self.dhcp_server.start(device, device, subnet, self.config.dns_server, probe=True)
+            if not self.hostapd_manager.is_enabled(device) or not self.dhcp_server.is_running(device):
+                raise CommandError("Recovery AP or DHCP process is not ready")
+        except (HostapdError, DhcpServerError) as exc:
+            raise CommandError("Recovery AP/DHCP probe failed") from exc
+        finally:
+            self.release_device(device)
+
+    def _start_network(
+        self, device_id: str, req: NetworkCreateRequest,
+        expires_at_timestamp: float | None, allow_internal_retry: bool,
     ) -> NetworkStatus:
         """
         Start an AP network with DHCP server.
@@ -94,6 +184,12 @@ class NetworkManager:
         Returns:
             NetworkStatus with active network details
         """
+        retry_deadline = time.monotonic() + STARTUP_RETRY_BUDGET
+        if expires_at_timestamp is not None:
+            retry_deadline = min(
+                retry_deadline,
+                time.monotonic() + (expires_at_timestamp - time.time()),
+            )
         logger.info(f"Starting network {device_id} with SSID '{req.ssid}'")
         
         # Validate device_id exists in config
@@ -105,10 +201,11 @@ class NetworkManager:
         if device_id in self.active:
             raise ValueError(f"Network {device_id} is already active. Stop it first before creating a new one.")
         
-        # Also check if hostapd is running (in case network was marked inactive but processes still running)
-        if self.hostapd_manager.is_running(device_id):
-            logger.warning(f"hostapd is running for {device_id} but network not in active dict, cleaning up")
-            self.stop_network(device_id)
+        # Clear any tracked resources left by a failed startup before retrying.
+        try:
+            self.release_device(device_id)
+        except RuntimeError as e:
+            raise StartupFailure(f"Failed to clean up previous startup: {e}", cleanup_failed=True) from e
         
         # Expiration: from reservation timestamp, or None for unlimited
         if expires_at_timestamp is not None:
@@ -118,6 +215,8 @@ class NetworkManager:
         
         # Get subnet (from config or calculated)
         subnet = self._get_subnet(device_id)
+        net = IPv4Network(subnet)
+        gateway = f"{net[1]}/{net.prefixlen}"
         
         # Validate interface
         logger.info(f"Validating interface {cfg_net.interface}")
@@ -139,66 +238,72 @@ class NetworkManager:
         # Best-effort: prevent NetworkManager/wpa_supplicant from contending AP interface.
         self._configure_networkmanager_unmanaged(cfg_net.interface)
         
-        # Start DHCP server
-        try:
-            dhcp_info = self.dhcp_server.start(
-                net_id=device_id,
-                interface=cfg_net.interface,
-                subnet=subnet,
-                dns_server=self.config.dns_server
-            )
-            logger.info(f"DHCP server started: {dhcp_info}")
-        except DhcpServerError as e:
-            logger.error(f"Failed to start DHCP server: {e}")
-            raise ValueError(f"Failed to configure DHCP: {e}") from e
-        
-        # Start hostapd for AP mode
-        try:
-            hostapd_info = self.hostapd_manager.start(
-                net_id=device_id,
-                interface=cfg_net.interface,
-                ssid=req.ssid,
-                channel=req.channel,
-                encryption=req.encryption,
-                password=req.password,
-                hidden=req.hidden,
-                band=req.band,
-                country_code=self.config.country_code,
-            )
-            logger.info(f"hostapd started: {hostapd_info}")
-        except HostapdError as e:
-            logger.error(f"Failed to start hostapd: {e}")
-            # Rollback DHCP
+        for retrying in (False, True):
+            stage = "start AP"
             try:
-                self.dhcp_server.stop(device_id)
-            except Exception:
-                pass
-            raise ValueError(f"Failed to start AP: {e}") from e
+                with command_deadline(retry_deadline if retrying else None):
+                    self.hostapd_manager.start(
+                        net_id=device_id,
+                        interface=cfg_net.interface,
+                        ssid=req.ssid,
+                        channel=req.channel,
+                        encryption=req.encryption,
+                        password=req.password,
+                        hidden=req.hidden,
+                        band=req.band,
+                        country_code=self.config.country_code,
+                    )
+                    stage = "assign gateway IP"
+                    execute_ip(["addr", "add", gateway, "dev", cfg_net.interface])
+                    logger.info("Gateway IP %s assigned to %s", gateway, cfg_net.interface)
+                    stage = "configure DHCP"
+                    self.dhcp_server.start(
+                        net_id=device_id,
+                        interface=cfg_net.interface,
+                        subnet=subnet,
+                        dns_server=self.config.dns_server,
+                    )
+                    if retrying and (
+                        time.monotonic() >= retry_deadline
+                        or (expires_at_timestamp is not None and time.time() >= expires_at_timestamp)
+                    ):
+                        stage = "complete startup retry"
+                        raise CommandError("Startup retry deadline expired")
+            except (HostapdError, CommandError, DhcpServerError) as e:
+                logger.error("Failed to %s for %s: %s", stage, device_id, e)
+                try:
+                    self.release_device(device_id)
+                except RuntimeError:
+                    logger.exception("Startup rollback failed for %s", device_id)
+                    raise StartupFailure(
+                        f"Failed to {stage}: {e}",
+                        radio=isinstance(e, HostapdRadioFailure) or (retrying and stage == "start AP"),
+                        cleanup_failed=True,
+                    ) from e
 
-        # Assign gateway IP (.1) to interface AFTER hostapd starts (hostapd resets the interface)
-        # subnet is e.g. "192.168.120.0/24", gateway must be .1
-        from ipaddress import IPv4Network as IPv4Net
-        from ..network.commands import execute_ip, CommandError
-        net = IPv4Net(subnet, strict=False)
-        gateway_ip = str(net.network_address + 1)  # .1 of the subnet
-        try:
-            # Check if IP is already present
-            ip_addr_output = execute_ip(["addr", "show", cfg_net.interface])
-            if gateway_ip not in ip_addr_output:
-                logger.info(f"Assigning gateway IP {gateway_ip}/24 to interface {cfg_net.interface}")
-                execute_ip(["addr", "add", f"{gateway_ip}/24", "dev", cfg_net.interface])
-                logger.info(f"Gateway IP {gateway_ip}/24 assigned to {cfg_net.interface}")
+                if (
+                    not retrying
+                    and allow_internal_retry
+                    and req.band == "2.4ghz"
+                    and isinstance(e, HostapdSegfault)
+                    and retry_deadline - time.monotonic()
+                    >= STARTUP_RETRY_DELAY + MIN_RETRY_ATTEMPT_TIME
+                ):
+                    time.sleep(STARTUP_RETRY_DELAY)
+                    if (
+                        retry_deadline - time.monotonic() >= MIN_RETRY_ATTEMPT_TIME
+                        and (expires_at_timestamp is None or time.time() < expires_at_timestamp)
+                    ):
+                        logger.info("Retrying AP startup once after segfault on %s", device_id)
+                        continue
+                raise StartupFailure(
+                    f"Failed to {stage}: {e}",
+                    radio=isinstance(e, HostapdRadioFailure) or (retrying and stage == "start AP"),
+                ) from e
             else:
-                logger.info(f"Gateway IP {gateway_ip}/24 already present on {cfg_net.interface}")
-        except CommandError as e:
-            logger.error(f"Failed to assign gateway IP: {e}")
-            # Rollback hostapd and DHCP
-            try:
-                self.hostapd_manager.stop(device_id)
-                self.dhcp_server.stop(device_id)
-            except Exception:
-                pass
-            raise ValueError(f"Failed to assign gateway IP: {e}")
+                if retrying:
+                    logger.info("AP startup retry recovered %s", device_id)
+                break
 
         # Apply TX power level from request
         tx_power_level = req.tx_power_level
@@ -229,12 +334,11 @@ class NetworkManager:
         # Store internal timestamp for expiration checking
         object.__setattr__(status, '_expires_at_timestamp', expires_at_timestamp)  # type: ignore[attr-defined]
         
-        self.active[device_id] = status
-        
         # Enable NAT if internet access is enabled
         if internet_enabled:
             try:
-                self.nat_manager.enable_nat(cfg_net.interface, device_id)
+                with self._firewall_lock:
+                    self.nat_manager.enable_nat(cfg_net.interface, device_id)
                 logger.info(f"NAT enabled for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to enable NAT for {device_id}: {e}")
@@ -242,18 +346,24 @@ class NetworkManager:
         
         # Apply isolation rules to prevent inter-network traffic
         try:
-            self.isolation_manager.add_network(subnet)
+            with self._firewall_lock:
+                self.isolation_manager.add_network(subnet)
             logger.info(f"Isolation rules applied for {device_id} ({subnet})")
         except Exception as e:
             logger.error(f"Failed to apply isolation rules for {device_id}: {e}")
         #     # Don't fail network creation if isolation fails
         logger.info(f"Isolation disabled for testing (network {device_id})")
         
+        self.active[device_id] = status
         logger.info(f"Network {device_id} started successfully (expires at {expires_at_str})")
         
         return status
 
     def stop_network(self, device_id: str) -> None:
+        with self.device_lock(device_id):
+            self._stop_network(device_id)
+
+    def _stop_network(self, device_id: str) -> None:
         """
         Stop an AP network and clean up DHCP and NAT.
         
@@ -261,6 +371,7 @@ class NetworkManager:
             device_id: Device identifier (interface name)
         """
         logger.info(f"Stopping network {device_id}")
+        errors: list[str] = []
         
         # Get interface and subnet before removing from active dict
         cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
@@ -269,46 +380,59 @@ class NetworkManager:
         # Clear QoS rules before tearing down the network
         if cfg_net and self.qos_manager is not None:
             try:
-                self.qos_manager.clear_qos(cfg_net.interface)  # type: ignore[attr-defined]
+                if self.qos_profile_manager is not None:
+                    self.qos_profile_manager.stop_profile(cfg_net.interface, self.qos_manager)
+                self.qos_manager.clear_qos(cfg_net.interface)
             except Exception as e:
                 logger.error(f"Error clearing QoS rules: {e}")
+                errors.append(f"QoS: {e}")
 
         # Stop hostapd
         try:
             self.hostapd_manager.stop(device_id)
         except Exception as e:
             logger.error(f"Error stopping hostapd: {e}")
+            errors.append(f"hostapd: {e}")
         
         # Disable NAT if it was enabled
         if device_id in self.active and self.active[device_id].internet_enabled and cfg_net:
             try:
-                self.nat_manager.disable_nat(cfg_net.interface, device_id)
+                with self._firewall_lock:
+                    self.nat_manager.disable_nat(cfg_net.interface, device_id)
             except Exception as e:
                 logger.error(f"Error disabling NAT: {e}")
+                errors.append(f"NAT: {e}")
         
         # Remove isolation rules
         if subnet:
             try:
-                self.isolation_manager.remove_network(subnet)
+                with self._firewall_lock:
+                    self.isolation_manager.remove_network(subnet)
                 logger.info(f"Isolation rules removed for {device_id} ({subnet})")
             except Exception as e:
                 logger.error(f"Error removing isolation rules: {e}")
+                errors.append(f"isolation: {e}")
         
         # Stop DHCP server
         try:
             self.dhcp_server.stop(device_id)
         except Exception as e:
             logger.error(f"Error stopping DHCP server: {e}")
+            errors.append(f"DHCP: {e}")
+
+        if errors:
+            raise RuntimeError(f"Failed to stop network {device_id}: {'; '.join(errors)}")
         
         # Remove from active dict
-        if device_id in self.active:
-            with self._lock:
-                if device_id in self.active:
-                    del self.active[device_id]
+        self.active.pop(device_id, None)
         
         logger.info(f"Network {device_id} stopped")
 
     def get_status(self, device_id: str) -> Optional[NetworkStatus]:
+        with self.device_lock(device_id):
+            return self._get_status(device_id)
+
+    def _get_status(self, device_id: str) -> NetworkStatus | None:
         """
         Get current status of a network.
         Auto-expires networks past their timeout.
@@ -409,7 +533,8 @@ class NetworkManager:
         # Enable NAT if not already enabled
         if not st.internet_enabled:
             try:
-                self.nat_manager.enable_nat(cfg_net.interface, device_id)
+                with self._firewall_lock:
+                    self.nat_manager.enable_nat(cfg_net.interface, device_id)
                 logger.info(f"NAT rules applied for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to enable NAT: {e}")
@@ -447,7 +572,8 @@ class NetworkManager:
         # Disable NAT if currently enabled
         if st.internet_enabled:
             try:
-                self.nat_manager.disable_nat(cfg_net.interface, device_id)
+                with self._firewall_lock:
+                    self.nat_manager.disable_nat(cfg_net.interface, device_id)
                 logger.info(f"NAT rules removed for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to disable NAT: {e}")
@@ -544,11 +670,13 @@ class NetworkManager:
     
     def shutdown_all(self) -> None:
         """Shutdown all active networks."""
+        self.recovery.stop()
+        self.watchdog.stopping.set()
         logger.info("Shutting down all networks")
-        device_ids = list(self.active.keys())
+        device_ids = {n.device_id for n in self.config.networks} | self.active.keys()
         for device_id in device_ids:
             try:
-                self.stop_network(device_id)
+                self.release_device(device_id)
             except Exception as e:
                 logger.error(f"Error stopping {device_id}: {e}")
         logger.info("All networks shut down")
@@ -713,24 +841,33 @@ class NetworkManager:
 
     def _expiry_loop(self) -> None:
         """Background loop to auto-expire networks without requiring API calls."""
-        while True:
+        while not self.watchdog.stopping.wait(5):
             try:
                 now = time.time()
                 # Copy keys to avoid mutation during iteration
-                with self._lock:
-                    items = list(self.active.items())
-                for device_id, st in items:
-                    # Some tests may not set internal timestamp; guard accordingly
-                    ts = getattr(st, '_expires_at_timestamp', None)
-                    if ts is not None and ts < now:
-                        logger.info(f"[expiry-loop] Network {device_id} expired, stopping")
-                        try:
-                            self.stop_network(device_id)
-                        except Exception as e:
-                            logger.error(f"[expiry-loop] Failed stopping {device_id}: {e}")
+                for device_id, st in self.active.copy().items():
+                    self._expire_network(device_id, st, now)
+                if self.expire_reservations is not None:
+                    self.expire_reservations()
             except Exception as e:
                 logger.debug(f"[expiry-loop] Loop error: {e}")
-            # Run every 5 seconds
-            time.sleep(5)
+
+    def _expire_network(self, device_id: str, status: NetworkStatus, now: float) -> None:
+        timestamp = getattr(status, '_expires_at_timestamp', None)
+        if timestamp is None or timestamp >= now:
+            return
+        lock = self.device_lock(device_id)
+        if not lock.acquire(blocking=False):
+            return
+        try:
+            if self.active.get(device_id) is not status:
+                return
+            logger.info(f"[expiry-loop] Network {device_id} expired, stopping")
+            try:
+                self.stop_network(device_id)
+            except RuntimeError as e:
+                logger.error(f"[expiry-loop] Failed stopping {device_id}: {e}")
+        finally:
+            lock.release()
 
 

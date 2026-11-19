@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
+from ...config import AppConfig
 from ...wifi.manager import NetworkManager
 from ...reservation import ReservationManager
 from ...api.dependencies import get_config, get_manager, get_reservation_manager
@@ -11,17 +12,38 @@ from ...api.auth import require_token
 from ...network.commands import execute_command, CommandError
 from ...version import __version__
 
-router = APIRouter(tags=["System"])
+router = APIRouter(
+    tags=["System"],
+    responses={503: {"description": "An expired device could not be cleaned up"}},
+)
 
 
 @router.get(
     "/status",
+    summary="Read system and adapter status",
     responses={
-        200: {"description": "System status retrieved successfully"},
+        200: {
+            "description": "Health and allocation snapshot; a reserved or quarantined adapter is not freely allocatable.",
+            "content": {"application/json": {"example": {
+                "version": "3.1.0", "status": "degraded", "active_networks": 0,
+                "networks": [
+                    {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
+                     "reservation_remaining_seconds": None, "recovery_state": "recovering"},
+                    {"display_name": "Antenna B", "interface": "wlan1", "reserved": True,
+                     "reservation_remaining_seconds": 54, "runtime_state": "restoring_ap"},
+                ],
+                "reservation_policy": {"min_seconds": 60, "max_seconds": 86400, "allow_unlimited": False},
+                "checks": {
+                    "dnsmasq": {"running": False, "instances": 0},
+                    "iptables_nat": {"configured": True, "errors": []},
+                    "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
+                },
+            }}},
+        },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
     },
 )
-async def system_status(
+def system_status(
     manager: NetworkManager = Depends(get_manager), 
     config=Depends(get_config),
     reservation_mgr: ReservationManager = Depends(get_reservation_manager),
@@ -30,14 +52,26 @@ async def system_status(
     """
     Comprehensive system status including interfaces and health check.
 
+    `recovery_state` (`recovering` or `unavailable`) excludes an adapter
+    from allocation even if `reserved` is false. `runtime_state` instead
+    describes an active reservation's AP or DHCP restoration. Either makes
+    overall status `degraded`. A status response is not a reservation.
+
     Returns:
         dict: Contains:
             - version: Software version
             - networks: List of managed interfaces
+              (`runtime_state` during AP/DHCP restoration or DHCP failure)
             - status: Overall health (ok|degraded|standby)
             - active_networks: Number of active networks
             - checks: Component health details
     """
+    return _system_status(manager, config, reservation_mgr)
+
+
+def _system_status(
+    manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager
+) -> dict[str, Any]:
     status_data: dict[str, Any] = {
         "version": __version__,
         "status": "ok",
@@ -90,10 +124,9 @@ async def system_status(
             "error": str(e),
         }
 
-    # Determine overall status
-    has_active_networks = len(manager.active) > 0
+    active_count = len(manager.active)
     
-    if not has_active_networks:
+    if not active_count:
         # Standby - service is healthy but no networks are active
         status_data["status"] = "standby"
         status_data["active_networks"] = 0
@@ -107,24 +140,27 @@ async def system_status(
             ]
         )
         status_data["status"] = "ok" if all_ok else "degraded"
-        status_data["active_networks"] = len(manager.active)
+        status_data["active_networks"] = active_count
 
     # Add networks with reservation info, checks, and rest of data
     networks_info = []
+    reservations = reservation_mgr.snapshot()
+    recovery = reservation_mgr.recovery_snapshot()
+    runtime_degraded = False
     for n in config.networks:
         entry: dict = {"display_name": n.display_name, "interface": n.interface}
-        if reservation_mgr.is_device_reserved(n.device_id):
-            entry["reserved"] = True
-            # Find the reservation for this device to report remaining time
-            for r in reservation_mgr.all_active():
-                if r.device_id == n.device_id:
-                    entry["reservation_remaining_seconds"] = r.expires_in  # None for unlimited
-                    break
-        else:
-            entry["reserved"] = False
-            entry["reservation_remaining_seconds"] = None
+        reservation = reservations.get(n.device_id)
+        entry["reserved"] = reservation is not None
+        entry["reservation_remaining_seconds"] = reservation.expires_in if reservation else None
+        if reservation is not None and (runtime_state := manager.watchdog.state(reservation)):
+            entry["runtime_state"] = runtime_state
+            runtime_degraded = True
+        if n.device_id in recovery:
+            entry["recovery_state"] = "recovering" if recovery[n.device_id] else "unavailable"
         networks_info.append(entry)
     status_data["networks"] = networks_info
+    if recovery or runtime_degraded:
+        status_data["status"] = "degraded"
     status_data["reservation_policy"] = {
         "min_seconds": config.min_timeout,
         "max_seconds": config.max_timeout,
@@ -141,7 +177,7 @@ async def system_status(
         401: {"description": "Unauthorized (missing or invalid auth token)"},
     },
 )
-async def debug_info(
+def debug_info(
     manager: NetworkManager = Depends(get_manager),
     config=Depends(get_config),
     reservation_mgr: ReservationManager = Depends(get_reservation_manager),
@@ -159,8 +195,14 @@ async def debug_info(
     Returns:
         dict: Complete system debug information.
     """
+    return _debug_info(manager, config, reservation_mgr)
+
+
+def _debug_info(
+    manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager
+) -> dict[str, Any]:
     # === DETERMINE OVERALL STATUS ===
-    has_active_networks = len(manager.active) > 0
+    active_count = len(manager.active)
     
     # Check dnsmasq
     dhcp_status = manager.dhcp_server.status()
@@ -197,7 +239,7 @@ async def debug_info(
         upstream_has_ip = False
     
     # Determine overall status
-    if not has_active_networks:
+    if not active_count:
         status = "standby"
     else:
         all_ok = dhcp_running and nat_configured and upstream_reachable
@@ -205,13 +247,14 @@ async def debug_info(
     
     # === GET DETAILED SERVICES INFO ===
     services = manager.services_status()
+    reservations = reservation_mgr.snapshot()
     
     debug_data = {
         "version": __version__,
         "status": status,
         
         "system": {
-            "active_networks": len(manager.active),
+            "active_networks": active_count,
             "configured_networks": len(config.networks),
             "upstream_interface": config.upstream_interface,
         },
@@ -242,10 +285,9 @@ async def debug_info(
                 {
                     "display_name": n.display_name,
                     "interface": n.interface,
-                    "reservation_id": next(
-                        (r.reservation_id for r in reservation_mgr.all_active()
-                         if r.device_id == n.device_id),
-                        None,
+                    "reservation_id": (
+                        reservations[n.device_id].reservation_id
+                        if n.device_id in reservations else None
                     ),
                 }
                 for n in config.networks

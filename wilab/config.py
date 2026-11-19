@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 class NetworkEntry(BaseModel):
     interface: str
     display_name: str
+    usb_recovery_port: str | None = Field(default=None, pattern=r"^\d+-\d+(\.\d+)*$")
 
     @property
     def device_id(self) -> str:
@@ -82,6 +83,9 @@ class AppConfig(BaseModel):
         interfaces = [n.interface for n in v]
         if len(interfaces) != len(set(interfaces)):
             raise ValueError("Duplicate interface names in networks configuration")
+        ports = [n.usb_recovery_port for n in v if n.usb_recovery_port is not None]
+        if len(ports) != len(set(ports)):
+            raise ValueError("Duplicate USB recovery ports in networks configuration")
         
         return v
 

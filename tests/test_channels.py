@@ -471,7 +471,7 @@ class TestNetworkCreationChannelValidation:
             },
         )
         assert resp.status_code == 422
-        assert "disabled" in resp.json()['detail'].lower()
+        assert "disabled" in resp.json()['detail']['message'].lower()
 
     def test_unsupported_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
@@ -489,7 +489,7 @@ class TestNetworkCreationChannelValidation:
         # 173 passes static validation (it's in VALID_CHANNELS_5GHZ)
         # but is not in the mock hardware data → 422
         assert resp.status_code == 422
-        assert "not supported" in resp.json()['detail'].lower()
+        assert "not supported" in resp.json()['detail']['message'].lower()
 
     def test_no_ir_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
@@ -506,4 +506,4 @@ class TestNetworkCreationChannelValidation:
         )
         # Channel 12 has No IR in mock data — treated as disabled
         assert resp.status_code == 422
-        assert "disabled" in resp.json()['detail'].lower()
+        assert "disabled" in resp.json()['detail']['message'].lower()

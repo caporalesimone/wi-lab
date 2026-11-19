@@ -113,8 +113,25 @@ class TestSubnetInfo:
 class TestDhcpServerStart:
     """Tests for starting DHCP server (with mocking)."""
     
-    def test_start_server_not_installed(self, monkeypatch):
+    def test_start_does_not_change_interface(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_CONFIG_DIR", str(tmp_path))
+        monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_PID_DIR", str(tmp_path))
+        commands = []
+
+        def run(cmd):
+            commands.append(cmd[0])
+            if any(arg.startswith("--pid-file=") for arg in cmd):
+                (tmp_path / "dnsmasq-ap-01.pid").write_text("123")
+
+        monkeypatch.setattr("wilab.network.dhcp.execute_command", run)
+        info = DhcpServer().start("ap-01", "wlan0", "192.168.10.0/24", "192.0.2.1")
+        assert info["gateway"] == "192.168.10.1"
+        assert commands == ["dnsmasq", "dnsmasq", "dnsmasq"]
+
+    def test_start_server_not_installed(self, monkeypatch, tmp_path):
         """Test starting server fails gracefully when dnsmasq not installed."""
+        monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_CONFIG_DIR", str(tmp_path))
+        monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_PID_DIR", str(tmp_path))
         dhcp = DhcpServer()
         monkeypatch.setattr("wilab.network.dhcp.execute_command", lambda *args, **kwargs: (_ for _ in ()).throw(CommandError("missing")))
         with pytest.raises(DhcpServerError, match="dnsmasq not installed|Failed|Permission"):

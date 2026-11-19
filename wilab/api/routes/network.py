@@ -1,6 +1,8 @@
 """WiFi network lifecycle endpoints (create, delete, query)."""
 
 from datetime import datetime, timezone
+from math import ceil
+from time import monotonic
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Body
@@ -8,16 +10,27 @@ from pydantic import BaseModel, Field
 
 from ...models import NetworkCreateRequest, NetworkStatus
 from ...reservation import Reservation
-from ...wifi.manager import NetworkManager
+from ...wifi.manager import NetworkManager, StartupFailure
 from ...wifi.channels import ChannelManager
 from ...api.auth import require_token
-from ...api.dependencies import get_manager, get_channel_manager, resolve_reservation
+from ...api.dependencies import (
+    get_manager, get_channel_manager, hold_reservation, resolve_reservation, ReservationManagerDep,
+)
+from .recovery_responses import (
+    RETRY_AFTER_HEADER, RecoveryCode, recovery_error, recovery_example,
+)
 
-router = APIRouter(prefix="/interface", tags=["Network"])
+CREATE_RETRY_DELAYS = (5, 10)
+
+router = APIRouter(
+    prefix="/interface", tags=["Network"],
+    responses={503: {"description": "Device cleanup failed; retry after resolving the error"}},
+)
 
 
 @router.post(
     "/{reservation_id}/network",
+    summary="Create a network on a reserved adapter",
     responses={
         200: {
             "description": "Network created and started successfully",
@@ -27,9 +40,21 @@ router = APIRouter(prefix="/interface", tags=["Network"])
                 }
             },
         },
-        401: {"description": "Unauthorized (missing or invalid auth token)"},
-        404: {"description": "Reservation not found or expired"},
-        409: {"description": "Network already active; stop it first"},
+        401: {"description": "Unauthorized", "content": {"application/json": {
+            "example": {"detail": "Invalid token"},
+        }}},
+        404: {"description": "Reservation not found, expired or invalidated", "content": {
+            "application/json": {"example": {"detail": "Reservation not found or expired"}},
+        }},
+        409: {
+            "description": "Network already active, watchdog restoration, or radio cooldown (1001). Retry only for 1001.",
+            "headers": RETRY_AFTER_HEADER,
+            "content": {"application/json": {"examples": {
+                "active_network": {"value": {"detail": "Network is already active"}},
+                "restoration_in_progress": {"value": {"detail": "Network restoration is in progress"}},
+                "retry_later": recovery_example(RecoveryCode.RETRY_LATER),
+            }}},
+        },
         422: {
             "description": "Validation failed (body, unsupported channel, or disabled channel)",
             "content": {
@@ -51,24 +76,77 @@ router = APIRouter(prefix="/interface", tags=["Network"])
                 }
             },
         },
-        500: {"description": "Failed to start network due to runtime error"},
+        500: {
+            "description": (
+                "**Generic `500 / 500`:** `detail.message` explains the error. Keep the reservation ID; "
+                "release it if no longer needed. Do not retry creation automatically.\n\n"
+                "**`500 / 1003`:** the adapter is quarantined and the reservation is "
+                "invalidated. Discard the ID; do not retry creation or release it. "
+                "Request a new reservation if needed.\n\n"
+                "Neither response includes `Retry-After`."
+            ),
+            "content": {"application/json": {
+                "schema": {
+                    "type": "object",
+                    "required": ["detail"],
+                    "properties": {"detail": {"oneOf": [
+                        {
+                            "type": "object", "title": "Startup error; reservation retained",
+                            "required": ["code", "reason", "message"],
+                            "properties": {
+                                "code": {"type": "integer", "enum": [500]},
+                                "reason": {"type": "string", "enum": ["internal_server_error"]},
+                                "message": {"type": "string"},
+                            },
+                        },
+                        {
+                            "type": "object",
+                            "title": "Adapter quarantined; reservation invalidated",
+                            "required": ["code", "reason", "reservation_invalidated"],
+                            "properties": {
+                                "code": {"type": "integer", "enum": [RecoveryCode.DEVICE_UNAVAILABLE.value]},
+                                "reason": {"type": "string", "enum": ["device_unavailable"]},
+                                "reservation_invalidated": {"type": "boolean", "enum": [True]},
+                            },
+                        },
+                    ]}},
+                },
+                "examples": {
+                    "startup_failure": {
+                        "summary": "500 - Startup failed; reservation still valid",
+                        "value": {"detail": "Failed to start AP: hostapd exited with code 1"},
+                    },
+                    "device_unavailable": {
+                        "summary": "500 / 1003 - Adapter quarantined; discard the reservation ID",
+                        **recovery_example(RecoveryCode.DEVICE_UNAVAILABLE, invalidated=True),
+                    },
+                },
+            }},
+        },
+        503: {
+            "description": "Device cleanup failed while resolving an expired reservation.",
+            "content": {"application/json": {
+                "example": {"detail": "Failed to clean up device wlan0"},
+            }},
+        },
     },
 )
-async def start_network(
+def start_network(
+    reservation_mgr: ReservationManagerDep,
     _auth: bool = Depends(require_token),
     reservation: Reservation = Depends(resolve_reservation),
     req: NetworkCreateRequest = Body(
         ...,
-        examples=[
-            {
+        openapi_examples={
+            "wpa2_network": {"summary": "2.4 GHz WPA2 network", "value": {
                 "ssid": "TestNetwork",
                 "channel": 5,
                 "password": "testpass123",
                 "encryption": "wpa2",
                 "band": "2.4ghz",
                 "internet_enabled": True,
-            },
-        ],
+            }},
+        },
     ),
     manager: NetworkManager = Depends(get_manager),
     channel_mgr: ChannelManager = Depends(get_channel_manager),
@@ -79,32 +157,61 @@ async def start_network(
     Requires a valid reservation token. The network lifetime is bounded
     by the reservation expiry.
 
-    Args:
-        reservation: Active reservation (resolved from path token).
-        req: Network configuration (SSID, channel, password, band, etc).
+    If hostapd crashes with SIGSEGV during 2.4 GHz startup, the server may
+    retry once in the same request after successful cleanup. Clients do
+    not need to resubmit the request to trigger the retry.
 
-    Returns:
-        dict: Simple confirmation message.
+    After the first and second classified radio startup failures, **409 / 1001**
+    retains the reservation. Retry the same POST and ID only after the
+    `Retry-After` header (5 and 10 seconds, respectively). Calls during cooldown
+    do not consume a startup attempt. Reservation expiry is not extended.
+
+    A third classified failure, or unsafe cleanup during startup, returns **500 / 1003** and
+    invalidates the ID. Do not retry creation or release that ID. A new
+    reservation request can return **503 / 1002** while recovery is running.
+    No USB reset runs in the creation request.
+    A network being restored by the watchdog returns an ordinary HTTP 409.
     """
-    device_id = reservation.device_id
+    if manager.watchdog.state(reservation) in ("restoring_ap", "restoring_dhcp"):
+        raise HTTPException(status_code=409, detail="Network restoration is in progress")
+    with hold_reservation(reservation_mgr, reservation):
+        device_id = reservation.device_id
+        remaining = ceil(reservation.retry_at - monotonic())
+        if remaining > 0:
+            raise recovery_error(RecoveryCode.RETRY_LATER, retry_after=remaining)
+        try:
+            channel_mgr.validate_channel(device_id, req.channel, req.band)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
 
-    # Validate channel against real hardware capabilities
-    try:
-        channel_mgr.validate_channel(device_id, req.channel, req.band)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-    try:
-        manager.start_network(device_id, req, expires_at_timestamp=reservation.expires_at)
-        return {"detail": f"Network {device_id} created successfully"}
-    except ValueError as e:
-        error_msg = str(e)
-        error_msg_lower = error_msg.lower()
-        if "already active" in error_msg_lower:
-            raise HTTPException(status_code=409, detail=error_msg)
-        if "unknown device_id" in error_msg_lower:
-            raise HTTPException(status_code=404, detail=error_msg)
-        raise HTTPException(status_code=500, detail=error_msg)
+        try:
+            manager.start_network(
+                device_id, req, expires_at_timestamp=reservation.expires_at,
+                allow_internal_retry=reservation.radio_failures == 0,
+            )
+            reservation.radio_failures = 0
+            reservation.retry_at = 0
+            return {"detail": f"Network {device_id} created successfully"}
+        except StartupFailure as e:
+            if not (e.radio or e.cleanup_failed):
+                raise HTTPException(status_code=500, detail=str(e)) from e
+            reservation.radio_failures += 1
+            if not e.cleanup_failed and reservation.radio_failures <= len(CREATE_RETRY_DELAYS):
+                delay = CREATE_RETRY_DELAYS[reservation.radio_failures - 1]
+                reservation.retry_at = monotonic() + delay
+                raise recovery_error(RecoveryCode.RETRY_LATER, retry_after=delay) from e
+            manager.quarantine_radio(
+                reservation_mgr, reservation, radio_fault=e.radio, band=req.band, channel=req.channel,
+            )
+            raise recovery_error(RecoveryCode.DEVICE_UNAVAILABLE, invalidated=True) from e
+        except ValueError as e:
+            error_msg = str(e)
+            error_msg_lower = error_msg.lower()
+            if "already active" in error_msg_lower:
+                raise HTTPException(status_code=409, detail=error_msg)
+            if "unknown device_id" in error_msg_lower:
+                raise HTTPException(status_code=404, detail=error_msg)
+            raise HTTPException(status_code=500, detail=error_msg)
 
 
 @router.delete(
@@ -123,7 +230,8 @@ async def start_network(
         409: {"description": "Network already inactive"},
     },
 )
-async def stop_network(
+def stop_network(
+    reservation_mgr: ReservationManagerDep,
     _auth: bool = Depends(require_token),
     reservation: Reservation = Depends(resolve_reservation),
     manager: NetworkManager = Depends(get_manager),
@@ -136,27 +244,45 @@ async def stop_network(
     Returns:
         dict: Confirmation with stopped device_id.
     """
-    device_id = reservation.device_id
-    st = manager.get_status(device_id)
-    if not st:
-        raise HTTPException(status_code=404, detail="Unknown device_id")
-    if not st.active:
-        raise HTTPException(status_code=409, detail=f"Network {device_id} is already inactive")
+    with hold_reservation(reservation_mgr, reservation):
+        device_id = reservation.device_id
+        st = manager.get_status(device_id)
+        if not st:
+            raise HTTPException(status_code=404, detail="Unknown device_id")
+        if not st.active:
+            raise HTTPException(status_code=409, detail=f"Network {device_id} is already inactive")
 
-    manager.stop_network(device_id)
-    return {"detail": f"Network {device_id} stopped successfully"}
+        manager.stop_network(device_id)
+        return {"detail": f"Network {device_id} stopped successfully"}
 
 
 @router.get(
     "/{reservation_id}/network",
     response_model=NetworkStatus,
     responses={
-        200: {"description": "Network status retrieved successfully"},
+        200: {
+            "description": "Network status, or a watchdog snapshot while restoration is in progress.",
+            "content": {"application/json": {"examples": {
+                "restoring_ap": {"value": {
+                    "interface": "wlan0", "active": False, "runtime_state": "restoring_ap",
+                    "expires_in": 54,
+                }},
+                "restoring_dhcp": {"value": {
+                    "interface": "wlan0", "active": True, "runtime_state": "restoring_dhcp",
+                    "expires_in": 53,
+                }},
+                "dhcp_failed": {"value": {
+                    "interface": "wlan0", "active": True, "runtime_state": "dhcp_failed",
+                    "expires_in": 51,
+                }},
+            }}},
+        },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "Reservation not found or expired"},
     },
 )
-async def get_network(
+def get_network(
+    reservation_mgr: ReservationManagerDep,
     _auth: bool = Depends(require_token),
     reservation: Reservation = Depends(resolve_reservation),
     manager: NetworkManager = Depends(get_manager),
@@ -165,23 +291,34 @@ async def get_network(
     Get complete network configuration, status, DHCP info, and connected clients.
 
     Requires a valid reservation token.
+    During runtime restoration, returns the current `runtime_state` without
+    waiting for the radio. A quarantined network's former ID returns 404.
 
     Returns:
         NetworkStatus: Full details including SSID, channel, password, expiration time,
             DHCP configuration, and list of connected clients.
     """
-    device_id = reservation.device_id
-    st = manager.get_status(device_id)
-    if not st:
-        raise HTTPException(status_code=404, detail="Unknown device_id")
-    # Always inject reservation-derived expiry so clients see countdown
-    # even when the network is off.
-    st.expires_at = (
-        datetime.fromtimestamp(reservation.expires_at, tz=timezone.utc).isoformat()
-        if reservation.expires_at is not None else None
-    )
-    st.expires_in = reservation.expires_in
-    return st
+    runtime_state = manager.watchdog.state(reservation)
+    if runtime_state in ("restoring_ap", "restoring_dhcp"):
+        return NetworkStatus(
+            interface=reservation.device_id, active=runtime_state == "restoring_dhcp",
+            runtime_state=runtime_state, expires_in=reservation.expires_in,
+            expires_at=(
+                datetime.fromtimestamp(reservation.expires_at, tz=timezone.utc).isoformat()
+                if reservation.expires_at is not None else None
+            ),
+        )
+    with hold_reservation(reservation_mgr, reservation):
+        device_id = reservation.device_id
+        st = manager.get_status(device_id)
+        if not st:
+            raise HTTPException(status_code=404, detail="Unknown device_id")
+        st.expires_at = (
+            datetime.fromtimestamp(reservation.expires_at, tz=timezone.utc).isoformat()
+            if reservation.expires_at is not None else None
+        )
+        st.expires_in = reservation.expires_in
+        return st.model_copy(update={"runtime_state": manager.watchdog.state(reservation)})
 
 
 # ---- Response models for available channels ----
@@ -212,7 +349,8 @@ class AvailableChannelsResponse(BaseModel):
         500: {"description": "Failed to query interface capabilities"},
     },
 )
-async def get_available_channels(
+def get_available_channels(
+    reservation_mgr: ReservationManagerDep,
     _auth: bool = Depends(require_token),
     reservation: Reservation = Depends(resolve_reservation),
     channel_mgr: ChannelManager = Depends(get_channel_manager),
@@ -224,14 +362,15 @@ async def get_available_channels(
     Disabled channels are included with ``max_power_dbm = 0.0`` and
     ``disabled = true`` so clients can display them as unavailable.
     """
-    device_id = reservation.device_id
-    try:
-        info = channel_mgr.get_channels(device_id)
-    except (ValueError, Exception) as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to query channels for {device_id}: {exc}",
-        )
+    with hold_reservation(reservation_mgr, reservation):
+        device_id = reservation.device_id
+        try:
+            info = channel_mgr.get_channels(device_id)
+        except (ValueError, Exception) as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to query channels for {device_id}: {exc}",
+            )
 
     return AvailableChannelsResponse(
         interface=info.interface,

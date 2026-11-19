@@ -4,11 +4,34 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
-## [Unreleased]
+## [3.1.0] - 2026-11-19
+
+### Breaking Changes
+
+- All `/api/v1` error bodies now use an object with `detail.code` and `detail.reason`. Clients displaying a former string `detail` should read `detail.message`. Recovery codes 1001–1003 and successful responses are unchanged.
+
+### Features
+
+- Allow clients to retry classified radio startup failures using the same reservation after `Retry-After`. A terminal creation failure returns `500 / 1003` and invalidates the reservation. New reservations still return `503` when blocked by recovery or quarantine.
+- Restart failed active access points or DHCP processes and verify AP and DHCP startup before a USB-reset antenna returns to the pool.
+
+### 🐛 Bug Fixes
+
+- Prevent concurrent reservations in one service process from sharing an antenna, and wait for network cleanup before reassigning it. Failed cleanup keeps the device held and returns 503 when it prevents an operation.
+- Stop active QoS profiles when their network is released or expires.
+- Keep independent API requests responsive during slow device operations.
+- Leave Wi-Fi interfaces managed and down after a network stops to avoid an unnecessary activation cycle.
+- Verify that the access point is enabled before assigning its gateway and starting DHCP. Roll back incomplete network starts.
+- Retry a transient hostapd startup segfault once on 2.4 GHz after successful cleanup, without requiring the client to resubmit the request.
+- Clean up timed-out access point starts by tracking hostapd directly instead of waiting for a PID file.
+- Keep other adapters and system status responsive during a slow AP startup or cleanup.
 
 ### 🔧 Maintenance
 
 - **hostapd regulatory compliance** — The generated hostapd configuration now enables `ieee80211d=1` (advertise country code and apply the regulatory domain) on all bands, and `ieee80211h=1` (DFS/TPC) on 5 GHz where regulatory rules require it.
+- Documented safe recovery of a blocked USB Wi-Fi adapter.
+- Explain the reservation and recovery lifecycle in Swagger and ReDoc, including retry, quarantine and watchdog response examples.
+- Include the API operation, HTTP status, and error code in journal entries for server errors, without request or response data.
 
 ### ✅ Tests
 

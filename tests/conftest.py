@@ -1,6 +1,7 @@
 # pytest configuration and shared fixtures
 import os
 import sys
+from unittest.mock import patch
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,7 +15,8 @@ TEST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'test.config.yaml')
 @pytest.fixture(scope="session")
 def config():
     """Load test config once per test session."""
-    return load_config(TEST_CONFIG_PATH)
+    with patch("wilab.wifi.interface.validate_interface"):
+        return load_config(TEST_CONFIG_PATH)
 
 
 @pytest.fixture(autouse=True)
@@ -31,12 +33,14 @@ def _test_config_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def mock_network_operations(monkeypatch):
+def mock_network_operations(monkeypatch, tmp_path):
     """Auto-mock network operations that require root privileges."""
     from wilab.network import commands
     from wilab.wifi import interface
     from wilab.wifi import manager
     from wilab.wifi import channels
+    from wilab.wifi import hostapd
+    from wilab.network import dhcp, nat
     
     # Mock WiFi interface validation (requires real hardware)
     def mock_validate_interface(iface):
@@ -188,6 +192,10 @@ Band 2:
     
     # Mock execute_command for network operations
     def mock_execute_command(cmd, **kwargs):
+        if cmd[:4] == ["ip", "route", "show", "default"]:
+            return "default via 192.0.2.1 dev eth0"
+        if cmd[0] == "iptables" and "-C" in cmd:
+            raise commands.CommandError("Rule not found")
         if cmd[0] == "ip":
             return mock_execute_ip(cmd[1:])
         # For other commands, return empty string
@@ -202,6 +210,17 @@ Band 2:
     monkeypatch.setattr(manager, "validate_interface_wireless", lambda iface: None)
     monkeypatch.setattr(manager, "validate_interface_ap_mode", mock_validate_interface_ap_mode)
     monkeypatch.setattr(manager, "execute_iw", mock_execute_iw)
+    monkeypatch.setattr(manager, "execute_ip", mock_execute_ip)
+    monkeypatch.setattr(manager, "execute_command", mock_execute_command)
+    monkeypatch.setattr(hostapd, "execute_command", mock_execute_command)
+    monkeypatch.setattr(hostapd, "execute_iw", mock_execute_iw)
+    def reject_real_hostapd(cmd: list[str]) -> None:
+        raise commands.CommandError("hostapd must be mocked in tests")
+
+    monkeypatch.setattr(hostapd, "HOSTAPD_CONFIG_DIR", str(tmp_path / "hostapd"))
+    monkeypatch.setattr(hostapd, "start_foreground", reject_real_hostapd)
+    monkeypatch.setattr(dhcp, "execute_command", mock_execute_command)
+    monkeypatch.setattr(nat, "execute_command", mock_execute_command)
     
     # Patch commands
     monkeypatch.setattr(commands, "execute_ip", mock_execute_ip)

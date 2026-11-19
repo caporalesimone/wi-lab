@@ -2,7 +2,8 @@ import logging
 import os
 from typing import Optional, List, Tuple
 from ipaddress import IPv4Network
-from .commands import execute_command, CommandError
+from pathlib import Path
+from .commands import execute_command, stop_process, CommandError, CommandTimeout
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ class DhcpServer:
         gateway: str,
         dhcp_range: str,
         lease_file: str,
-        dns_server: str
+        dns_server: str, *, probe: bool = False,
     ) -> str:
         """
         Generate dnsmasq configuration for an interface.
@@ -89,12 +90,17 @@ class DhcpServer:
             "bind-interfaces",
             f"listen-address={gateway}",
             f"dhcp-range={dhcp_range},255.255.255.0,12h",
-            f"dhcp-option=option:router,{gateway}",
             f"dhcp-leasefile={lease_file}",
         ]
         
-        # DNS server configuration (always use explicit value from config)
-        config_lines.append(f"dhcp-option=option:dns-server,{dns_server}")
+        if probe:
+            config_lines.extend([
+                "leasefile-ro", "dhcp-option=option:router", "dhcp-option=option:dns-server",
+            ])
+        else:
+            config_lines.extend([
+                f"dhcp-option=option:router,{gateway}", f"dhcp-option=option:dns-server,{dns_server}",
+            ])
         
         # Minimal additional settings
         config_lines.extend([
@@ -111,7 +117,7 @@ class DhcpServer:
         net_id: str,
         interface: str,
         subnet: str,
-        dns_server: str
+        dns_server: str, *, probe: bool = False,
     ) -> dict:
         """
         Start DHCP server for a network interface with static subnet configuration.
@@ -146,18 +152,29 @@ class DhcpServer:
                 gateway_addr,
                 dhcp_range,
                 lease_file,
-                dns_server
+                dns_server, probe=probe,
             )
             
             # Write config to file
             config_file = os.path.join(DNSMASQ_CONFIG_DIR, f"dnsmasq-{net_id}.conf")
+            if os.path.lexists(pid_file):
+                raise DhcpServerError(f"Existing dnsmasq PID file for {net_id}")
+            instance = {
+                "interface": interface,
+                "subnet": subnet,
+                "gateway": gateway_addr,
+                "config_file": config_file,
+                "pid_file": pid_file,
+                "lease_file": lease_file,
+                "network_addr": network_addr,
+                "dhcp_range": dhcp_range,
+                "process_stopped": True,
+            }
+            self._instances[net_id] = instance
             with open(config_file, "w") as f:
                 f.write(config_content)
             
             logger.info(f"Generated dnsmasq config at {config_file}")
-            
-            # Configure interface IP address (gateway)
-            self._configure_interface(interface, gateway_addr, subnet)
             
             # Ensure dnsmasq is available
             try:
@@ -176,28 +193,27 @@ class DhcpServer:
                 raise DhcpServerError(f"dnsmasq config test failed: {e}") from e
             
             # Start dnsmasq for this interface (daemonizes by default)
+            instance["process_stopped"] = False
             try:
                 execute_command([
                     "dnsmasq",
                     f"--conf-file={config_file}",
                     f"--pid-file={pid_file}",
                 ])
+            except CommandTimeout:
+                # The launcher may already have forked.
+                raise
             except CommandError as e:
+                instance["process_stopped"] = not os.path.exists(pid_file)
                 raise DhcpServerError(f"dnsmasq failed to start: {e}") from e
             
+            if not os.path.isfile(pid_file):
+                raise DhcpServerError(f"Missing dnsmasq PID file for {net_id}")
+            pid = int(Path(pid_file).read_text().strip())
+            if pid <= 0:
+                raise DhcpServerError(f"Invalid dnsmasq PID for {net_id}")
+            instance["pid"] = pid
             logger.info(f"dnsmasq started for {net_id} on {interface}")
-            
-            # Store instance info
-            self._instances[net_id] = {
-                "interface": interface,
-                "subnet": subnet,
-                "gateway": gateway_addr,
-                "config_file": config_file,
-                "pid_file": pid_file,
-                "lease_file": lease_file,
-                "network_addr": network_addr,
-                "dhcp_range": dhcp_range,
-            }
             
             logger.info(f"DHCP server started for {net_id}: {subnet} (gateway: {gateway_addr})")
             
@@ -223,17 +239,22 @@ class DhcpServer:
             pid_file = instance.get("pid_file")
             
             # Stop dnsmasq process if pid file exists
-            if pid_file and os.path.exists(pid_file):
-                try:
-                    with open(pid_file, "r") as f:
-                        pid = f.read().strip()
-                    if pid:
-                        execute_command(["kill", pid], check=False)
-                except Exception as e:
-                    logger.warning(f"Could not stop dnsmasq for {net_id}: {e}")
+            if not instance.get("process_stopped"):
+                pid = instance.get("pid")
+                if pid is not None:
+                    if self._owns_process(instance):
+                        stop_process(pid)
+                elif not pid_file or not os.path.exists(pid_file):
+                    raise DhcpServerError(f"Missing dnsmasq PID file for {net_id}")
+                else:
+                    pid = int(Path(pid_file).read_text().strip())
+                    if self._owns_process({**instance, "pid": pid}):
+                        stop_process(pid)
+                instance["process_stopped"] = True
+            if pid_file:
                 try:
                     os.remove(pid_file)
-                except OSError:
+                except FileNotFoundError:
                     pass
             
             # Remove config file
@@ -246,48 +267,7 @@ class DhcpServer:
         
         except Exception as e:
             logger.error(f"Error stopping DHCP server for {net_id}: {e}")
-    
-    def _configure_interface(self, interface: str, ip_address: str, subnet: str) -> None:
-        """
-        Configure interface with IP address and bring it up.
-        
-        Args:
-            interface: Interface name
-            ip_address: IP address to assign (e.g., "192.168.10.1")
-            subnet: CIDR subnet for calculating prefix length
-        """
-        try:
-            # Extract prefix length from CIDR
-            prefix_len = subnet.split('/')[-1]
-            
-            # Bring interface up
-            try:
-                execute_command(["ip", "link", "set", interface, "up"])
-            except CommandError as e:
-                logger.warning(f"Could not bring up interface {interface}: {e}")
-            
-            # Flush existing addresses (non-fatal if fails)
-            try:
-                execute_command(
-                    ["ip", "addr", "flush", "dev", interface],
-                    check=False
-                )
-            except CommandError:
-                pass
-            
-            # Assign new address
-            try:
-                execute_command([
-                    "ip", "addr", "add",
-                    f"{ip_address}/{prefix_len}",
-                    "dev", interface
-                ])
-                logger.info(f"Configured interface {interface} with {ip_address}/{prefix_len}")
-            except CommandError as e:
-                logger.warning(f"Could not configure interface {interface}: {e}")
-        
-        except Exception as e:
-            logger.error(f"Error in interface configuration: {e}")
+            raise DhcpServerError(f"Failed to stop DHCP server for {net_id}: {e}") from e
     
     def get_subnet_info(self, net_id: str) -> Optional[dict]:
         """
@@ -299,7 +279,29 @@ class DhcpServer:
         Returns:
             Dictionary with subnet info or None if not active
         """
-        return self._instances.get(net_id)
+        instance = self._instances.get(net_id)
+        if instance is None:
+            return None
+        return {key: value for key, value in instance.items() if key != "pid"}
+
+    @staticmethod
+    def _owns_process(instance: dict) -> bool:
+        pid = instance.get("pid")
+        if not isinstance(pid, int) or pid <= 0:
+            return False
+        try:
+            args = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+        except FileNotFoundError:
+            return False
+        return (
+            Path(os.fsdecode(args[0])).name == "dnsmasq"
+            and os.fsencode(f"--conf-file={instance['config_file']}") in args[1:]
+        )
+
+    def is_running(self, net_id: str) -> bool:
+        """Check the tracked DHCP daemon, not just its PID file."""
+        instance = self._instances.get(net_id)
+        return instance is not None and not instance.get("process_stopped") and self._owns_process(instance)
     
     def list_active(self) -> List[str]:
         """Get list of active DHCP server net_ids."""
@@ -308,7 +310,7 @@ class DhcpServer:
     def status(self) -> dict:
         """Return minimal status for dnsmasq instances."""
         instances = []
-        for net_id, data in self._instances.items():
+        for net_id, data in self._instances.copy().items():
             pid_file = data.get("pid_file")
             instances.append({
                 "net_id": net_id,

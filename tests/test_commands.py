@@ -1,8 +1,10 @@
+import subprocess
 import pytest
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 from wilab.network.commands import (
-    CommandError, execute_command, execute_iptables,
-    execute_ip, execute_sysctl, execute_pkill
+    CommandError, CommandTimeout, ForegroundProcess, execute_command,
+    execute_iptables, execute_ip, execute_sysctl, execute_pkill, stop_process,
 )
 
 
@@ -22,6 +24,23 @@ class TestCommandExecution:
             mock_run.return_value = MagicMock(returncode=0, stdout='ok', stderr='')
             execute_command(['echo', 'hello'], timeout=1.0)
             assert mock_run.call_args.kwargs['timeout'] == 5.0
+
+    def test_deadline_clamps_timeout_and_does_not_leak(self, monkeypatch):
+        from wilab.network import commands
+
+        now = 10.0
+        monkeypatch.setattr(commands, "time", SimpleNamespace(monotonic=lambda: now))
+        with patch.object(commands.subprocess, "run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+            with commands.command_deadline(10.5):
+                execute_command(["ip", "addr", "show"])
+                assert run.call_args.kwargs["timeout"] == 0.5
+                now = 10.5
+                with pytest.raises(CommandError, match="Deadline expired"):
+                    execute_command(["dnsmasq", "--test"])
+                assert run.call_count == 1
+            execute_command(["ip", "addr", "show"])
+            assert run.call_args.kwargs["timeout"] == 8.0
     
     def test_execute_command_success(self):
         """Test successful command execution."""
@@ -55,6 +74,197 @@ class TestCommandExecution:
         result = execute_command(['false'], check=False)
         # Should not raise
         assert result is not None
+
+
+class TestStopProcess:
+    def test_waits_until_process_exits(self, monkeypatch):
+        from wilab.network import commands
+
+        checks = iter([True, True, False])
+
+        def check_process(pid, signal):
+            if not next(checks):
+                raise ProcessLookupError
+
+        calls = []
+        monkeypatch.setattr(commands, "os", SimpleNamespace(kill=check_process))
+        monkeypatch.setattr(commands, "execute_command", lambda cmd: calls.append(cmd))
+        monkeypatch.setattr(commands, "time", SimpleNamespace(sleep=lambda _: None))
+        stop_process(123)
+        assert calls == [["kill", "123"]]
+
+    def test_failed_signal_is_not_hidden(self, monkeypatch):
+        from wilab.network import commands
+
+        monkeypatch.setattr(commands, "os", SimpleNamespace(kill=lambda pid, signal: None))
+
+        def fail(cmd):
+            raise CommandError("permission denied")
+
+        monkeypatch.setattr(commands, "execute_command", fail)
+        with pytest.raises(CommandError, match="permission denied"):
+            stop_process(123)
+
+    def test_process_that_survives_force_kill_is_not_released(self, monkeypatch):
+        from wilab.network import commands
+
+        calls = []
+        monkeypatch.setattr(commands, "os", SimpleNamespace(kill=lambda pid, signal: None))
+        monkeypatch.setattr(commands, "time", SimpleNamespace(sleep=lambda _: None))
+        monkeypatch.setattr(commands, "execute_command", lambda cmd: calls.append(cmd))
+        with pytest.raises(CommandError, match="did not exit"):
+            stop_process(123)
+        assert calls == [["kill", "123"], ["kill", "-9", "123"]]
+
+    @pytest.mark.parametrize(
+        ("module_name", "manager_name", "error_name"),
+        [
+            ("wilab.network.dhcp", "DhcpServer", "DhcpServerError"),
+        ],
+    )
+    def test_failed_daemon_stop_preserves_tracking_for_retry(
+        self, module_name, manager_name, error_name, tmp_path, monkeypatch
+    ):
+        import importlib
+
+        module = importlib.import_module(module_name)
+        manager = getattr(module, manager_name).__new__(getattr(module, manager_name))
+        pid_file = tmp_path / "daemon.pid"
+        config_file = tmp_path / "daemon.conf"
+        pid_file.write_text("123", encoding="utf-8")
+        config_file.write_text("", encoding="utf-8")
+        manager._instances = {
+            "dev0": {"pid": 123, "pid_file": str(pid_file), "config_file": str(config_file)}
+        }
+        monkeypatch.setattr(manager, "_owns_process", lambda instance: instance["pid"] == 123)
+
+        def fail(pid):
+            raise CommandError("permission denied")
+
+        monkeypatch.setattr(module, "stop_process", fail)
+        with pytest.raises(getattr(module, error_name)):
+            manager.stop("dev0")
+        assert "dev0" in manager._instances
+        assert pid_file.exists()
+
+        monkeypatch.setattr(module, "stop_process", lambda pid: None)
+        manager.stop("dev0")
+        assert "dev0" not in manager._instances
+
+    @pytest.mark.parametrize(
+        ("module_name", "manager_name"),
+        [
+            ("wilab.network.dhcp", "DhcpServer"),
+        ],
+    )
+    def test_retry_removes_pid_file_without_signalling_stopped_process(
+        self, module_name, manager_name, tmp_path, monkeypatch
+    ):
+        import importlib
+
+        module = importlib.import_module(module_name)
+        manager = getattr(module, manager_name).__new__(getattr(module, manager_name))
+        pid_file = tmp_path / "daemon.pid"
+        config_file = tmp_path / "daemon.conf"
+        pid_file.write_text("123", encoding="utf-8")
+        config_file.write_text("", encoding="utf-8")
+        manager._instances = {
+            "dev0": {
+                "pid_file": str(pid_file), "config_file": str(config_file),
+                "process_stopped": True,
+            }
+        }
+        monkeypatch.setattr(module, "stop_process", lambda pid: pytest.fail("unexpected signal"))
+        manager.stop("dev0")
+        assert not pid_file.exists()
+        assert "dev0" not in manager._instances
+
+
+class TestHostapdInterfaceCleanup:
+    def test_stop_leaves_interface_managed_and_down(self, tmp_path, monkeypatch):
+        from wilab.wifi import hostapd
+
+        manager = hostapd.HostapdManager.__new__(hostapd.HostapdManager)
+        instance_dir = tmp_path / "ap"
+        instance_dir.mkdir()
+        config_file = instance_dir / "hostapd.conf"
+        config_file.write_text("", encoding="utf-8")
+        calls = []
+        manager._instances = {
+            "dev0": {
+                "interface": "wlan0", "config_file": str(config_file),
+                "control_dir": str(instance_dir / "ctrl"), "ssid": "test",
+                "process": SimpleNamespace(stop=lambda: calls.append(("stop",))),
+            }
+        }
+        monkeypatch.setattr(hostapd, "execute_command", lambda cmd: calls.append(("command", cmd)))
+
+        manager.stop("dev0")
+
+        assert calls == [
+            ("stop",),
+            ("command", ["ip", "link", "set", "wlan0", "down"]),
+            ("command", ["iw", "dev", "wlan0", "set", "type", "managed"]),
+            ("command", ["ip", "addr", "flush", "dev", "wlan0"]),
+        ]
+        assert "dev0" not in manager._instances
+
+    @pytest.mark.parametrize("failure", ["process", "interface"])
+    def test_cleanup_failure_is_retryable(self, tmp_path, monkeypatch, failure):
+        from wilab.wifi import hostapd
+
+        manager = hostapd.HostapdManager.__new__(hostapd.HostapdManager)
+        instance_dir = tmp_path / "ap"
+        instance_dir.mkdir()
+        config_file = instance_dir / "hostapd.conf"
+        config_file.write_text("", encoding="utf-8")
+        stopped = []
+        fail = True
+
+        def stop():
+            if fail and failure == "process":
+                raise CommandTimeout("process did not exit")
+            stopped.append(True)
+
+        process = SimpleNamespace(stop=stop)
+        manager._instances = {
+            "dev0": {
+                "interface": "wlan0", "config_file": str(config_file),
+                "control_dir": str(instance_dir / "ctrl"), "ssid": "test",
+                "process": process,
+            }
+        }
+
+        def fail_on_managed(cmd):
+            if fail and failure == "interface" and cmd[:2] == ["iw", "dev"]:
+                raise CommandError("mode change failed")
+
+        monkeypatch.setattr(hostapd, "execute_command", fail_on_managed)
+        with pytest.raises(hostapd.HostapdError, match="mode change failed|process did not exit"):
+            manager.stop("dev0")
+        assert manager._instances["dev0"]["process"] is (process if failure == "process" else None)
+        assert config_file.exists() == (failure == "process")
+        fail = False
+        manager.stop("dev0")
+        assert stopped == [True]
+        assert "dev0" not in manager._instances
+
+
+@pytest.mark.parametrize("exits_after_kill", [True, False])
+def test_foreground_stop_escalates_and_verifies_exit(exits_after_kill):
+    child = MagicMock(pid=123)
+    child.poll.return_value = None
+    timeout = subprocess.TimeoutExpired("hostapd", 2)
+    child.wait.side_effect = [timeout, 0 if exits_after_kill else timeout]
+    process = ForegroundProcess(child)
+    if exits_after_kill:
+        process.stop()
+    else:
+        with pytest.raises(CommandTimeout, match="did not exit"):
+            process.stop()
+    child.terminate.assert_called_once()
+    child.kill.assert_called_once()
+    assert child.wait.call_count == 2
 
 
 class TestIptablesWrapper:

@@ -1,13 +1,22 @@
 """Tests for device reservation module and API endpoints."""
 
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+from unittest.mock import Mock
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from wilab.reservation import ReservationManager, Reservation, NoDeviceAvailableError
+from wilab.reservation import (
+    ReservationManager, Reservation, NoDeviceAvailableError, ReservationCleanupError,
+)
 from wilab.api import create_app
 from wilab.config import load_config
 from wilab.api import dependencies
+from wilab.api.dependencies import hold_reservation
+from wilab.models import NetworkStatus
 
 
 # ======================================================================
@@ -172,6 +181,188 @@ class TestReservationManagerHelpers:
         assert len(mgr.all_active()) == 0
 
 
+class TestReservationLifecycleConcurrency:
+    def test_expired_device_is_not_reassigned_before_cleanup_finishes(self):
+        started = threading.Event()
+        finish = threading.Event()
+
+        def cleanup(device_id):
+            started.set()
+            assert finish.wait(timeout=5)
+
+        mgr = ReservationManager(["dev0"], cleanup=cleanup)
+        old = mgr.create(60)
+        old.expires_at = time.time() - 1
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(mgr.create, 60)
+            assert started.wait(timeout=5)
+            assert not future.done()
+            finish.set()
+            new = future.result(timeout=5)
+        assert new.device_id == old.device_id
+        assert mgr.get(old.reservation_id) is None
+
+    def test_failed_expiry_cleanup_blocks_reassignment_until_retry(self):
+        failed = True
+
+        def cleanup(device_id):
+            if failed:
+                raise RuntimeError("cleanup failed")
+
+        mgr = ReservationManager(["dev0"], cleanup=cleanup)
+        old = mgr.create(60)
+        old.expires_at = time.time() - 1
+        with pytest.raises(ReservationCleanupError):
+            mgr.create(60)
+        failed = False
+        assert mgr.create(60).device_id == "dev0"
+
+    def test_failed_cleanup_does_not_block_another_free_device(self):
+        def cleanup(device_id):
+            raise RuntimeError("cleanup failed")
+
+        mgr = ReservationManager(["dev0", "dev1"], cleanup=cleanup)
+        old = mgr.create(60)
+        old.expires_at = time.time() - 1
+        assert mgr.create(60).device_id == "dev1"
+        with pytest.raises(ReservationCleanupError):
+            mgr.create(60)
+
+    def test_slow_cleanup_does_not_hold_reservation_store(self):
+        started, finish = threading.Event(), threading.Event()
+
+        def cleanup(device_id: str) -> None:
+            if device_id == "dev0":
+                started.set()
+                assert finish.wait(timeout=5)
+
+        mgr = ReservationManager(["dev0", "dev1"], cleanup=cleanup)
+        old = mgr.create(60)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            release = pool.submit(mgr.delete, old.reservation_id)
+            try:
+                assert started.wait(timeout=2)
+                other = pool.submit(mgr.create, 60).result(timeout=2)
+                assert other.device_id == "dev1"
+                assert mgr.snapshot() == {"dev0": old, "dev1": other}
+                with pytest.raises(NoDeviceAvailableError):
+                    mgr.create(60)
+            finally:
+                finish.set()
+            assert release.result(timeout=2)
+        assert mgr.create(60).device_id == "dev0"
+
+    def test_bulk_release_keeps_device_when_cleanup_fails(self):
+        def cleanup(device_id):
+            if device_id == "dev1":
+                raise RuntimeError("cleanup failed")
+
+        mgr = ReservationManager(["dev0", "dev1"], cleanup=cleanup)
+        first = mgr.create(60)
+        second = mgr.create(60)
+        with pytest.raises(ReservationCleanupError):
+            mgr.delete_all()
+        assert mgr.get(first.reservation_id) is None
+        assert mgr.get(second.reservation_id) is second
+        assert mgr.create(60).device_id == "dev0"
+
+    def test_release_waits_for_in_flight_operation(self):
+        operation_started = threading.Event()
+        finish = threading.Event()
+        cleanup_started = threading.Event()
+        mgr = ReservationManager(["dev0"], cleanup=lambda _: cleanup_started.set())
+        reservation = mgr.create(60)
+
+        def operate():
+            with mgr.hold(reservation.reservation_id) as current:
+                assert current is reservation
+                operation_started.set()
+                assert finish.wait(timeout=5)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            operation = pool.submit(operate)
+            assert operation_started.wait(timeout=5)
+            release = pool.submit(mgr.delete, reservation.reservation_id)
+            assert not cleanup_started.wait(timeout=0.1)
+            finish.set()
+            operation.result(timeout=5)
+            assert release.result(timeout=5)
+        assert cleanup_started.is_set()
+
+    def test_first_concurrent_requests_share_one_manager(self, monkeypatch):
+        entered = threading.Event()
+        resume = threading.Event()
+        second_started = threading.Event()
+        original = ReservationManager
+        created = []
+        config = SimpleNamespace(networks=[
+            SimpleNamespace(device_id="dev0"), SimpleNamespace(device_id="dev1")
+        ])
+        network = SimpleNamespace(
+            device_lock=lambda _: threading.RLock(), release_device=lambda _: None,
+            watchdog=SimpleNamespace(start=lambda _: None),
+        )
+        monkeypatch.setattr(dependencies, "get_manager", lambda _: network)
+
+        def construct(*args, **kwargs):
+            created.append(1)
+            entered.set()
+            assert resume.wait(timeout=5)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(dependencies, "ReservationManager", construct)
+
+        def second_request():
+            second_started.set()
+            return dependencies.get_reservation_manager(config)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(dependencies.get_reservation_manager, config)
+            assert entered.wait(timeout=5)
+            second = pool.submit(second_request)
+            assert second_started.wait(timeout=5)
+            resume.set()
+            first_manager = first.result(timeout=5)
+            second_manager = second.result(timeout=5)
+        assert first_manager is second_manager
+        assert len(created) == 1
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            reservations = list(pool.map(lambda manager: manager.create(60), [first_manager, second_manager]))
+        assert {reservation.device_id for reservation in reservations} == {"dev0", "dev1"}
+
+    def test_stale_reservation_cannot_operate_on_reassigned_device(self):
+        mgr = ReservationManager(["dev0"])
+        old = mgr.create(60)
+        assert mgr.delete(old.reservation_id)
+        assert mgr.create(60).device_id == old.device_id
+        with pytest.raises(HTTPException) as exc, hold_reservation(mgr, old):
+            pytest.fail("stale reservation was accepted")
+        assert exc.value.status_code == 404
+
+    def test_expiry_snapshot_does_not_stop_replacement_network(self, clean_manager, monkeypatch):
+        from wilab.models import NetworkStatus
+
+        old = NetworkStatus(interface="wls16", active=True)
+        object.__setattr__(old, "_expires_at_timestamp", time.time() - 1)
+        new = NetworkStatus(interface="wls16", active=True)
+        clean_manager.active["wls16"] = new
+        stopped = []
+        monkeypatch.setattr(clean_manager, "stop_network", stopped.append)
+        clean_manager._expire_network("wls16", old, time.time())
+        assert stopped == []
+
+    def test_network_cleanup_stops_qos_profile_before_release(self, clean_manager, monkeypatch):
+        clean_manager.active["wls16"] = NetworkStatus(interface="wls16", active=True)
+        clean_manager.qos_manager = Mock()
+        clean_manager.qos_profile_manager = Mock()
+        monkeypatch.setattr(clean_manager.hostapd_manager, "stop", lambda _: None)
+        clean_manager.release_device("wls16")
+        clean_manager.qos_profile_manager.stop_profile.assert_called_once_with(
+            "wls16", clean_manager.qos_manager
+        )
+        assert "wls16" not in clean_manager.active
+
+
 # ======================================================================
 # API integration tests
 # ======================================================================
@@ -192,6 +383,158 @@ def client():
 def valid_token():
     cfg = load_config()
     return f"Bearer {cfg.auth_token}"
+
+
+@pytest.mark.parametrize("operation", ["start_network", "expired_cleanup"])
+def test_slow_lifecycle_operation_does_not_block_event_loop(operation, valid_token, monkeypatch):
+    started = threading.Event()
+    finish = threading.Event()
+
+    with TestClient(create_app()) as client:
+        headers = {"Authorization": valid_token}
+        body = {"duration_seconds": 3600}
+        response = client.post("/api/v1/device-reservation", headers=headers, json=body)
+        assert response.status_code == 200
+        reservation_id = response.json()["reservation_id"]
+        manager = dependencies._manager
+        reservation_manager = dependencies._reservation_manager
+        assert manager is not None
+        assert reservation_manager is not None
+        assert client.get("/openapi.json").status_code == 200
+
+        if operation == "start_network":
+            def slow_start(*args, **kwargs):
+                started.set()
+                assert finish.wait(timeout=10)
+
+            monkeypatch.setattr(manager, "start_network", slow_start)
+            path = f"/api/v1/interface/{reservation_id}/network"
+            payload = {
+                "ssid": "test", "channel": 1, "password": "testpassword",
+                "encryption": "wpa2", "band": "2.4ghz", "tx_power_level": 4,
+            }
+        else:
+            reservation = reservation_manager.get(reservation_id)
+            assert reservation is not None
+            manager.active[reservation.device_id] = NetworkStatus(
+                interface=reservation.device_id, active=True
+            )
+            reservation.expires_at = time.time() - 1
+
+            def slow_stop(device_id):
+                started.set()
+                assert finish.wait(timeout=10)
+                manager.active.pop(device_id)
+
+            monkeypatch.setattr(manager, "stop_network", slow_stop)
+            path = "/api/v1/device-reservation"
+            payload = body
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            operation_future = pool.submit(client.post, path, headers=headers, json=payload)
+            try:
+                assert started.wait(timeout=5)
+                probe_future = pool.submit(client.get, "/openapi.json")
+                assert probe_future.result(timeout=2).status_code == 200
+            finally:
+                finish.set()
+            assert operation_future.result(timeout=5).status_code == 200
+
+
+def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeypatch):
+    from wilab.config import NetworkEntry
+
+    cfg = dependencies.get_config()
+    monkeypatch.setattr(cfg, "networks", [
+        *cfg.networks, NetworkEntry(interface="wlan1", display_name="Second radio"),
+    ])
+    headers = {"Authorization": valid_token}
+    reserve = "/api/v1/device-reservation"
+    payload = {
+        "ssid": "test", "channel": 1, "encryption": "open", "band": "2.4ghz",
+        "tx_power_level": 4, "internet_enabled": False,
+    }
+    entered, finish = threading.Event(), threading.Event()
+    with TestClient(create_app()) as client, ThreadPoolExecutor(max_workers=4) as pool:
+        mgr = dependencies.get_manager(cfg)
+        first_device = cfg.networks[0].device_id
+
+        def start_ap(*, net_id: str, **kwargs) -> None:
+            if net_id == first_device:
+                entered.set()
+                assert finish.wait(timeout=10)
+
+        monkeypatch.setattr(mgr.hostapd_manager, "start", start_ap)
+        monkeypatch.setattr(mgr.dhcp_server, "start", lambda **kwargs: None)
+        first = client.post(reserve, headers=headers, json={"duration_seconds": 60}).json()
+        first_id = first["reservation_id"]
+
+        def create(rid: str):
+            return client.post(f"/api/v1/interface/{rid}/network", headers=headers, json=payload)
+
+        slow = pool.submit(create, first_id)
+        try:
+            assert entered.wait(timeout=5)
+            release = pool.submit(client.delete, f"{reserve}/{first_id}", headers=headers)
+            second = pool.submit(
+                client.post, reserve, headers=headers, json={"duration_seconds": 60},
+            ).result(timeout=2)
+            assert second.status_code == 200 and second.json()["interface"] == "wlan1"
+            rid = second.json()["reservation_id"]
+            assert pool.submit(create, rid).result(timeout=2).status_code == 200
+            status = pool.submit(client.get, "/api/v1/status", headers=headers).result(timeout=2)
+            assert status.status_code == 200 and status.json()["active_networks"] == 1
+            assert all(n["reserved"] for n in status.json()["networks"])
+            assert not release.done()
+        finally:
+            finish.set()
+        assert slow.result(timeout=3).status_code == 200
+        assert release.result(timeout=3).status_code == 200
+
+
+def test_channel_query_holds_reservation_until_complete(valid_token, monkeypatch):
+    started = threading.Event()
+    finish = threading.Event()
+    cleanup_started = threading.Event()
+
+    with TestClient(create_app()) as client:
+        headers = {"Authorization": valid_token}
+        response = client.post(
+            "/api/v1/device-reservation", headers=headers, json={"duration_seconds": 3600}
+        )
+        assert response.status_code == 200
+        reservation_id = response.json()["reservation_id"]
+        channel_manager = dependencies.get_channel_manager()
+        reservation_manager = dependencies._reservation_manager
+        assert reservation_manager is not None
+        get_channels = channel_manager.get_channels
+
+        def slow_channels(interface):
+            if threading.current_thread().name == "channel-cache-warmup":
+                return get_channels(interface)
+            started.set()
+            assert finish.wait(timeout=10)
+            return get_channels(interface)
+
+        monkeypatch.setattr(channel_manager, "get_channels", slow_channels)
+        monkeypatch.setattr(reservation_manager, "_cleanup", lambda _: cleanup_started.set())
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            query = pool.submit(
+                client.get,
+                f"/api/v1/interface/{reservation_id}/network/available-channels",
+                headers=headers,
+            )
+            try:
+                assert started.wait(timeout=5)
+                release = pool.submit(
+                    client.delete, f"/api/v1/device-reservation/{reservation_id}", headers=headers
+                )
+                assert not cleanup_started.wait(timeout=0.2)
+            finally:
+                finish.set()
+            assert query.result(timeout=5).status_code == 200
+            assert release.result(timeout=5).status_code == 200
+            assert cleanup_started.is_set()
 
 
 class TestReservationAPICreate:
@@ -252,7 +595,8 @@ class TestReservationAPICreate:
         )
         assert resp.status_code == 409
         data = resp.json()["detail"]
-        assert data["error"] == "No device available"
+        assert data["code"] == 1005
+        assert data["message"] == "No device available"
         assert "next_available_at" in data
         assert "next_available_in" in data
         assert data["next_available_in"] > 0
@@ -534,8 +878,62 @@ class TestReservationDeleteStopsNetwork:
         assert resp.status_code == 200
         assert stopped == []
 
-    def test_delete_reservation_stop_network_error_still_releases(self, client, valid_token, monkeypatch):
-        """If stop_network raises, the reservation is still released (best-effort)."""
+    def test_expired_network_is_stopped_before_device_is_reassigned(self, client, valid_token, monkeypatch):
+        from wilab.models import NetworkStatus
+
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        )
+        reservation = dependencies._reservation_manager.get(resp.json()["reservation_id"])
+        mgr = self._ensure_manager(client, valid_token)
+        device_id = reservation.device_id
+        mgr.active[device_id] = NetworkStatus(interface=device_id, active=True)
+        reservation.expires_at = time.time() - 1
+        stopped = []
+
+        def stop(did):
+            stopped.append(did)
+            mgr.active.pop(did)
+
+        monkeypatch.setattr(mgr, "stop_network", stop)
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["interface"] == device_id
+        assert stopped == [device_id]
+
+    def test_expired_cleanup_failure_returns_503_and_allows_retry(self, client, valid_token, monkeypatch):
+        from wilab.models import NetworkStatus
+
+        headers = {"Authorization": valid_token}
+        body = {"duration_seconds": 3600}
+        response = client.post("/api/v1/device-reservation", headers=headers, json=body)
+        reservation = dependencies._reservation_manager.get(response.json()["reservation_id"])
+        manager = self._ensure_manager(client, valid_token)
+        device_id = reservation.device_id
+        manager.active[device_id] = NetworkStatus(interface=device_id, active=True)
+        reservation.expires_at = time.time() - 1
+
+        def fail(did):
+            raise RuntimeError("cleanup failed")
+
+        monkeypatch.setattr(manager, "stop_network", fail)
+        response = client.post("/api/v1/device-reservation", headers=headers, json=body)
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == 1004
+
+        monkeypatch.setattr(manager, "stop_network", lambda did: manager.active.pop(did))
+        response = client.post("/api/v1/device-reservation", headers=headers, json=body)
+        assert response.status_code == 200
+        assert response.json()["interface"] == device_id
+
+    def test_delete_reservation_stop_network_error_keeps_reservation(self, client, valid_token, monkeypatch):
+        """A failed teardown leaves the reservation held so it can be retried."""
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
@@ -557,14 +955,28 @@ class TestReservationDeleteStopsNetwork:
             f"/api/v1/device-reservation/{rid}",
             headers={"Authorization": valid_token},
         )
-        assert resp.status_code == 200
-        assert resp.json() == {"detail": "Reservation released"}
-        # Reservation should still be gone
+        assert resp.status_code == 503
         resp = client.get(
             f"/api/v1/device-reservation/{rid}",
             headers={"Authorization": valid_token},
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        resp = client.post(
+            "/api/v1/device-reservation",
+            headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
+        )
+        assert resp.status_code == 409
+
+        def successful_stop(did):
+            mgr.active.pop(did)
+
+        monkeypatch.setattr(mgr, "stop_network", successful_stop)
+        resp = client.delete(
+            f"/api/v1/device-reservation/{rid}",
+            headers={"Authorization": valid_token},
+        )
+        assert resp.status_code == 200
 
     def test_delete_all_stops_all_active_networks(self, client, valid_token, monkeypatch):
         """DELETE all reservations stops active networks on released devices."""

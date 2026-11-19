@@ -1,6 +1,10 @@
 import subprocess
 import logging
-from typing import List, Optional
+import os
+import time
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Iterator, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +14,116 @@ class CommandError(Exception):
     pass
 
 
-def execute_command(cmd: List[str], check: bool = True, timeout: float = 8.0) -> str:
+class CommandTimeout(CommandError):
+    """The command did not finish before its deadline."""
+
+
+_command_deadline: ContextVar[float | None] = ContextVar(
+    "command_deadline", default=None,
+)
+
+
+@contextmanager
+def command_deadline(deadline: float | None) -> Iterator[None]:
+    """Bound commands in this operation without affecting other requests."""
+    token = _command_deadline.set(deadline)
+    try:
+        yield
+    finally:
+        _command_deadline.reset(token)
+
+
+def bounded_timeout(timeout: float) -> float:
+    """Limit a timeout to the remaining command budget."""
+    deadline = _command_deadline.get()
+    if deadline is None:
+        return timeout
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise CommandError("Deadline expired before running command")
+    return min(timeout, remaining)
+
+
+class ForegroundProcess:
+    """A directly owned child process, independent of PID files."""
+
+    def __init__(self, process: subprocess.Popen[bytes]) -> None:
+        self._process = process
+
+    def poll(self) -> int | None:
+        return self._process.poll()
+
+    def stop(self) -> None:
+        """Terminate and reap the child, escalating if it does not exit."""
+        try:
+            if self.poll() is not None:
+                return
+            self._process.terminate()
+            try:
+                self._process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+                self._process.wait(timeout=2.0)
+        except subprocess.TimeoutExpired as e:
+            raise CommandTimeout(f"Process {self._process.pid} did not exit") from e
+        except OSError as e:
+            raise CommandError(f"Could not stop process {self._process.pid}: {e}") from e
+
+
+def start_foreground(cmd: list[str]) -> ForegroundProcess:
+    """Start a child without an output pipe that could block the daemon."""
+    bounded_timeout(1.0)
+    try:
+        return ForegroundProcess(subprocess.Popen(
+            cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ))
+    except OSError as e:
+        raise CommandError(f"Could not start {cmd[0]}: {e}") from e
+
+
+def stop_process(pid: int) -> None:
+    """Terminate a specific process and verify it has exited."""
+    if pid <= 0:
+        raise CommandError(f"Invalid process ID: {pid}")
+
+    def running() -> bool:
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+
+    if not running():
+        return
+    try:
+        execute_command(["kill", str(pid)])
+    except CommandError:
+        if running():
+            raise
+        return
+    for _ in range(20):
+        if not running():
+            return
+        time.sleep(0.1)
+    if not running():
+        return
+    try:
+        execute_command(["kill", "-9", str(pid)])
+    except CommandError:
+        if running():
+            raise
+        return
+    for _ in range(20):
+        if not running():
+            return
+        time.sleep(0.1)
+    raise CommandError(f"Process {pid} did not exit")
+
+
+def execute_command(
+    cmd: list[str], check: bool = True, timeout: float = 8.0, *, exact_timeout: bool = False,
+) -> str:
     """
     Execute a shell command safely.
     
@@ -18,6 +131,7 @@ def execute_command(cmd: List[str], check: bool = True, timeout: float = 8.0) ->
         cmd: List of command arguments
         check: Raise CommandError if return code is non-zero
         timeout: Command timeout in seconds (minimum enforced to 5)
+        exact_timeout: Honor the supplied timeout without applying the minimum
         
     Returns:
         stdout as string
@@ -26,7 +140,9 @@ def execute_command(cmd: List[str], check: bool = True, timeout: float = 8.0) ->
         CommandError: If command fails and check=True
     """
     try:
-        effective_timeout = max(5.0, timeout)
+        effective_timeout = bounded_timeout(
+            timeout if exact_timeout else max(5.0, timeout)
+        )
 
         result = subprocess.run(
             cmd,
@@ -47,7 +163,7 @@ def execute_command(cmd: List[str], check: bool = True, timeout: float = 8.0) ->
         return result.stdout
     
     except subprocess.TimeoutExpired as e:
-        raise CommandError(f"Command timed out: {' '.join(cmd)}") from e
+        raise CommandTimeout(f"Command timed out: {' '.join(cmd)}") from e
     except FileNotFoundError as e:
         raise CommandError(f"Command not found: {cmd[0]}") from e
 

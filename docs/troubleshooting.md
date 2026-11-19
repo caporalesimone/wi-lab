@@ -17,6 +17,18 @@ Run scripts from the repository root with `bash <script>`.
 - Post-installation sanity checks:
 	- [diagnostics/troubleshooting/post_installation_sanity.sh](../diagnostics/troubleshooting/post_installation_sanity.sh)
 
+### Filter API server errors
+
+```bash
+journalctl -u wi-lab.service --no-pager -g 'API failure operation='
+```
+
+For example, `API failure operation=start_network http_status=500 detail_code=1003`
+identifies a terminal creation failure with an invalidated reservation. The
+new diagnostic line is emitted only for API `5xx` responses. It omits request
+paths, reservation IDs, tokens, and response bodies. Existing access and
+application logs are unchanged.
+
 ---
 
 ## Service Management
@@ -47,6 +59,7 @@ Symptoms:
 
 Script:
 - [diagnostics/troubleshooting/issue_network_creation_fails.sh](../diagnostics/troubleshooting/issue_network_creation_fails.sh)
+- [USB adapter recovery procedure](recovery.md) for a blocked interface
 
 ### Issue 3: Clients Cannot Connect
 

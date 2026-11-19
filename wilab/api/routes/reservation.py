@@ -5,14 +5,17 @@ from datetime import datetime, timezone
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from pydantic import BaseModel, Field, field_validator
 
 from ...api.auth import require_token
-from ...api.dependencies import get_config, get_manager, get_reservation_manager
+from ...api.dependencies import get_config, get_reservation_manager
+from ...api.errors import ApiErrorCode, domain_error
 from ...config import AppConfig
-from ...reservation import ReservationManager, NoDeviceAvailableError
-from ...wifi.manager import NetworkManager
+from ...reservation import DeviceRecoveryUnavailable, ReservationManager, NoDeviceAvailableError
+from .recovery_responses import (
+    RETRY_AFTER_HEADER, RecoveryCode, recovery_error, recovery_example,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,20 +60,47 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
 
 @router.post(
     "",
+    summary="Reserve an available Wi-Fi adapter",
     response_model=ReservationResponse,
     responses={
         200: {"description": "Device reserved successfully"},
         401: {"description": "Unauthorized"},
-        409: {"description": "All devices are currently reserved"},
+        409: {
+            "description": "No adapter currently available due to ordinary contention.",
+            "content": {"application/json": {"example": {"detail": domain_error(
+                ApiErrorCode.NO_DEVICE_AVAILABLE, "No device available",
+                next_available_at="2026-11-19 23:00:00", next_available_in=18,
+            )}}},
+        },
+        503: {
+            "description": "No allocatable adapter: recovery (1002), quarantine (1003), or cleanup failure.",
+            "headers": RETRY_AFTER_HEADER,
+            "content": {"application/json": {"examples": {
+                "device_recovering": recovery_example(RecoveryCode.DEVICE_RECOVERING),
+                "device_unavailable": recovery_example(RecoveryCode.DEVICE_UNAVAILABLE),
+                "cleanup_failed": {"value": {"detail": domain_error(
+                    ApiErrorCode.CLEANUP_FAILED, "Failed to clean up device wlan0",
+                )}},
+            }}},
+        },
     },
 )
-async def create_reservation(
-    req: ReservationCreateRequest,
+def create_reservation(
+    req: ReservationCreateRequest = Body(..., openapi_examples={
+        "timed": {"summary": "Reserve for two minutes", "value": {"duration_seconds": 120}},
+        "unlimited": {"summary": "Reserve until release (if allowed)", "value": {"duration_seconds": 0}},
+    }),
     config: AppConfig = Depends(get_config),
     mgr: ReservationManager = Depends(get_reservation_manager),
     _auth: bool = Depends(require_token),
 ):
-    """Reserve the first available device for the given duration."""
+    """Reserve the first available device for the given duration.
+
+    An adapter in recovery or quarantine is excluded. If an alternative is
+    available it can still be reserved. Otherwise **503 / 1002** tells callers
+    to retry this reservation request after `Retry-After`, not to reuse an old
+    reservation ID. **503 / 1003** has no automatic retry recommendation.
+    """
     # Validate duration against config bounds
     duration = req.duration_seconds
     if duration == 0:
@@ -93,16 +123,20 @@ async def create_reservation(
 
     try:
         r = mgr.create(duration)
+    except DeviceRecoveryUnavailable as exc:
+        if exc.recovering:
+            raise recovery_error(RecoveryCode.DEVICE_RECOVERING, retry_after=10) from exc
+        raise recovery_error(RecoveryCode.DEVICE_UNAVAILABLE) from exc
     except NoDeviceAvailableError as exc:
         raise HTTPException(
             status_code=409,
-            detail={
-                "error": "No device available",
-                "next_available_at": datetime.fromtimestamp(
+            detail=domain_error(
+                ApiErrorCode.NO_DEVICE_AVAILABLE, "No device available",
+                next_available_at=datetime.fromtimestamp(
                     exc.next_available_at
                 ).strftime("%Y-%m-%d %H:%M:%S"),
-                "next_available_in": exc.next_available_in,
-            },
+                next_available_in=exc.next_available_in,
+            ),
         )
 
     return _build_response(r, config)
@@ -129,9 +163,10 @@ def _build_response(r, config: AppConfig) -> ReservationResponse:
         200: {"description": "Reservation details"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation not found or expired"},
+        503: {"description": "The expired device could not be cleaned up"},
     },
 )
-async def get_reservation(
+def get_reservation(
     reservation_id: str = Path(...),
     config: AppConfig = Depends(get_config),
     mgr: ReservationManager = Depends(get_reservation_manager),
@@ -151,29 +186,25 @@ async def get_reservation(
         200: {"description": "Reservation released"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation not found or already expired"},
+        503: {"description": "The device could not be cleaned up; the reservation remains held"},
     },
 )
-async def delete_reservation(
+def delete_reservation(
     reservation_id: str = Path(...),
     mgr: ReservationManager = Depends(get_reservation_manager),
-    manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):
-    """Release a reservation and free the device."""
-    # Resolve device_id before deletion (delete removes the record)
-    reservation = mgr.get(reservation_id)
+    """Release a reservation, stop any network and clean up before freeing the device.
+
+    An explicit network stop is not required. For `503 / 1004`,
+    the device stays held; retry release after the cleanup issue is resolved.
+    For `404`, stop using the ID.
+    """
     removed = mgr.delete(reservation_id)
     if not removed:
         raise HTTPException(
             status_code=404, detail="Reservation not found or already expired"
         )
-    # Best-effort: stop any active network on the released device
-    if reservation and reservation.device_id in manager.active:
-        try:
-            manager.stop_network(reservation.device_id)
-            logger.info("Network %s stopped on reservation release", reservation.device_id)
-        except Exception:
-            logger.exception("Failed to stop network %s on reservation release", reservation.device_id)
     return {"detail": "Reservation released"}
 
 
@@ -182,23 +213,17 @@ async def delete_reservation(
     responses={
         200: {"description": "All reservations released"},
         401: {"description": "Unauthorized"},
+        503: {"description": "Cleanup failed; remaining reservations are still held"},
     },
 )
-async def delete_all_reservations(
+def delete_all_reservations(
     mgr: ReservationManager = Depends(get_reservation_manager),
-    manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ):
-    """Release all active reservations at once."""
-    # Collect device_ids before deletion removes the records
-    device_ids = [r.device_id for r in mgr.all_active()]
+    """Release all active reservations, including those held by other clients.
+
+    This is not atomic across adapters. If cleanup fails, earlier releases may
+    already have completed. Inspect status and resolve the failure before retrying.
+    """
     count = mgr.delete_all()
-    # Best-effort: stop any active networks on released devices
-    for device_id in device_ids:
-        if device_id in manager.active:
-            try:
-                manager.stop_network(device_id)
-                logger.info("Network %s stopped on bulk reservation release", device_id)
-            except Exception:
-                logger.exception("Failed to stop network %s on bulk reservation release", device_id)
     return {"detail": f"{count} reservation(s) released", "released": count}

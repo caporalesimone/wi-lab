@@ -279,10 +279,10 @@ class TestAuthentication:
     """Tests for authentication and authorization."""
     
     def test_request_without_auth(self, client):
-        """Test that request without auth token is rejected."""
-        resp = client.get('/api/v1/interfaces')
-        # GET /interfaces doesn't require auth, so should succeed
-        assert resp.status_code == 200
+        """A missing token returns a coded error for a protected API route."""
+        resp = client.get('/api/v1/status')
+        assert resp.status_code == 401
+        assert resp.json()['detail']['code'] == 401
     
     def test_start_network_without_auth(self, client, reservation_id):
         """Test that network creation without auth is rejected."""
@@ -439,8 +439,8 @@ class TestNetworkCreateEndpoint:
                 data = resp.json()
                 assert data == {'detail': 'Network wls16 created successfully'}
 
-    def test_start_network_422_has_simple_detail(self, client, valid_token, reservation_id):
-        """Validation errors should return a simple string detail."""
+    def test_start_network_422_has_coded_detail(self, client, valid_token, reservation_id):
+        """Validation errors should expose a stable code and a display message."""
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
@@ -449,8 +449,8 @@ class TestNetworkCreateEndpoint:
         assert resp.status_code == 422
         data = resp.json()
         assert 'detail' in data
-        assert isinstance(data['detail'], str)
-        assert data['detail'].strip() != ''
+        assert data['detail']['code'] == 422
+        assert data['detail']['message'].strip() != ''
 
 
 class TestNetworkGetEndpoint:
@@ -648,7 +648,8 @@ class TestNetworkDeleteEndpoint:
         )
         assert resp.status_code == 409
         data = resp.json()
-        assert data['detail'] == 'Network wls16 is already inactive'
+        assert data['detail']['code'] == 409
+        assert data['detail']['message'] == 'Network wls16 is already inactive'
     
     def test_stop_network_invalid_reservation(self, client, valid_token):
         """Test stopping with invalid reservation returns 404."""
@@ -789,9 +790,10 @@ class TestTxPowerPostEndpoint:
 
         assert resp.status_code == 422
         data = resp.json()
-        assert data['detail'] == 'Interface does not support dynamic power change.'
+        assert data['detail']['code'] == 422
+        assert data['detail']['message'] == 'Interface does not support dynamic power change.'
 
-    def test_post_txpower_out_of_range_returns_422_simple_message(self, client, valid_token, reservation_id):
+    def test_post_txpower_out_of_range_returns_422_coded_error(self, client, valid_token, reservation_id):
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/txpower',
             headers={'Authorization': valid_token},
@@ -801,7 +803,11 @@ class TestTxPowerPostEndpoint:
         assert resp.status_code == 422
         data = resp.json()
         assert data == {
-            'detail': 'Requested power out of range. Valid values are 1, 2, 3, 4.'
+            'detail': {
+                'code': 422,
+                'reason': 'validation_error',
+                'message': 'Requested power out of range. Valid values are 1, 2, 3, 4.',
+            }
         }
 
     def test_post_txpower_openapi_documents_422_examples(self, client, valid_token):
@@ -814,14 +820,14 @@ class TestTxPowerPostEndpoint:
         assert '422' in responses
 
         examples = responses['422']['content']['application/json']['examples']
-        assert examples['out_of_range']['value']['detail'] == (
+        assert examples['out_of_range']['value']['detail']['message'] == (
             'Requested power out of range. Valid values are 1, 2, 3, 4.'
         )
-        assert examples['hardware_mismatch']['value']['detail'] == (
+        assert examples['hardware_mismatch']['value']['detail']['message'] == (
             'Interface does not support dynamic power change.'
         )
 
-    def test_get_network_openapi_422_uses_simple_detail_schema(self, client, valid_token):
+    def test_get_network_openapi_422_uses_coded_detail_schema(self, client, valid_token):
         resp = client.get('/openapi.json', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         schema = resp.json()
@@ -831,7 +837,7 @@ class TestTxPowerPostEndpoint:
         json_schema = response_422['content']['application/json']['schema']
 
         assert json_schema['type'] == 'object'
-        assert json_schema['properties']['detail']['type'] == 'string'
+        assert 'code' in json_schema['properties']['detail']['required']
 
 
 class TestInternetControlEndpoints:
@@ -954,7 +960,8 @@ class TestReservationRequiredForOperations:
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 404
-        assert 'Reservation' in resp.json()['detail']
+        assert resp.json()['detail']['code'] == 404
+        assert 'Reservation' in resp.json()['detail']['message']
 
     def test_internet_op_without_reservation_returns_404(self, client, valid_token):
         """Internet enable with invalid reservation returns 404."""

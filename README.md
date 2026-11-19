@@ -9,7 +9,7 @@ Typical use-cases: automated wireless testing, RF/antenna benchmarking, classroo
 ## How It Works
 
 1. **Multiple WiFi interfaces** — each USB adapter is declared in `config.yaml` and managed independently.
-2. **Reservation system** — before touching an interface you acquire a time-limited (or unlimited) reservation token via the API. The token is an 8-char hex string; when it expires the AP is torn down automatically.
+2. **Reservation system** — before touching an interface you acquire a time-limited (or unlimited) reservation token via the API. The token is an 8-char hex string; when it expires the AP is torn down automatically. A device is not reassigned until cleanup succeeds. If cleanup fails, the device stays held for retry; other free devices remain available.
 3. **One AP per interface** — while reserved, you can create a WiFi network (hostapd), configure DHCP (dnsmasq), enable/disable Internet (iptables NAT), and adjust TX power — all via REST calls.
 4. **Web frontend** — an Angular SPA shows every interface as a card (available / owned / occupied), lets you reserve, configure, and monitor networks from the browser. The auth token is entered at runtime via a login dialog.
 5. **Web API** — every operation is also available programmatically (`/api/v1/…`), with full Swagger UI at `http://<host>:8080/docs`. Useful for scripting, SDKs, or CI integration.
@@ -46,6 +46,9 @@ sudo bash install.sh
 
 After installation Wi-Lab is running on port **8080** and will autostart on reboot.
 Open `http://<host>:8080` for the web UI or `http://<host>:8080/docs` for the Swagger API.
+
+For retry behavior and optional USB reset, see
+[Network creation failure and recovery](docs/network-creation-failure.md).
 
 To **uninstall** and remove the systemd service:
 

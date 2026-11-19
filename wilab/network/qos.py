@@ -1,6 +1,7 @@
 """QoS traffic control management using tc (HTB + IFB + netem)."""
 
 import logging
+import threading
 from dataclasses import dataclass
 from typing import Dict, Optional, TypeVar
 
@@ -52,6 +53,7 @@ class QosManager:
     def __init__(self) -> None:
         self._state: Dict[str, _InterfaceQosState] = {}
         self._ifb_counter = 0
+        self._ifb_lock = threading.Lock()
         logger.info("QosManager initialized")
 
     # ------------------------------------------------------------------
@@ -304,9 +306,10 @@ class QosManager:
         logger.debug(f"IFB removed for {interface}")
 
     def _allocate_ifb(self) -> str:
-        name = f"ifb{self._ifb_counter}"
-        self._ifb_counter += 1
-        return name
+        with self._ifb_lock:
+            name = f"ifb{self._ifb_counter}"
+            self._ifb_counter += 1
+            return name
 
     # ------------------------------------------------------------------
     # netem management (link quality)

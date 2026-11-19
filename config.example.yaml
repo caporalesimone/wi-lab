@@ -138,6 +138,10 @@ country_code: "IT"
 networks:
   - interface: "wlxbc071dc527d6"
     display_name: "bench-antenna-1"
+    # Optional: authorize automatic reset of this dedicated port in Linux USB topology.
+    # Match the interface to its actual port with: readlink -f /sys/class/net/<interface>/device
+    # Example: a USB function named 2-1:1.0 belongs to physical USB port 2-1.
+    # usb_recovery_port: "2-1"
 
   - interface: "wlx7820512451b4"
     display_name: "bench-antenna-2"

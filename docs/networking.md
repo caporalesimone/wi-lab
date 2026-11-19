@@ -39,7 +39,35 @@ iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE
 **What:** Interface switched to AP mode  
 **When:** Network is created  
 **Impact:** Interface unavailable for other applications (e.g., NetworkManager)  
-**Reversible:** Yes - restored to managed mode when network stops
+**Reversible:** Yes - restored to managed mode and left down when network stops.
+On the next start, only hostapd brings up the radio. Wi-Lab verifies that
+hostapd has enabled the expected AP via its private control socket before
+assigning the gateway address and starting dnsmasq. DHCP never changes the
+interface state. If startup fails, Wi-Lab attempts rollback before allowing
+the adapter to be reused. This avoids an unnecessary up/down cycle; it does
+not fix driver or firmware failures.
+
+Wi-Lab runs hostapd in the foreground and verifies that the child process
+has exited before resetting the interface. Startup timeout cleanup does
+not depend on a PID file. If the process cannot be stopped or the radio
+cannot be reset, the adapter is not reassigned.
+
+If hostapd exits with `SIGSEGV` during 2.4 GHz startup, Wi-Lab
+can retry once on the same adapter within the original request. It waits
+750 ms after successful rollback and retries only while the reservation
+is valid and enough of the five-second startup budget remains. This budget
+limits the retry, not rollback or the overall HTTP response time. A failed
+retry is reported using the creation recovery contract. Once an AP has
+started, a separate watchdog handles confirmed AP outages or DHCP failure.
+See [Network creation failure and recovery](network-creation-failure.md) for
+restart limits, quarantine and the post-reset AP/DHCP probe.
+
+Startup and cleanup are serialized per adapter, not across all adapters.
+An adapter remains held until cleanup succeeds, including after expiry. If
+startup cleanup is unsafe, the ID is invalidated and quarantine prevents reuse.
+System status reads allocation and recovery snapshots without running cleanup
+or waiting for the adapter's startup to finish; it still performs host health
+checks and is not a sub-second latency guarantee.
 
 ---
 
@@ -116,8 +144,9 @@ dhcp_base_network: "192.168.10.0/24"
 # List WiFi interfaces
 iw dev
 
-# Check current mode (should be "managed" when not in use)
-iw dev wlx782051245264 link
+# Check mode and administrative state after a successful network stop
+iw dev wlx782051245264 info
+ip -br link show wlx782051245264
 
 # Check TX power capabilities
 iw dev wlx782051245264 info | grep -i "tx power"
@@ -229,7 +258,11 @@ Users must first reserve a device via the reservation API which specifies
 `duration_seconds`. The reservation expiry becomes the authoritative
 network lifetime.
 
-This ensures networks don't run indefinitely and prevents orphaned rules.
+The device is not reassigned until its previous network has been cleaned up.
+If cleanup fails, the device remains held; other free devices can still be
+reserved. The API returns 503 when cleanup prevents an operation; retry after
+resolving the error. A bulk release may have released some devices before
+encountering an error.
 
 ---
 

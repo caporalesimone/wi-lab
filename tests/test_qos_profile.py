@@ -361,6 +361,16 @@ class TestQosProfileManager:
         assert state is not None
         assert not state.active
 
+    def test_stop_keeps_profile_tracked_if_worker_does_not_exit(self, pm, qos):
+        from unittest.mock import Mock
+
+        profile = Mock()
+        profile.thread.is_alive.return_value = True
+        pm._active["wlan0"] = profile
+        with pytest.raises(RuntimeError, match="did not stop"):
+            pm.stop_profile("wlan0", qos)
+        assert pm._active["wlan0"] is profile
+
     def test_step_applies_all_six_fields(self, pm, qos):
         profile = QosProfile(
             id="test",

@@ -6,9 +6,12 @@ from ...models import TxPowerRequest, TxPowerInfo
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager, TxPowerMismatchError
 from ...api.auth import require_token
-from ...api.dependencies import get_manager, resolve_reservation
+from ...api.dependencies import get_manager, hold_reservation, resolve_reservation, ReservationManagerDep
 
-router = APIRouter(prefix="/interface", tags=["TX Power"])
+router = APIRouter(
+    prefix="/interface", tags=["TX Power"],
+    responses={503: {"description": "Device cleanup failed; retry after resolving the error"}},
+)
 VALID_TX_POWER_LEVELS = (1, 2, 3, 4)
 VALID_TX_POWER_LEVELS_TEXT = ", ".join(str(level) for level in VALID_TX_POWER_LEVELS)
 
@@ -22,7 +25,8 @@ VALID_TX_POWER_LEVELS_TEXT = ", ".join(str(level) for level in VALID_TX_POWER_LE
         404: {"description": "Reservation not found or expired"},
     },
 )
-async def get_tx_power(
+def get_tx_power(
+    reservation_mgr: ReservationManagerDep,
     _auth: bool = Depends(require_token),
     reservation: Reservation = Depends(resolve_reservation),
     manager: NetworkManager = Depends(get_manager),
@@ -32,10 +36,11 @@ async def get_tx_power(
 
     Requires a valid reservation token.
     """
-    try:
-        return manager.get_tx_power_info(reservation.device_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    with hold_reservation(reservation_mgr, reservation):
+        try:
+            return manager.get_tx_power_info(reservation.device_id)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post(
@@ -50,8 +55,9 @@ async def get_tx_power(
         },
     },
 )
-async def set_tx_power(
+def set_tx_power(
     req: TxPowerRequest,
+    reservation_mgr: ReservationManagerDep,
     _auth: bool = Depends(require_token),
     reservation: Reservation = Depends(resolve_reservation),
     manager: NetworkManager = Depends(get_manager),
@@ -67,9 +73,10 @@ async def set_tx_power(
             detail=f"Requested power out of range. Valid values are {VALID_TX_POWER_LEVELS_TEXT}.",
         )
 
-    try:
-        return manager.set_tx_power_level(reservation.device_id, req.level)
-    except TxPowerMismatchError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    with hold_reservation(reservation_mgr, reservation):
+        try:
+            return manager.set_tx_power_level(reservation.device_id, req.level)
+        except TxPowerMismatchError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))

@@ -2,14 +2,20 @@
 
 import os
 import logging
+import signal
+import tempfile
 import time
-from typing import Optional, Dict
-from ..network.commands import execute_command, execute_iw, CommandError
+from typing import Optional, TypedDict
+from ..network.commands import (
+    CommandError, CommandTimeout, ForegroundProcess, bounded_timeout, execute_command,
+    execute_iw, start_foreground,
+)
 
 logger = logging.getLogger(__name__)
 
 HOSTAPD_CONFIG_DIR = "/tmp/wilab-hostapd"
-HOSTAPD_PID_DIR = "/tmp/wilab-hostapd/pids"
+AP_READY_TIMEOUT = 10.0
+DFS_READY_TIMEOUT = 75.0
 
 
 class HostapdError(Exception):
@@ -17,19 +23,34 @@ class HostapdError(Exception):
     pass
 
 
+class HostapdRadioFailure(HostapdError):
+    """Radio startup failed without a confirmed configuration error."""
+
+
+class HostapdSegfault(HostapdRadioFailure):
+    """The hostapd process terminated with SIGSEGV during startup."""
+
+
+class HostapdInstance(TypedDict):
+    interface: str
+    config_file: str
+    control_dir: str
+    ssid: str
+    process: ForegroundProcess | None
+
+
 class HostapdManager:
     """Manages hostapd processes for WiFi AP networks."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize hostapd manager."""
-        self._instances: Dict[str, dict] = {}  # net_id -> {config_file, pid_file, interface}
+        self._instances: dict[str, HostapdInstance] = {}
         self._ensure_dirs()
     
     def _ensure_dirs(self) -> None:
-        """Ensure config and pid directories exist."""
+        """Ensure the config directory exists."""
         try:
             os.makedirs(HOSTAPD_CONFIG_DIR, exist_ok=True)
-            os.makedirs(HOSTAPD_PID_DIR, exist_ok=True)
         except OSError as e:
             logger.warning(f"Could not create hostapd dirs: {e}")
     
@@ -126,7 +147,7 @@ class HostapdManager:
         hidden: bool,
         band: str,
         country_code: str = "IT",
-    ) -> dict:
+    ) -> HostapdInstance:
         """
         Start hostapd for an AP network.
         
@@ -148,80 +169,103 @@ class HostapdManager:
             HostapdError: If hostapd fails to start or already running
         """
         if net_id in self._instances:
-            logger.warning(f"hostapd already running for {net_id}")
-            return self._instances[net_id]
-        
+            raise HostapdError(f"hostapd cleanup required for {net_id}")
+
         try:
-            # Generate config
             config_content = self._generate_config(
                 interface, ssid, channel, encryption, password, hidden, band, country_code
             )
-            
-            # Write config file
-            config_file = os.path.join(HOSTAPD_CONFIG_DIR, f"hostapd-{net_id}.conf")
-            with open(config_file, "w") as f:
-                f.write(config_content)
-            
-            logger.info(f"Generated hostapd config at {config_file}")
-            
-            # Paths
-            pid_file = os.path.join(HOSTAPD_PID_DIR, f"hostapd-{net_id}.pid")
-            
-            # Check hostapd is available
-            try:
-                execute_command(["which", "hostapd"])
-            except CommandError:
-                raise HostapdError("hostapd not installed")
-            
-            # Prepare interface for AP mode
-            # This prevents hostapd from crashing due to interface state issues
-            try:
-                logger.info(f"Preparing interface {interface} for AP mode")
-                # Bring interface down
-                execute_command(["ip", "link", "set", interface, "down"])
-                # Set to managed mode first (clean slate)
-                execute_iw(["dev", interface, "set", "type", "managed"])
-                # Flush any IP addresses
-                execute_command(["ip", "addr", "flush", "dev", interface])
-                # Leave interface DOWN - hostapd will bring it up itself
-                # Small delay to let interface stabilize
-                time.sleep(0.2)
-            except CommandError as e:
-                logger.warning(f"Failed to prepare interface {interface}: {e}")
-                # Continue anyway - hostapd might still work
-            
-            # Start hostapd in background (config validation happens at startup)
-            try:
-                # Use -B for background mode and -P for pid file
-                execute_command([
-                    "hostapd",
-                    "-B",  # Background
-                    "-P", pid_file,  # PID file
-                    config_file
-                ], timeout=8.0)
-            except CommandError as e:
-                raise HostapdError(f"hostapd failed to start: {e}") from e
-            
-            # Verify process started
-            time.sleep(0.5)
-            if not os.path.exists(pid_file):
-                raise HostapdError(f"hostapd pid file not created for {net_id}")
-            
-            logger.info(f"hostapd started for {net_id} on {interface}")
-            
-            # Store instance info
-            self._instances[net_id] = {
+            instance_dir = tempfile.mkdtemp(prefix="ap-", dir=HOSTAPD_CONFIG_DIR)
+            control_dir = os.path.join(instance_dir, "ctrl")
+            config_file = os.path.join(instance_dir, "hostapd.conf")
+            instance: HostapdInstance = {
                 "interface": interface,
                 "config_file": config_file,
-                "pid_file": pid_file,
+                "control_dir": control_dir,
                 "ssid": ssid,
-                "channel": channel,
+                "process": None,
             }
-            
-            return self._instances[net_id]
-        
-        except Exception as e:
+            self._instances[net_id] = instance
+            with open(config_file, "w", encoding="utf-8") as f:
+                f.write(config_content + f"ctrl_interface={control_dir}\n")
+
+            logger.info(f"Preparing interface {interface} for AP mode")
+            try:
+                execute_command(["ip", "link", "set", interface, "down"])
+                execute_iw(["dev", interface, "set", "type", "managed"])
+                execute_command(["ip", "addr", "flush", "dev", interface])
+            except CommandTimeout as e:
+                raise HostapdRadioFailure(f"Radio preparation timed out on {interface}") from e
+
+            process = start_foreground(["hostapd", config_file])
+            instance["process"] = process
+            timeout = DFS_READY_TIMEOUT if band == "5ghz" and 52 <= channel <= 144 else AP_READY_TIMEOUT
+            self._wait_until_ready(process, interface, ssid, control_dir, timeout)
+            logger.info(f"hostapd started for {net_id} on {interface}")
+            return instance
+
+        except (CommandError, OSError) as e:
             raise HostapdError(f"Failed to start hostapd for {net_id}: {e}") from e
+
+    @staticmethod
+    def _check_process(process: ForegroundProcess, interface: str) -> None:
+        code = process.poll()
+        if code == -signal.SIGSEGV:
+            raise HostapdSegfault(f"hostapd segfault on {interface}")
+        if code is not None:
+            raise HostapdError(f"hostapd exited with code {code} on {interface}")
+
+    def _wait_until_ready(
+        self, process: ForegroundProcess, interface: str, ssid: str,
+        control_dir: str, timeout: float,
+    ) -> None:
+        started = time.monotonic()
+        deadline = started + bounded_timeout(timeout)
+        state = "unavailable"
+        socket_seen = False
+
+        def check_process() -> None:
+            try:
+                self._check_process(process, interface)
+            except HostapdError:
+                logger.warning(
+                    "hostapd startup exit on %s after %.3fs (control socket seen: %s)",
+                    interface, time.monotonic() - started, socket_seen,
+                )
+                raise
+
+        while (remaining := deadline - time.monotonic()) > 0:
+            check_process()
+            socket_path = os.path.join(control_dir, interface)
+            status = ""
+            if os.path.exists(socket_path):
+                socket_seen = True
+                command = ["hostapd_cli", "-p", control_dir, "-i", interface, "status"]
+                try:
+                    status = execute_command(
+                        command, check=False, timeout=remaining, exact_timeout=True,
+                    )
+                except CommandTimeout as e:
+                    check_process()
+                    raise HostapdRadioFailure(f"AP status timed out on {interface}") from e
+                except CommandError:
+                    check_process()
+                    raise
+                check_process()
+            fields = dict(line.split("=", 1) for line in status.splitlines() if "=" in line)
+            state = fields.get("state", "unavailable")
+            if (
+                time.monotonic() < deadline
+                and state == "ENABLED"
+                and fields.get("bss[0]") == interface
+                and fields.get("ssid[0]") == ssid
+            ):
+                return
+            if state == "DISABLED":
+                break
+            time.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
+        check_process()
+        raise HostapdRadioFailure(f"AP not ready on {interface} (hostapd state: {state})")
     
     def stop(self, net_id: str) -> None:
         """
@@ -236,80 +280,81 @@ class HostapdManager:
         
         try:
             instance = self._instances[net_id]
-            pid_file = instance.get("pid_file")
             config_file = instance["config_file"]
-            interface = instance.get("interface")
+            interface = instance["interface"]
+            process = instance["process"]
 
-            # Stop hostapd process
-            if pid_file and os.path.exists(pid_file):
-                try:
-                    with open(pid_file, "r") as f:
-                        pid = f.read().strip()
-                    if pid:
-                        execute_command(["kill", pid], check=False)
-                        logger.info(f"Sent SIGTERM to hostapd pid {pid}")
-                        time.sleep(0.3)
-                        # Force kill if still running
-                        execute_command(["kill", "-9", pid], check=False)
-                except Exception as e:
-                    logger.warning(f"Could not stop hostapd for {net_id}: {e}")
-
-                try:
-                    os.remove(pid_file)
-                except OSError:
-                    pass
+            if process is not None:
+                process.stop()
+                instance["process"] = None
 
             # Remove config file
             if os.path.exists(config_file):
                 os.remove(config_file)
                 logger.info(f"Removed hostapd config {config_file}")
 
-            # Reset interface mode to managed to avoid lingering AP mode
-            if interface:
+            control_dir = instance["control_dir"]
+            for path, remove in (
+                (os.path.join(control_dir, interface), os.unlink),
+                (control_dir, os.rmdir),
+                (os.path.dirname(control_dir), os.rmdir),
+            ):
                 try:
-                    execute_command(["ip", "link", "set", interface, "down"], check=False)
-                    execute_command(["iw", "dev", interface, "set", "type", "managed"], check=False)
-                    execute_command(["ip", "addr", "flush", "dev", interface], check=False)
-                    execute_command(["ip", "link", "set", interface, "up"], check=False)
-                    logger.info(f"Reset interface {interface} to managed mode")
-                except Exception as e:
-                    logger.warning(f"Failed to reset interface {interface} to managed: {e}")
+                    remove(path)
+                except FileNotFoundError:
+                    pass
+
+            # Leave the interface down until the next network starts.
+            execute_command(["ip", "link", "set", interface, "down"])
+            execute_command(["iw", "dev", interface, "set", "type", "managed"])
+            execute_command(["ip", "addr", "flush", "dev", interface])
+            logger.info(f"Reset interface {interface} to managed mode, down")
 
             del self._instances[net_id]
             logger.info(f"hostapd stopped for {net_id}")
 
-        except Exception as e:
+        except (CommandError, OSError) as e:
             logger.error(f"Error stopping hostapd for {net_id}: {e}")
+            raise HostapdError(f"Failed to stop hostapd for {net_id}: {e}") from e
     
     def is_running(self, net_id: str) -> bool:
         """Check if hostapd is running for a network."""
         if net_id not in self._instances:
             return False
         
-        pid_file = self._instances[net_id].get("pid_file")
-        if not pid_file or not os.path.exists(pid_file):
+        process = self._instances[net_id]["process"]
+        return process is not None and process.poll() is None
+
+    def is_enabled(self, net_id: str) -> bool:
+        """Check the private control socket with a short, bounded timeout."""
+        instance = self._instances.get(net_id)
+        if instance is None or not self.is_running(net_id):
             return False
-        
+        interface = instance["interface"]
         try:
-            with open(pid_file, "r") as f:
-                pid = f.read().strip()
-            # Check if process exists
-            execute_command(["kill", "-0", pid], check=True)
-            return True
-        except (CommandError, FileNotFoundError):
+            status = execute_command(
+                ["hostapd_cli", "-p", instance["control_dir"], "-i", interface, "status"],
+                check=False, timeout=1.0, exact_timeout=True,
+            )
+        except CommandError:
             return False
+        fields = dict(line.split("=", 1) for line in status.splitlines() if "=" in line)
+        return (
+            fields.get("state") == "ENABLED"
+            and fields.get("bss[0]") == interface
+            and fields.get("ssid[0]") == instance["ssid"]
+        )
     
     def status(self) -> dict:
         """Return status of all hostapd instances."""
         instances = []
-        for net_id, data in self._instances.items():
-            pid_file = data.get("pid_file")
+        for net_id, data in self._instances.copy().items():
             instances.append({
                 "net_id": net_id,
                 "interface": data.get("interface"),
                 "ssid": data.get("ssid"),
-                "pid_file": pid_file,
-                "running": self.is_running(net_id),
+                "pid_file": None,
+                "running": (process := data["process"]) is not None and process.poll() is None,
             })
         return {
             "running": any(inst["running"] for inst in instances),

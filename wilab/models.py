@@ -85,6 +85,9 @@ class NetworkTxPower(BaseModel):
 class NetworkStatus(BaseModel):
     interface: str
     active: bool
+    runtime_state: Optional[str] = Field(
+        None, description="Watchdog state: restoring_ap, restoring_dhcp, or dhcp_failed.",
+    )
     ssid: Optional[str] = None
     channel: Optional[int] = None
     password: Optional[str] = None
