@@ -1,8 +1,13 @@
+export type RecoveryState = 'recovering' | 'unavailable';
+export type RuntimeState = 'restoring_ap' | 'restoring_dhcp' | 'dhcp_failed';
+
 export interface InterfaceInfo {
   display_name: string;
   interface: string;
   reserved: boolean;
   reservation_remaining_seconds: number | null;
+  recovery_state?: RecoveryState;
+  runtime_state?: RuntimeState;
 }
 
 export interface ReservationPolicy {
@@ -39,6 +44,7 @@ export interface ReservationResponse {
 export interface NetworkStatus {
   interface: string;
   active: boolean;
+  runtime_state?: RuntimeState | null;
   ssid?: string;
   channel?: number;
   password?: string;
@@ -84,8 +90,14 @@ export interface ClientInfo {
   ip: string;
 }
 
-export interface NoDeviceAvailableError {
-  detail: string;
+export interface ApiErrorDetail {
+  code: number;
+  reason: string;
+  message?: string;
+  reservation_invalidated?: boolean;
+}
+
+export interface NoDeviceAvailableError extends ApiErrorDetail {
   next_available_at: string;
   next_available_in: number;
 }

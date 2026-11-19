@@ -15,6 +15,23 @@ Angular frontend for Wi-Lab WiFi Access Point management system.
 - Node.js 18+ and npm
 - Angular CLI (install with `npm install -g @angular/cli`)
 
+## Recovery in the dashboard
+
+- On a Wi-Fi start failure with `409 / 1001`, the dashboard automatically
+  retries the same configuration and reservation after `Retry-After`, up to
+  two retries. The card shows the wait and blocks duplicate starts.
+- On `500 / 1003`, it removes the invalidated reservation from the dashboard
+  and browser storage without sending a release. A generic `500` leaves the
+  reservation in place.
+- On `503 / 1002` from a reservation request, the dashboard enables **Retry
+  Reservation** after `Retry-After`; it does not reserve anything in the
+  background. `503 / 1003` does not offer a retry. Recovering and unavailable
+  antennas are shown but excluded from the available count.
+- During watchdog restoration, the card displays whether the AP or DHCP is
+  being restored. A DHCP failure can leave the AP on but unable to issue leases.
+
+See the [API recovery contract](../docs/network-creation-failure.md).
+
 ## Installation
 
 1. Install dependencies:

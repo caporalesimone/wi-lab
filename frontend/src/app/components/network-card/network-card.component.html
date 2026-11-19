@@ -10,6 +10,7 @@
         <mat-icon *ngIf="isMine">{{ status?.active ? 'wifi' : 'wifi_off' }}</mat-icon>
         <mat-icon *ngIf="isAvailable">check_circle_outline</mat-icon>
         <mat-icon *ngIf="isOccupied">lock</mat-icon>
+        <mat-icon *ngIf="slot.recoveryState">build</mat-icon>
         {{ slot.display_name }}
       </mat-card-title>
       <mat-card-subtitle>{{ slot.interface }}</mat-card-subtitle>
@@ -24,6 +25,9 @@
     </div>
     <!-- Status chip for non-owned cards -->
     <span *ngIf="isAvailable" class="status-chip available-chip">Available</span>
+    <span *ngIf="slot.recoveryState" class="status-chip occupied-chip">
+      {{ slot.recoveryState === 'recovering' ? 'Recovering' : 'Unavailable' }}
+    </span>
     <span *ngIf="isOccupied" class="status-chip occupied-chip">
       <ng-container *ngIf="isOccupiedUnlimited">Occupied &mdash; No expiry</ng-container>
       <ng-container *ngIf="!isOccupiedUnlimited">Occupied &mdash; {{ formatCountdown(occupiedCountdown) }}</ng-container>
@@ -96,27 +100,41 @@
           </ng-template>
         </div>
       </div>
-      <div *ngIf="!status?.active" class="inactive-message">
+      <p *ngIf="runtimeState as state" role="status">
+        {{ state === 'restoring_ap' ? 'Restoring the access point. Clients may need to reconnect.'
+           : state === 'restoring_dhcp' ? 'Restarting DHCP.'
+           : 'DHCP is unavailable. Restart this network to try again.' }}
+      </p>
+      <div *ngIf="!status?.active && !restoring" class="inactive-message">
         <mat-icon>wifi_off</mat-icon>
-        <p>Access point not active — start WiFi to begin</p>
+        <p role="status">{{ createMessage ?? 'Access point not active — start WiFi to begin' }}</p>
+      </div>
+    </mat-card-content>
+
+    <mat-card-content *ngIf="slot.recoveryState">
+      <div class="placeholder-message occupied">
+        <mat-icon>build</mat-icon>
+        <p>{{ slot.recoveryState === 'recovering'
+          ? 'This antenna is recovering and cannot be reserved yet.'
+          : 'This antenna is unavailable and cannot be reserved.' }}</p>
       </div>
     </mat-card-content>
 
     <mat-card-actions>
       <div class="actions-container">
         <div class="button-row">
-          <button mat-raised-button color="primary" (click)="startWiFi()" [disabled]="loading || status?.active">
+          <button mat-raised-button color="primary" (click)="startWiFi()" [disabled]="loading || restoring || status?.active">
             <mat-icon>play_arrow</mat-icon> Start WiFi
           </button>
-          <button mat-raised-button color="warn" (click)="stopWiFi()" [disabled]="loading || !status?.active">
+          <button mat-raised-button color="warn" (click)="stopWiFi()" [disabled]="loading || restoring || !status?.active">
             <mat-icon>stop</mat-icon> Stop WiFi
           </button>
         </div>
         <div class="button-row">
-          <button mat-raised-button color="accent" (click)="enableInternet()" [disabled]="loading || !status?.active || status?.internet_enabled">
+          <button mat-raised-button color="accent" (click)="enableInternet()" [disabled]="loading || restoring || !status?.active || status?.internet_enabled">
             <mat-icon>cloud_done</mat-icon> Enable Internet
           </button>
-          <button mat-raised-button color="accent" (click)="disableInternet()" [disabled]="loading || !status?.active || !status?.internet_enabled">
+          <button mat-raised-button color="accent" (click)="disableInternet()" [disabled]="loading || restoring || !status?.active || !status?.internet_enabled">
             <mat-icon>cloud_off</mat-icon> Disable Internet
           </button>
         </div>

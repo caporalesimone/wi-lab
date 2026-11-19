@@ -16,12 +16,14 @@ import { WilabApiService } from './services/wilab-api.service';
 import { AuthService } from './services/auth.service';
 import {
   InterfaceInfo,
+  RecoveryState,
+  RuntimeState,
   ReservationPolicy,
   ReservationRequest,
   ReservationResponse,
   NoDeviceAvailableError
 } from './models/network.models';
-import { HttpErrorResponse } from '@angular/common/http';
+import { ApiError, RecoveryCode, retryAfterSeconds } from './services/recovery-response';
 
 /** Unified view-model for each interface card. */
 export interface InterfaceSlot {
@@ -31,6 +33,8 @@ export interface InterfaceSlot {
   occupiedByOther: boolean;
   /** Remaining seconds for other user's timed reservation, null if unlimited or not occupied */
   otherReservationSeconds: number | null;
+  recoveryState?: RecoveryState;
+  runtimeState?: RuntimeState | null;
   /** Set when this client owns the reservation */
   myReservation: ReservationResponse | null;
 }
@@ -70,6 +74,11 @@ export class AppComponent implements OnInit, OnDestroy {
   /** Error info when all devices are busy */
   capacityError: NoDeviceAvailableError | null = null;
   capacityCountdown = 0;
+  reservationPending = false;
+  releaseAllPending = false;
+  recoveryRequest: ReservationRequest | null = null;
+  recoveryCountdown = 0;
+  private recoveryTimer: ReturnType<typeof setInterval> | null = null;
   private capacityTimer: ReturnType<typeof setInterval> | null = null;
   private statusTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -95,6 +104,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   public ngOnDestroy(): void {
     this.clearCapacityTimer();
+    this.cancelRecoveryRetry();
     if (this.statusTimer !== null) {
       clearInterval(this.statusTimer);
       this.statusTimer = null;
@@ -102,11 +112,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   public get availableCount(): number {
-    return this.slots.filter(s => s.myReservation === null && !s.occupiedByOther).length;
+    return this.slots.filter(s => s.myReservation === null && !s.occupiedByOther && !s.recoveryState).length;
   }
 
   public get reservedCount(): number {
-    return this.slots.length - this.availableCount;
+    return this.slots.filter(s => s.myReservation !== null || s.occupiedByOther).length;
   }
 
   public get hasAnyReservation(): boolean {
@@ -208,12 +218,19 @@ export class AppComponent implements OnInit, OnDestroy {
         interface: n.interface,
         occupiedByOther: !myRes && n.reserved,
         otherReservationSeconds: myRes ? null : n.reservation_remaining_seconds,
+        recoveryState: n.recovery_state,
+        runtimeState: n.runtime_state ?? null,
         myReservation: myRes,
       };
     });
   }
 
+  public trackSlot(_index: number, slot: InterfaceSlot): string {
+    return slot.interface;
+  }
+
   public openReservationDialog(): void {
+    this.cancelRecoveryRetry();
     this.capacityError = null;
     this.clearCapacityTimer();
     const dialogRef = this.dialog.open(ReservationDialogComponent, {
@@ -233,7 +250,9 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private createReservation(req: ReservationRequest): void {
-    this.loading = true;
+    if (this.reservationPending) return;
+    this.cancelRecoveryRetry();
+    this.reservationPending = true;
     this.capacityError = null;
     this.clearCapacityTimer();
     this.apiService.createReservation(req).subscribe({
@@ -241,18 +260,28 @@ export class AppComponent implements OnInit, OnDestroy {
         this.myReservations.set(res.interface, res);
         this.persistReservations();
         this.refreshStatus();
-        this.loading = false;
+        this.reservationPending = false;
         this.snackBar.open('Device reserved successfully', 'Close', { duration: 3000 });
       },
-      error: (err) => {
-        this.loading = false;
-        const raw = (err as { originalError?: HttpErrorResponse }).originalError;
+      error: (err: ApiError) => {
+        this.reservationPending = false;
+        const raw = err.originalError;
         const detail = raw?.error?.detail;
-        if (raw && raw.status === 409 && detail?.next_available_in !== undefined) {
+        const recoveryDelay = raw && retryAfterSeconds(raw, 503, RecoveryCode.DeviceRecovering);
+        if (raw?.status === 409 && detail?.code === RecoveryCode.NoDeviceAvailable &&
+            typeof detail.next_available_in === 'number') {
           this.capacityError = detail as NoDeviceAvailableError;
           this.startCapacityTimer(detail.next_available_in);
+        } else if (recoveryDelay) {
+          this.waitForRecovery(req, recoveryDelay);
+          this.refreshStatus();
         } else {
-          this.snackBar.open(`Reservation failed: ${err.message}`, 'Close', {
+          const unavailable = raw?.status === 503 && detail?.code === RecoveryCode.DeviceUnavailable;
+          if (unavailable) this.refreshStatus();
+          const message = unavailable
+            ? 'No devices can be reserved: the antennas are unavailable and no recovery is running.'
+            : `Reservation failed: ${err.message}`;
+          this.snackBar.open(message, 'Close', {
             duration: 5000,
             panelClass: ['error-snackbar']
           });
@@ -261,12 +290,43 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
-  public onReservationReleased(interfaceName: string): void {
+  public onReservationReleased(interfaceName: string, reservationId: string): void {
+    if (this.myReservations.get(interfaceName)?.reservation_id !== reservationId) return;
     this.myReservations.delete(interfaceName);
     this.persistReservations();
+    this.slots = this.slots.map(slot => slot.interface === interfaceName
+      ? { ...slot, myReservation: null, occupiedByOther: true } : slot);
     this.capacityError = null;
     this.clearCapacityTimer();
     this.refreshStatus();
+  }
+
+  private waitForRecovery(req: ReservationRequest, seconds: number): void {
+    this.recoveryRequest = req;
+    this.recoveryCountdown = seconds;
+    const deadline = performance.now() + seconds * 1000;
+    this.recoveryTimer = setInterval(() => {
+      this.recoveryCountdown = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
+      if (this.recoveryCountdown === 0 && this.recoveryTimer !== null) {
+        clearInterval(this.recoveryTimer);
+        this.recoveryTimer = null;
+      }
+    }, 250);
+  }
+
+  public retryReservation(): void {
+    if (this.recoveryRequest && this.recoveryCountdown === 0) {
+      this.createReservation(this.recoveryRequest);
+    }
+  }
+
+  public cancelRecoveryRetry(): void {
+    if (this.recoveryTimer !== null) {
+      clearInterval(this.recoveryTimer);
+      this.recoveryTimer = null;
+    }
+    this.recoveryRequest = null;
+    this.recoveryCountdown = 0;
   }
 
   private startCapacityTimer(seconds: number): void {
@@ -294,20 +354,21 @@ export class AppComponent implements OnInit, OnDestroy {
     });
 
     dialogRef.afterClosed().subscribe((confirmed: boolean) => {
-      if (!confirmed) return;
-      this.loading = true;
+      if (!confirmed || this.releaseAllPending || this.reservationPending) return;
+      this.releaseAllPending = true;
       this.apiService.deleteAllReservations().subscribe({
         next: () => {
           this.myReservations.clear();
           this.persistReservations();
+          this.slots = this.slots.map(slot => ({ ...slot, myReservation: null }));
           this.capacityError = null;
           this.clearCapacityTimer();
           this.refreshStatus();
-          this.loading = false;
+          this.releaseAllPending = false;
           this.snackBar.open('All reservations released', 'Close', { duration: 3000 });
         },
         error: (err) => {
-          this.loading = false;
+          this.releaseAllPending = false;
           this.snackBar.open(`Failed to release all: ${err.message}`, 'Close', {
             duration: 5000,
             panelClass: ['error-snackbar']

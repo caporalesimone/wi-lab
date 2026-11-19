@@ -1,9 +1,10 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
-import { Observable, throwError } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { Observable, throwError, timer } from 'rxjs';
+import { catchError, retry } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
+import { ApiError, RecoveryCode, retryAfterSeconds } from './recovery-response';
 import {
   StatusResponse,
   NetworkStatus,
@@ -86,12 +87,23 @@ export class WilabApiService {
     );
   }
 
-  public startNetwork(reservationId: string, config: NetworkCreateRequest): Observable<NetworkStatus> {
+  public startNetwork(
+    reservationId: string, config: NetworkCreateRequest, onRetry: (seconds: number) => void
+  ): Observable<NetworkStatus> {
     return this.http.post<NetworkStatus>(
       `${this.apiUrl}/interface/${reservationId}/network`,
       config,
       { headers: this.getHeaders() }
     ).pipe(
+      retry({
+        count: 2,
+        delay: (error: HttpErrorResponse) => {
+          const seconds = retryAfterSeconds(error, 409, RecoveryCode.RetryLater);
+          if (seconds === null) return throwError(() => error);
+          onRetry(seconds);
+          return timer(seconds * 1000);
+        }
+      }),
       catchError(this.handleError)
     );
   }
@@ -129,6 +141,7 @@ export class WilabApiService {
 
   private handleError = (error: HttpErrorResponse) => {
     let errorMessage = 'Unknown error occurred';
+    const detail = error.error?.detail;
     
     // Error status 0 typically indicates CORS, network, or connection issues
     if (error.status === 0) {
@@ -144,12 +157,7 @@ export class WilabApiService {
       errorMessage = `Error: ${error.error.message}`;
     } else {
       // Server-side error
-      const detail = error.error?.detail || error.error?.message || error.message;
-      if (typeof detail === 'object' && detail !== null) {
-        errorMessage = detail.error || detail.message || JSON.stringify(detail);
-      } else {
-        errorMessage = String(detail);
-      }
+      errorMessage = detail?.message ?? detail?.reason ?? error.message;
     }
     
     console.error('API Error:', {
@@ -160,8 +168,11 @@ export class WilabApiService {
       message: error.message
     });
     
-    const err = new Error(errorMessage);
-    (err as Error & { originalError: HttpErrorResponse }).originalError = error;
+    const err: ApiError = new Error(errorMessage);
+    err.originalError = error;
+    if (typeof detail?.code === 'number' && typeof detail?.reason === 'string') {
+      err.detail = detail;
+    }
     return throwError(() => err);
   };
 }

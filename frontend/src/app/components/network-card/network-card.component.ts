@@ -10,7 +10,8 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { interval, Subscription } from 'rxjs';
 import { WilabApiService } from '../../services/wilab-api.service';
-import { ClientInfo, NetworkStatus } from '../../models/network.models';
+import { ClientInfo, NetworkCreateRequest, NetworkStatus } from '../../models/network.models';
+import { ApiError, RecoveryCode } from '../../services/recovery-response';
 import { environment } from '../../../environments/environment';
 import { NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
 import { InterfaceSlot } from '../../app.component';
@@ -33,10 +34,12 @@ import { InterfaceSlot } from '../../app.component';
 })
 export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   @Input() slot!: InterfaceSlot;
-  @Output() released = new EventEmitter<void>();
+  @Output() released = new EventEmitter<string>();
 
   status: NetworkStatus | null = null;
   loading = false;
+  createMessage: string | null = null;
+  private creation?: Subscription;
   pollingSubscription?: Subscription;
   countdownSubscription?: Subscription;
   clientsCount = 0;
@@ -54,15 +57,23 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   public get isOccupied(): boolean {
-    return !this.isMine && this.slot.occupiedByOther;
+    return !this.isMine && !this.slot.recoveryState && this.slot.occupiedByOther;
   }
 
   public get isAvailable(): boolean {
-    return !this.isMine && !this.slot.occupiedByOther;
+    return !this.isMine && !this.slot.recoveryState && !this.slot.occupiedByOther;
   }
 
   public get reservationId(): string {
     return this.slot.myReservation?.reservation_id ?? '';
+  }
+
+  public get runtimeState() {
+    return this.status?.runtime_state ?? this.slot.runtimeState;
+  }
+
+  public get restoring(): boolean {
+    return this.runtimeState === 'restoring_ap' || this.runtimeState === 'restoring_dhcp';
   }
 
   public get clients(): ClientInfo[] {
@@ -111,12 +122,11 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
 
   public ngOnChanges(changes: SimpleChanges): void {
     if (changes['slot'] && !changes['slot'].firstChange) {
-      const wasMine = changes['slot'].previousValue?.myReservation !== null;
-      if (this.isMine && !wasMine) {
-        this.stopOccupiedCountdown();
-        this.startOwned();
-      } else if (!this.isMine && wasMine) {
+      const previousId = changes['slot'].previousValue?.myReservation?.reservation_id ?? '';
+      if (previousId !== this.reservationId) {
         this.stopOwned();
+        this.stopOccupiedCountdown();
+        if (this.isMine) this.startOwned();
       }
       // Sync occupied countdown from API without recreating timer
       if (this.isOccupied && this.slot.otherReservationSeconds !== null) {
@@ -164,6 +174,9 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   private stopOwned(): void {
+    this.creation?.unsubscribe();
+    this.createMessage = null;
+    this.loading = false;
     this.stopPolling();
     this.stopCountdown();
     this.status = null;
@@ -189,7 +202,9 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
         this.remainingSeconds--;
       }
       if (this.remainingSeconds <= 0) {
-        this.released.emit();
+        this.stopCountdown();
+        this.creation?.unsubscribe();
+        this.released.emit(this.reservationId);
       }
     });
   }
@@ -199,11 +214,13 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   public checkStatus(showNotification: boolean = true): void {
-    if (!this.isMine) return;
+    if (!this.isMine || this.createMessage !== null) return;
+    const reservationId = this.reservationId;
     if (showNotification) this.loading = true;
 
-    this.wilabApiService.getNetworkStatus(this.reservationId).subscribe({
+    this.wilabApiService.getNetworkStatus(reservationId).subscribe({
       next: (networkStatus) => {
+        if (this.reservationId !== reservationId || this.createMessage !== null) return;
         this.status = networkStatus;
         this.clientsCount = networkStatus.clients_connected || 0;
         if (networkStatus.expires_in !== undefined && networkStatus.expires_in !== null) {
@@ -214,10 +231,11 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
           this.snackBar.open('Status updated', 'Close', { duration: 2000 });
         }
       },
-      error: (err) => {
+      error: (err: ApiError) => {
+        if (this.reservationId !== reservationId || this.createMessage !== null) return;
         if (showNotification) this.loading = false;
-        if (err.message?.includes('404')) {
-          this.released.emit();
+        if (err.originalError?.status === 404) {
+          this.released.emit(reservationId);
         } else if (showNotification) {
           this.snackBar.open(`Error: ${err.message}`, 'Close', {
             duration: 5000,
@@ -229,25 +247,44 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   public startWiFi(): void {
+    if (!this.isMine || this.loading || this.restoring) return;
+    const reservationId = this.reservationId;
     const dialogRef = this.dialog.open(NetworkFormDialogComponent, {
       width: '500px',
-      data: { netId: this.reservationId }
+      data: { netId: reservationId }
     });
 
-    dialogRef.afterClosed().subscribe(result => {
-      if (result) {
+    dialogRef.afterClosed().subscribe((result: NetworkCreateRequest | undefined) => {
+      if (result && this.reservationId === reservationId && !this.loading && !this.restoring) {
         this.loading = true;
-        this.wilabApiService.startNetwork(this.reservationId, result).subscribe({
+        this.createMessage = 'Starting WiFi...';
+        this.creation = this.wilabApiService.startNetwork(reservationId, result, seconds => {
+          this.createMessage = `Radio startup failed. Retry scheduled after ${seconds}s with the same reservation.`;
+        }).subscribe({
           next: () => {
+            this.createMessage = null;
+            this.loading = false;
             this.snackBar.open('WiFi network started successfully', 'Close', { duration: 3000 });
             this.checkStatus(false);
-            this.loading = false;
           },
-          error: (err) => {
-            this.snackBar.open(`Failed to start network: ${err.message}`, 'Close', {
+          error: (err: ApiError) => {
+            this.createMessage = null;
+            this.loading = false;
+            const raw = err.originalError;
+            const invalidated = raw?.status === 500 &&
+              raw.error?.detail?.code === RecoveryCode.DeviceUnavailable &&
+              raw.error.detail.reservation_invalidated === true;
+            if (invalidated || raw?.status === 404) {
+              this.released.emit(reservationId);
+            } else if (raw?.status === 0) {
+              this.checkStatus(false);
+            }
+            const message = invalidated
+              ? 'WiFi startup failed. The reservation was invalidated; request a new device to continue.'
+              : `Failed to start network: ${err.message}`;
+            this.snackBar.open(message, 'Close', {
               duration: 5000, panelClass: ['error-snackbar']
             });
-            this.loading = false;
           }
         });
       }
@@ -307,16 +344,18 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   public releaseReservation(): void {
+    if (!this.isMine || this.loading) return;
     if (!confirm('Are you sure you want to release this device reservation?')) return;
+    const reservationId = this.reservationId;
     this.loading = true;
-    this.wilabApiService.deleteReservation(this.reservationId).subscribe({
+    this.wilabApiService.deleteReservation(reservationId).subscribe({
       next: () => {
         this.snackBar.open('Reservation released', 'Close', { duration: 3000 });
-        this.released.emit();
+        this.released.emit(reservationId);
       },
-      error: (err) => {
-        if (err.message?.includes('404')) {
-          this.released.emit();
+      error: (err: ApiError) => {
+        if (err.originalError?.status === 404) {
+          this.released.emit(reservationId);
         } else {
           this.snackBar.open(`Failed to release: ${err.message}`, 'Close', {
             duration: 5000, panelClass: ['error-snackbar']

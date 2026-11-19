@@ -49,15 +49,26 @@
           <span>All devices busy. Next available in <strong>{{ capacityCountdown }}</strong>s</span>
         </div>
 
+        <div *ngIf="recoveryRequest" class="capacity-error">
+          <mat-icon color="warn">schedule</mat-icon>
+          <span aria-live="polite">
+            No device can be assigned while recovery is running.
+            <ng-container *ngIf="recoveryCountdown > 0">Retry after {{ recoveryCountdown }}s.</ng-container>
+          </span>
+          <button mat-button [disabled]="recoveryCountdown > 0 || releaseAllPending"
+            (click)="retryReservation()">Retry Reservation</button>
+          <button mat-button (click)="cancelRecoveryRetry()">Dismiss</button>
+        </div>
+
         <button mat-raised-button color="primary" class="reserve-button" (click)="openReservationDialog()"
-          [disabled]="availableCount === 0">
+          [disabled]="availableCount === 0 || reservationPending || releaseAllPending || recoveryCountdown > 0">
           <mat-icon>lock_clock</mat-icon>
           Reserve Device
         </button>
 
         <button mat-raised-button class="release-all-button"
           [color]="reservedCount > 0 ? 'warn' : undefined"
-          [disabled]="reservedCount === 0"
+          [disabled]="reservedCount === 0 || reservationPending || releaseAllPending"
           (click)="releaseAll()">
           <mat-icon>delete_sweep</mat-icon>
           Release All
@@ -67,9 +78,9 @@
       <!-- All interface cards -->
       <div class="networks-container">
         <app-network-card
-          *ngFor="let slot of slots"
+          *ngFor="let slot of slots; trackBy: trackSlot"
           [slot]="slot"
-          (released)="onReservationReleased(slot.interface)">
+          (released)="onReservationReleased(slot.interface, $event)">
         </app-network-card>
       </div>
 
