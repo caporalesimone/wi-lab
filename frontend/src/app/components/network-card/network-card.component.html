@@ -70,7 +70,8 @@
           <span class="label">Band:</span>
           <span class="value">{{ status?.band }}</span>
         </div>
-        <div class="info-row" *ngIf="status?.tx_power?.requested_level !== undefined && status?.tx_power?.requested_level !== null">
+        <div class="info-row" *ngIf="status?.tx_power?.requested_level !== undefined && status?.tx_power?.requested_level !== null"
+          matTooltip="The reported level comes from the driver and does not guarantee actual transmitted power.">
           <span class="label">TX Power requested/reported:</span>
           <span class="value">{{ status?.tx_power?.requested_level }}/{{ status?.tx_power?.reported_level ?? '-' }}</span>
         </div>
