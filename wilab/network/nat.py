@@ -1,8 +1,10 @@
 """NAT and Internet forwarding management using iptables."""
 
 import logging
+import shlex
+from itertools import pairwise
 from typing import Optional
-from .commands import execute_command, execute_iptables, execute_sysctl
+from .commands import CommandError, execute_command, execute_iptables, execute_sysctl
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,35 @@ class NatManager:
         self.upstream_interface = upstream_interface
         self._resolved_upstream: Optional[str] = None
         logger.info(f"NatManager initialized with upstream={upstream_interface}")
+
+    def remove_stale_rules(self) -> None:
+        """Remove only rules owned by Wi-Lab from the chains it manages."""
+        for table, chain in ((None, "FORWARD"), ("nat", "POSTROUTING")):
+            prefix = ["-t", table] if table else []
+            try:
+                listing = execute_command(["iptables", *prefix, "-S", chain])
+            except CommandError as exc:
+                logger.warning("Cannot list stale Wi-Lab rules in %s: %s", chain, exc)
+                continue
+            for line in listing.splitlines():
+                try:
+                    tokens = shlex.split(line)
+                except ValueError:
+                    logger.warning("Cannot parse firewall rule in %s", chain)
+                    continue
+                if tokens[:2] != ["-A", chain]:
+                    continue
+                comments = [b for a, b in pairwise(tokens) if a == "--comment"]
+                if not any(
+                    comment in ("wilab-isolation", "wilab-protect-existing")
+                    or comment.startswith(("wilab-nat-", "wilab-forward-", "wilab-block-"))
+                    for comment in comments
+                ):
+                    continue
+                try:
+                    execute_iptables([*prefix, "-D", *tokens[1:]])
+                except CommandError as exc:
+                    logger.warning("Cannot remove stale Wi-Lab rule in %s: %s", chain, exc)
     
     def _discover_upstream_interface(self) -> str:
         """

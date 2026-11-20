@@ -84,7 +84,8 @@ def _candidate_frontend_paths() -> list[Path]:
 async def lifespan(app: FastAPI):
     # Startup: instantiate manager so background expiry runs
     cfg = get_config()
-    get_manager(cfg)
+    manager = get_manager(cfg)
+    manager.nat_manager.remove_stale_rules()
 
     # Set regulatory domain before any channel query
     set_regulatory_domain(cfg.country_code)

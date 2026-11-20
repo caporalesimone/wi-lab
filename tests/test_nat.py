@@ -5,6 +5,55 @@ from wilab.network.nat import NatManager
 from wilab.network.commands import CommandError
 
 
+def test_stale_cleanup_removes_only_owned_rules_and_duplicates(monkeypatch):
+    rules = {
+        "FORWARD": [
+            '-A FORWARD -m comment --comment "wilab-isolation" -j DROP',
+            '-A FORWARD -m comment --comment "wilab-forward-wlan0" -j ACCEPT',
+            '-A FORWARD -m comment --comment "wilab-forward-wlan0" -j ACCEPT',
+            '-A FORWARD -m comment --comment "other-wilab-nat-wlan0" -j ACCEPT',
+        ],
+        "POSTROUTING": [
+            '-A POSTROUTING -m comment --comment "wilab-nat-wlan0" -j MASQUERADE',
+            '-A POSTROUTING -m comment --comment "unrelated" -j MASQUERADE',
+        ],
+    }
+    import shlex
+
+    def list_rules(cmd):
+        return "\n".join(rules[cmd[-1]])
+
+    def delete_rule(args):
+        chain = args[3] if args[:2] == ["-t", "nat"] else args[1]
+        rule = args[3:] if args[:2] == ["-t", "nat"] else args[1:]
+        index = next(i for i, line in enumerate(rules[chain]) if shlex.split(line)[1:] == rule)
+        rules[chain].pop(index)
+
+    monkeypatch.setattr("wilab.network.nat.execute_command", list_rules)
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", delete_rule)
+    manager = NatManager()
+    manager.remove_stale_rules()
+    manager.remove_stale_rules()
+    assert len(rules["FORWARD"]) == 1 and "other-wilab" in rules["FORWARD"][0]
+    assert len(rules["POSTROUTING"]) == 1 and "unrelated" in rules["POSTROUTING"][0]
+
+
+def test_stale_cleanup_logs_failures_and_continues(monkeypatch, caplog):
+    def listing(cmd):
+        if cmd[-1] == "FORWARD":
+            raise CommandError("listing failed")
+        return '-A POSTROUTING -m comment --comment wilab-nat-wlan0 -j MASQUERADE'
+
+    def delete(args):
+        raise CommandError("deletion failed")
+
+    monkeypatch.setattr("wilab.network.nat.execute_command", listing)
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", delete)
+    NatManager().remove_stale_rules()
+    assert "Cannot list stale" in caplog.text
+    assert "Cannot remove stale" in caplog.text
+
+
 class TestNatManagerInit:
     """Tests for NAT manager initialization."""
     
