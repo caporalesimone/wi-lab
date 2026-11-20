@@ -265,6 +265,10 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch):
         response = client.get(path, headers=headers)
         assert response.status_code == 200 and not response.json()["active"]
         assert response.json()["runtime_state"] == "restoring_ap"
+        expiry = response.json()["expires_at"]
+        assert expiry.endswith("Z")
+        reserved = client.get(f"/api/v1/device-reservation/{reservation.reservation_id}", headers=headers)
+        assert reserved.status_code == 200 and reserved.json()["expires_at"] == expiry
         create = client.post(path, headers=headers, json=PAYLOAD)
         assert create.status_code == 409 and "Retry-After" not in create.headers
         system = client.get("/api/v1/status", headers=headers).json()

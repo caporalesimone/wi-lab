@@ -306,25 +306,24 @@ class TestAvailableChannelsAPI:
 # ---------------------------------------------------------------------------
 
 class TestLifespanChannelCacheWarmup:
-    """Verify that the app lifespan pre-populates the channel cache."""
+    """Verify that antennas added by discovery get their channel cache warmed."""
 
-    def test_cache_populated_after_startup(self):
-        """After TestClient enters the lifespan, the cache should already have entries."""
+    def test_cache_populated_when_discovery_adds_an_antenna(self, monkeypatch):
         import time
-        # Reset singleton so lifespan creates a fresh one
-        dependencies._channel_manager = None
-        load_config()
-        app = create_app()
-        with TestClient(app):
-            cfg = load_config()
-            channel_mgr = dependencies._channel_manager
-            assert channel_mgr is not None
-            # Give the background thread a moment to finish
-            time.sleep(0.5)
-            for net in cfg.networks:
-                info = channel_mgr.get_channels(net.interface)
-                assert info.interface == net.interface
-                assert len(info.channels_24ghz) > 0
+
+        from wilab import config as config_module
+        from wilab.wifi import discovery
+        from wilab.wifi.discovery import DiscoveredRadio
+
+        monkeypatch.setattr(config_module, "_initial_networks", lambda labels: [])
+        monkeypatch.setattr(discovery, "discover_radios", lambda **kwargs: [
+            DiscoveredRadio("wls16", "phy0", None),
+        ])
+        with TestClient(create_app()):
+            deadline = time.monotonic() + 5
+            while "wls16" not in dependencies.get_channel_manager()._cache:
+                assert time.monotonic() < deadline, "channel cache was not warmed"
+                time.sleep(0.01)
 
     def test_warmup_tolerates_failure(self, monkeypatch):
         """If iw fails for one interface the app should still start."""

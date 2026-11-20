@@ -23,7 +23,7 @@ import {
   ReservationResponse,
   NoDeviceAvailableError
 } from './models/network.models';
-import { ApiError, RecoveryCode, retryAfterSeconds } from './services/recovery-response';
+import { ApiError, RecoveryCode, apiErrorToast, retryAfterSeconds } from './services/recovery-response';
 
 /** Unified view-model for each interface card. */
 export interface InterfaceSlot {
@@ -194,6 +194,9 @@ export class AppComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.error = `Failed to load status: ${err.message}`;
+        this.snackBar.open(apiErrorToast('Failed to load status', err), 'Close', {
+          duration: 10000, panelClass: ['error-snackbar']
+        });
         this.loading = false;
       }
     });
@@ -280,9 +283,9 @@ export class AppComponent implements OnInit, OnDestroy {
           if (unavailable) this.refreshStatus();
           const message = unavailable
             ? 'No devices can be reserved: the antennas are unavailable and no recovery is running.'
-            : `Reservation failed: ${err.message}`;
-          this.snackBar.open(message, 'Close', {
-            duration: 5000,
+            : 'Reservation failed';
+          this.snackBar.open(apiErrorToast(message, err), 'Close', {
+            duration: 10000,
             panelClass: ['error-snackbar']
           });
         }
@@ -369,8 +372,8 @@ export class AppComponent implements OnInit, OnDestroy {
         },
         error: (err) => {
           this.releaseAllPending = false;
-          this.snackBar.open(`Failed to release all: ${err.message}`, 'Close', {
-            duration: 5000,
+          this.snackBar.open(apiErrorToast('Failed to release all', err), 'Close', {
+            duration: 10000,
             panelClass: ['error-snackbar']
           });
         }

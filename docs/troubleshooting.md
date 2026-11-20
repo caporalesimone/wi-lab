@@ -59,7 +59,7 @@ Symptoms:
 
 Script:
 - [diagnostics/troubleshooting/issue_network_creation_fails.sh](../diagnostics/troubleshooting/issue_network_creation_fails.sh)
-- [USB adapter recovery procedure](recovery.md) for a blocked interface
+- [USB adapter recovery procedure](manual_recovery.md) for a blocked interface
 
 ### Issue 3: Clients Cannot Connect
 

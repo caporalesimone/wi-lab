@@ -1,9 +1,9 @@
-# Recovering a blocked Wi-Fi adapter
+# Manual recovery of a blocked Wi-Fi adapter
 
 This is a manual recovery procedure for a Wi-Lab adapter that cannot be brought up.
 It resets **one USB device**, not the USB controller or every adapter. This page
-covers manual recovery; automatic reset is opt-in and described in
-[Network creation failure and recovery](network-creation-failure.md).
+covers manual recovery; automatic reset applies to adapters detected as USB and is
+described in [Architecture](architecture.md#8-quarantine-and-automatic-usb-recovery).
 A successful reset does not establish or fix the underlying cause.
 
 ## Symptoms and observed case

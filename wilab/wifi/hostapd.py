@@ -2,6 +2,7 @@
 
 import os
 import logging
+import re
 import signal
 import tempfile
 import time
@@ -16,6 +17,36 @@ logger = logging.getLogger(__name__)
 HOSTAPD_CONFIG_DIR = "/tmp/wilab-hostapd"
 AP_READY_TIMEOUT = 10.0
 DFS_READY_TIMEOUT = 75.0
+_STARTUP_STATES = frozenset({
+    "UNINITIALIZED", "DISABLED", "COUNTRY_UPDATE", "ACS", "HT_SCAN", "DFS",
+    "NO_IR", "ENABLED",
+})
+_OUTPUT_EVENTS = (
+    (b"nl80211: Scan timeout", "scan_timeout"),
+    (b"nl80211: Failed to set beacon", "beacon_failed"),
+    (b"nl80211: Beacon set failed", "beacon_failed"),
+    (b"nl80211: Failed to set channel", "channel_failed"),
+    (b"nl80211: Failed to set interface", "interface_failed"),
+    (b"Could not select hw_mode and channel", "channel_selection_failed"),
+    (b"Failed to set beacon parameters", "beacon_failed"),
+    (b"Failed to set channel", "channel_failed"),
+    (b"Failed to initialize interface", "interface_init_failed"),
+    (b"Interface initialization failed", "interface_init_failed"),
+    (b"Channel list update timeout", "channel_list_timeout"),
+    (b"Channel list updated - continue setup", "channel_list_updated"),
+)
+_INTERFACE_EVENT = re.compile(rb"^[\w.-]+: (AP-ENABLED|AP-DISABLED|DFS-CAC-START|DFS-CAC-COMPLETED)(?: |$)")
+_STATE_TRANSITION = re.compile(rb"^[\w.-]+: interface state [A-Z_]+->([A-Z_]+)$")
+
+
+def _classify_output(line: bytes) -> str | None:
+    if match := _INTERFACE_EVENT.match(line):
+        return match[1].decode("ascii").lower().replace("-", "_")
+    if match := _STATE_TRANSITION.match(line):
+        state = match[1].decode("ascii")
+        if state in _STARTUP_STATES:
+            return f"state_{state.lower()}"
+    return next((event for prefix, event in _OUTPUT_EVENTS if line.startswith(prefix)), None)
 
 
 class HostapdError(Exception):
@@ -197,7 +228,7 @@ class HostapdManager:
             except CommandTimeout as e:
                 raise HostapdRadioFailure(f"Radio preparation timed out on {interface}") from e
 
-            process = start_foreground(["hostapd", config_file])
+            process = start_foreground(["hostapd", "-d", config_file], classify_output=_classify_output)
             instance["process"] = process
             timeout = DFS_READY_TIMEOUT if band == "5ghz" and 52 <= channel <= 144 else AP_READY_TIMEOUT
             self._wait_until_ready(process, interface, ssid, control_dir, timeout)
@@ -222,50 +253,67 @@ class HostapdManager:
         started = time.monotonic()
         deadline = started + bounded_timeout(timeout)
         state = "unavailable"
+        last_state = state
         socket_seen = False
+        probe = "not_attempted"
+        exit_code = None
 
         def check_process() -> None:
+            nonlocal exit_code
             try:
                 self._check_process(process, interface)
             except HostapdError:
-                logger.warning(
-                    "hostapd startup exit on %s after %.3fs (control socket seen: %s)",
-                    interface, time.monotonic() - started, socket_seen,
-                )
+                exit_code = process.poll()
                 raise
 
-        while (remaining := deadline - time.monotonic()) > 0:
-            check_process()
-            socket_path = os.path.join(control_dir, interface)
-            status = ""
-            if os.path.exists(socket_path):
-                socket_seen = True
-                command = ["hostapd_cli", "-p", control_dir, "-i", interface, "status"]
-                try:
-                    status = execute_command(
-                        command, check=False, timeout=remaining, exact_timeout=True,
-                    )
-                except CommandTimeout as e:
-                    check_process()
-                    raise HostapdRadioFailure(f"AP status timed out on {interface}") from e
-                except CommandError:
-                    check_process()
-                    raise
+        try:
+            while (remaining := deadline - time.monotonic()) > 0:
                 check_process()
-            fields = dict(line.split("=", 1) for line in status.splitlines() if "=" in line)
-            state = fields.get("state", "unavailable")
-            if (
-                time.monotonic() < deadline
-                and state == "ENABLED"
-                and fields.get("bss[0]") == interface
-                and fields.get("ssid[0]") == ssid
-            ):
-                return
-            if state == "DISABLED":
-                break
-            time.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
-        check_process()
-        raise HostapdRadioFailure(f"AP not ready on {interface} (hostapd state: {state})")
+                fields: dict[str, str] = {}
+                if os.path.exists(os.path.join(control_dir, interface)):
+                    socket_seen = True
+                    command = ["hostapd_cli", "-p", control_dir, "-i", interface, "status"]
+                    try:
+                        status = execute_command(
+                            command, check=False, timeout=remaining, exact_timeout=True,
+                        )
+                    except CommandTimeout as e:
+                        probe = "timed_out"
+                        check_process()
+                        raise HostapdRadioFailure(f"AP status timed out on {interface}") from e
+                    except CommandError:
+                        probe = "command_error"
+                        check_process()
+                        raise
+                    fields = dict(line.split("=", 1) for line in status.splitlines() if "=" in line)
+                    reported = fields.get("state")
+                    probe = "state_received" if reported in _STARTUP_STATES else "no_known_state"
+                    if reported is not None and reported in _STARTUP_STATES:
+                        last_state = reported
+                    check_process()
+                state = fields.get("state", "unavailable")
+                if (
+                    time.monotonic() < deadline
+                    and state == "ENABLED"
+                    and fields.get("bss[0]") == interface
+                    and fields.get("ssid[0]") == ssid
+                ):
+                    return
+                if state == "DISABLED":
+                    break
+                time.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
+            check_process()
+            raise HostapdRadioFailure(f"AP not ready on {interface} (hostapd state: {last_state})")
+        except (HostapdError, CommandError) as exc:
+            elapsed = time.monotonic() - started
+            logger.warning(
+                "hostapd startup failure on %s elapsed=%.3fs budget=%.3fs "
+                "socket_seen=%s last_state=%s last_probe=%s error=%s exit_code=%s events=%s",
+                interface, elapsed, deadline - started, socket_seen, last_state, probe,
+                type(exc).__name__, exit_code,
+                ",".join(process.output_events(exited=exit_code is not None)) or "none",
+            )
+            raise
     
     def stop(self, net_id: str) -> None:
         """

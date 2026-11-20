@@ -1,13 +1,19 @@
+import logging
 import os
-from typing import List, Optional
+from typing import Any, List, Optional
 from ipaddress import IPv4Network
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
+
+logger = logging.getLogger(__name__)
 
 
 class NetworkEntry(BaseModel):
     interface: str
     display_name: str
+    # Configuration only: exclude this radio from discovery and allocation.
+    disable: bool = False
+    # Detected at startup from sysfs; set only for USB adapters.
     usb_recovery_port: str | None = Field(default=None, pattern=r"^\d+-\d+(\.\d+)*$")
 
     @property
@@ -26,7 +32,7 @@ class AppConfig(BaseModel):
     country_code: str = "IT"
     dns_server: str = "192.168.10.21"
     internet_enabled_by_default: bool = True
-    networks: List[NetworkEntry]
+    networks: List[NetworkEntry] = Field(default_factory=list)
     cors_origins: Optional[List[str]] = Field(
         default=None,
         description="CORS allowed origins. If None or empty, CORS is disabled (secure for production). "
@@ -90,26 +96,138 @@ class AppConfig(BaseModel):
         return v
 
 
-def load_config(path: Optional[str] = None) -> AppConfig:
-    cfg_path = path or os.environ.get('CONFIG_PATH') or os.path.join(os.getcwd(), 'config.yaml')
+def resolve_networks(
+    labels: list[NetworkEntry], radios: list[Any], excluded: set[str], *, quiet: bool = False,
+) -> list[NetworkEntry]:
+    """Build managed devices from discovered radios, naming them from configured labels.
+
+    Configured interfaces keep their configured order (stable DHCP subnets); other
+    radios follow sorted by name. Only one interface per physical radio is managed,
+    and a disabled interface excludes its whole radio. `quiet` logs skips at debug
+    level for repeated background scans.
+    """
+    info = logger.debug if quiet else logger.info
+    warning = logger.debug if quiet else logger.warning
+    disabled = {label.interface for label in labels if label.disable}
+    labels = [label for label in labels if not label.disable]
+    disabled_phys = {r.phy for r in radios if r.interface in disabled}
+    for interface in sorted(disabled):
+        info("Skipping %s: disabled in configuration", interface)
+    radios = [r for r in radios if r.phy not in disabled_phys]
+    names = {label.interface: label.display_name for label in labels}
+    by_interface = {r.interface: r for r in radios if r.interface not in excluded}
+    for r in radios:
+        if r.interface in excluded:
+            info("Skipping %s: used as upstream interface", r.interface)
+    for label in labels:
+        if label.interface not in by_interface:
+            warning(
+                "Configured interface %s (%s) not found or not usable as AP; skipping",
+                label.interface, label.display_name,
+            )
+    ordered = [by_interface[label.interface] for label in labels if label.interface in by_interface]
+    ordered += sorted((r for r in by_interface.values() if r.interface not in names),
+                      key=lambda r: r.interface)
+    networks: list[NetworkEntry] = []
+    used_phys: set[str] = set()
+    for r in ordered:
+        if r.phy in used_phys:
+            info("Skipping %s: %s already managed via another interface", r.interface, r.phy)
+            continue
+        used_phys.add(r.phy)
+        networks.append(NetworkEntry(
+            interface=r.interface,
+            display_name=names.get(r.interface, r.interface),
+            usb_recovery_port=r.usb_port,
+        ))
+    return networks
+
+
+def _initial_networks(labels: list[NetworkEntry]) -> list[NetworkEntry]:
+    """Antennas managed right after loading: none, the discovery service adds them.
+
+    Kept as a seam so tests can start with the configured interfaces.
+    """
+    return []
+
+
+def select_new_networks(
+    current: list[NetworkEntry], labels: list[NetworkEntry], radios: list[Any], excluded: set[str],
+    *, quiet: bool = False,
+) -> list[NetworkEntry]:
+    """Return discovered radios not yet managed, honouring disabled entries and display names."""
+    managed = {n.interface for n in current}
+    managed_phys = {r.phy for r in radios if r.interface in managed}
+    fresh = [r for r in radios if r.interface not in managed and r.phy not in managed_phys]
+    return resolve_networks(
+        [label for label in labels if label.interface not in managed], fresh, excluded, quiet=quiet,
+    )
+
+
+def config_path(path: str | None = None) -> str:
+    return path or os.environ.get('CONFIG_PATH') or os.path.join(os.getcwd(), 'config.yaml')
+
+
+def _read_raw_config(cfg_path: str, *, quiet: bool = False) -> dict:
+    with open(cfg_path, 'r', encoding='utf-8') as f:
+        raw = yaml.safe_load(f) or {}
+    if raw.get('networks') is None:
+        raw['networks'] = []
+    for entry in raw['networks']:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('disable') and not entry.get('display_name'):
+            entry['display_name'] = entry.get('interface')
+        if entry.pop('usb_recovery_port', None) is not None and not quiet:
+            logger.warning(
+                "Ignoring usb_recovery_port for %s: USB ports are detected automatically",
+                entry.get('interface'),
+            )
+    return raw
+
+
+def scan_new_networks(
+    config: AppConfig, path: str | None = None, *, quiet: bool = False,
+) -> list[NetworkEntry]:
+    """Re-read `networks` from the config file and discover radios not yet managed.
+
+    Only additions are returned; managed devices are never removed or renamed.
+
+    Raises:
+        ValueError: If the configuration file cannot be read or is invalid.
+    """
+    from .wifi.discovery import default_route_interfaces, discover_radios
+
+    cfg_path = config_path(path)
     try:
-        with open(cfg_path, 'r', encoding='utf-8') as f:
-            raw = yaml.safe_load(f) or {}
-        config = AppConfig(**raw)
-        
-        # Validate interfaces at config load time
-        from .wifi.interface import validate_interface, InterfaceError
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        for net in config.networks:
-            try:
-                validate_interface(net.interface)
-            except InterfaceError as e:
-                logger.error(f"Interface validation failed for {net.device_id}: {e}")
-                raise SystemExit(f"Configuration error for {net.device_id}: {e}")
-        
-        return config
+        labels = AppConfig(**_read_raw_config(cfg_path, quiet=quiet)).networks
+    except (OSError, yaml.YAMLError, ValidationError) as e:
+        raise ValueError(f"Cannot read configuration {cfg_path}: {e}") from e
+    excluded = default_route_interfaces()
+    if config.upstream_interface != "auto":
+        excluded.add(config.upstream_interface)
+    added = select_new_networks(
+        config.networks, labels, discover_radios(quiet=quiet), excluded, quiet=quiet,
+    )
+    base_third = int(str(IPv4Network(config.dhcp_base_network).network_address).split('.')[2])
+    room = 256 - base_third - len(config.networks)
+    if len(added) > room:
+        logger.warning("Only %d new interface(s) fit in dhcp_base_network; ignoring the rest", max(room, 0))
+        added = added[:max(room, 0)]
+    return added
+
+
+def load_config(path: Optional[str] = None) -> AppConfig:
+    """Load and validate the configuration.
+
+    No antenna is managed yet: the discovery service started with the API adds
+    them, and the first discovery scan reports configuration warnings.
+    """
+    cfg_path = config_path(path)
+    try:
+        raw = _read_raw_config(cfg_path, quiet=True)
+        labels = AppConfig(**raw).networks
+        return AppConfig(**{**raw, 'networks': [n.model_dump() for n in _initial_networks(labels)]})
         
     except FileNotFoundError as e:
         raise SystemExit(f"Configuration file not found: {cfg_path}") from e

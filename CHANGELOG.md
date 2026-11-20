@@ -4,16 +4,19 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
-## [3.1.0] - 2026-11-19
+## [4.0.0] - 2026-11-20
 
 ### Breaking Changes
 
-- All `/api/v1` error bodies now use an object with `detail.code` and `detail.reason`. Clients displaying a former string `detail` should read `detail.message`. Recovery codes 1001–1003 and successful responses are unchanged.
+- All `/api/v1` error bodies now use an object with `detail.code` and `detail.reason`. Clients displaying a former string `detail` should read `detail.message`. Recovery codes 1001–1003 are unchanged.
+- API timestamps (`expires_at`, `detail.next_available_at`) now use RFC 3339 UTC with a `Z` suffix. Durations and countdowns remain in seconds.
 
 ### Features
 
 - Allow clients to retry classified radio startup failures using the same reservation after `Retry-After`. A terminal creation failure returns `500 / 1003` and invalidates the reservation. New reservations still return `503` when blocked by recovery or quarantine.
 - Restart failed active access points or DHCP processes and verify AP and DHCP startup before a USB-reset antenna returns to the pool.
+- Discover AP-capable Wi-Fi interfaces (USB or built-in) automatically instead of requiring each one in `networks`. The section now only assigns display names, and `disable: true` keeps a radio out of Wi-Lab; unlisted interfaces use their interface name. A missing configured interface no longer prevents startup; with no usable adapter, reservations return `503 / 1003`. USB ports are detected automatically for recovery resets; `usb_recovery_port` is ignored.
+- Add a device discovery service: Wi-Lab starts without antennas and scans as soon as the API starts, then every 5 seconds while none is available and every 30 seconds afterwards. Antennas plugged in later are added without a restart. Each scan re-reads `networks` (display names and `disable`) and only adds devices; existing antennas, subnets and reservations are unchanged. Interfaces still being renamed by udev are skipped until they have their final name.
 
 ### 🐛 Bug Fixes
 
@@ -30,6 +33,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 - **hostapd regulatory compliance** — The generated hostapd configuration now enables `ieee80211d=1` (advertise country code and apply the regulatory domain) on all bands, and `ieee80211h=1` (DFS/TPC) on 5 GHz where regulatory rules require it.
 - Documented safe recovery of a blocked USB Wi-Fi adapter.
+- Added an [AP creation procedure](docs/ap-creation-procedure.md) for client developers and a backend [architecture](docs/architecture.md) guide with startup, threading, creation, retry, watchdog and recovery diagrams.
 - Explain the reservation and recovery lifecycle in Swagger and ReDoc, including retry, quarantine and watchdog response examples.
 - Include the API operation, HTTP status, and error code in journal entries for server errors, without request or response data.
 

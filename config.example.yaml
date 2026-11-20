@@ -115,36 +115,46 @@ internet_enabled_by_default: true
 country_code: "IT"
 
 # ==================================================================================================
-# MANAGED WiFi NETWORKS
+# WiFi DEVICES (auto-discovered)
 # ==================================================================================================
 
-# List of WiFi interfaces managed by Wi-Lab
-# Each interface can run ONE WiFi network at a time
-# 
-# Parameters:
-#   - interface: WiFi interface name to use for this network
-#                Find available interfaces: iw dev
-#                Names: wlan0, wlx782051245264, etc.
-#                The interface name is also used as the internal device_id.
+# Wi-Lab discovers Wi-Fi interfaces automatically (`iw dev`) and manages each radio
+# only after udev has finished initializing and naming its interface.
+# Only AP-capable radios are managed, whether USB or built-in (PCI/SDIO). Interfaces carrying a
+# default route and `upstream_interface` are never managed. A configured interface
+# that is missing does not stop the service.
 #
-#   - display_name: Human-readable label for the device (required)
-#                  Example: "bench-antenna-1"
+# This optional section only assigns a human-readable display_name to an interface.
+# Discovered interfaces not listed here use the interface name as display_name.
+# Listed interfaces are allocated DHCP subnets first, in this order; the others
+# follow sorted by name.
 #
-# For WiFi interface discovery:
-#   List interfaces: iw dev
-#   Check AP mode support: iw list | grep -A 5 "Supported interface modes"
-#   Find interface name: iw dev (look for "Interface wlx..." lines)
+# USB adapters are detected automatically from sysfs: on repeated radio faults Wi-Lab
+# may reset the adapter's dedicated USB port (never a hub or shared device).
+# Non-USB adapters get the same startup retries and quarantine, without port reset.
+#
+# Wi-Lab starts without antennas: discovery scans as soon as the API starts, then
+# every 5 seconds while no antenna is available and every 30 seconds afterwards.
+# Antennas plugged in later are added automatically, without a restart. Each scan
+# re-reads this section, so new display names and disable flags apply to newly found
+# antennas; antennas already in use are not changed until the service restarts.
+#
+#   - interface:    WiFi interface name (list them with: iw dev)
+#   - display_name: Human-readable label shown in the API and UI
+#                   (optional when disable is true)
+#   - disable:      Optional, default false. When true, Wi-Lab never uses this radio
+#                   (any interface on the same physical radio is excluded too)
 
 networks:
   - interface: "wlxbc071dc527d6"
     display_name: "bench-antenna-1"
-    # Optional: authorize automatic reset of this dedicated port in Linux USB topology.
-    # Match the interface to its actual port with: readlink -f /sys/class/net/<interface>/device
-    # Example: a USB function named 2-1:1.0 belongs to physical USB port 2-1.
-    # usb_recovery_port: "2-1"
 
   - interface: "wlx7820512451b4"
     display_name: "bench-antenna-2"
 
   - interface: "wlx782051245264"
     display_name: "bench-antenna-3"
+
+  # Example: keep the built-in card out of Wi-Lab
+  # - interface: "wlan0"
+  #   disable: true

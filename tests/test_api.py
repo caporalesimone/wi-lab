@@ -1069,7 +1069,13 @@ class TestGetNetworkExpiryAlwaysPresent:
         assert data['active'] is False
         assert data['expires_at'] is not None
         assert isinstance(data['expires_at'], str)
-        assert '+00:00' in data['expires_at']  # ISO 8601 UTC
+        assert data['expires_at'].endswith('Z')
+        reservation = client.get(
+            f'/api/v1/device-reservation/{reservation_id}',
+            headers={'Authorization': valid_token}
+        )
+        assert reservation.status_code == 200
+        assert data['expires_at'] == reservation.json()['expires_at']
         assert data['expires_in'] is not None
         assert data['expires_in'] > 3500
 
@@ -1102,7 +1108,7 @@ class TestGetNetworkExpiryAlwaysPresent:
         assert resp.status_code == 200
         data = resp.json()
         assert data['active'] is True
-        assert data['expires_at'] is not None
+        assert data['expires_at'].endswith('Z')
         assert data['expires_in'] is not None
         assert data['expires_in'] > 3500
 

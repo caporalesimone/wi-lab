@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from wilab.config import load_config, NetworkEntry
 from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
 from wilab.models import NetworkCreateRequest
-from wilab.network.commands import CommandError
+from wilab.network.commands import CommandError, CommandTimeout
 from wilab.network.dhcp import DhcpServerError
 from wilab.wifi import hostapd
 
@@ -162,8 +162,8 @@ class TestNetworkLifecycle:
                 raise CommandError("reset failed")
             return ""
 
-        def launch(cmd: list[str]) -> SimpleNamespace:
-            assert len(cmd) == 2 and cmd[0] == "hostapd"
+        def launch(cmd: list[str], *, classify_output) -> SimpleNamespace:
+            assert cmd[:2] == ["hostapd", "-d"]
             events.append("ap")
             if failure == "ap":
                 raise CommandError("launch failed")
@@ -269,7 +269,7 @@ class TestNetworkLifecycle:
                     raise CommandError("reset failed")
             return ""
 
-        def launch(cmd: list[str]) -> SimpleNamespace:
+        def launch(cmd: list[str], *, classify_output) -> SimpleNamespace:
             nonlocal now
             events.append("ap")
             code = None
@@ -278,6 +278,7 @@ class TestNetworkLifecycle:
                 code = 1 if scenario == "non_segfault" else -signal.SIGSEGV
             return SimpleNamespace(
                 poll=lambda: code, stop=lambda: events.append("stop"),
+                output_events=lambda **kwargs: (),
             )
 
         poll_readiness = mgr.hostapd_manager._wait_until_ready
@@ -365,7 +366,7 @@ class TestNetworkLifecycle:
         status = mgr.start_network('wls16', req, expires_at_timestamp=expires_at)
         assert status.expires_at is not None
         assert isinstance(status.expires_at, str)
-        assert '+00:00' in status.expires_at  # ISO 8601 UTC
+        assert status.expires_at.endswith('Z')
         # Check expires_in is within expected range (2 hours = 7200 seconds, allow 100s margin)
         assert status.expires_in > 7100
         assert status.expires_in < 7300
@@ -810,7 +811,7 @@ class TestTxPower:
 def test_hostapd_checks_ap_readiness(monkeypatch, tmp_path, state, interface, ssid, ready):
     mgr = hostapd.HostapdManager()
     (tmp_path / "wlan0").touch()
-    process = SimpleNamespace(poll=lambda: None)
+    process = SimpleNamespace(poll=lambda: None, output_events=lambda **kwargs: ())
     now = 0.0
 
     def sleep(seconds):
@@ -830,6 +831,39 @@ def test_hostapd_checks_ap_readiness(monkeypatch, tmp_path, state, interface, ss
     else:
         with pytest.raises(hostapd.HostapdError, match="AP not ready"):
             mgr._wait_until_ready(process, "wlan0", "TestAP", str(tmp_path), 0.3)
+
+
+@pytest.mark.parametrize("exit_code", [1, None])
+def test_hostapd_diagnostics_at_probe_timeout(monkeypatch, tmp_path, caplog, exit_code):
+    mgr = hostapd.HostapdManager()
+    (tmp_path / "wlan0").touch()
+    now = 0.0
+    process = SimpleNamespace(
+        poll=lambda: exit_code if now >= 10 else None,
+        output_events=lambda **kwargs: ("channel_list_timeout",),
+    )
+
+    def probe(*args, **kwargs):
+        nonlocal now
+        if now == 0:
+            return "state=COUNTRY_UPDATE\nssid[0]=private-network\n"
+        now = 10
+        raise CommandTimeout("probe timeout")
+
+    def sleep(seconds):
+        nonlocal now
+        now += seconds
+
+    monkeypatch.setattr(hostapd, "time", SimpleNamespace(monotonic=lambda: now, sleep=sleep))
+    monkeypatch.setattr(hostapd, "execute_command", probe)
+    expected_error = hostapd.HostapdError if exit_code else hostapd.HostapdRadioFailure
+    with pytest.raises(expected_error) as error:
+        mgr._wait_until_ready(process, "wlan0", "private-network", str(tmp_path), 10)
+    assert type(error.value) is expected_error
+    assert "elapsed=10.000s budget=10.000s socket_seen=True" in caplog.text
+    assert "last_state=COUNTRY_UPDATE last_probe=timed_out" in caplog.text
+    assert f"exit_code={exit_code} events=channel_list_timeout" in caplog.text
+    assert "private-network" not in caplog.text
 
 
 class TestHostapdConfigGeneration:

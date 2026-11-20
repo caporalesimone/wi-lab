@@ -3,6 +3,7 @@
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import Mock
 import pytest
@@ -510,8 +511,6 @@ def test_channel_query_holds_reservation_until_complete(valid_token, monkeypatch
         get_channels = channel_manager.get_channels
 
         def slow_channels(interface):
-            if threading.current_thread().name == "channel-cache-warmup":
-                return get_channels(interface)
             started.set()
             assert finish.wait(timeout=10)
             return get_channels(interface)
@@ -541,6 +540,7 @@ class TestReservationAPICreate:
     """Tests for POST /api/v1/device-reservation."""
 
     def test_create_reservation_success(self, client, valid_token):
+        started = time.time()
         resp = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
@@ -551,7 +551,9 @@ class TestReservationAPICreate:
         assert "reservation_id" in data
         assert "display_name" in data
         assert "interface" in data
-        assert "expires_at" in data
+        assert data["expires_at"].endswith("Z")
+        expiry = datetime.fromisoformat(data["expires_at"]).timestamp()
+        assert started + 3600 <= expiry <= time.time() + 3600
         assert "expires_in" in data
         assert data["expires_in"] > 0
         assert "device_id" not in data
@@ -582,11 +584,12 @@ class TestReservationAPICreate:
     def test_full_capacity_returns_409_with_eta(self, client, valid_token):
         """All devices reserved returns 409 with next_available_at/in."""
         # Config has 1 device (wls16), reserve it
-        client.post(
+        first = client.post(
             "/api/v1/device-reservation",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 120},
         )
+        assert first.status_code == 200
         # Try again — should get 409
         resp = client.post(
             "/api/v1/device-reservation",
@@ -597,7 +600,8 @@ class TestReservationAPICreate:
         data = resp.json()["detail"]
         assert data["code"] == 1005
         assert data["message"] == "No device available"
-        assert "next_available_at" in data
+        assert data["next_available_at"].endswith("Z")
+        assert data["next_available_at"] == first.json()["expires_at"]
         assert "next_available_in" in data
         assert data["next_available_in"] > 0
 
@@ -621,6 +625,7 @@ class TestReservationAPIGet:
         assert resp.status_code == 200
         data = resp.json()
         assert data["reservation_id"] == rid
+        assert data["expires_at"] == create_resp.json()["expires_at"]
         assert data["expires_in"] > 0
         assert "display_name" in data
         assert "interface" in data

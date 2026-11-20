@@ -59,7 +59,7 @@ is valid and enough of the five-second startup budget remains. This budget
 limits the retry, not rollback or the overall HTTP response time. A failed
 retry is reported using the creation recovery contract. Once an AP has
 started, a separate watchdog handles confirmed AP outages or DHCP failure.
-See [Network creation failure and recovery](network-creation-failure.md) for
+See [Architecture](architecture.md) for
 restart limits, quarantine and the post-reset AP/DHCP probe.
 
 Startup and cleanup are serialized per adapter, not across all adapters.

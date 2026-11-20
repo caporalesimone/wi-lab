@@ -1,7 +1,6 @@
 import os
 import logging
 import uvicorn
-from ipaddress import IPv4Network
 from wilab.config import load_config
 from wilab.api import create_app
 from wilab.version import __version__
@@ -27,22 +26,9 @@ def main():
     # Load configuration (exits with descriptive error on failure)
     config = load_config(os.environ.get('CONFIG_PATH'))
     logger.info(f"Configuration loaded from {os.environ.get('CONFIG_PATH', 'default')}")
-    logger.info(f"Managed networks: {[n.device_id for n in config.networks]}")
-
-    # Log resolved subnets for each network (sequential /24 from dhcp_base_network)
-    try:
-        base_net = IPv4Network(config.dhcp_base_network, strict=False)
-        octet2 = str(base_net.network_address).split('.')
-        for idx, net in enumerate(config.networks):
-            octets = octet2.copy()
-            third = int(octets[2]) + idx
-            if third > 255:
-                raise SystemExit(f"Cannot allocate subnet for {net.device_id}: octet overflow")
-            octets[2] = str(third)
-            subnet = '.'.join(octets) + '/24'
-            logger.info(f"Network {net.device_id} on {net.interface} -> subnet {subnet}")
-    except Exception as exc:
-        raise SystemExit(f"Failed to compute subnets: {exc}") from exc
+    logger.info(
+        "Wi-Fi adapters are added by device discovery (subnets from %s)", config.dhcp_base_network,
+    )
     
     app = create_app()
     logger.info(f"Starting REST API server on 0.0.0.0:8080")

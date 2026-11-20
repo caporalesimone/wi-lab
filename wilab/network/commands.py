@@ -2,9 +2,12 @@ import subprocess
 import logging
 import os
 import time
+from collections import deque
+from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Iterator, List, Optional
+from threading import Lock, Thread
+from typing import BinaryIO, Iterator, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +50,38 @@ def bounded_timeout(timeout: float) -> float:
 class ForegroundProcess:
     """A directly owned child process, independent of PID files."""
 
-    def __init__(self, process: subprocess.Popen[bytes]) -> None:
+    def __init__(
+        self, process: subprocess.Popen[bytes],
+        classify_output: Callable[[bytes], str | None] | None = None,
+    ) -> None:
         self._process = process
+        self._events: deque[str] = deque(maxlen=12)
+        self._events_lock = Lock()
+        self._reader: Thread | None = None
+        if classify_output is not None and process.stdout is not None:
+            self._reader = Thread(
+                target=self._drain_output, args=(process.stdout, classify_output),
+                name=f"child-output-{process.pid}", daemon=True,
+            )
+            self._reader.start()
+
+    def _drain_output(self, stream: BinaryIO, classify: Callable[[bytes], str | None]) -> None:
+        try:
+            with stream:
+                complete = True
+                while line := stream.readline(4096):
+                    if complete and line.endswith(b"\n") and (event := classify(line.rstrip(b"\r\n"))):
+                        with self._events_lock:
+                            self._events.append(event)
+                    complete = line.endswith(b"\n")
+        except OSError as exc:
+            logger.warning("Child output reader failed (pid=%d errno=%s)", self._process.pid, exc.errno)
+
+    def output_events(self, *, exited: bool = False) -> tuple[str, ...]:
+        if exited and self._reader is not None:
+            self._reader.join(timeout=0.05)
+        with self._events_lock:
+            return tuple(self._events)
 
     def poll(self) -> int | None:
         return self._process.poll()
@@ -70,14 +103,18 @@ class ForegroundProcess:
             raise CommandError(f"Could not stop process {self._process.pid}: {e}") from e
 
 
-def start_foreground(cmd: list[str]) -> ForegroundProcess:
-    """Start a child without an output pipe that could block the daemon."""
+def start_foreground(
+    cmd: list[str], *, classify_output: Callable[[bytes], str | None] | None = None,
+) -> ForegroundProcess:
+    """Start a child, continuously draining output when a classifier is supplied."""
     bounded_timeout(1.0)
     try:
-        return ForegroundProcess(subprocess.Popen(
-            cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        ))
+        process = subprocess.Popen(
+            cmd, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE if classify_output is not None else subprocess.DEVNULL,
+            stderr=subprocess.STDOUT if classify_output is not None else subprocess.DEVNULL,
+        )
+        return ForegroundProcess(process, classify_output)
     except OSError as e:
         raise CommandError(f"Could not start {cmd[0]}: {e}") from e
 

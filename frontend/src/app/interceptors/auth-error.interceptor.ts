@@ -5,6 +5,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { AuthService } from '../services/auth.service';
 import { TokenDialogComponent } from '../components/token-dialog/token-dialog.component';
+import { apiErrorToast } from '../services/recovery-response';
 
 let dialogOpen = false;
 
@@ -19,7 +20,9 @@ export const authErrorInterceptor: HttpInterceptorFn = (req, next) => {
         if (err.status === 401 && !dialogOpen) {
           dialogOpen = true;
           authService.clearToken();
-          snackBar.open('Invalid or expired token', 'Close', { duration: 4000 });
+          snackBar.open(apiErrorToast('Invalid or expired token', err), 'Close', {
+            duration: 10000, panelClass: ['error-snackbar']
+          });
 
           const dialogRef = dialog.open(TokenDialogComponent, {
             width: '450px',

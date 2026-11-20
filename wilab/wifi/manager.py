@@ -3,7 +3,6 @@ import logging
 import os
 from typing import Dict, Optional, List
 from ipaddress import IPv4Network
-from datetime import datetime, timezone
 import re
 import threading
 import secrets
@@ -11,6 +10,7 @@ from collections.abc import Callable
 from _thread import RLock
 from ..config import AppConfig
 from ..models import NetworkCreateRequest, NetworkStatus, ClientInfo, NetworkTxPower
+from ..timestamps import format_utc_timestamp
 from ..network.dhcp import DhcpServer, DhcpServerError
 from ..network.nat import NatManager
 from ..network.isolation import IsolationManager
@@ -207,11 +207,7 @@ class NetworkManager:
         except RuntimeError as e:
             raise StartupFailure(f"Failed to clean up previous startup: {e}", cleanup_failed=True) from e
         
-        # Expiration: from reservation timestamp, or None for unlimited
-        if expires_at_timestamp is not None:
-            expires_at_str = datetime.fromtimestamp(expires_at_timestamp, tz=timezone.utc).isoformat()
-        else:
-            expires_at_str = None
+        expires_at_str = format_utc_timestamp(expires_at_timestamp)
         
         # Get subnet (from config or calculated)
         subnet = self._get_subnet(device_id)

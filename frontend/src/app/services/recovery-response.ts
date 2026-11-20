@@ -13,6 +13,17 @@ export interface ApiError extends Error {
   detail?: ApiErrorDetail;
 }
 
+export function apiErrorToast(title: string, error: ApiError | HttpErrorResponse): string {
+  const response = error instanceof HttpErrorResponse ? error : error.originalError;
+  if (!response?.status) return `${title}: ${error.message}`;
+
+  const body: unknown = response.error;
+  const text = body == null || body === ''
+    ? 'No response body'
+    : typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+  return `${title}\nHTTP ${response.status}\n${text}`;
+}
+
 export function retryAfterSeconds(error: HttpErrorResponse, status: number, code: RecoveryCode): number | null {
   if (error.status !== status || error.error?.detail?.code !== code) return null;
   const header = error.headers.get('Retry-After');

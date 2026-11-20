@@ -98,7 +98,10 @@ class NetworkStatus(BaseModel):
     internet_enabled: bool = False
     tx_power_level: Optional[int] = Field(None, description="Internal requested TX power level 1-4", exclude=True)
     tx_power: Optional[NetworkTxPower] = Field(None, description="Requested and reported TX power details")
-    expires_at: Optional[str] = Field(None, description="Network expiration date and time in format: yyyy-mm-dd HH:MM:SS")
+    expires_at: Optional[str] = Field(
+        None, description="Expiration timestamp in UTC (RFC 3339 with a Z suffix), null if unlimited",
+        json_schema_extra={"format": "date-time", "examples": ["2026-11-19T23:00:00Z"]},
+    )
     expires_in: Optional[int] = Field(None, description="Seconds remaining until network auto-shutdown")
     dhcp: Optional[dict] = Field(None, description="DHCP server configuration details")
     clients_connected: Optional[int] = Field(None, description="Number of clients currently connected")

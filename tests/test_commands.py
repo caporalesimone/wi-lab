@@ -1,11 +1,14 @@
 import subprocess
+import sys
+import time
 import pytest
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 from wilab.network.commands import (
     CommandError, CommandTimeout, ForegroundProcess, execute_command,
-    execute_iptables, execute_ip, execute_sysctl, execute_pkill, stop_process,
+    execute_iptables, execute_ip, execute_sysctl, execute_pkill, start_foreground, stop_process,
 )
+from wilab.wifi.hostapd import _classify_output
 
 
 class TestCommandExecution:
@@ -265,6 +268,28 @@ def test_foreground_stop_escalates_and_verifies_exit(exits_after_kill):
     child.terminate.assert_called_once()
     child.kill.assert_called_once()
     assert child.wait.call_count == 2
+
+
+def test_foreground_drains_large_output_and_keeps_only_recent_allowlisted_events():
+    cmd = [
+        sys.executable, "-c",
+        (
+            "import sys; out=sys.stderr.buffer; "
+            "out.write(b'ssid=private-network\\n' * 5000); "
+            "out.write(b'wlan0: AP-ENABLED\\n' * 20); "
+            "out.write(b'x' * 4096 + b'wlan0: AP-DISABLED\\n'); "
+            "out.write(b'nl80211: Scan timeout - try to abort it\\n')"
+        ),
+    ]
+    process = start_foreground(cmd, classify_output=_classify_output)
+    deadline = time.monotonic() + 5
+    try:
+        while process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert process.poll() == 0
+        assert process.output_events(exited=True) == ("ap_enabled",) * 11 + ("scan_timeout",)
+    finally:
+        process.stop()
 
 
 class TestIptablesWrapper:

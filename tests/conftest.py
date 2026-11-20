@@ -12,17 +12,28 @@ from wilab.config import load_config
 TEST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'test.config.yaml')
 
 
+def _configured_networks_only(labels):
+    """Start with every enabled configured interface managed (tests must not probe real hardware)."""
+    return [label for label in labels if not label.disable]
+
+
 @pytest.fixture(scope="session")
 def config():
     """Load test config once per test session."""
-    with patch("wilab.wifi.interface.validate_interface"):
+    with patch("wilab.config._initial_networks", _configured_networks_only):
         return load_config(TEST_CONFIG_PATH)
 
 
 @pytest.fixture(autouse=True)
 def _test_config_env(monkeypatch):
     """Point load_config() to the test config and reset cached dependency singletons."""
+    from wilab import config as config_module
     from wilab.api import dependencies
+    from wilab.wifi import discovery
+    monkeypatch.setattr(config_module, '_initial_networks', _configured_networks_only)
+    # The discovery service runs with every app; it must not probe real hardware.
+    monkeypatch.setattr(discovery, 'discover_radios', lambda **kwargs: [])
+    monkeypatch.setattr(discovery, 'default_route_interfaces', set)
     monkeypatch.setenv('CONFIG_PATH', TEST_CONFIG_PATH)
     monkeypatch.setattr(dependencies, '_config', None)
     monkeypatch.setattr(dependencies, '_manager', None)
@@ -214,7 +225,7 @@ Band 2:
     monkeypatch.setattr(manager, "execute_command", mock_execute_command)
     monkeypatch.setattr(hostapd, "execute_command", mock_execute_command)
     monkeypatch.setattr(hostapd, "execute_iw", mock_execute_iw)
-    def reject_real_hostapd(cmd: list[str]) -> None:
+    def reject_real_hostapd(*args, **kwargs) -> None:
         raise commands.CommandError("hostapd must be mocked in tests")
 
     monkeypatch.setattr(hostapd, "HOSTAPD_CONFIG_DIR", str(tmp_path / "hostapd"))

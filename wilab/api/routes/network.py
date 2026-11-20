@@ -1,6 +1,5 @@
 """WiFi network lifecycle endpoints (create, delete, query)."""
 
-from datetime import datetime, timezone
 from math import ceil
 from time import monotonic
 from typing import List
@@ -10,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from ...models import NetworkCreateRequest, NetworkStatus
 from ...reservation import Reservation
+from ...timestamps import format_utc_timestamp
 from ...wifi.manager import NetworkManager, StartupFailure
 from ...wifi.channels import ChannelManager
 from ...api.auth import require_token
@@ -303,20 +303,14 @@ def get_network(
         return NetworkStatus(
             interface=reservation.device_id, active=runtime_state == "restoring_dhcp",
             runtime_state=runtime_state, expires_in=reservation.expires_in,
-            expires_at=(
-                datetime.fromtimestamp(reservation.expires_at, tz=timezone.utc).isoformat()
-                if reservation.expires_at is not None else None
-            ),
+            expires_at=format_utc_timestamp(reservation.expires_at),
         )
     with hold_reservation(reservation_mgr, reservation):
         device_id = reservation.device_id
         st = manager.get_status(device_id)
         if not st:
             raise HTTPException(status_code=404, detail="Unknown device_id")
-        st.expires_at = (
-            datetime.fromtimestamp(reservation.expires_at, tz=timezone.utc).isoformat()
-            if reservation.expires_at is not None else None
-        )
+        st.expires_at = format_utc_timestamp(reservation.expires_at)
         st.expires_in = reservation.expires_in
         return st.model_copy(update={"runtime_state": manager.watchdog.state(reservation)})
 

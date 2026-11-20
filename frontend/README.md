@@ -17,6 +17,9 @@ Angular frontend for Wi-Lab WiFi Access Point management system.
 
 ## Recovery in the dashboard
 
+- Red error notifications include the HTTP status and API response body when
+  available. Transport failures show a connection message instead.
+
 - On a Wi-Fi start failure with `409 / 1001`, the dashboard automatically
   retries the same configuration and reservation after `Retry-After`, up to
   two retries. The card shows the wait and blocks duplicate starts.
@@ -30,7 +33,7 @@ Angular frontend for Wi-Lab WiFi Access Point management system.
 - During watchdog restoration, the card displays whether the AP or DHCP is
   being restored. A DHCP failure can leave the AP on but unable to issue leases.
 
-See the [API recovery contract](../docs/network-creation-failure.md).
+See the [AP creation procedure](../docs/ap-creation-procedure.md).
 
 ## Installation
 

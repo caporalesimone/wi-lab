@@ -47,8 +47,8 @@ sudo bash install.sh
 After installation Wi-Lab is running on port **8080** and will autostart on reboot.
 Open `http://<host>:8080` for the web UI or `http://<host>:8080/docs` for the Swagger API.
 
-For retry behavior and optional USB reset, see
-[Network creation failure and recovery](docs/network-creation-failure.md).
+For retry behavior and automatic USB reset, see
+[AP creation procedure](docs/ap-creation-procedure.md) and [Architecture](docs/architecture.md).
 
 To **uninstall** and remove the systemd service:
 
@@ -80,13 +80,17 @@ dns_server: "208.67.222.222"
 internet_enabled_by_default: true
 country_code: "IT"                      # WiFi regulatory domain
 
-# Managed interfaces
+# Optional display names; every AP-capable Wi-Fi interface is discovered automatically
 networks:
   - interface: "wlxbc071dc527d6"
     display_name: "bench-antenna-1"
   - interface: "wlx7820512451b4"
     display_name: "bench-antenna-2"
 ```
+
+Wi-Lab discovers Wi-Fi interfaces automatically (USB or built-in) and manages every radio that supports AP mode, except the upstream interface and any interface carrying a default route. `networks` only assigns display names; unlisted interfaces are shown by interface name, and a listed interface that is missing does not stop the service. Set `disable: true` on an entry (`display_name` is then optional) to keep that radio out of Wi-Lab. USB adapters are detected automatically and are eligible for automatic port reset after repeated radio faults (see [Architecture](docs/architecture.md#8-quarantine-and-automatic-usb-recovery)).
+
+Wi-Lab starts without antennas and a discovery service adds them: the first scan runs as soon as the API starts, then it repeats every 5 seconds while no antenna is available and every 30 seconds afterwards, for the whole life of the service. Antennas plugged in later are therefore added automatically within about 30 seconds, without a restart. Each scan re-reads `networks` from `config.yaml` (display names and `disable`) and only adds new AP-capable radios; antennas already in the pool are never removed or renamed and their reservations are not affected. Disabling or renaming an antenna that is already in use requires a service restart.
 
 > **Warning:** `dhcp_base_network` must use a subnet different from your host LAN. A conflict will break host networking and may require a physical reboot.
 
@@ -161,6 +165,9 @@ Detailed guides live in the `docs/` folder:
 
 | Document | Topic |
 |----------|-------|
+| [ap-creation-procedure.md](docs/ap-creation-procedure.md) | Client guide: reservation, AP creation, retries |
+| [architecture.md](docs/architecture.md) | Backend architecture, threads, AP pipeline, recovery |
+| [manual_recovery.md](docs/manual_recovery.md) | Manual recovery of a blocked USB Wi-Fi adapter |
 | [swagger.md](docs/swagger.md) | API exploration via Swagger UI |
 | [networking.md](docs/networking.md) | Subnet layout, iptables, NAT internals |
 | [unit-testing.md](docs/unit-testing.md) | Test suite structure and pytest usage |

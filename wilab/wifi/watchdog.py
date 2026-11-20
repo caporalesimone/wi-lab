@@ -19,13 +19,27 @@ class NetworkWatchdog:
         self.manager = manager
         self.stopping = threading.Event()
         self.states: dict[str, tuple[Reservation, str]] = {}
+        self._reservations: ReservationManager | None = None
+        self._watched: set[str] = set()
+        self._watch_lock = threading.Lock()
 
     def start(self, reservations: ReservationManager) -> None:
-        for device in self.manager.config.networks:
-            threading.Thread(
-                target=self._watch, args=(reservations, device.device_id),
-                name=f"ap-watchdog-{device.device_id}", daemon=True,
-            ).start()
+        self._reservations = reservations
+        self.watch([device.device_id for device in self.manager.config.networks])
+
+    def watch(self, device_ids: list[str]) -> None:
+        """Start one watcher thread per device; devices already watched are ignored."""
+        with self._watch_lock:
+            if self._reservations is None:
+                return
+            for device_id in device_ids:
+                if device_id in self._watched:
+                    continue
+                self._watched.add(device_id)
+                threading.Thread(
+                    target=self._watch, args=(self._reservations, device_id),
+                    name=f"ap-watchdog-{device_id}", daemon=True,
+                ).start()
 
     def _watch(self, reservations: ReservationManager, device: str) -> None:
         current = None

@@ -11,7 +11,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { interval, Subscription } from 'rxjs';
 import { WilabApiService } from '../../services/wilab-api.service';
 import { ClientInfo, NetworkCreateRequest, NetworkStatus } from '../../models/network.models';
-import { ApiError, RecoveryCode } from '../../services/recovery-response';
+import { ApiError, RecoveryCode, apiErrorToast } from '../../services/recovery-response';
 import { environment } from '../../../environments/environment';
 import { NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
 import { InterfaceSlot } from '../../app.component';
@@ -237,8 +237,8 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
         if (err.originalError?.status === 404) {
           this.released.emit(reservationId);
         } else if (showNotification) {
-          this.snackBar.open(`Error: ${err.message}`, 'Close', {
-            duration: 5000,
+          this.snackBar.open(apiErrorToast('Failed to read network status', err), 'Close', {
+            duration: 10000,
             panelClass: ['error-snackbar']
           });
         }
@@ -281,9 +281,9 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
             }
             const message = invalidated
               ? 'WiFi startup failed. The reservation was invalidated; request a new device to continue.'
-              : `Failed to start network: ${err.message}`;
-            this.snackBar.open(message, 'Close', {
-              duration: 5000, panelClass: ['error-snackbar']
+              : 'Failed to start network';
+            this.snackBar.open(apiErrorToast(message, err), 'Close', {
+              duration: 10000, panelClass: ['error-snackbar']
             });
           }
         });
@@ -301,8 +301,8 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
         this.loading = false;
       },
       error: (err) => {
-        this.snackBar.open(`Failed to stop network: ${err.message}`, 'Close', {
-          duration: 5000, panelClass: ['error-snackbar']
+        this.snackBar.open(apiErrorToast('Failed to stop network', err), 'Close', {
+          duration: 10000, panelClass: ['error-snackbar']
         });
         this.loading = false;
       }
@@ -318,8 +318,8 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
         this.loading = false;
       },
       error: (err) => {
-        this.snackBar.open(`Failed to enable internet: ${err.message}`, 'Close', {
-          duration: 5000, panelClass: ['error-snackbar']
+        this.snackBar.open(apiErrorToast('Failed to enable internet', err), 'Close', {
+          duration: 10000, panelClass: ['error-snackbar']
         });
         this.loading = false;
       }
@@ -335,8 +335,8 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
         this.loading = false;
       },
       error: (err) => {
-        this.snackBar.open(`Failed to disable internet: ${err.message}`, 'Close', {
-          duration: 5000, panelClass: ['error-snackbar']
+        this.snackBar.open(apiErrorToast('Failed to disable internet', err), 'Close', {
+          duration: 10000, panelClass: ['error-snackbar']
         });
         this.loading = false;
       }
@@ -357,8 +357,8 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
         if (err.originalError?.status === 404) {
           this.released.emit(reservationId);
         } else {
-          this.snackBar.open(`Failed to release: ${err.message}`, 'Close', {
-            duration: 5000, panelClass: ['error-snackbar']
+          this.snackBar.open(apiErrorToast('Failed to release', err), 'Close', {
+            duration: 10000, panelClass: ['error-snackbar']
           });
           this.loading = false;
         }

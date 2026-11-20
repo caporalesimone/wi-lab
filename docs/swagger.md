@@ -24,7 +24,14 @@ Every `/api/v1` application error has a JSON `detail` object with an integer
 `code`, a stable `reason` and, for generic errors, a human-readable `message`.
 Generic codes match the HTTP status (for example `401`, `404`, `422`, `500`).
 Use `detail.message` for display, not for control flow. This replaces the old
-string form of `detail` on errors only; success bodies are unchanged.
+string form of `detail` on errors only.
+
+API timestamps are RFC 3339 strings in UTC, marked by a `Z` suffix
+(for example `2026-11-19T23:00:00Z`). This applies to `expires_at` on
+reservation and network responses and to `detail.next_available_at` on
+reservation contention. Unlimited reservations still have `expires_at: null`.
+Durations and countdowns such as `expires_in`, `next_available_in` and
+`Retry-After` remain in seconds.
 
 - Swagger and ReDoc display the same OpenAPI contract. Swagger can execute
   requests; ReDoc is a read-only reference. Both show the lifecycle overview,
@@ -67,6 +74,6 @@ For a complete interactive example:
 4. When finished, delete the reservation by ID; Wi-Lab stops the network.
    Do not send this request for an ID already invalidated by `500 / 1003`.
 
-See [Network creation failure and recovery](network-creation-failure.md)
-for the complete client flow, examples, and USB recovery setup.
+See the [AP creation procedure](ap-creation-procedure.md) for the complete
+client flow and retry rules, and [Architecture](architecture.md) for USB recovery.
 

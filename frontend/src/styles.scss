@@ -15,4 +15,11 @@ body {
   .mdc-snackbar__surface {
     background-color: #d32f2f !important;
   }
+
+  .mdc-snackbar__label {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 45vh;
+    overflow-y: auto;
+  }
 }

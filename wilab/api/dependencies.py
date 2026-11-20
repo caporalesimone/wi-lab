@@ -1,14 +1,18 @@
 from fastapi import Depends, HTTPException, Path
+import logging
 import threading
 from contextlib import contextmanager
 from collections.abc import Iterator
 from typing import Annotated
-from ..config import AppConfig, load_config
+from ..config import AppConfig, NetworkEntry, load_config, scan_new_networks
 from ..wifi.manager import NetworkManager
 from ..wifi.channels import ChannelManager
 from ..reservation import ReservationManager, Reservation
 from ..network.qos import QosManager
 from ..network.qos_profile import QosProfileManager
+from ..network.commands import CommandError
+
+logger = logging.getLogger(__name__)
 
 _config: AppConfig | None = None
 _manager: NetworkManager | None = None
@@ -50,6 +54,78 @@ def get_reservation_manager(config: AppConfig = Depends(get_config)) -> Reservat
 
 
 ReservationManagerDep = Annotated[ReservationManager, Depends(get_reservation_manager)]
+
+_scan_lock = threading.Lock()
+DISCOVERY_FAST_INTERVAL = 5.0
+DISCOVERY_SLOW_INTERVAL = 30.0
+
+
+def scan_devices(config: AppConfig, *, quiet: bool = False) -> list[NetworkEntry]:
+    """Add newly found Wi-Fi interfaces to the allocatable pool."""
+    with _scan_lock:
+        reservations = get_reservation_manager(config)
+        added = scan_new_networks(config, quiet=quiet)
+        if not added:
+            return []
+        # Appending keeps the index-based DHCP subnets of existing devices unchanged.
+        config.networks = [*config.networks, *added]
+        reservations.add_devices([n.device_id for n in added])
+        manager = get_manager(config)
+        manager.watchdog.watch([n.device_id for n in added])
+        for net in added:
+            logger.info(
+                "Added %s as %r (%s, subnet %s)", net.interface, net.display_name,
+                f"USB port {net.usb_recovery_port}" if net.usb_recovery_port else "non-USB",
+                manager._get_subnet(net.device_id),
+            )
+        channels = get_channel_manager()
+        threading.Thread(
+            target=_warm_channels, args=(channels, [n.interface for n in added]),
+            name="channel-cache-scan", daemon=True,
+        ).start()
+        return added
+
+
+def discovery_loop(config: AppConfig, stop: threading.Event) -> None:
+    """Add antennas for the whole service lifetime.
+
+    The first scan runs immediately. Scans repeat every 5 s while no antenna is
+    managed, then every 30 s. Only the first scan logs configuration warnings.
+    """
+    interval = 0.0
+    first = True
+    searching: bool | None = None
+    last_error: str | None = None
+    while not stop.wait(interval):
+        try:
+            scan_devices(config, quiet=not first)
+        except ValueError as exc:
+            if str(exc) != last_error:
+                logger.error("Device discovery failed: %s", exc)
+            last_error = str(exc)
+        else:
+            last_error = None
+        first = False
+        if searching != (not config.networks):
+            searching = not config.networks
+            if searching:
+                logger.warning(
+                    "No Wi-Fi adapter available; discovery runs every %.0f s", DISCOVERY_FAST_INTERVAL,
+                )
+            else:
+                logger.info(
+                    "%d Wi-Fi adapter(s) managed; discovery runs every %.0f s",
+                    len(config.networks), DISCOVERY_SLOW_INTERVAL,
+                )
+        interval = DISCOVERY_FAST_INTERVAL if searching else DISCOVERY_SLOW_INTERVAL
+
+
+def _warm_channels(channels: ChannelManager, interfaces: list[str]) -> None:
+    for interface in interfaces:
+        try:
+            channels.get_channels(interface)
+        except (CommandError, ValueError) as exc:
+            logger.warning("Failed to cache channels for %s: %s", interface, exc)
 
 
 def get_channel_manager() -> ChannelManager:

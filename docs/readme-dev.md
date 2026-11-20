@@ -82,8 +82,8 @@ upstream_interface: "auto"
 dns_server: "192.168.10.1"
 internet_enabled_by_default: true
 
-networks:
-  - interface: "wlx782051245264"  # Your WiFi interface
+networks:  # Optional: display names only; interfaces are discovered automatically
+  - interface: "wlx782051245264"
     display_name: "bench-antenna-1"
 ```
 

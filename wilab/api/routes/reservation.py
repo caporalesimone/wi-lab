@@ -1,8 +1,6 @@
 """Device reservation endpoints (create, query, release)."""
 
 import logging
-from datetime import datetime, timezone
-
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
@@ -13,6 +11,7 @@ from ...api.dependencies import get_config, get_reservation_manager
 from ...api.errors import ApiErrorCode, domain_error
 from ...config import AppConfig
 from ...reservation import DeviceRecoveryUnavailable, ReservationManager, NoDeviceAvailableError
+from ...timestamps import format_utc_timestamp
 from .recovery_responses import (
     RETRY_AFTER_HEADER, RecoveryCode, recovery_error, recovery_example,
 )
@@ -44,7 +43,10 @@ class ReservationResponse(BaseModel):
     reservation_id: str
     display_name: str
     interface: str
-    expires_at: Optional[str] = Field(None, description="Expiration datetime (yyyy-mm-dd HH:MM:SS), null if unlimited")
+    expires_at: Optional[str] = Field(
+        None, description="Expiration timestamp in UTC (RFC 3339 with a Z suffix), null if unlimited",
+        json_schema_extra={"format": "date-time", "examples": ["2026-11-19T23:00:00Z"]},
+    )
     expires_in: Optional[int] = Field(None, description="Seconds remaining until expiry, null if unlimited")
 
 
@@ -66,14 +68,14 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
         200: {"description": "Device reserved successfully"},
         401: {"description": "Unauthorized"},
         409: {
-            "description": "No adapter currently available due to ordinary contention.",
+            "description": "No adapter available. next_available_at is an RFC 3339 UTC timestamp (Z suffix).",
             "content": {"application/json": {"example": {"detail": domain_error(
                 ApiErrorCode.NO_DEVICE_AVAILABLE, "No device available",
-                next_available_at="2026-11-19 23:00:00", next_available_in=18,
+                next_available_at="2026-11-19T23:00:00Z", next_available_in=18,
             )}}},
         },
         503: {
-            "description": "No allocatable adapter: recovery (1002), quarantine (1003), or cleanup failure.",
+            "description": "No allocatable adapter: recovery (1002), quarantine or no Wi-Fi adapter detected (1003), or cleanup failure.",
             "headers": RETRY_AFTER_HEADER,
             "content": {"application/json": {"examples": {
                 "device_recovering": recovery_example(RecoveryCode.DEVICE_RECOVERING),
@@ -99,7 +101,8 @@ def create_reservation(
     An adapter in recovery or quarantine is excluded. If an alternative is
     available it can still be reserved. Otherwise **503 / 1002** tells callers
     to retry this reservation request after `Retry-After`, not to reuse an old
-    reservation ID. **503 / 1003** has no automatic retry recommendation.
+    reservation ID. **503 / 1003** (every adapter quarantined, or no AP-capable
+    adapter detected yet) has no automatic retry recommendation.
     """
     # Validate duration against config bounds
     duration = req.duration_seconds
@@ -132,9 +135,7 @@ def create_reservation(
             status_code=409,
             detail=domain_error(
                 ApiErrorCode.NO_DEVICE_AVAILABLE, "No device available",
-                next_available_at=datetime.fromtimestamp(
-                    exc.next_available_at
-                ).strftime("%Y-%m-%d %H:%M:%S"),
+                next_available_at=format_utc_timestamp(exc.next_available_at),
                 next_available_in=exc.next_available_in,
             ),
         )
@@ -148,10 +149,7 @@ def _build_response(r, config: AppConfig) -> ReservationResponse:
         reservation_id=r.reservation_id,
         display_name=_display_name_for(r.device_id, config),
         interface=r.device_id,
-        expires_at=(
-            datetime.fromtimestamp(r.expires_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            if r.expires_at is not None else None
-        ),
+        expires_at=format_utc_timestamp(r.expires_at),
         expires_in=r.expires_in,
     )
 

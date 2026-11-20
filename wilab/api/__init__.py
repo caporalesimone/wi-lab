@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.openapi.utils import get_openapi
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .dependencies import get_channel_manager, get_config, get_manager
+from .dependencies import discovery_loop, get_config, get_manager
 from .errors import ApiErrorCode, api_error_response, document_errors, domain_error
 from .routes import router as api_router
 from ..version import __version__
@@ -86,28 +86,21 @@ async def lifespan(app: FastAPI):
     cfg = get_config()
     get_manager(cfg)
 
-    # Set regulatory domain before populating channel cache
+    # Set regulatory domain before any channel query
     set_regulatory_domain(cfg.country_code)
 
-    # Pre-populate channel cache in background to not delay startup
-    channel_mgr = get_channel_manager()
-
-    def _warm_channel_cache() -> None:
-        for net in cfg.networks:
-            try:
-                channel_mgr.get_channels(net.interface)
-                logger.info("Channels cached for %s", net.interface)
-            except Exception as exc:
-                logger.warning("Failed to cache channels for %s: %s", net.interface, exc)
-
-    cache_thread = threading.Thread(
-        target=_warm_channel_cache, name="channel-cache-warmup", daemon=True,
+    # Antennas are added by discovery; their channel cache is warmed when added.
+    stop_discovery = threading.Event()
+    discovery_thread = threading.Thread(
+        target=discovery_loop, args=(cfg, stop_discovery),
+        name="device-discovery", daemon=True,
     )
-    cache_thread.start()
+    discovery_thread.start()
 
     yield
 
-    cache_thread.join(timeout=10)
+    stop_discovery.set()
+    discovery_thread.join(timeout=10)
     # Shutdown: gracefully stop any active networks
     try:
         mgr = get_manager(cfg)
@@ -304,7 +297,7 @@ def create_app() -> FastAPI:
                         "reported_level": 4,
                         "reported_dbm": 20.0,
                     },
-                    "expires_at": "2026-03-20 19:33:46",
+                    "expires_at": "2026-03-20T19:33:46Z",
                     "expires_in": 3471,
                     "dhcp": {
                         "interface": "wlxbc071dc527d6",

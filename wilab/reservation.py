@@ -84,9 +84,10 @@ class ReservationManager:
         self._device_to_rid: Dict[str, str] = {}           # device_id -> reservation_id
         self._lock = threading.RLock()
         self._blocked: dict[str, bool] = {}
+        self._own_locks: dict[str, RLock] | None = None
         if device_lock is None:
-            locks = {device_id: threading.RLock() for device_id in device_ids}
-            device_lock = locks.__getitem__
+            self._own_locks = {device_id: threading.RLock() for device_id in device_ids}
+            device_lock = self._own_locks.__getitem__
         self._device_lock = device_lock
         self._cleanup = cleanup
 
@@ -118,7 +119,7 @@ class ReservationManager:
                 return self._reserve(device_id, duration_seconds)
             if cleanup_error is not None:
                 raise cleanup_error
-            if any(self._blocked.values()) or len(self._blocked) == len(self._device_ids) > 0:
+            if any(self._blocked.values()) or len(self._blocked) == len(self._device_ids):
                 raise DeviceRecoveryUnavailable(any(self._blocked.values()))
             raise NoDeviceAvailableError(self._soonest_expiry())
 
@@ -140,6 +141,16 @@ class ReservationManager:
     def recovery_snapshot(self) -> dict[str, bool]:
         with self._lock:
             return self._blocked.copy()
+
+    def add_devices(self, device_ids: list[str]) -> None:
+        """Make newly discovered devices allocatable; known devices are ignored."""
+        with self._lock:
+            for device_id in device_ids:
+                if device_id in self._device_ids:
+                    continue
+                if self._own_locks is not None:
+                    self._own_locks.setdefault(device_id, threading.RLock())
+                self._device_ids.append(device_id)
 
     def _reserve(self, device_id: str, duration_seconds: int) -> Reservation:
         reservation_id = secrets.token_hex(RESERVATION_TOKEN_BYTES)
