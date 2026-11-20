@@ -144,15 +144,16 @@ class NatManager:
 
     def block_internet(self, wifi_interface: str, net_id: str) -> None:
         """Block forwarded traffic for an AP, including established flows."""
-        if net_id in self._blocked_rules:
-            if len(self._blocked_rules[net_id]) == 2:
-                return
-            raise RuntimeError(f"Incomplete Internet block for {net_id}; cleanup required")
         comment = ["-m", "comment", "--comment", f"wilab-block-{net_id}"]
         rules = [
+            ["FORWARD", "-i", wifi_interface, "-p", "tcp", "-j", "REJECT", "--reject-with", "tcp-reset", *comment],
             ["FORWARD", "-i", wifi_interface, "-j", "REJECT", *comment],
             ["FORWARD", "-o", wifi_interface, "-j", "DROP", *comment],
         ]
+        if net_id in self._blocked_rules:
+            if self._blocked_rules[net_id] == list(reversed(rules)):
+                return
+            raise RuntimeError(f"Incomplete Internet block for {net_id}; cleanup required")
         installed = self._blocked_rules[net_id] = []
         try:
             for rule in reversed(rules):

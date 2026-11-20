@@ -90,10 +90,12 @@ def test_internet_block_precedes_protection_and_is_removed_on_reenable(monkeypat
     nat.disable_nat("wlan0", "a", "192.168.120.0/24")
     assert calls[0][:3] == ["-I", "FORWARD", "1"]
     assert calls[1][:3] == ["-I", "FORWARD", "1"]
+    assert calls[2][:3] == ["-I", "FORWARD", "1"]
+    assert ["-p", "tcp", "-j", "REJECT", "--reject-with", "tcp-reset"] == calls[2][5:11]
     calls.clear()
     nat.enable_nat("wlan1", "b", "192.168.121.0/24")
     protect = next(c for c in calls if "wilab-protect-existing" in c)
-    assert protect[:3] == ["-I", "FORWARD", "3"]
+    assert protect[:3] == ["-I", "FORWARD", "4"]
     calls.clear()
     nat.enable_nat("wlan0", "a", "192.168.120.0/24")
     assert calls[-1][:2] == ["-D", "FORWARD"]
@@ -124,7 +126,7 @@ def test_unblock_failure_restores_previously_removed_rule(monkeypatch):
 
     def iptables(args):
         calls.append(args)
-        if len(calls) == 4:
+        if len(calls) == 5:
             raise CommandError("delete failed")
 
     monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
@@ -132,7 +134,7 @@ def test_unblock_failure_restores_previously_removed_rule(monkeypatch):
     nat.block_internet("wlan0", "a")
     with pytest.raises(RuntimeError, match="Cannot remove Internet block"):
         nat.unblock_internet("a")
-    assert len(nat._blocked_rules["a"]) == 2
+    assert len(nat._blocked_rules["a"]) == 3
     assert calls[-1][:3] == ["-I", "FORWARD", "1"]
 
 
@@ -454,7 +456,7 @@ class TestDisableNat:
         with pytest.raises(RuntimeError, match="Cannot remove NAT rules"):
             nat.release_network("wlan0", "test-net", "192.168.120.0/24")
         assert nat.has_pending_network("test-net")
-        assert len(nat._blocked_rules["test-net"]) == 2
+        assert len(nat._blocked_rules["test-net"]) == 3
 
 
 class TestFlushRules:

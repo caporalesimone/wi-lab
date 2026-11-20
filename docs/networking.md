@@ -6,7 +6,8 @@ Wi-Lab manages WiFi Access Points by directly controlling network settings on th
 
 Each AP's masquerade rule matches only that AP's assigned subnet.
 Disabling Internet blocks forwarded traffic, including existing connections,
-for that AP; it does not disconnect its Wi-Fi clients.
+for that AP; it does not disconnect its Wi-Fi clients. Subsequent TCP packets
+from clients receive a reset so applications can detect the interruption.
 
 ---
 
