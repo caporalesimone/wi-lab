@@ -58,15 +58,19 @@ sudo iptables -S | grep wilab-cp
 
 ### 5. Host Network Manager Exclusion
 
-**What:** Runtime rules that make NetworkManager and systemd-networkd ignore Wi-Lab radios  
+**What:** NetworkManager releases each Wi-Lab radio (`nmcli device set ... managed no`); a
+runtime systemd-networkd rule marks the radios unmanaged  
 **When:** Antennas are added by discovery  
-**Impact:** Only the listed `wlx*` interfaces; the management interface is not touched  
-**Reversible:** Yes - the files live in `/run` and disappear on reboot
+**Impact:** Only Wi-Lab radios; NetworkManager's configuration is never written or reloaded  
+**Reversible:** Yes - runtime state and the `/run` file disappear on reboot
 
 ```bash
-cat /run/NetworkManager/conf.d/90-wilab-unmanaged.conf /run/systemd/network/00-wilab-unmanaged.network
+cat /run/systemd/network/00-wilab-unmanaged.network
 nmcli device status; networkctl list
 ```
+
+Recommended: do not connect the Wi-Lab host via Wi-Fi, and do not use Wi-Fi adapters
+outside Wi-Lab on it. If one is needed, list it with `disable: true`.
 
 ### 6. WiFi Interface State
 

@@ -132,6 +132,8 @@ allow_dfs_channels: false
 
 # Wi-Lab discovers Wi-Fi interfaces automatically (`iw dev`) and manages each radio
 # only after udev has finished initializing and naming its interface.
+# Recommended: do not connect the Wi-Lab host via Wi-Fi, and use every Wi-Fi adapter
+# on it for Wi-Lab. Any Wi-Fi adapter the host needs must be listed with disable: true.
 # Only AP-capable radios are managed, whether USB or built-in (PCI/SDIO). Interfaces carrying a
 # default route and `upstream_interface` are never managed. A configured interface
 # that is missing does not stop the service.
