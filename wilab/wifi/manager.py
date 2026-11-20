@@ -28,7 +28,13 @@ from ..network.subnet import host_ipv4_networks
 from ..reservation import Reservation, ReservationManager
 from ..timestamps import format_utc_timestamp
 from .channels import ChannelManager
-from .hostapd import HostapdError, HostapdManager, HostapdRadioFailure, HostapdSegfault
+from .hostapd import (
+    HostapdError,
+    HostapdInitFailure,
+    HostapdManager,
+    HostapdRadioFailure,
+    HostapdSegfault,
+)
 from .interface import (
     InterfaceError,
     validate_interface_ap_mode,
@@ -329,8 +335,10 @@ class NetworkManager:
                 if (
                     not retrying
                     and allow_internal_retry
-                    and req.band == "2.4ghz"
-                    and isinstance(e, HostapdSegfault)
+                    and (
+                        isinstance(e, HostapdInitFailure)
+                        or (req.band == "2.4ghz" and isinstance(e, HostapdSegfault))
+                    )
                     and retry_deadline - time.monotonic()
                     >= STARTUP_RETRY_DELAY + MIN_RETRY_ATTEMPT_TIME
                 ):
@@ -339,7 +347,7 @@ class NetworkManager:
                         retry_deadline - time.monotonic() >= MIN_RETRY_ATTEMPT_TIME
                         and (expires_at_timestamp is None or time.time() < expires_at_timestamp)
                     ):
-                        logger.info("Retrying AP startup once after segfault on %s", device_id)
+                        logger.info("Retrying AP startup once after %s on %s", type(e).__name__, device_id)
                         continue
                 raise StartupFailure(
                     f"Failed to {stage}: {e}",

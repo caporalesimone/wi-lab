@@ -30,6 +30,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- Report a hostapd exit during AP startup within about 1 s instead of after the full 10 s readiness timeout, and retry once in the same request when hostapd exits after a failed beacon setup (both bands). This transient failure previously returned a generic `500` after about 10.3 s.
 - Keep Wi-Lab radios away from NetworkManager (per-device release, no configuration reload) and systemd-networkd (runtime rule under `/run`), and bring a radio down again after a USB reset. Previously a reset adapter could be raised by the host and stay quarantined.
 - Send TCP resets for forwarded client traffic after Internet is disabled.
 - Remove stale Wi-Lab firewall rules after an unclean shutdown without flushing host chains.

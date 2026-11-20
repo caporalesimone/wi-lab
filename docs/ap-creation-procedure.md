@@ -169,7 +169,8 @@ A success resets the counter. Further rules:
   extend the reservation; if it would expire first, release it and start over.
 - **Do not count your own retries on top of the server's.** On the first
   attempt Wi-Lab may already retry once internally (a `hostapd` crash on
-  2.4 GHz, within about 5 seconds). The client sees only the final result.
+  2.4 GHz, or a transient beacon setup failure on either band, within about
+  5 seconds). The client sees only the final result.
 - **Transport errors are ambiguous.** If the connection drops or the client
   times out, the server may have finished the AP or still be working on it. Do
   not resend the create blindly; first read the state:
@@ -355,8 +356,11 @@ Details and diagrams are in [Architecture](architecture.md).
   in time. After successful rollback the first two produce `409 / 1001`; the
   third invalidates the reservation (`500 / 1003`).
 - **Unclassified failures** (for example `hostapd` exiting with code 1, a
-  gateway, DHCP or captive portal startup error) are rolled back and return a generic `500`. They do not
-  count as radio failures and do not invalidate the reservation.
+  gateway, DHCP or captive portal startup error) are rolled back and return a
+  generic `500`. They do not count as radio failures and do not invalidate the
+  reservation. A transient beacon setup failure is first retried once
+  internally; if the retry also fails, it counts as a radio failure
+  (`409 / 1001`).
 - **Unsafe cleanup**: if Wi-Lab cannot roll back a failed start, it invalidates
   the reservation and quarantines the antenna immediately (`500 / 1003`), even
   on the first attempt.

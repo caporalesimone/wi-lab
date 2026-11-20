@@ -181,7 +181,8 @@ def start_network(
     Requires a valid reservation token. The network lifetime is bounded
     by the reservation expiry.
 
-    If hostapd crashes with SIGSEGV during 2.4 GHz startup, the server may
+    If hostapd crashes with SIGSEGV during 2.4 GHz startup, or exits after a
+    transient beacon setup failure on either band, the server may
     retry once in the same request after successful cleanup. Clients do
     not need to resubmit the request to trigger the retry.
 

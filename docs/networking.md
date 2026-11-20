@@ -90,7 +90,8 @@ has exited before resetting the interface. Startup timeout cleanup does
 not depend on a PID file. If the process cannot be stopped or the radio
 cannot be reset, the adapter is not reassigned.
 
-If hostapd exits with `SIGSEGV` during 2.4 GHz startup, Wi-Lab
+If hostapd exits with `SIGSEGV` during 2.4 GHz startup, or exits on either
+band after the driver rejected the beacon during interface setup, Wi-Lab
 can retry once on the same adapter within the original request. It waits
 750 ms after successful rollback and retries only while the reservation
 is valid and enough of the five-second startup budget remains. This budget

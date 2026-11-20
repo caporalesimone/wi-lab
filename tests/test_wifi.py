@@ -261,6 +261,8 @@ class TestNetworkLifecycle:
             ("reservation_expired", "2.4ghz", 1),
             ("non_segfault", "2.4ghz", 1),
             ("recover", "5ghz", 1),
+            ("init_failure", "2.4ghz", 2),
+            ("init_failure", "5ghz", 2),
         ],
     )
     def test_startup_segfault_retry(
@@ -309,10 +311,13 @@ class TestNetworkLifecycle:
             code = None
             if events.count("ap") == 1 or scenario == "second_crash":
                 now += 4.0 if scenario == "budget_exhausted" else 1.5
-                code = 1 if scenario == "non_segfault" else -signal.SIGSEGV
+                code = 1 if scenario in ("non_segfault", "init_failure") else -signal.SIGSEGV
+            init_events = (
+                "state_country_update", "beacon_failed", "beacon_failed", "interface_init_failed",
+            ) if scenario == "init_failure" and code == 1 else ()
             return SimpleNamespace(
                 poll=lambda: code, stop=lambda: events.append("stop"),
-                output_events=lambda **kwargs: (),
+                output_events=lambda **kwargs: init_events,
             )
 
         poll_readiness = mgr.hostapd_manager._wait_until_ready
@@ -335,7 +340,7 @@ class TestNetworkLifecycle:
         if scenario == "reservation_expired":
             expires_at = 101.5
 
-        if scenario == "recover" and expected_attempts == 2:
+        if scenario in ("recover", "init_failure") and expected_attempts == 2:
             assert mgr.start_network(device, req, expires_at).active
             assert events == ["ap", "stop", "rollback", "wait", "ap", "gateway", "dhcp"]
             assert now == 2.25
@@ -958,6 +963,39 @@ def test_hostapd_diagnostics_at_probe_timeout(monkeypatch, tmp_path, caplog, exi
     assert "last_state=COUNTRY_UPDATE last_probe=timed_out" in caplog.text
     assert f"exit_code={exit_code} events=channel_list_timeout" in caplog.text
     assert "private-network" not in caplog.text
+
+
+def test_hostapd_exit_during_a_hung_status_probe_is_reported_quickly(monkeypatch, tmp_path, caplog):
+    """hostapd_cli waits for a dead hostapd; the short probe lets the exit surface in ~1 s."""
+    mgr = hostapd.HostapdManager()
+    (tmp_path / "wlan0").touch()
+    now = 0.0
+    process = SimpleNamespace(
+        poll=lambda: 1 if now >= 1 else None,
+        output_events=lambda **kwargs: (
+            "state_country_update", "beacon_failed", "beacon_failed", "interface_init_failed",
+            "state_disabled", "ap_disabled",
+        ),
+    )
+
+    def probe(cmd, **kwargs):
+        nonlocal now
+        assert kwargs["timeout"] == hostapd.STATUS_PROBE_TIMEOUT
+        now += kwargs["timeout"]
+        raise CommandTimeout("no reply")
+
+    monkeypatch.setattr(hostapd, "time", SimpleNamespace(monotonic=lambda: now, sleep=lambda s: None))
+    monkeypatch.setattr(hostapd, "execute_command", probe)
+    with pytest.raises(hostapd.HostapdInitFailure):
+        mgr._wait_until_ready(process, "wlan0", "TestAP", str(tmp_path), 10)
+    assert "elapsed=1.000s" in caplog.text
+
+
+def test_exit_without_beacon_failure_stays_unclassified():
+    process = SimpleNamespace(poll=lambda: 1, output_events=lambda **kwargs: ("interface_init_failed",))
+    with pytest.raises(hostapd.HostapdError) as error:
+        hostapd.HostapdManager._check_process(process, "wlan0")
+    assert type(error.value) is hostapd.HostapdError
 
 
 class TestHostapdConfigGeneration:

@@ -377,10 +377,16 @@ hostapd is started as a **foreground child process** owned by Wi-Lab, not as a
 daemon. Wi-Lab therefore knows immediately when it exits, and how:
 
 - exit by `SIGSEGV` → `HostapdSegfault` (a classified radio failure);
+- exit after the output reported both a failed beacon setup and a failed
+  interface initialization → `HostapdInitFailure` (unclassified, retried once
+  internally, see [section 6](#6-retry-layers));
 - any other exit code → `HostapdError` (unclassified);
 - timeout of `ip link down`, `iw set type managed` or `ip addr flush` →
   `HostapdRadioFailure` ("radio preparation timed out");
-- `hostapd_cli status` timing out → `HostapdRadioFailure`;
+- `hostapd_cli status` with no reply until the readiness timeout → `HostapdRadioFailure`.
+  Each probe waits at most 1 s and the process is checked between probes:
+  `hostapd_cli` keeps waiting for a reply from a hostapd that has already exited,
+  which previously delayed such failures until the full timeout (about 10.3 s);
 - state `DISABLED`, or not `ENABLED` with the right interface and SSID within
   the timeout → `HostapdRadioFailure` ("AP not ready").
 
@@ -490,7 +496,7 @@ flowchart TD
     CD -->|no| ST["start AP"]
     ST --> OUT{"outcome"}
     OUT -->|success| OK["200, counter reset"]
-    OUT -->|"segfault on 2.4 GHz, first attempt of the sequence,<br/>at least 1.5 s of the 5 s budget left"| IR["layer 1: rollback, wait 0.75 s,<br/>retry once inside the same request"]
+    OUT -->|"segfault on 2.4 GHz, or beacon/init failure on any band;<br/>first attempt of the sequence, at least 1.5 s of the 5 s budget left"| IR["layer 1: rollback, wait 0.75 s,<br/>retry once inside the same request"]
     IR --> OUT2{"retry outcome"}
     OUT2 -->|success| OK
     OUT2 -->|"AP start failed again"| CL
@@ -509,7 +515,7 @@ flowchart TD
 
 | Layer | Where | Trigger | Limit |
 |---|---|---|---|
-| 1. Internal retry | Inside one request (`NetworkManager`) | hostapd segfault on 2.4 GHz, first request of the sequence | Once, within a 5 s budget capped by expiry. If the AP fails to start again, it counts as a radio failure. |
+| 1. Internal retry | Inside one request (`NetworkManager`) | hostapd segfault on 2.4 GHz, or beacon setup and interface initialization failure (`HostapdInitFailure`) on any band; first request of the sequence | Once, within a 5 s budget capped by expiry. If the AP fails to start again, it counts as a radio failure. |
 | 2. Client retry with cooldown | Across requests (route + `Reservation`) | Classified radio failure | 3 attempts per sequence, cooldowns 5 s and 10 s. Success resets the counter. |
 | 3. Quarantine and USB recovery | Background worker | 3rd classified failure, unsafe rollback, or a failed watchdog restart | 10 rounds at least 60 s apart, USB antennas only. |
 

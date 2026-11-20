@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 HOSTAPD_CONFIG_DIR = "/tmp/wilab-hostapd"
 AP_READY_TIMEOUT = 10.0
+# hostapd_cli waits for a reply that never comes if hostapd exits meanwhile,
+# so each status probe is short and the process is checked between probes.
+STATUS_PROBE_TIMEOUT = 1.0
+_TRANSIENT_INIT_EVENTS = frozenset({"beacon_failed", "interface_init_failed"})
 DFS_READY_TIMEOUT = 75.0
 _STARTUP_STATES = frozenset({
     "UNINITIALIZED", "DISABLED", "COUNTRY_UPDATE", "ACS", "HT_SCAN", "DFS",
@@ -65,6 +69,13 @@ class HostapdRadioFailure(HostapdError):
 
 class HostapdSegfault(HostapdRadioFailure):
     """The hostapd process terminated with SIGSEGV during startup."""
+
+
+class HostapdInitFailure(HostapdError):
+    """hostapd exited after the driver rejected the beacon during interface setup.
+
+    Observed as a transient failure: an immediate new start on the same radio succeeds.
+    """
 
 
 class HostapdInstance(TypedDict):
@@ -249,6 +260,10 @@ class HostapdManager:
         if code == -signal.SIGSEGV:
             raise HostapdSegfault(f"hostapd segfault on {interface}")
         if code is not None:
+            if _TRANSIENT_INIT_EVENTS <= set(process.output_events(exited=True)):
+                raise HostapdInitFailure(
+                    f"hostapd exited with code {code} on {interface}: beacon setup failed",
+                )
             raise HostapdError(f"hostapd exited with code {code} on {interface}")
 
     def _wait_until_ready(
@@ -280,12 +295,15 @@ class HostapdManager:
                     command = ["hostapd_cli", "-p", control_dir, "-i", interface, "status"]
                     try:
                         status = execute_command(
-                            command, check=False, timeout=remaining, exact_timeout=True,
+                            command, check=False, timeout=min(remaining, STATUS_PROBE_TIMEOUT),
+                            exact_timeout=True,
                         )
                     except CommandTimeout as e:
                         probe = "timed_out"
                         check_process()
-                        raise HostapdRadioFailure(f"AP status timed out on {interface}") from e
+                        if remaining <= STATUS_PROBE_TIMEOUT:
+                            raise HostapdRadioFailure(f"AP status timed out on {interface}") from e
+                        continue
                     except CommandError:
                         probe = "command_error"
                         check_process()
