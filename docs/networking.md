@@ -4,6 +4,8 @@
 
 Wi-Lab manages WiFi Access Points by directly controlling network settings on the host system. This document explains how Wi-Lab modifies the network, potential risks, and how to diagnose and recover from issues.
 
+Each AP's masquerade rule matches only that AP's assigned subnet.
+
 ---
 
 ## System Modifications

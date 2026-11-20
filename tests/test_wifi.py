@@ -455,7 +455,7 @@ class TestInternetControl:
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
         
-        def mock_nat_enable(interface, device_id):
+        def mock_nat_enable(interface, device_id, subnet):
             pass  # Mock NAT enable
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
@@ -484,10 +484,10 @@ class TestInternetControl:
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
         
-        def mock_nat_enable(interface, device_id):
+        def mock_nat_enable(interface, device_id, subnet):
             pass  # Mock NAT enable
         
-        def mock_nat_disable(interface, device_id):
+        def mock_nat_disable(interface, device_id, subnet):
             pass  # Mock NAT disable
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)

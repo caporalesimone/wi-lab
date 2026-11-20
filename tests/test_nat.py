@@ -54,6 +54,21 @@ def test_stale_cleanup_logs_failures_and_continues(monkeypatch, caplog):
     assert "Cannot remove stale" in caplog.text
 
 
+def test_nat_rules_use_only_the_selected_network_subnet(monkeypatch):
+    calls = []
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", calls.append)
+    monkeypatch.setattr("wilab.network.nat.execute_sysctl", lambda *args: None)
+    nat = NatManager("eth0")
+    nat.enable_nat("wlan0", "a", "192.168.120.0/24")
+    nat.enable_nat("wlan1", "b", "192.168.121.0/24")
+    nat.disable_nat("wlan0", "a", "192.168.120.0/24")
+    added = [c for c in calls if c[:4] == ["-t", "nat", "-A", "POSTROUTING"]]
+    removed = [c for c in calls if c[:4] == ["-t", "nat", "-D", "POSTROUTING"]]
+    assert len(added) == 2
+    assert "192.168.120.0/24" in added[0] and "192.168.121.0/24" in added[1]
+    assert removed and all("192.168.120.0/24" in c and "wilab-nat-a" in c for c in removed)
+
+
 class TestNatManagerInit:
     """Tests for NAT manager initialization."""
     
@@ -216,7 +231,7 @@ class TestEnableNat:
             return ""
         monkeypatch.setattr("wilab.network.nat.execute_sysctl", mock_sysctl)
         
-        nat.enable_nat("wlan0", "test-net")
+        nat.enable_nat("wlan0", "test-net", "192.168.120.0/24")
         
         # Check IP forwarding was enabled
         assert sysctl_calls == [("net.ipv4.ip_forward", "1")]
@@ -227,7 +242,7 @@ class TestEnableNat:
         # Verify MASQUERADE rule exists (may not be first if protection rule added)
         masquerade_rule = [
             "-t", "nat", "-A", "POSTROUTING",
-            "-o", "eth0", "-j", "MASQUERADE",
+            "-s", "192.168.120.0/24", "-o", "eth0", "-j", "MASQUERADE",
             "-m", "comment", "--comment", "wilab-nat-test-net"
         ]
         assert masquerade_rule in iptables_calls
@@ -273,7 +288,7 @@ class TestEnableNat:
             return ""
         monkeypatch.setattr("wilab.network.nat.execute_sysctl", mock_sysctl)
         
-        nat.enable_nat("wlan0", "test-net")
+        nat.enable_nat("wlan0", "test-net", "192.168.120.0/24")
         
         # Check that eth1 was used
         assert any("eth1" in str(call) for call in iptables_calls)
@@ -293,7 +308,7 @@ class TestEnableNat:
         monkeypatch.setattr("wilab.network.nat.execute_sysctl", lambda args: None)
         
         with pytest.raises(RuntimeError, match="Cannot enable NAT"):
-            nat.enable_nat("wlan0", "test-net")
+            nat.enable_nat("wlan0", "test-net", "192.168.120.0/24")
 
 
 class TestDisableNat:
@@ -309,7 +324,7 @@ class TestDisableNat:
             lambda args: iptables_calls.append(args)
         )
         
-        nat.disable_nat("wlan0", "test-net")
+        nat.disable_nat("wlan0", "test-net", "192.168.120.0/24")
         
         # The implementation may issue multiple deletes to remove duplicates;
         # assert that required rule deletions were attempted at least once.
@@ -319,7 +334,7 @@ class TestDisableNat:
         # MASQUERADE delete on POSTROUTING for upstream eth0 with net_id comment
         assert any(
             call[:4] == ["-t", "nat", "-D", "POSTROUTING"]
-            and contains(["-o", "eth0", "MASQUERADE", "wilab-nat-test-net"], call)
+            and contains(["-s", "192.168.120.0/24", "-o", "eth0", "MASQUERADE", "wilab-nat-test-net"], call)
             for call in iptables_calls
         )
 
@@ -347,7 +362,7 @@ class TestDisableNat:
         monkeypatch.setattr("wilab.network.nat.execute_iptables", mock_iptables)
         
         # Should not raise
-        nat.disable_nat("wlan0", "test-net")
+        nat.disable_nat("wlan0", "test-net", "192.168.120.0/24")
 
 
 class TestFlushRules:

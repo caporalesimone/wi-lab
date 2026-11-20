@@ -334,7 +334,7 @@ class NetworkManager:
         if internet_enabled:
             try:
                 with self._firewall_lock:
-                    self.nat_manager.enable_nat(cfg_net.interface, device_id)
+                    self.nat_manager.enable_nat(cfg_net.interface, device_id, subnet)
                 logger.info(f"NAT enabled for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to enable NAT for {device_id}: {e}")
@@ -394,7 +394,7 @@ class NetworkManager:
         if device_id in self.active and self.active[device_id].internet_enabled and cfg_net:
             try:
                 with self._firewall_lock:
-                    self.nat_manager.disable_nat(cfg_net.interface, device_id)
+                    self.nat_manager.disable_nat(cfg_net.interface, device_id, self._get_subnet(device_id))
             except Exception as e:
                 logger.error(f"Error disabling NAT: {e}")
                 errors.append(f"NAT: {e}")
@@ -530,7 +530,7 @@ class NetworkManager:
         if not st.internet_enabled:
             try:
                 with self._firewall_lock:
-                    self.nat_manager.enable_nat(cfg_net.interface, device_id)
+                    self.nat_manager.enable_nat(cfg_net.interface, device_id, self._get_subnet(device_id))
                 logger.info(f"NAT rules applied for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to enable NAT: {e}")
@@ -569,7 +569,7 @@ class NetworkManager:
         if st.internet_enabled:
             try:
                 with self._firewall_lock:
-                    self.nat_manager.disable_nat(cfg_net.interface, device_id)
+                    self.nat_manager.disable_nat(cfg_net.interface, device_id, self._get_subnet(device_id))
                 logger.info(f"NAT rules removed for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to disable NAT: {e}")

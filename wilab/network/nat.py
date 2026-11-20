@@ -140,7 +140,7 @@ class NatManager:
         except Exception:
             return False
     
-    def enable_nat(self, wifi_interface: str, net_id: str) -> None:
+    def enable_nat(self, wifi_interface: str, net_id: str, subnet: str) -> None:
         """
         Enable NAT for a WiFi interface to allow Internet access.
         
@@ -192,6 +192,7 @@ class NatManager:
             # Add MASQUERADE rule (check if exists first to avoid duplicates)
             masquerade_rule = [
                 "POSTROUTING",
+                "-s", subnet,
                 "-o", upstream,
                 "-j", "MASQUERADE",
                 "-m", "comment",
@@ -201,6 +202,7 @@ class NatManager:
                 execute_iptables([
                     "-t", "nat",
                     "-A", "POSTROUTING",
+                    "-s", subnet,
                     "-o", upstream,
                     "-j", "MASQUERADE",
                     "-m", "comment",
@@ -264,7 +266,7 @@ class NatManager:
             logger.error(f"Failed to enable NAT for {net_id} ({wifi_interface}): {e}")
             raise RuntimeError(f"Cannot enable NAT: {e}") from e
     
-    def disable_nat(self, wifi_interface: str, net_id: str) -> None:
+    def disable_nat(self, wifi_interface: str, net_id: str, subnet: str) -> None:
         """
         Disable NAT for a WiFi interface.
         
@@ -285,6 +287,7 @@ class NatManager:
                     execute_iptables([
                         "-t", "nat",
                         "-D", "POSTROUTING",
+                        "-s", subnet,
                         "-o", upstream,
                         "-j", "MASQUERADE",
                         "-m", "comment",
