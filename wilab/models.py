@@ -114,8 +114,10 @@ class NetworkStatus(BaseModel):
     hidden: bool | None = None
     subnet: str | None = None
     internet_enabled: bool = False
-    captive_portal: bool = False
-    captive_portal_url: str | None = Field(None, description="Portal page URL, reachable from the AP clients")
+    captive_portal: bool = Field(False, description="True if clients are held behind the captive portal until they sign in")
+    captive_portal_url: str | None = Field(
+        None, description="Portal page URL, reachable from the AP clients; null without a portal",
+    )
     tx_power_level: int | None = Field(None, description="Internal requested TX power level 1-4", exclude=True)
     tx_power: NetworkTxPower | None = Field(None, description="Requested and reported TX power details")
     expires_at: str | None = Field(

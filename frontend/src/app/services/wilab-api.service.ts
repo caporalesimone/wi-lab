@@ -68,10 +68,10 @@ export class WilabApiService {
     );
   }
 
-  public deleteAllReservations(): Observable<object> {
+  public deleteAllReservations(confirmPassword: string): Observable<object> {
     return this.http.delete(
-      `${this.apiUrl}/device-reservation`,
-      { headers: this.getHeaders() }
+      `${this.apiUrl}/device-reservation/all`,
+      { headers: this.getHeaders().set('X-Confirm-Password', confirmPassword) }
     ).pipe(
       catchError(this.handleError)
     );

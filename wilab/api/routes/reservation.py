@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from pydantic import BaseModel, Field, field_validator
 
-from ...api.auth import require_token
+from ...api.auth import require_protected_password, require_token
 from ...api.dependencies import get_config, get_reservation_manager
 from ...api.errors import ApiErrorCode, domain_error
 from ...config import AppConfig
@@ -160,6 +160,47 @@ def _build_response(r, config: AppConfig) -> ReservationResponse:
     )
 
 
+@router.delete(
+    "/all",
+    tags=["Maintenance"],
+    summary="Release ALL reservations (maintenance only)",
+    responses={
+        200: {"description": "All reservations released"},
+        401: {"description": "Unauthorized"},
+        403: {
+            "description": "Protected commands disabled, or missing or wrong X-Confirm-Password. Nothing was released.",
+            "content": {"application/json": {"examples": {
+                "wrong_password": {"summary": "Missing or wrong X-Confirm-Password", "value": {"detail": {
+                    "code": 403, "reason": "forbidden", "message": "Missing or wrong X-Confirm-Password",
+                }}},
+                "disabled": {"summary": "protected_commands_password not configured", "value": {"detail": {
+                    "code": 403, "reason": "forbidden",
+                    "message": "Protected commands are disabled: protected_commands_password is not configured",
+                }}},
+            }}},
+        },
+        503: {"description": "Cleanup failed; remaining reservations are still held"},
+    },
+)
+def delete_all_reservations(
+    mgr: ReservationManager = Depends(get_reservation_manager),
+    _auth: bool = Depends(require_token),
+    _confirmed: bool = Depends(require_protected_password),
+):
+    """Release **all** active reservations, including those held by other clients.
+
+    Maintenance and unblocking endpoint: clients must not use it, and it may be
+    removed in a future version. It requires the `X-Confirm-Password` header,
+    matching `protected_commands_password` in the server configuration; without
+    that setting the endpoint is disabled (`403`).
+
+    This is not atomic across adapters. If cleanup fails, earlier releases may
+    already have completed. Inspect status and resolve the failure before retrying.
+    """
+    count = mgr.delete_all()
+    return {"detail": f"{count} reservation(s) released", "released": count}
+
+
 @router.get(
     "/{reservation_id}",
     response_model=ReservationResponse,
@@ -210,24 +251,3 @@ def delete_reservation(
             status_code=404, detail="Reservation not found or already expired"
         )
     return {"detail": "Reservation released"}
-
-
-@router.delete(
-    "",
-    responses={
-        200: {"description": "All reservations released"},
-        401: {"description": "Unauthorized"},
-        503: {"description": "Cleanup failed; remaining reservations are still held"},
-    },
-)
-def delete_all_reservations(
-    mgr: ReservationManager = Depends(get_reservation_manager),
-    _auth: bool = Depends(require_token),
-):
-    """Release all active reservations, including those held by other clients.
-
-    This is not atomic across adapters. If cleanup fails, earlier releases may
-    already have completed. Inspect status and resolve the failure before retrying.
-    """
-    count = mgr.delete_all()
-    return {"detail": f"{count} reservation(s) released", "released": count}

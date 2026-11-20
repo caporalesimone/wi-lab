@@ -625,7 +625,7 @@ hardware.
 
 - Stopping Wi-Lab affects every adapter. Agree a maintenance window and check
   `GET /api/v1/status`: no reservations and no active networks. Ask owners to
-  release theirs; do not use the global release endpoint.
+  release theirs; do not use `DELETE /api/v1/device-reservation/all`.
 - Check that nothing outside Wi-Lab uses the adapter, and that it is neither the
   management nor the upstream interface (`ip -br link`, `ip route show default`,
   `iw dev`). Keep console access (for example KVM) in case the management

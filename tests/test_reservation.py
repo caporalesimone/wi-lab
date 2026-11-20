@@ -739,52 +739,60 @@ class TestReservationManagerDeleteAll:
 
 
 class TestReservationAPIDeleteAll:
-    """Tests for DELETE /api/v1/device-reservation."""
+    """Tests for DELETE /api/v1/device-reservation/all (password-protected)."""
 
-    def test_delete_all_success(self, client, valid_token):
-        # Create a reservation first
-        client.post(
-            "/api/v1/device-reservation",
-            headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
-        )
-        resp = client.delete(
-            "/api/v1/device-reservation",
-            headers={"Authorization": valid_token},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["released"] == 1
+    URL = "/api/v1/device-reservation/all"
 
-    def test_delete_all_empty(self, client, valid_token):
-        resp = client.delete(
-            "/api/v1/device-reservation",
-            headers={"Authorization": valid_token},
-        )
-        assert resp.status_code == 200
-        assert resp.json()["released"] == 0
+    @pytest.fixture(autouse=True)
+    def _password(self, client):
+        dependencies.get_config().protected_commands_password = "qwerty-test"
 
-    def test_delete_all_requires_auth(self, client):
-        resp = client.delete("/api/v1/device-reservation")
-        assert resp.status_code == 401
-
-    def test_delete_all_frees_for_new_reservation(self, client, valid_token):
-        """After delete-all, a new reservation should succeed."""
-        client.post(
-            "/api/v1/device-reservation",
-            headers={"Authorization": valid_token},
-            json={"duration_seconds": 3600},
-        )
-        client.delete(
-            "/api/v1/device-reservation",
-            headers={"Authorization": valid_token},
-        )
+    def _reserve(self, client, valid_token):
         resp = client.post(
-            "/api/v1/device-reservation",
-            headers={"Authorization": valid_token},
+            "/api/v1/device-reservation", headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
         assert resp.status_code == 200
+        return resp.json()["reservation_id"]
+
+    def test_releases_all_with_the_configured_password_and_frees_devices(self, client, valid_token):
+        rid = self._reserve(client, valid_token)
+        headers = {"Authorization": valid_token, "X-Confirm-Password": "qwerty-test"}
+        resp = client.delete(self.URL, headers=headers)
+        assert resp.status_code == 200 and resp.json()["released"] == 1
+        assert client.get(f"/api/v1/device-reservation/{rid}", headers={"Authorization": valid_token}).status_code == 404
+        assert client.delete(self.URL, headers=headers).json()["released"] == 0
+        self._reserve(client, valid_token)
+
+    @pytest.mark.parametrize("password", [None, "", "wrong", "qwerty-test "])
+    def test_missing_or_wrong_password_releases_nothing(self, client, valid_token, password):
+        rid = self._reserve(client, valid_token)
+        headers = {"Authorization": valid_token}
+        if password is not None:
+            headers["X-Confirm-Password"] = password
+        resp = client.delete(self.URL, headers=headers)
+        assert resp.status_code == 403
+        assert "X-Confirm-Password" in resp.json()["detail"]["message"]
+        assert client.get(f"/api/v1/device-reservation/{rid}", headers={"Authorization": valid_token}).status_code == 200
+
+    def test_disabled_without_a_configured_password(self, client, valid_token):
+        from wilab.config import AppConfig
+        blank = AppConfig(auth_token="t", dhcp_base_network="192.168.120.0/24", protected_commands_password="  ")
+        assert blank.protected_commands_password is None
+        dependencies.get_config().protected_commands_password = None
+        self._reserve(client, valid_token)
+        resp = client.delete(self.URL, headers={"Authorization": valid_token, "X-Confirm-Password": "anything"})
+        assert resp.status_code == 403 and "not configured" in resp.json()["detail"]["message"]
+
+    def test_requires_auth_before_the_password(self, client):
+        assert client.delete(self.URL, headers={"X-Confirm-Password": "qwerty-test"}).status_code == 401
+
+    @pytest.mark.parametrize("path", ["/api/v1/device-reservation", "/api/v1/device-reservation/"])
+    def test_collection_delete_no_longer_releases_anything(self, client, valid_token, path):
+        rid = self._reserve(client, valid_token)
+        headers = {"Authorization": valid_token, "X-Confirm-Password": "qwerty-test"}
+        assert client.delete(path, headers=headers).status_code == 405
+        assert client.get(f"/api/v1/device-reservation/{rid}", headers={"Authorization": valid_token}).status_code == 200
 
 
 # ======================================================================
@@ -1040,9 +1048,10 @@ class TestReservationDeleteStopsNetwork:
 
         monkeypatch.setattr(mgr, "stop_network", mock_stop)
 
+        dependencies.get_config().protected_commands_password = "qwerty-test"
         resp = client.delete(
-            "/api/v1/device-reservation",
-            headers={"Authorization": valid_token},
+            "/api/v1/device-reservation/all",
+            headers={"Authorization": valid_token, "X-Confirm-Password": "qwerty-test"},
         )
         assert resp.status_code == 200
         assert resp.json()["released"] == 1
@@ -1060,9 +1069,10 @@ class TestReservationDeleteStopsNetwork:
         stopped = []
         monkeypatch.setattr(mgr, "stop_network", lambda did: stopped.append(did))
 
+        dependencies.get_config().protected_commands_password = "qwerty-test"
         resp = client.delete(
-            "/api/v1/device-reservation",
-            headers={"Authorization": valid_token},
+            "/api/v1/device-reservation/all",
+            headers={"Authorization": valid_token, "X-Confirm-Password": "qwerty-test"},
         )
         assert resp.status_code == 200
         assert stopped == []

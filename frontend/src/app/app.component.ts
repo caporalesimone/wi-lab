@@ -358,10 +358,10 @@ export class AppComponent implements OnInit, OnDestroy {
       width: '450px'
     });
 
-    dialogRef.afterClosed().subscribe((confirmed: boolean) => {
-      if (!confirmed || this.releaseAllPending || this.reservationPending) return;
+    dialogRef.afterClosed().subscribe((password: string | null | undefined) => {
+      if (!password || this.releaseAllPending || this.reservationPending) return;
       this.releaseAllPending = true;
-      this.apiService.deleteAllReservations().subscribe({
+      this.apiService.deleteAllReservations(password).subscribe({
         next: () => {
           this.myReservations.clear();
           this.persistReservations();

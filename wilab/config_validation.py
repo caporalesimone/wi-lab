@@ -59,6 +59,8 @@ def validate_config_file(path: str) -> tuple[list[str], list[str]]:
         errors.append("auth_token must not be empty.")
     elif config.auth_token == "secret-token-12345":
         warnings.append("auth_token is still set to the example value.")
+    if config.protected_commands_password == "change-me":
+        warnings.append("protected_commands_password is still set to the example value.")
     if not 1 <= config.api_port <= 65535:
         errors.append("api_port must be between 1 and 65535.")
     if config.max_timeout <= 0 or config.min_timeout > config.max_timeout:

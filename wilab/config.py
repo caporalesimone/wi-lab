@@ -33,6 +33,7 @@ class AppConfig(BaseModel):
     upstream_interface: str = "auto"
     country_code: str = "IT"
     allow_dfs_channels: bool = False
+    protected_commands_password: str | None = None
     dns_server: str = "192.168.10.21"
     internet_enabled_by_default: bool = True
     networks: list[NetworkEntry] = Field(default_factory=list)
@@ -50,6 +51,11 @@ class AppConfig(BaseModel):
         if not re.fullmatch(r"[A-Z]{2}", value):
             raise ValueError("country_code must be two uppercase ASCII letters")
         return value
+
+    @field_validator('protected_commands_password')
+    @classmethod
+    def disable_blank_protected_password(cls, value: str | None) -> str | None:
+        return value if value and value.strip() else None
 
     @field_validator('min_timeout')
     @classmethod

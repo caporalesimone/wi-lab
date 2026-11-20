@@ -45,6 +45,12 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
   If the reservation ID is unknown, the device may remain occupied until expiry;
   an unlimited reservation requires operator intervention.
 
+- **Maintenance** groups operations that clients must not use.
+  `DELETE /api/v1/device-reservation/all` releases **every** reservation; it
+  requires the `X-Confirm-Password` header with `protected_commands_password`
+  from the server configuration, and is disabled (`403`) when that setting is
+  missing. It may be removed in a future version.
+
 ⚠️ **Note:** debug operations are expensive (150-600ms). Use them only for manual troubleshooting, not for frontend polling.
 
 ## Network creation failure

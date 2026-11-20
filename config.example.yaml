@@ -94,6 +94,18 @@ dns_server: "208.67.222.222"
 internet_enabled_by_default: true
 
 # ==================================================================================================
+# PROTECTED COMMANDS
+# ==================================================================================================
+
+# Password that confirms maintenance commands which must not be triggered by mistake,
+# currently DELETE /api/v1/device-reservation/all (release ALL reservations).
+# Callers send it in the X-Confirm-Password header, together with the bearer token;
+# the web UI asks for it every time "Release All" is pressed.
+# It guards against accidental use, not against attackers: share it only with operators.
+# If omitted or empty, protected commands are disabled (HTTP 403).
+protected_commands_password: "change-me"
+
+# ==================================================================================================
 # REGULATORY DOMAIN
 # ==================================================================================================
 

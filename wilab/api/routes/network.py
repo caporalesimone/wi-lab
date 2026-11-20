@@ -151,7 +151,25 @@ def start_network(
                 "encryption": "wpa2",
                 "band": "2.4ghz",
                 "internet_enabled": True,
+                "captive_portal": False,
+                "tx_power_level": 4,
             }},
+            "captive_portal_network": {
+                "summary": "Network behind a simulated captive portal",
+                "description": "Clients are redirected to the portal page until they press Sign in. "
+                "Only the client that signs in is released; with internet_enabled it then reaches "
+                "the Internet.",
+                "value": {
+                    "ssid": "CaptiveTest",
+                    "channel": 6,
+                    "password": "testpass123",
+                    "encryption": "wpa2",
+                    "band": "2.4ghz",
+                    "internet_enabled": True,
+                    "captive_portal": True,
+                    "tx_power_level": 4,
+                },
+            },
         },
     ),
     manager: NetworkManager = Depends(get_manager),
@@ -177,6 +195,16 @@ def start_network(
     reservation request can return **503 / 1002** while recovery is running.
     No USB reset runs in the creation request.
     A network being restored by the watchdog returns an ordinary HTTP 409.
+
+    **Captive portal** (optional `captive_portal`, default `false`; omitted means
+    no portal): each client that joins is held behind a simple portal page on the
+    gateway (`http://<gateway>/`, reported as `captive_portal_url`). Until it
+    presses **Sign in**, its DNS queries resolve to the gateway, its HTTP requests
+    are redirected to the portal and other forwarded traffic, including HTTPS, is
+    rejected. Sign-in releases only that client (MAC and IP); there is no API to
+    sign a client in. Afterwards the network's `internet_enabled` setting applies.
+    Sign-ins are cleared when the AP stops or is restored by the watchdog. A
+    portal startup failure is rolled back like any other startup error (`500`).
     """
     if manager.watchdog.state(reservation) in ("restoring_ap", "restoring_dhcp"):
         raise HTTPException(status_code=409, detail="Network restoration is in progress")
@@ -281,6 +309,20 @@ def stop_network(
                     "interface": "wlan0", "active": True, "runtime_state": "dhcp_failed",
                     "expires_in": 51,
                 }},
+                "captive_portal": {
+                    "summary": "Active network with a captive portal",
+                    "value": {
+                        "interface": "wlan0", "active": True, "ssid": "CaptiveTest", "channel": 6,
+                        "band": "2.4ghz", "encryption": "wpa2", "subnet": "192.168.120.0/24",
+                        "internet_enabled": True, "captive_portal": True,
+                        "captive_portal_url": "http://192.168.120.1/", "expires_in": 3540,
+                        "clients_connected": 2,
+                        "clients": [
+                            {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.120.23", "captive_authorized": True},
+                            {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.120.57", "captive_authorized": False},
+                        ],
+                    },
+                },
             }}},
         },
         401: {"description": "Unauthorized (missing or invalid auth token)"},

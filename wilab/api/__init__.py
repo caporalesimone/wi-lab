@@ -31,6 +31,16 @@ creation request at a time per reservation. Release with
 `DELETE /api/v1/device-reservation/{reservation_id}` when finished; this also
 stops the network. A failed cleanup can return `503` and keep the device held.
 
+Set `"captive_portal": true` when creating a network to hold each client
+behind a simulated captive portal until it presses **Sign in** on the portal
+page; see the network creation operation. Omitted, it defaults to `false`.
+
+`DELETE /api/v1/device-reservation/all` (tag **Maintenance**) releases every
+reservation, including other clients'. It is not part of the client workflow:
+it requires the `X-Confirm-Password` header matching
+`protected_commands_password` in the server configuration, and is disabled
+when that setting is missing.
+
 Every API error body has a `detail` object with an integer `code` and a
 stable `reason`. Generic errors use the HTTP status as their code and
 include a human-readable `message`. Use the HTTP status and `detail.code`,
@@ -67,6 +77,8 @@ OPENAPI_TAGS = [
     {"name": "Internet", "description": "Enable or disable Internet access for a reserved network."},
     {"name": "TX Power", "description": "Inspect or request transmit power. Hardware support is not guaranteed."},
     {"name": "QoS Profiles", "description": "Inspect and manage traffic shaping profiles for a reserved network."},
+    {"name": "Maintenance", "description": "Operator-only commands, not for clients. They require the "
+     "X-Confirm-Password header matching protected_commands_password and may be removed in the future."},
 ]
 
 
