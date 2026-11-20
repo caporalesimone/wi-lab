@@ -181,12 +181,14 @@ def start_network(
     Requires a valid reservation token. The network lifetime is bounded
     by the reservation expiry.
 
-    If hostapd crashes with SIGSEGV during 2.4 GHz startup, or exits after a
-    transient beacon setup failure on either band, the server may
-    retry once in the same request after successful cleanup. Clients do
-    not need to resubmit the request to trigger the retry.
+    If starting the AP fails because of the radio (hostapd crash, beacon setup
+    failure, radio or readiness timeout), the server starts it again in the same
+    request after successful cleanup, on either band: up to 3 starts, 1 s apart,
+    within 15 s. A normal start takes about 0.5 s; with retries the response can
+    take up to about 15 s outside DFS channels. Clients do not need to resubmit
+    the request to trigger these retries.
 
-    After the first and second classified radio startup failures, **409 / 1001**
+    After the first and second requests whose internal starts all failed, **409 / 1001**
     retains the reservation. Retry the same POST and ID only after the
     `Retry-After` header (5 and 10 seconds, respectively). Calls during cooldown
     do not consume a startup attempt. Reservation expiry is not extended.

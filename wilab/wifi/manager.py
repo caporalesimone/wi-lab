@@ -33,7 +33,6 @@ from .hostapd import (
     HostapdInitFailure,
     HostapdManager,
     HostapdRadioFailure,
-    HostapdSegfault,
 )
 from .interface import (
     InterfaceError,
@@ -46,8 +45,11 @@ from .watchdog import NetworkWatchdog
 
 logger = logging.getLogger(__name__)
 
-STARTUP_RETRY_BUDGET = 5.0
-STARTUP_RETRY_DELAY = 0.75
+# Transient radio failures usually clear on an immediate new start, so the
+# server retries inside the request instead of handing the retry to the client.
+STARTUP_ATTEMPTS = 3
+STARTUP_RETRY_BUDGET = 15.0
+STARTUP_RETRY_DELAY = 1.0
 MIN_RETRY_ATTEMPT_TIME = 0.75
 
 
@@ -269,7 +271,8 @@ class NetworkManager:
         # Best-effort: prevent NetworkManager/wpa_supplicant from contending AP interface.
         self._configure_networkmanager_unmanaged(cfg_net.interface)
         
-        for retrying in (False, True):
+        for attempt in range(1, STARTUP_ATTEMPTS + 1):
+            retrying = attempt > 1
             stage = "start AP"
             try:
                 with command_deadline(retry_deadline if retrying else None):
@@ -333,12 +336,10 @@ class NetworkManager:
                     ) from e
 
                 if (
-                    not retrying
+                    attempt < STARTUP_ATTEMPTS
                     and allow_internal_retry
-                    and (
-                        isinstance(e, HostapdInitFailure)
-                        or (req.band == "2.4ghz" and isinstance(e, HostapdSegfault))
-                    )
+                    and stage == "start AP"
+                    and isinstance(e, (HostapdRadioFailure, HostapdInitFailure))
                     and retry_deadline - time.monotonic()
                     >= STARTUP_RETRY_DELAY + MIN_RETRY_ATTEMPT_TIME
                 ):
@@ -347,7 +348,10 @@ class NetworkManager:
                         retry_deadline - time.monotonic() >= MIN_RETRY_ATTEMPT_TIME
                         and (expires_at_timestamp is None or time.time() < expires_at_timestamp)
                     ):
-                        logger.info("Retrying AP startup once after %s on %s", type(e).__name__, device_id)
+                        logger.info(
+                            "Retrying AP startup (attempt %d/%d) after %s on %s",
+                            attempt + 1, STARTUP_ATTEMPTS, type(e).__name__, device_id,
+                        )
                         continue
                 raise StartupFailure(
                     f"Failed to {stage}: {e}",

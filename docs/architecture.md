@@ -360,7 +360,7 @@ sequenceDiagram
     end
     alt any step failed
         NM->>NM: release_device rollback
-        NM->>NM: internal retry once, or raise StartupFailure
+        NM->>NM: internal retry (up to 3 starts), or raise StartupFailure
     end
     NM->>OS: set TX power level (best effort)
     NM->>FW: enable NAT if internet_enabled (best effort, firewall lock)
@@ -496,10 +496,11 @@ flowchart TD
     CD -->|no| ST["start AP"]
     ST --> OUT{"outcome"}
     OUT -->|success| OK["200, counter reset"]
-    OUT -->|"segfault on 2.4 GHz, or beacon/init failure on any band;<br/>first attempt of the sequence, at least 1.5 s of the 5 s budget left"| IR["layer 1: rollback, wait 0.75 s,<br/>retry once inside the same request"]
+    OUT -->|"radio failure while starting the AP (segfault, beacon/init failure,<br/>radio or readiness timeout); first request of the sequence,<br/>fewer than 3 starts, at least 1.75 s of the 15 s budget left"| IR["layer 1: rollback, wait 1 s,<br/>start again inside the same request"]
     IR --> OUT2{"retry outcome"}
     OUT2 -->|success| OK
-    OUT2 -->|"AP start failed again"| CL
+    OUT2 -->|"AP start failed again, starts or budget left"| IR
+    OUT2 -->|"AP start failed again, no starts or budget left"| CL
     OUT2 -->|"gateway or DHCP failed"| G
     OUT -->|"unclassified: exit code, gateway, DHCP,<br/>interface validation"| G["500 generic<br/>reservation kept, no counter change"]
     OUT -->|classified radio failure| CL["radio_failures += 1"]
@@ -515,9 +516,18 @@ flowchart TD
 
 | Layer | Where | Trigger | Limit |
 |---|---|---|---|
-| 1. Internal retry | Inside one request (`NetworkManager`) | hostapd segfault on 2.4 GHz, or beacon setup and interface initialization failure (`HostapdInitFailure`) on any band; first request of the sequence | Once, within a 5 s budget capped by expiry. If the AP fails to start again, it counts as a radio failure. |
+| 1. Internal retry | Inside one request (`NetworkManager`) | Radio failure while starting the AP, on either band: hostapd segfault, beacon setup and interface initialization failure (`HostapdInitFailure`), radio preparation or readiness timeout. First request of the sequence only. | Up to 3 starts, 1 s apart, within 15 s from the request start, capped by expiry. If the last start fails, the request counts as **one** radio failure. |
 | 2. Client retry with cooldown | Across requests (route + `Reservation`) | Classified radio failure | 3 attempts per sequence, cooldowns 5 s and 10 s. Success resets the counter. |
 | 3. Quarantine and USB recovery | Background worker | 3rd classified failure, unsafe rollback, or a failed watchdog restart | 10 rounds at least 60 s apart, USB antennas only. |
+
+Layer 1 exists because these failures are short-lived: in test runs nearly
+every one succeeded on an immediate new start, and waiting the 5 s cooldown did
+not improve the success rate. Retrying inside the request spares the client a
+`409 / 1001` round trip. A start without failures still takes about 0.5 s; one
+retry adds about 2–3 s, two retries about 5–6 s, and the worst case, with a
+firmware timeout, is about 15 s. Gateway, DHCP, captive portal and other
+unclassified failures are not retried. On a DFS channel the radar check can use
+up the whole budget, so a failure there is usually not retried.
 
 An unclassified startup failure with successful rollback returns `500 / 500`
 without `Retry-After`. It does not consume the radio budget, but the reservation

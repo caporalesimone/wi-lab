@@ -254,13 +254,13 @@ class TestNetworkLifecycle:
         "scenario, band, expected_attempts",
         [
             ("recover", "2.4ghz", 2),
-            ("second_crash", "2.4ghz", 2),
+            ("second_crash", "2.4ghz", 3),
             ("retry_timeout", "2.4ghz", 2),
             ("cleanup_failed", "2.4ghz", 1),
             ("budget_exhausted", "2.4ghz", 1),
             ("reservation_expired", "2.4ghz", 1),
             ("non_segfault", "2.4ghz", 1),
-            ("recover", "5ghz", 1),
+            ("recover", "5ghz", 2),
             ("init_failure", "2.4ghz", 2),
             ("init_failure", "5ghz", 2),
         ],
@@ -310,7 +310,7 @@ class TestNetworkLifecycle:
             events.append("ap")
             code = None
             if events.count("ap") == 1 or scenario == "second_crash":
-                now += 4.0 if scenario == "budget_exhausted" else 1.5
+                now += 14.0 if scenario == "budget_exhausted" else 1.5
                 code = 1 if scenario in ("non_segfault", "init_failure") else -signal.SIGSEGV
             init_events = (
                 "state_country_update", "beacon_failed", "beacon_failed", "interface_init_failed",
@@ -343,16 +343,20 @@ class TestNetworkLifecycle:
         if scenario in ("recover", "init_failure") and expected_attempts == 2:
             assert mgr.start_network(device, req, expires_at).active
             assert events == ["ap", "stop", "rollback", "wait", "ap", "gateway", "dhcp"]
-            assert now == 2.25
+            assert now == 2.5
         else:
             error = "AP not ready" if scenario == "retry_timeout" else "Failed to start AP"
-            with pytest.raises(ValueError, match=error):
+            with pytest.raises(ValueError, match=error) as failure:
                 mgr.start_network(device, req, expires_at)
+            if scenario == "second_crash":
+                # Three failed starts in one request count as a single radio failure for the client.
+                assert failure.value.radio and not failure.value.cleanup_failed
             assert not mgr.active
             assert "gateway" not in events and "dhcp" not in events
             assert (device in mgr.hostapd_manager._instances) == (scenario == "cleanup_failed")
             if scenario == "retry_timeout":
-                assert now == 5.0
+                # The second attempt runs until the reservation expires (t=10), so no third one.
+                assert now == 10.0
                 assert events == ["ap", "stop", "rollback", "wait", "ap", "stop", "rollback"]
                 assert not list(tmp_path.glob("ap-*"))
         assert events.count("ap") == expected_attempts

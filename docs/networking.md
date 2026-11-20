@@ -90,12 +90,12 @@ has exited before resetting the interface. Startup timeout cleanup does
 not depend on a PID file. If the process cannot be stopped or the radio
 cannot be reset, the adapter is not reassigned.
 
-If hostapd exits with `SIGSEGV` during 2.4 GHz startup, or exits on either
-band after the driver rejected the beacon during interface setup, Wi-Lab
-can retry once on the same adapter within the original request. It waits
-750 ms after successful rollback and retries only while the reservation
-is valid and enough of the five-second startup budget remains. This budget
-limits the retry, not rollback or the overall HTTP response time. A failed
+If starting the AP fails because of the radio (hostapd `SIGSEGV`, a beacon
+rejected during interface setup, or a radio or readiness timeout), Wi-Lab
+starts it again on the same adapter within the original request, on either
+band, up to 3 starts in total. It waits 1 s after each successful rollback and
+retries only while the reservation is valid and enough of the 15-second
+startup budget remains. This budget limits the retries, not rollback. A failed
 retry is reported using the creation recovery contract. Once an AP has
 started, a separate watchdog handles confirmed AP outages or DHCP failure.
 See [Architecture](architecture.md) for

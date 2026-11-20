@@ -112,7 +112,10 @@ Validate the body on the client side when possible: an invalid body returns
 
 Creating an AP is synchronous: the response arrives only when the AP is
 broadcasting and DHCP is running, or when startup has failed and been rolled
-back. Typical duration is a few seconds. Configure the HTTP client with a long
+back. A start normally takes about 0.5 s. If the radio fails transiently,
+Wi-Lab starts it again inside the same request (up to 3 starts): about 3 s
+with one retry, 5–6 s with two, up to about 15 s in the worst case outside DFS
+channels. Configure the HTTP client with a long
 read timeout so that a slow start is not mistaken for a failure:
 
 | Channel | Suggested read timeout |
@@ -168,9 +171,10 @@ A success resets the counter. Further rules:
 - **Check the remaining reservation time** before waiting. The cooldown does not
   extend the reservation; if it would expire first, release it and start over.
 - **Do not count your own retries on top of the server's.** On the first
-  attempt Wi-Lab may already retry once internally (a `hostapd` crash on
-  2.4 GHz, or a transient beacon setup failure on either band, within about
-  5 seconds). The client sees only the final result.
+  attempt Wi-Lab already starts the AP up to 3 times internally after a
+  transient radio failure, on either band, within about 15 seconds. A
+  `409 / 1001` therefore means that those internal attempts also failed. The
+  client sees only the final result.
 - **Transport errors are ambiguous.** If the connection drops or the client
   times out, the server may have finished the AP or still be working on it. Do
   not resend the create blindly; first read the state:
@@ -277,7 +281,7 @@ sequenceDiagram
 
     loop At most 3 attempts with the same ID and body
         C->>W: POST /interface/{id}/network {ssid, channel, band, ...}
-        Note over W: Prepare radio, start hostapd, wait for AP ready,<br/>assign gateway, start DHCP. May retry once internally.
+        Note over W: Prepare radio, start hostapd, wait for AP ready,<br/>assign gateway, start DHCP. May start the AP up to 3 times internally.
         alt 200
             W-->>C: network created
             Note over C: Done. Leave the loop
@@ -358,9 +362,9 @@ Details and diagrams are in [Architecture](architecture.md).
 - **Unclassified failures** (for example `hostapd` exiting with code 1, a
   gateway, DHCP or captive portal startup error) are rolled back and return a
   generic `500`. They do not count as radio failures and do not invalidate the
-  reservation. A transient beacon setup failure is first retried once
-  internally; if the retry also fails, it counts as a radio failure
-  (`409 / 1001`).
+  reservation. Radio failures while starting the AP are first retried
+  internally (up to 3 starts); only if all fail does the request count as a
+  radio failure (`409 / 1001`).
 - **Unsafe cleanup**: if Wi-Lab cannot roll back a failed start, it invalidates
   the reservation and quarantines the antenna immediately (`500 / 1003`), even
   on the first attempt.
