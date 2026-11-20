@@ -176,6 +176,8 @@ def execute_command(
     Raises:
         CommandError: If command fails and check=True
     """
+    if not cmd:
+        raise CommandError("Empty command")
     try:
         effective_timeout = bounded_timeout(
             timeout if exact_timeout else max(5.0, timeout)

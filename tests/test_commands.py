@@ -423,10 +423,13 @@ class TestCommandIntegration:
 class TestCommandEdgeCases:
     """Tests for edge cases in command execution."""
     
-    def test_empty_command_list(self):
+    def test_empty_command_list(self, monkeypatch):
         """Test handling of empty command list."""
-        with pytest.raises((CommandError, IndexError)):
+        run = MagicMock()
+        monkeypatch.setattr(subprocess, "run", run)
+        with pytest.raises(CommandError, match="Empty command"):
             execute_command([])
+        run.assert_not_called()
     
     def test_command_with_pipes(self):
         """Test command with complex arguments."""
