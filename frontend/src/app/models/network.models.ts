@@ -53,6 +53,8 @@ export interface NetworkStatus {
   hidden?: boolean;
   subnet?: string;
   internet_enabled: boolean;
+  captive_portal?: boolean;
+  captive_portal_url?: string | null;
   tx_power?: {
     requested_level: number;
     reported_level?: number;
@@ -82,12 +84,14 @@ export interface NetworkCreateRequest {
   band: string;
   hidden?: boolean;
   internet_enabled?: boolean;
+  captive_portal?: boolean;
   tx_power_level: number;
 }
 
 export interface ClientInfo {
   mac: string;
   ip: string;
+  captive_authorized?: boolean;
 }
 
 export interface ApiErrorDetail {

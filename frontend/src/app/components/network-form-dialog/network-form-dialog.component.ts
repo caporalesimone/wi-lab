@@ -8,6 +8,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { NetworkCreateRequest } from '../../models/network.models';
 
 @Component({
@@ -22,7 +23,8 @@ import { NetworkCreateRequest } from '../../models/network.models';
     MatSelectModule,
     MatCheckboxModule,
     MatButtonModule,
-    MatIconModule
+    MatIconModule,
+    MatTooltipModule
   ],
   templateUrl: './network-form-dialog.component.html',
   styleUrl: './network-form-dialog.component.scss'
@@ -49,6 +51,7 @@ export class NetworkFormDialogComponent {
       password: ['12345678', [Validators.minLength(8), Validators.maxLength(63)]],
       hidden: [false],
       internet_enabled: [true],
+      captive_portal: [false],
       tx_power_level: [4, [Validators.required, Validators.min(1), Validators.max(4)]]
     });
 
@@ -94,6 +97,7 @@ export class NetworkFormDialogComponent {
         password: value.encryption !== 'open' ? value.password : undefined,
         hidden: value.hidden,
         internet_enabled: value.internet_enabled,
+        captive_portal: value.captive_portal,
         tx_power_level: value.tx_power_level
       };
       this.dialogRef.close(request);

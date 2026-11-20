@@ -124,7 +124,8 @@ class NetworkWatchdog:
             request = NetworkCreateRequest(
                 ssid=status.ssid, password=status.password, channel=channel,
                 encryption=status.encryption, band=band, hidden=bool(status.hidden),
-                internet_enabled=status.internet_enabled, tx_power_level=status.tx_power_level,
+                internet_enabled=status.internet_enabled, captive_portal=status.captive_portal,
+                tx_power_level=status.tx_power_level,
             )
             self.manager.start_network(
                 device, request, reservation.expires_at, allow_internal_retry=False,
@@ -164,6 +165,7 @@ class NetworkWatchdog:
             if not self._cancelled(reservation):
                 self.manager.dhcp_server.start(
                     device, status.interface, status.subnet, self.manager.config.dns_server,
+                    **({"captive_dns": True} if status.captive_portal else {}),
                 )
                 if not self.manager.dhcp_server.is_running(device):
                     raise DhcpServerError("Restarted DHCP process is not running")

@@ -1,6 +1,6 @@
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from .wifi.channels import is_valid_channel_for_band
 
@@ -13,6 +13,13 @@ class NetworkCreateRequest(BaseModel):
     band: str = Field(pattern=r"^(2\.4ghz|5ghz)$")
     hidden: bool = False
     internet_enabled: bool | None = None
+    captive_portal: bool = Field(
+        False,
+        description="Optional; omitted or false means no captive portal. When true, new clients "
+        "are put behind a simulated captive portal: DNS and HTTP are redirected to a portal page "
+        "on the gateway and other traffic is blocked until the client presses its sign-in button. "
+        "Only that client is released.",
+    )
     tx_power_level: int = Field(..., ge=1, le=4, description="TX power level (1=low, 4=max)")
 
     # Swagger/OpenAPI example
@@ -26,6 +33,7 @@ class NetworkCreateRequest(BaseModel):
                     "encryption": "wpa2",
                     "band": "2.4ghz",
                     "internet_enabled": True,
+                    "captive_portal": False,
                     "tx_power_level": 4
                 }
             ]
@@ -75,6 +83,16 @@ class NetworkCreateRequest(BaseModel):
 class ClientInfo(BaseModel):
     mac: str
     ip: str
+    captive_authorized: bool | None = Field(
+        None, description="Present only with a captive portal: true once the client has signed in",
+    )
+
+    @model_serializer(mode="wrap")
+    def _omit_without_portal(self, handler):
+        data = handler(self)
+        if isinstance(data, dict) and data.get("captive_authorized") is None:
+            data.pop("captive_authorized", None)
+        return data
 
 
 class NetworkTxPower(BaseModel):
@@ -96,6 +114,8 @@ class NetworkStatus(BaseModel):
     hidden: bool | None = None
     subnet: str | None = None
     internet_enabled: bool = False
+    captive_portal: bool = False
+    captive_portal_url: str | None = Field(None, description="Portal page URL, reachable from the AP clients")
     tx_power_level: int | None = Field(None, description="Internal requested TX power level 1-4", exclude=True)
     tx_power: NetworkTxPower | None = Field(None, description="Requested and reported TX power details")
     expires_at: str | None = Field(

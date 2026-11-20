@@ -88,6 +88,7 @@ Content-Type: application/json
   "password": "testpass123",
   "hidden": false,
   "internet_enabled": true,
+  "captive_portal": false,
   "tx_power_level": 4
 }
 ```
@@ -102,6 +103,7 @@ Content-Type: application/json
 | `tx_power_level` | yes | `1` (low) to `4` (maximum). |
 | `hidden` | no | Default `false`. |
 | `internet_enabled` | no | Default from the server configuration. Enables NAT to the upstream network. |
+| `captive_portal` | no | Default `false`; omitting it keeps the previous behavior. Puts clients behind a simulated captive portal; see [2.7](#27-captive-portal). |
 
 Validate the body on the client side when possible: an invalid body returns
 `422` without touching the antenna.
@@ -206,6 +208,43 @@ A success resets the counter. Further rules:
   allocatable.
 - To stop the AP but keep the antenna: `DELETE .../network`. To finish: release
   the reservation.
+
+### 2.7 Captive portal
+
+With `"captive_portal": true`, each client that joins the AP is held behind a
+simple portal until it signs in. Use it to check how a device detects a
+captive network. Without the flag, nothing changes.
+
+Until the client signs in:
+
+- DNS queries are answered by the AP with the gateway address, so connectivity
+  checks resolve and reach the portal even when `internet_enabled` is `false`.
+- HTTP requests on port 80, to any host, are redirected (`302`) to the portal
+  page, `http://<gateway>/`.
+- Any other forwarded traffic, including HTTPS, is rejected.
+
+The page, titled **WiLab Captive Portal**, shows the SSID, band and channel,
+subnet, gateway, DHCP range, the client's IP and MAC address, whether the
+network has Internet access, and when the network expires. Its **Sign in**
+button releases only the client that pressed it, identified by its MAC and IP
+address. Other clients stay on the portal. There is no API to sign a client
+in.
+
+After sign-in, the client uses the DNS server from the configuration and the
+network's normal Internet setting: with `internet_enabled: false` it stays
+offline. `GET .../network` reports `captive_portal`, `captive_portal_url` and,
+for each client, `captive_authorized`.
+
+Notes:
+
+- Clients are detected through their HTTP connectivity checks. Wi-Lab does not
+  advertise the portal via DHCP option 114 (RFC 8910) and does not intercept
+  HTTPS.
+- A client that obtains a new IP address, or changes its MAC address, must
+  sign in again. Sign-ins are cleared when the AP stops, the reservation ends
+  or the watchdog restarts the AP.
+- The portal listens on port 80 and dnsmasq answers DNS on port 53, both on
+  the AP gateway address only.
 
 ## 3. Sequence diagram
 
@@ -316,7 +355,7 @@ Details and diagrams are in [Architecture](architecture.md).
   in time. After successful rollback the first two produce `409 / 1001`; the
   third invalidates the reservation (`500 / 1003`).
 - **Unclassified failures** (for example `hostapd` exiting with code 1, a
-  gateway or DHCP error) are rolled back and return a generic `500`. They do not
+  gateway, DHCP or captive portal startup error) are rolled back and return a generic `500`. They do not
   count as radio failures and do not invalidate the reservation.
 - **Unsafe cleanup**: if Wi-Lab cannot roll back a failed start, it invalidates
   the reservation and quarantines the antenna immediately (`500 / 1003`), even

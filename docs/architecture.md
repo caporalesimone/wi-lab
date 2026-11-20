@@ -34,6 +34,7 @@ flowchart LR
             NAT["NatManager"]
             ISO["IsolationManager"]
             QOS["QosManager / QosProfileManager"]
+            CP["CaptivePortal<br/>portal web server"]
         end
     end
 
@@ -60,11 +61,13 @@ flowchart LR
     NM --> NAT
     NM --> ISO
     NM --> QOS
+    NM --> CP
     HA --> HOSTAPD
     HA --> IPIW
     DH --> DNSMASQ
     NAT --> IPT
     ISO --> IPT
+    CP --> IPT
     QOS --> TC
     DISC --> IPIW
     CM --> IPIW
@@ -89,6 +92,7 @@ flowchart LR
 | `wilab/wifi/channels.py` | Regulatory domain and per-interface channel cache. |
 | `wilab/network/dhcp.py` | dnsmasq configuration and process tracking. |
 | `wilab/network/nat.py`, `isolation.py` | iptables NAT to the upstream interface and inter-AP isolation. |
+| `wilab/network/captive.py` | Optional captive portal: per-AP redirection chains and portal web server. |
 | `wilab/network/qos.py`, `qos_profile.py` | Traffic shaping (HTB, netem, IFB) and QoS profiles. |
 | `wilab/network/commands.py` | Bounded command execution, foreground process ownership. |
 
@@ -119,6 +123,7 @@ sequenceDiagram
     U->>L: lifespan startup
     L->>C: get_config() (runtime instance)
     L->>NM: get_manager() creates NetworkManager
+    L->>L: remove leftover NAT and captive portal rules
     NM->>NM: start expiry thread (every 5 s)
     L->>L: set regulatory domain (iw reg set)
     L->>D: start device discovery
@@ -342,6 +347,9 @@ sequenceDiagram
     HA-->>NM: AP enabled for this interface and SSID
     NM->>OS: ip addr add gateway
     NM->>DH: start: write config, dnsmasq --test, launch, read PID
+    opt captive_portal
+        NM->>FW: install portal chains, then start the portal web server
+    end
     alt any step failed
         NM->>NM: release_device rollback
         NM->>NM: internal retry once, or raise StartupFailure
@@ -397,7 +405,8 @@ flowchart LR
     A["clear QoS profile and tc rules"] --> B["stop hostapd: terminate, then kill<br/>remove config and ctrl socket"]
     B --> C["interface down, managed mode, flush addresses"]
     C --> D["disable NAT (firewall lock)"]
-    D --> E["remove isolation rules"]
+    D --> CPS["stop captive portal: web server,<br/>then chains and sign-ins"]
+    CPS --> E["remove isolation rules"]
     E --> F["stop dnsmasq"]
     F --> G{"any step failed?"}
     G -->|no| H["remove from active networks"]
@@ -406,6 +415,60 @@ flowchart LR
 
 Every step runs even if an earlier one fails, and errors are reported together.
 The radio is always left `managed` and `DOWN` between networks.
+
+### 5.4 Captive portal
+
+`captive_portal` is optional in the create request; omitted or `false`, none of
+the following happens. When `true`, after DHCP starts Wi-Lab builds a
+`CaptivePortal` for the AP. A failure here is an unclassified startup failure:
+the start is rolled back and the client gets a generic `500`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant ST as Station
+    participant DN as dnsmasq (captive DNS)
+    participant FW as iptables wilab-cp chains
+    participant PS as Portal web server (gateway:80)
+    participant NM as NetworkManager
+
+    ST->>DN: DHCP: address, router, configured DNS server
+    ST->>FW: DNS query to the configured server
+    FW->>DN: DNAT to gateway:53
+    DN-->>ST: every name resolves to the gateway
+    ST->>FW: HTTP connectivity check (any host)
+    FW->>PS: DNAT to gateway:80
+    PS-->>ST: 302 to the portal page on the gateway
+    ST->>FW: HTTPS or other forwarded traffic
+    FW-->>ST: rejected (TCP reset or ICMP)
+    ST->>PS: GET / shows network and client details
+    ST->>PS: POST /login (Sign in)
+    PS->>NM: MAC for source IP: DHCP lease, else neighbour table
+    PS->>FW: insert RETURN for this MAC + IP in both chains (firewall lock)
+    PS-->>ST: 303 to the portal: "signed in"
+    Note over ST,FW: this station now uses the configured DNS and the AP's<br/>normal Internet setting; other stations stay captive
+```
+
+| Element | Captive AP only |
+|---|---|
+| dnsmasq | Listens on gateway:53 (`except-interface=lo`), answers `address=/#/<gateway>`. Clients still receive the configured DNS server. |
+| `nat` chain `wilab-cp-<interface>` | Jumped to first from `PREROUTING` for traffic entering the AP. Per-client `RETURN` rules, then DNAT of UDP/TCP 53 to gateway:53 and TCP 80 to gateway:80. |
+| `filter` chain `wilab-cp-<interface>` | Jumped to first from `FORWARD`. Per-client `RETURN` rules, then reject everything else. |
+| Portal web server | Threaded HTTP server bound to gateway:80 only. `GET /` renders the page, `POST /login` signs in the caller, anything else redirects to the page. |
+
+- Chains are complete before the jump rules are added, so unsigned traffic is
+  never forwarded. Signed-in clients bypass only the portal chains: Internet
+  blocks and NAT behave as for any AP, so with `internet_enabled: false` a
+  signed-in client stays offline.
+- Sign-ins are in memory. Teardown stops the web server and waits for its
+  requests, then removes the chains; a sign-in cannot add rules afterwards.
+  The watchdog restarts a captive AP as captive, without previous sign-ins;
+  a DHCP-only restart keeps the captive DNS mode.
+- At startup the lifespan removes any `wilab-cp-*` chain and `wilab-captive-*`
+  jump left by a previous process.
+- Clients are identified by their HTTP connectivity checks; DHCP option 114
+  (RFC 8910) is not sent and HTTPS is not intercepted. A connection redirected
+  before sign-in keeps its translation until it closes.
 
 ## 6. Retry layers
 
@@ -560,6 +623,7 @@ no hostapd, dnsmasq, iptables or tc state is left behind.
 | hostapd configuration and control socket | `/tmp/wilab-hostapd/ap-*/` | Removed at teardown. Contains the WPA passphrase. |
 | dnsmasq configuration, leases, PID | `/tmp/wilab-dnsmasq/` | Removed at teardown. |
 | NAT and isolation rules | iptables `nat` and `FORWARD` | Removed at teardown. Leftovers are reported at startup. |
+| Captive portal chains and sign-ins | iptables `wilab-cp-<interface>` chains; sign-ins in process memory | Removed at teardown and at startup. |
 | Traffic shaping | tc qdiscs, IFB devices | Removed at teardown. |
 
 The upstream interface is resolved from the default route on first use and

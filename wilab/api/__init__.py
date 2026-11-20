@@ -11,6 +11,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ..network.captive import remove_stale_captive_rules
 from ..reservation import ReservationCleanupError
 from ..version import __version__
 from ..wifi.channels import set_regulatory_domain
@@ -86,6 +87,7 @@ async def lifespan(app: FastAPI):
     cfg = get_config()
     manager = get_manager(cfg)
     manager.nat_manager.remove_stale_rules()
+    remove_stale_captive_rules()
 
     # Set regulatory domain before any channel query
     set_regulatory_domain(cfg.country_code)

@@ -15,6 +15,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### Features
 
+- Add an optional captive portal to AP creation (`captive_portal`). Its sign-in button releases only the client that pressed it.
 - Block DFS channels in the channel listing and reject AP creation on them by default; opt in with `allow_dfs_channels: true`.
 - Run backend tests, type checks and the frontend build in CI and publish API documentation.
 - Export the current API schema and offline Swagger/ReDoc documentation.

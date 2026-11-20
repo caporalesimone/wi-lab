@@ -11,6 +11,7 @@ from itertools import islice
 
 from ..config import AppConfig
 from ..models import ClientInfo, NetworkCreateRequest, NetworkStatus, NetworkTxPower
+from ..network.captive import CaptivePortal, CaptivePortalError
 from ..network.commands import (
     CommandError,
     command_deadline,
@@ -65,6 +66,7 @@ class NetworkManager:
         self.nat_manager = NatManager(upstream_interface=config.upstream_interface)
         self.hostapd_manager = HostapdManager()
         self.isolation_manager = IsolationManager()
+        self.captive_portals: dict[str, CaptivePortal] = {}
         self._channel_manager = ChannelManager(allow_dfs_channels=config.allow_dfs_channels)
         self.qos_manager: QosManager | None = None
         self.qos_profile_manager: QosProfileManager | None = None
@@ -147,6 +149,7 @@ class NetworkManager:
                 device_id in self.active
                 or device_id in self.hostapd_manager._instances
                 or device_id in self.dhcp_server.list_active()
+                or device_id in self.captive_portals
                 or firewall_pending
             ):
                 self.stop_network(device_id)
@@ -292,14 +295,26 @@ class NetworkManager:
                         interface=cfg_net.interface,
                         subnet=subnet,
                         dns_server=self.config.dns_server,
+                        **({"captive_dns": True} if req.captive_portal else {}),
                     )
+                    if req.captive_portal:
+                        stage = "start captive portal"
+                        portal = CaptivePortal(
+                            interface=cfg_net.interface, net_id=device_id, gateway=str(net[1]),
+                            context=lambda: self._portal_context(device_id),
+                            lookup_mac=lambda ip: self._client_mac(device_id, ip),
+                            firewall_lock=self._firewall_lock,
+                        )
+                        # Tracked before start so a rollback removes partial rules.
+                        self.captive_portals[device_id] = portal
+                        portal.start()
                     if retrying and (
                         time.monotonic() >= retry_deadline
                         or (expires_at_timestamp is not None and time.time() >= expires_at_timestamp)
                     ):
                         stage = "complete startup retry"
                         raise CommandError("Startup retry deadline expired")
-            except (HostapdError, CommandError, DhcpServerError) as e:
+            except (HostapdError, CommandError, DhcpServerError, CaptivePortalError) as e:
                 logger.error("Failed to %s for %s: %s", stage, device_id, e)
                 try:
                     self.release_device(device_id)
@@ -357,6 +372,8 @@ class NetworkManager:
             hidden=req.hidden,
             subnet=subnet,
             internet_enabled=internet_enabled,
+            captive_portal=req.captive_portal,
+            captive_portal_url=self.captive_portals[device_id].url if req.captive_portal else None,
             tx_power_level=tx_power_level,
             expires_at=expires_at_str,
             expires_in=expires_in,
@@ -434,6 +451,15 @@ class NetworkManager:
             except Exception as e:
                 logger.error(f"Error disabling NAT: {e}")
                 errors.append(f"NAT: {e}")
+
+        portal = self.captive_portals.get(device_id)
+        if portal is not None:
+            try:
+                portal.stop()
+                self.captive_portals.pop(device_id, None)
+            except CaptivePortalError as e:
+                logger.error("Error stopping captive portal: %s", e)
+                errors.append(f"captive portal: {e}")
         
         # Remove isolation rules
         if subnet:
@@ -660,37 +686,64 @@ class NetworkManager:
         if not connected_macs:
             return clients
 
-        # Build MAC -> IP mapping from DHCP lease file (only valid leases)
-        mac_to_ip = {}
-        now = int(time.time())
-        dhcp_info = self.dhcp_server.get_subnet_info(device_id)
-        if dhcp_info:
-            lease_file = dhcp_info.get('lease_file')
-            if lease_file and os.path.exists(lease_file):
-                try:
-                    with open(lease_file, 'r') as f:
-                        for line in f:
-                            parts = line.strip().split()
-                            if len(parts) >= 3:
-                                try:
-                                    lease_expiry = int(parts[0])
-                                except Exception:
-                                    continue
-                                # Only include valid (non-expired) leases
-                                if lease_expiry > now:
-                                    mac = parts[1].lower()
-                                    ip = parts[2]
-                                    mac_to_ip[mac] = ip
-                except Exception as e:
-                    logger.warning(f"Could not read lease file: {e}")
+        mac_to_ip = self._leases(device_id)
+        portal = self.captive_portals.get(device_id)
 
         # Build client list: only include clients with BOTH WiFi association AND valid DHCP lease
         for mac in connected_macs:
             client_ip = mac_to_ip.get(mac)
             if client_ip:  # Only count as connected if they have a valid IP lease
-                clients.append(ClientInfo(mac=mac, ip=client_ip))
+                clients.append(ClientInfo(
+                    mac=mac, ip=client_ip,
+                    captive_authorized=portal.is_authorized(client_ip, mac) if portal else None,
+                ))
         
         return clients
+
+    def _leases(self, device_id: str) -> dict[str, str]:
+        """Return MAC -> IP for unexpired DHCP leases of a network."""
+        mac_to_ip: dict[str, str] = {}
+        now = int(time.time())
+        dhcp_info = self.dhcp_server.get_subnet_info(device_id)
+        lease_file = dhcp_info.get("lease_file") if dhcp_info else None
+        if lease_file and os.path.exists(lease_file):
+            try:
+                with open(lease_file) as f:
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) >= 3 and parts[0].isdigit() and int(parts[0]) > now:
+                            mac_to_ip[parts[1].lower()] = parts[2]
+            except OSError as e:
+                logger.warning(f"Could not read lease file: {e}")
+        return mac_to_ip
+
+    def _client_mac(self, device_id: str, ip: str) -> str | None:
+        """Identify a client by IP from its DHCP lease, else from the neighbour table."""
+        mac = next((mac for mac, lease_ip in self._leases(device_id).items() if lease_ip == ip), None)
+        if mac is not None:
+            return mac
+        try:
+            neighbour = execute_ip(["neigh", "show", ip, "dev", device_id]).split()
+        except CommandError:
+            return None
+        return neighbour[neighbour.index("lladdr") + 1] if "lladdr" in neighbour[:-1] else None
+
+    def _portal_context(self, device_id: str) -> dict[str, str]:
+        """Network details shown on the captive portal page."""
+        st = self.active.get(device_id)
+        dhcp_info = self.dhcp_server.get_subnet_info(device_id) or {}
+        if st is None:
+            return {"dhcp_range": str(dhcp_info.get("dhcp_range", "")).replace(",", " - ")}
+        expires = getattr(st, "_expires_at_timestamp", None)
+        return {
+            "ssid": st.ssid or "",
+            "radio": f"{st.band} / {st.channel}",
+            "subnet": st.subnet or "",
+            "dhcp_range": str(dhcp_info.get("dhcp_range", "")).replace(",", " - "),
+            "internet": "enabled after sign-in" if st.internet_enabled
+            else "disabled on this network (sign-in does not give Internet access)",
+            "expires": format_utc_timestamp(expires) or "no expiry",
+        }
 
     def services_status(self) -> dict:
         """Return minimal service status (dnsmasq, hostapd, iptables)."""

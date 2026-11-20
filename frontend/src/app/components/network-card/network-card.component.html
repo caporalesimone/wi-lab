@@ -70,6 +70,10 @@
           <span class="label">Band:</span>
           <span class="value">{{ status?.band }}</span>
         </div>
+        <div class="info-row" *ngIf="status?.captive_portal">
+          <span class="label">Captive portal:</span>
+          <span class="value">{{ status?.captive_portal_url }}</span>
+        </div>
         <div class="info-row" *ngIf="status?.tx_power?.requested_level !== undefined && status?.tx_power?.requested_level !== null"
           matTooltip="The reported level comes from the driver and does not guarantee actual transmitted power.">
           <span class="label">TX Power requested/reported:</span>
@@ -86,12 +90,14 @@
                 <tr>
                   <th>IP Address</th>
                   <th>MAC Address</th>
+                  <th *ngIf="status?.captive_portal">Portal</th>
                 </tr>
               </thead>
               <tbody>
                 <tr *ngFor="let client of clients">
                   <td>{{ client.ip }}</td>
                   <td>{{ client.mac }}</td>
+                  <td *ngIf="status?.captive_portal">{{ client.captive_authorized ? 'Signed in' : 'Not signed in' }}</td>
                 </tr>
               </tbody>
             </table>

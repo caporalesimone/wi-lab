@@ -47,7 +47,7 @@ def _test_config_env(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_network_operations(monkeypatch, tmp_path):
     """Auto-mock network operations that require root privileges."""
-    from wilab.network import commands, dhcp, nat, subnet
+    from wilab.network import captive, commands, dhcp, nat, subnet
     from wilab.wifi import channels, hostapd, interface, manager
     
     # Mock WiFi interface validation (requires real hardware)
@@ -230,6 +230,21 @@ Band 2:
     monkeypatch.setattr(dhcp, "execute_command", mock_execute_command)
     monkeypatch.setattr(nat, "execute_command", mock_execute_command)
     monkeypatch.setattr(subnet, "execute_command", lambda cmd, **kwargs: "[]")
+    monkeypatch.setattr(captive, "execute_command", mock_execute_command)
+
+    class _UnboundPortalServer:
+        """Stands in for the portal web server, which would bind the AP gateway."""
+
+        def serve_forever(self) -> None:
+            pass
+
+        def shutdown(self) -> None:
+            pass
+
+        def server_close(self) -> None:
+            pass
+
+    monkeypatch.setattr(captive.CaptivePortal, "_open_server", lambda self: _UnboundPortalServer())
     
     # Patch commands
     monkeypatch.setattr(commands, "execute_ip", mock_execute_ip)

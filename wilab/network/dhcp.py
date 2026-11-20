@@ -69,7 +69,7 @@ class DhcpServer:
         gateway: str,
         dhcp_range: str,
         lease_file: str,
-        dns_server: str, *, probe: bool = False,
+        dns_server: str, *, probe: bool = False, captive_dns: bool = False,
     ) -> str:
         """
         Generate dnsmasq configuration for an interface.
@@ -79,6 +79,9 @@ class DhcpServer:
             gateway: Gateway IP address (e.g., "192.168.10.1")
             dhcp_range: DHCP range (e.g., "192.168.10.10,192.168.10.250")
             dns_server: DNS server IP address (e.g., "192.168.10.21")
+            captive_dns: Answer every DNS query on the gateway with the gateway
+                address. Clients still receive ``dns_server``; the captive
+                portal redirects only unauthorized clients' queries here.
             
         Returns:
             dnsmasq configuration as string
@@ -101,9 +104,14 @@ class DhcpServer:
                 f"dhcp-option=option:router,{gateway}", f"dhcp-option=option:dns-server,{dns_server}",
             ])
         
+        if captive_dns:
+            # --interface implicitly adds lo; exclude it so several portals can coexist.
+            config_lines.extend(["except-interface=lo", f"address=/#/{gateway}"])
+        else:
+            config_lines.append("port=0")  # DHCP-only, avoids 127.0.0.1 conflicts
+
         # Minimal additional settings
         config_lines.extend([
-            "port=0",    # Disable DNS server; DHCP-only to avoid 127.0.0.1 conflicts
             "no-resolv",  # Don't read /etc/resolv.conf
             "no-poll",    # Don't poll /etc/resolv.conf for changes
             "log-dhcp",   # Log DHCP transactions for debugging
@@ -116,7 +124,7 @@ class DhcpServer:
         net_id: str,
         interface: str,
         subnet: str,
-        dns_server: str, *, probe: bool = False,
+        dns_server: str, *, probe: bool = False, captive_dns: bool = False,
     ) -> dict:
         """
         Start DHCP server for a network interface with static subnet configuration.
@@ -151,7 +159,7 @@ class DhcpServer:
                 gateway_addr,
                 dhcp_range,
                 lease_file,
-                dns_server, probe=probe,
+                dns_server, probe=probe, captive_dns=captive_dns,
             )
             
             # Write config to file

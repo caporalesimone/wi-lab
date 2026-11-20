@@ -39,7 +39,24 @@ iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE
 **Impact:** Controls traffic routing between interfaces  
 **Reversible:** Yes - removed when networks stop
 
-### 4. WiFi Interface State
+### 4. Captive Portal Rules (iptables)
+
+**What:** Per-AP chains `wilab-cp-<interface>` in the `nat` and `filter` tables, jumped
+to from `PREROUTING` and `FORWARD` (comment `wilab-captive-<interface>`)  
+**When:** Network created with `captive_portal: true`  
+**Impact:** Unsigned clients' DNS and HTTP are redirected to the AP gateway and
+other forwarded traffic is rejected. Signing in adds a `RETURN` rule for that
+client's MAC and IP only.  
+**Reversible:** Yes - chains are removed when the network stops; stale chains
+are removed when Wi-Lab starts
+
+```bash
+# Inspect captive portal rules
+sudo iptables -t nat -S | grep wilab-cp
+sudo iptables -S | grep wilab-cp
+```
+
+### 5. WiFi Interface State
 
 **What:** Interface switched to AP mode  
 **When:** Network is created  
