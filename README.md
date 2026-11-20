@@ -86,7 +86,7 @@ min_timeout: 60                         # 1 min (hard floor: 10 s)
 allow_unlimited_reservation: false      # allow duration_seconds=0
 
 # Networking
-dhcp_base_network: "192.168.120.0/24"   # MUST NOT overlap with host network!
+dhcp_base_network: "192.168.120.0/24"   # Starting subnet for AP allocation
 upstream_interface: "auto"
 dns_server: "208.67.222.222"
 internet_enabled_by_default: true
@@ -104,7 +104,7 @@ Wi-Lab discovers Wi-Fi interfaces automatically (USB or built-in) and manages ev
 
 Wi-Lab starts without antennas and a discovery service adds them: the first scan runs as soon as the API starts, then it repeats every 5 seconds while no antenna is available and every 30 seconds afterwards, for the whole life of the service. Antennas plugged in later are therefore added automatically within about 30 seconds, without a restart. Each scan re-reads `networks` from `config.yaml` (display names and `disable`) and only adds new AP-capable radios; antennas already in the pool are never removed or renamed and their reservations are not affected. Disabling or renaming an antenna that is already in use requires a service restart.
 
-> **Warning:** `dhcp_base_network` must use a subnet different from your host LAN. A conflict will break host networking and may require a physical reboot.
+Wi-Lab skips `/24` subnets that overlap the host network when starting an AP.
 
 ---
 

@@ -86,6 +86,38 @@ class TestSubnetResolution:
         assert first == '192.168.120.0/24'
         assert second == '192.168.121.0/24'
 
+    def test_skip_host_network_without_reassigning_other_antennas(self, monkeypatch):
+        from ipaddress import IPv4Network
+
+        cfg = load_config()
+        cfg.dhcp_base_network = "192.168.9.0/24"
+        cfg.networks.append(NetworkEntry(interface="wlan1", display_name="extra"))
+        host_routes = {IPv4Network("192.168.10.0/24")}
+        monkeypatch.setattr("wilab.wifi.manager.host_ipv4_networks", lambda: host_routes)
+        mgr = NetworkManager(cfg)
+        # A later antenna can start first without taking the first antenna's slot.
+        assert mgr._get_subnet("wlan1") == "192.168.11.0/24"
+        assert mgr._get_subnet("wls16") == "192.168.9.0/24"
+        host_routes.add(IPv4Network("192.168.12.0/23"))
+        host_routes.add(IPv4Network("192.168.11.0/24"))
+        assert mgr._get_subnet("wlan1") == "192.168.14.0/24"
+        assert mgr._get_subnet("wls16") == "192.168.9.0/24"
+
+    def test_no_safe_subnet_does_not_start_ap(self, monkeypatch):
+        from ipaddress import IPv4Network
+        from unittest.mock import Mock
+
+        mgr = NetworkManager(load_config())
+        monkeypatch.setattr(
+            "wilab.wifi.manager.host_ipv4_networks", lambda: {IPv4Network("192.168.0.0/16")},
+        )
+        start = Mock()
+        monkeypatch.setattr(mgr.hostapd_manager, "start", start)
+        req = NetworkCreateRequest(ssid="TestAP", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)
+        with pytest.raises(ValueError, match="No available /24 AP subnet"):
+            mgr.start_network("wls16", req)
+        start.assert_not_called()
+
 
 class TestNetworkLifecycle:
     """Tests for network start/stop lifecycle."""
@@ -323,14 +355,18 @@ class TestNetworkLifecycle:
         cfg = load_config()
         mgr = NetworkManager(cfg)
         events = []
-        checked = []
         
         def mock_dhcp_start(*args, **kwargs):
+            assert kwargs["subnet"] == "192.168.121.0/24"
             return {'gateway': '192.168.10.1'}
         
+        from ipaddress import IPv4Network
+
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
         monkeypatch.setattr(mgr.nat_manager, 'block_internet', lambda *a: events.append('block'))
-        monkeypatch.setattr("wilab.wifi.manager.warn_subnet_collisions", lambda subnet, owned: checked.append(subnet))
+        monkeypatch.setattr(
+            "wilab.wifi.manager.host_ipv4_networks", lambda: {IPv4Network("192.168.120.0/24")},
+        )
         monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: events.append('ap'))
         
         req = NetworkCreateRequest(
@@ -345,7 +381,7 @@ class TestNetworkLifecycle:
         status = mgr.start_network('wls16', req)
         assert status.internet_enabled is False
         assert events == ['block', 'ap']
-        assert checked == [mgr._get_subnet('wls16')]
+        assert status.subnet == "192.168.121.0/24"
 
     def test_failed_hostapd_stop_keeps_internet_block(self, monkeypatch):
         mgr = NetworkManager(load_config())

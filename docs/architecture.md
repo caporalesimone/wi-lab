@@ -200,10 +200,11 @@ flowchart TD
 An interface still being renamed by udev is skipped, never saved under its
 temporary kernel name; the next scan picks it up with its final name.
 
-Each antenna gets a `/24` subnet: the third octet of `dhcp_base_network` plus
-its position in the pool. New antennas are **appended**, so the subnets of
-existing antennas never change. The order therefore depends on when antennas
-are found: antennas found by the same scan follow the configured order.
+The AP allocator scans `/24` subnets from `dhcp_base_network` in antenna pool
+order, skipping overlaps with host IPv4 routes and subnets assigned to other
+antennas. It checks routes before a new AP start and reuses the antenna's previous
+assignment if still safe. Newly discovered antennas are appended; active APs
+keep their subnet. Antennas found by the same scan follow the configured order.
 
 ## 3. Concurrency model
 
@@ -328,7 +329,7 @@ sequenceDiagram
     NM->>NM: retry deadline = now + 5 s, capped by expiry
     NM->>NM: known antenna, not already active (409)
     NM->>NM: release_device: clear leftovers of a failed start
-    NM->>NM: subnet from pool index, gateway .1
+    NM->>NM: select available subnet, gateway .1
     NM->>OS: validate interface exists, is wireless, supports AP
     NM->>OS: nmcli device set unmanaged (best effort)
     NM->>HA: start(ssid, channel, band, encryption, ...)

@@ -1,39 +1,27 @@
-"""Read-only checks for conflicts with existing IPv4 routes."""
+"""Read IPv4 networks already in use on the host."""
 
 import json
-import logging
 from ipaddress import IPv4Network
 
 from .commands import CommandError, execute_command
 
-logger = logging.getLogger(__name__)
 
-
-def warn_subnet_collisions(subnet: str, owned_routes: set[tuple[str, str, str]]) -> None:
-    """Warn about overlapping routes, except known connected Wi-Lab AP routes."""
+def host_ipv4_networks() -> set[IPv4Network]:
+    """Include host addresses and routed networks, but not the default route."""
     try:
-        routes = json.loads(execute_command(["ip", "-j", "-4", "route", "show", "table", "all"]))
+        routes = json.loads(execute_command(["ip", "-j", "-4", "route", "show", "table", "all"], timeout=2))
         if not isinstance(routes, list):
             raise TypeError("route output is not a list")
-        target = IPv4Network(subnet)
+        networks = set()
         for route in routes:
             if not isinstance(route, dict):
                 raise TypeError("route entry is not an object")
             dst = route.get("dst", "default")
-            if dst == "default" or route.get("type", "unicast") != "unicast":
+            if dst == "default" or route.get("type", "unicast") not in {"unicast", "local"}:
                 continue
             network = IPv4Network(dst, strict=False)
-            if network.prefixlen == 0 or not target.overlaps(network):
-                continue
-            if (
-                route.get("protocol") == "kernel"
-                and (str(network), route.get("dev"), route.get("prefsrc")) in owned_routes
-            ):
-                continue
-            logger.warning(
-                "Wi-Lab subnet %s overlaps existing route %s (device %s); "
-                "this may disrupt host connectivity",
-                subnet, network, route.get("dev", "unknown"),
-            )
+            if network.prefixlen:
+                networks.add(network)
+        return networks
     except (CommandError, ValueError, TypeError) as exc:
-        logger.warning("Cannot check subnet %s against host routes: %s", subnet, exc)
+        raise ValueError(f"Cannot check AP subnet against host IPv4 routes: {exc}") from exc

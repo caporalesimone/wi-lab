@@ -68,12 +68,7 @@ allow_unlimited_reservation: true
 #   2nd network: 192.168.121.0/24 (gateway: .1, DHCP: .10-.250)
 #   3rd network: 192.168.122.0/24 (gateway: .1, DHCP: .10-.250)
 #
-# *** CRITICAL: Verify this subnet does NOT conflict with your host network! ***
-# Check your host network: ip addr show | grep "inet "
-# Example:
-#   - If host is on 192.168.10.x: use 192.168.120.0/24 for WiFi ✅
-#   - If host is on 192.168.10.x: DON'T use 192.168.10.0/24 for WiFi ❌
-# Subnet conflict can BLOCK SSH access!
+# If a subnet conflicts with the host network, Wi-Lab selects the next available /24.
 dhcp_base_network: "192.168.120.0/24"
 
 # Upstream interface for Internet access (NAT forwarding)

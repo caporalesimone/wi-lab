@@ -232,7 +232,7 @@ Band 2:
     monkeypatch.setattr(hostapd, "start_foreground", reject_real_hostapd)
     monkeypatch.setattr(dhcp, "execute_command", mock_execute_command)
     monkeypatch.setattr(nat, "execute_command", mock_execute_command)
-    monkeypatch.setattr(subnet, "execute_command", lambda cmd: "[]")
+    monkeypatch.setattr(subnet, "execute_command", lambda cmd, **kwargs: "[]")
     
     # Patch commands
     monkeypatch.setattr(commands, "execute_ip", mock_execute_ip)

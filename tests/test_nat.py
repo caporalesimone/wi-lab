@@ -454,7 +454,7 @@ class TestDisableNat:
 
         monkeypatch.setattr("wilab.network.nat.execute_command", fail)
         with pytest.raises(RuntimeError, match="Cannot remove NAT rules"):
-            nat.release_network("wlan0", "test-net", "192.168.120.0/24")
+            nat.release_network("wlan0", "test-net")
         assert nat.has_pending_network("test-net")
         assert len(nat._blocked_rules["test-net"]) == 3
 

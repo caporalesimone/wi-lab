@@ -106,10 +106,11 @@ When network isolation is enabled, Wi-Lab adds rules to explicitly protect SSH c
 
 ## ⚠️ CRITICAL: Subnet Conflicts
 
-Before starting an AP, Wi-Lab checks its assigned IPv4 subnet against host
-routes and logs any overlap or failed check. This diagnostic does not prevent
-startup. Check the journal and choose a non-conflicting DHCP base subnet; the
-default route is not treated as a collision.
+Before starting an AP, Wi-Lab checks host IPv4 routes and skips overlapping `/24`
+subnets. For example, with base `192.168.9.0/24` and host LAN `192.168.10.0/24`,
+the first two APs use `192.168.9.0/24` and `192.168.11.0/24`. The default route is
+not treated as a collision. If routes cannot be read or no subnet is available
+through third octet 255, the AP does not start; existing APs are unaffected.
 
 ### The Problem
 

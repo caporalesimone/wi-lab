@@ -3,6 +3,7 @@ import logging
 import os
 from typing import Dict, Optional, List
 from ipaddress import IPv4Network
+from itertools import islice
 import re
 import threading
 import secrets
@@ -14,7 +15,7 @@ from ..timestamps import format_utc_timestamp
 from ..network.dhcp import DhcpServer, DhcpServerError
 from ..network.nat import NatManager
 from ..network.isolation import IsolationManager
-from ..network.subnet import warn_subnet_collisions
+from ..network.subnet import host_ipv4_networks
 from ..network.qos import QosManager
 from ..network.qos_profile import QosProfileManager
 from .hostapd import HostapdManager, HostapdError, HostapdRadioFailure, HostapdSegfault
@@ -61,6 +62,8 @@ class NetworkManager:
         self._device_locks = {n.device_id: threading.RLock() for n in config.networks}
         self._device_locks_guard = threading.Lock()
         self._firewall_lock = threading.Lock()
+        self._subnet_lock = threading.Lock()
+        self._assigned_subnets: dict[str, IPv4Network] = {}
         self.expire_reservations: Callable[[], None] | None = None
         self.recovery = RadioRecovery(self)
         self.watchdog = NetworkWatchdog(self)
@@ -87,26 +90,36 @@ class NetworkManager:
             logger.warning(f"Could not configure NetworkManager unmanaged for {interface}: {e}")
 
     def _get_subnet(self, device_id: str) -> str:
-        """Assign a /24 subnet by incrementing the third octet from dhcp_base_network."""
-        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
-        if not cfg_net:
+        """Allocate or reuse a non-overlapping /24 before a new AP start."""
+        devices = [n.device_id for n in self.config.networks]
+        if device_id not in devices:
             raise ValueError("Unknown device_id")
 
         base_net = IPv4Network(self.config.dhcp_base_network, strict=False)
         if base_net.prefixlen != 24:
             raise ValueError("dhcp_base_network must be a /24 network")
 
-        try:
-            idx = [n.device_id for n in self.config.networks].index(device_id)
-        except ValueError as exc:
-            raise ValueError("Unknown device_id for subnet allocation") from exc
+        with self._subnet_lock:
+            host_networks = host_ipv4_networks()
+            previous = self._assigned_subnets.get(device_id)
+            if previous is not None and not any(previous.overlaps(route) for route in host_networks):
+                return str(previous)
 
-        octets = str(base_net.network_address).split('.')
-        third_octet = int(octets[2]) + idx
-        if third_octet > 255:
-            raise ValueError(f"Cannot allocate subnet for {device_id}: octet overflow")
-        octets[2] = str(third_octet)
-        return '.'.join(octets) + '/24'
+            assigned = set(self._assigned_subnets.values())
+            candidates = (
+                subnet for subnet in base_net.supernet(new_prefix=16).subnets(new_prefix=24)
+                if subnet >= base_net and subnet not in assigned
+                and not any(subnet.overlaps(route) for route in host_networks)
+            )
+            # Preserve pool order even when a later antenna starts first.
+            earlier_unassigned = sum(
+                device not in self._assigned_subnets for device in devices[:devices.index(device_id)]
+            )
+            subnet = next(islice(candidates, earlier_unassigned, None), None)
+            if subnet is None:
+                raise ValueError(f"No available /24 AP subnet for {device_id} from {base_net}")
+            self._assigned_subnets[device_id] = subnet
+            return str(subnet)
 
     def device_lock(self, device_id: str) -> RLock:
         """Serialize lifecycle operations only for this device."""
@@ -213,15 +226,10 @@ class NetworkManager:
         
         expires_at_str = format_utc_timestamp(expires_at_timestamp)
         
-        # Get subnet (from config or calculated)
+        # Select a safe subnet before configuring the AP or gateway.
         subnet = self._get_subnet(device_id)
         net = IPv4Network(subnet)
         gateway = f"{net[1]}/{net.prefixlen}"
-        owned_routes = {
-            (status.subnet, status.interface, str(IPv4Network(status.subnet)[1]))
-            for status in list(self.active.values()) if status.subnet
-        }
-        warn_subnet_collisions(subnet, owned_routes)
         
         # Validate interface
         logger.info(f"Validating interface {cfg_net.interface}")
@@ -413,7 +421,7 @@ class NetworkManager:
         if cfg_net and hostapd_stopped:
             try:
                 with self._firewall_lock:
-                    self.nat_manager.release_network(cfg_net.interface, device_id, self._get_subnet(device_id))
+                    self.nat_manager.release_network(cfg_net.interface, device_id)
             except Exception as e:
                 logger.error(f"Error disabling NAT: {e}")
                 errors.append(f"NAT: {e}")
@@ -549,7 +557,7 @@ class NetworkManager:
         if not st.internet_enabled:
             try:
                 with self._firewall_lock:
-                    self.nat_manager.enable_nat(cfg_net.interface, device_id, self._get_subnet(device_id))
+                    self.nat_manager.enable_nat(cfg_net.interface, device_id, st.subnet or self._get_subnet(device_id))
                 logger.info(f"NAT rules applied for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to enable NAT: {e}")
@@ -588,7 +596,7 @@ class NetworkManager:
         if st.internet_enabled:
             try:
                 with self._firewall_lock:
-                    self.nat_manager.disable_nat(cfg_net.interface, device_id, self._get_subnet(device_id))
+                    self.nat_manager.disable_nat(cfg_net.interface, device_id, st.subnet or self._get_subnet(device_id))
                 logger.info(f"NAT rules removed for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to disable NAT: {e}")

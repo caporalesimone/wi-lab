@@ -67,16 +67,15 @@ def scan_devices(config: AppConfig, *, quiet: bool = False) -> list[NetworkEntry
         added = scan_new_networks(config, quiet=quiet)
         if not added:
             return []
-        # Appending keeps the index-based DHCP subnets of existing devices unchanged.
+        # Appending preserves the order used for subnet allocation.
         config.networks = [*config.networks, *added]
         reservations.add_devices([n.device_id for n in added])
         manager = get_manager(config)
         manager.watchdog.watch([n.device_id for n in added])
         for net in added:
             logger.info(
-                "Added %s as %r (%s, subnet %s)", net.interface, net.display_name,
+                "Added %s as %r (%s)", net.interface, net.display_name,
                 f"USB port {net.usb_recovery_port}" if net.usb_recovery_port else "non-USB",
-                manager._get_subnet(net.device_id),
             )
         channels = get_channel_manager()
         threading.Thread(

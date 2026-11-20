@@ -321,15 +321,15 @@ class NatManager:
             net_id: Network identifier to match rules (e.g., "ap-01")
         """
         self.block_internet(wifi_interface, net_id)
-        self._remove_nat_rules(wifi_interface, net_id, subnet)
+        self._remove_nat_rules(wifi_interface, net_id)
 
-    def release_network(self, wifi_interface: str, net_id: str, subnet: str) -> None:
+    def release_network(self, wifi_interface: str, net_id: str) -> None:
         if net_id in self._nat_networks:
-            self._remove_nat_rules(wifi_interface, net_id, subnet)
+            self._remove_nat_rules(wifi_interface, net_id)
             self._nat_networks.discard(net_id)
         self.unblock_internet(net_id)
 
-    def _remove_nat_rules(self, wifi_interface: str, net_id: str, subnet: str) -> None:
+    def _remove_nat_rules(self, wifi_interface: str, net_id: str) -> None:
         for table, chain, comment in (
             ("nat", "POSTROUTING", f"wilab-nat-{net_id}"),
             (None, "FORWARD", f"wilab-forward-{net_id}"),
