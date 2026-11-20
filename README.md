@@ -66,6 +66,11 @@ Run `python main.py --validate-config --config config.yaml` to check configurati
 without starting the service or probing antennas. Errors return exit code 1;
 warnings identify ignored settings and the example token without printing secrets.
 
+To share the current API documentation offline, run
+`python scripts/export_api_docs.py --out api-docs`. The resulting ZIP contains
+OpenAPI JSON, Swagger UI and ReDoc. Pinned renderer assets are downloaded when
+building the bundle; the pages themselves do not require a running service.
+
 Key sections:
 
 ```yaml
