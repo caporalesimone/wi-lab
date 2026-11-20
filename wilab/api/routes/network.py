@@ -324,7 +324,7 @@ class ChannelDetail(BaseModel):
         description="Maximum allowed TX power in dBm. "
         "Disabled channels report 0.0 dBm by convention."
     )
-    disabled: bool = Field(description="True if the regulatory domain disables this channel")
+    disabled: bool = Field(description="True if regulatory restrictions or Wi-Lab's DFS policy block this channel")
 
 
 class AvailableChannelsResponse(BaseModel):
@@ -354,7 +354,8 @@ def get_available_channels(
 
     Results are cached in memory after the first query per interface.
     Disabled channels are included with ``max_power_dbm = 0.0`` and
-    ``disabled = true`` so clients can display them as unavailable.
+    ``disabled = true`` so clients can display them as unavailable. This includes
+    channels flagged for radar detection when ``allow_dfs_channels`` is false.
     """
     with hold_reservation(reservation_mgr, reservation):
         device_id = reservation.device_id

@@ -31,6 +31,7 @@ class AppConfig(BaseModel):
     dhcp_base_network: str
     upstream_interface: str = "auto"
     country_code: str = "IT"
+    allow_dfs_channels: bool = False
     dns_server: str = "192.168.10.21"
     internet_enabled_by_default: bool = True
     networks: List[NetworkEntry] = Field(default_factory=list)

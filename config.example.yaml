@@ -113,6 +113,19 @@ internet_enabled_by_default: true
 #   KR  - South Korea        AU  - Australia
 country_code: "IT"
 
+# Whether Wi-Lab allows AP creation on channels that require DFS (5 GHz).
+# DFS protects radar systems. Before an AP can transmit on a DFS channel, the
+# radio may need to listen for radar, usually for about 60 seconds and on some
+# frequencies for several minutes. Radar detected later can also interrupt an AP.
+# - true: Allow DFS channels if the radio and local regulations permit them.
+# - false (default, also if omitted): Exclude channels flagged for radar detection
+#   by the radio. The available-channels API lists them as disabled, and requests for
+#   those channels return HTTP 422 before starting the AP. No automatic fallback.
+# Set to false for shorter, more predictable AP startup, at the cost of fewer
+# 5 GHz channels. This does not turn off radar detection or override regulations.
+# Restart Wi-Lab after changing this setting.
+allow_dfs_channels: false
+
 # ==================================================================================================
 # WiFi DEVICES (auto-discovered)
 # ==================================================================================================

@@ -63,9 +63,16 @@ GET /api/v1/interface/{reservation_id}/network/available-channels
 ```
 
 The response lists 2.4 GHz and 5 GHz channels. Skip entries with
-`"disabled": true` (blocked by the regulatory domain). Prefer non-DFS channels:
-on 5 GHz, channels **52–144** require a radar check (CAC) and can take up to
-**75 seconds** to start instead of a few seconds.
+`"disabled": true`: they are blocked by regulatory restrictions or by the
+server's DFS policy. By default (`allow_dfs_channels: false`, including when
+omitted), Wi-Lab blocks channels flagged by the radio as requiring radar
+detection. A creation request selecting one of those channels returns `422`
+without starting the AP or substituting another channel.
+
+To allow DFS channels where permitted, set `allow_dfs_channels: true` in
+`config.yaml` and restart Wi-Lab. The radar check (CAC) on a DFS channel
+usually takes about 60 seconds; Wi-Lab's current startup timeout for 5 GHz
+channels 52–144 is 75 seconds, so longer checks can time out.
 
 ### 2.2 Build the request
 

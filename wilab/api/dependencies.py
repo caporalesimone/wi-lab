@@ -131,7 +131,7 @@ def get_channel_manager() -> ChannelManager:
     global _channel_manager
     with _singleton_lock:
         if _channel_manager is None:
-            _channel_manager = ChannelManager()
+            _channel_manager = ChannelManager(allow_dfs_channels=get_config().allow_dfs_channels)
         return _channel_manager
 
 

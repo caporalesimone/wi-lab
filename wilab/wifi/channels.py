@@ -10,7 +10,8 @@ Design decision – disabled channels:
     Channels marked ``No IR`` (no initiate radiation) are also treated as
     disabled because they cannot be used in AP mode.
     Both cases are stored with ``max_power_dbm = 0.0`` and
-    ``disabled = True``.  Consumers should check the ``disabled`` flag
+    ``    disabled = True``. The same applies to radar-detection channels when
+    ``allow_dfs_channels`` is disabled.  Consumers should check the ``disabled`` flag
     before using ``max_power_dbm``.
 """
 
@@ -75,6 +76,7 @@ class ChannelInfo:
     frequency_mhz: int
     max_power_dbm: float
     disabled: bool
+    requires_dfs: bool = False
 
 
 @dataclass
@@ -94,7 +96,8 @@ class ChannelManager:
     concurrent API requests don't trigger duplicate ``iw`` queries.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, allow_dfs_channels: bool = False) -> None:
+        self._allow_dfs_channels = allow_dfs_channels
         self._cache: Dict[str, InterfaceChannels] = {}
         self._lock = threading.Lock()
 
@@ -142,6 +145,8 @@ class ChannelManager:
                 f"Channel {channel} is not supported on {interface} for band {band}"
             )
         if match.disabled:
+            if match.requires_dfs and not self._allow_dfs_channels:
+                raise ValueError(f"DFS channel {channel} is disabled by allow_dfs_channels=false")
             raise ValueError(
                 f"Channel {channel} is disabled on {interface} for band {band}"
                 " (regulatory domain restriction)"
@@ -161,13 +166,12 @@ class ChannelManager:
         raise ValueError(f"Cannot determine wiphy for interface {interface}")
 
     @staticmethod
-    def _parse_iw_phy_output(output: str) -> List[ChannelInfo]:
+    def _parse_iw_phy_output(
+        output: str, *, allow_dfs_channels: bool = False,
+    ) -> List[ChannelInfo]:
         """Parse the output of ``iw phy<N> channels`` into a list of channels.
 
-        Handles three cases:
-        - Active:   ``* 2412 MHz [1]`` followed by ``Maximum TX power: 20.0 dBm``
-        - No IR:    same header, with a ``No IR`` line in the block
-        - Disabled: ``* 2484 MHz [14] (disabled)``
+        Radar detection may be marked on the frequency line or on its own line.
         """
         # Matches both active and disabled header lines
         header_re = re.compile(
@@ -181,22 +185,26 @@ class ChannelManager:
         current_disabled = False
         current_power: float = 0.0
         current_no_ir = False
+        current_dfs = False
 
         def _flush() -> None:
-            nonlocal current_freq, current_chan, current_disabled, current_power, current_no_ir
+            nonlocal current_freq, current_chan, current_disabled
+            nonlocal current_power, current_no_ir, current_dfs
             if current_freq is not None and current_chan is not None:
-                disabled = current_disabled or current_no_ir
+                disabled = current_disabled or current_no_ir or (current_dfs and not allow_dfs_channels)
                 channels.append(ChannelInfo(
                     channel=current_chan,
                     frequency_mhz=current_freq,
                     max_power_dbm=0.0 if disabled else current_power,
                     disabled=disabled,
+                    requires_dfs=current_dfs,
                 ))
             current_freq = None
             current_chan = None
             current_disabled = False
             current_power = 0.0
             current_no_ir = False
+            current_dfs = False
 
         for line in output.splitlines():
             hm = header_re.search(line)
@@ -205,13 +213,15 @@ class ChannelManager:
                 current_freq = int(float(hm.group(1)))
                 current_chan = int(hm.group(2))
                 current_disabled = "(disabled)" in line
-                continue
             if current_freq is not None:
+                flags = line.lower()
                 pm = power_re.search(line)
                 if pm:
                     current_power = float(pm.group(1))
-                if "No IR" in line:
+                if "no ir" in flags:
                     current_no_ir = True
+                if "radar detection" in flags:
+                    current_dfs = True
         _flush()
         return channels
 
@@ -219,7 +229,7 @@ class ChannelManager:
         """Query ``iw`` and split results into 2.4 GHz / 5 GHz bands."""
         phy = self._get_phy_for_interface(interface)
         output = execute_iw(["phy" + phy, "channels"])
-        all_channels = self._parse_iw_phy_output(output)
+        all_channels = self._parse_iw_phy_output(output, allow_dfs_channels=self._allow_dfs_channels)
 
         ch_24: List[ChannelInfo] = []
         ch_5: List[ChannelInfo] = []

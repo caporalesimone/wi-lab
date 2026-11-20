@@ -56,7 +56,7 @@ class NetworkManager:
         self.nat_manager = NatManager(upstream_interface=config.upstream_interface)
         self.hostapd_manager = HostapdManager()
         self.isolation_manager = IsolationManager()
-        self._channel_manager = ChannelManager()
+        self._channel_manager = ChannelManager(allow_dfs_channels=config.allow_dfs_channels)
         self.qos_manager: QosManager | None = None
         self.qos_profile_manager: QosProfileManager | None = None
         self._device_locks = {n.device_id: threading.RLock() for n in config.networks}

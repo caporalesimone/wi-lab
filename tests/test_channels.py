@@ -1,5 +1,7 @@
 """Tests for WiFi channel manager and available-channels API endpoint."""
 
+from unittest.mock import Mock
+
 import pytest
 from fastapi.testclient import TestClient
 from wilab.api import create_app
@@ -56,6 +58,20 @@ def reservation_id(client, valid_token, monkeypatch):
 class TestChannelManagerParsing:
     """Test iw phy channels output parsing logic."""
 
+    def test_dfs_policy_handles_inline_and_separate_radar_flags(self):
+        output = """        * 5260 MHz [52] (radar detection)
+        * 5280 MHz [56]
+          Radar detection
+          DFS state: available
+        * 5745 MHz [149]
+          Maximum TX power: 23.0 dBm"""
+        channels = ChannelManager._parse_iw_phy_output(output, allow_dfs_channels=False)
+        assert [(ch.channel, ch.disabled, ch.max_power_dbm) for ch in channels] == [
+            (52, True, 0.0),
+            (56, True, 0.0),
+            (149, False, 23.0),
+        ]
+
     def test_parse_active_channel(self):
         output = """        * 2412 MHz [1] 
           Maximum TX power: 20.0 dBm
@@ -91,14 +107,14 @@ class TestChannelManagerParsing:
         assert ch.max_power_dbm == 0.0
         assert ch.disabled is True
 
-    def test_parse_channel_with_radar(self):
+    def test_parse_channel_with_radar_when_dfs_is_allowed(self):
         output = """        * 5260 MHz [52] 
           Maximum TX power: 20.0 dBm
           Radar detection
           Channel widths: 20MHz HT40- HT40+ VHT80
           DFS state: usable (for 1000 sec)
           DFS CAC time: 60000 ms"""
-        channels = ChannelManager._parse_iw_phy_output(output)
+        channels = ChannelManager._parse_iw_phy_output(output, allow_dfs_channels=True)
         assert len(channels) == 1
         ch = channels[0]
         assert ch.channel == 52
@@ -450,6 +466,39 @@ class TestValidateChannel:
 
 class TestNetworkCreationChannelValidation:
     """Test that POST /network rejects invalid/disabled channels."""
+
+    @pytest.mark.parametrize("allow_dfs", [None, True], ids=["default-policy", "dfs-opt-in"])
+    def test_dfs_policy_applies_to_listing_and_creation(
+        self, client, valid_token, reservation_id, monkeypatch, allow_dfs,
+    ):
+        config = dependencies.get_config()
+        if allow_dfs is not None:
+            config.allow_dfs_channels = allow_dfs
+        start_network = Mock()
+        monkeypatch.setattr(dependencies.get_manager(config), "start_network", start_network)
+        url = f"/api/v1/interface/{reservation_id}/network"
+        headers = {"Authorization": valid_token}
+
+        listing = client.get(f"{url}/available-channels", headers=headers)
+        assert listing.status_code == 200
+        channels = {ch["channel"]: ch for ch in listing.json()["channels_5ghz"]}
+        assert channels[52]["disabled"] is (allow_dfs is None)
+        assert channels[52]["max_power_dbm"] == (0.0 if allow_dfs is None else 20.0)
+        assert channels[36]["disabled"] is False
+        assert channels[169]["disabled"] is True
+
+        request = {
+            "ssid": "TestNet", "channel": 52, "encryption": "open",
+            "band": "5ghz", "tx_power_level": 4,
+        }
+        response = client.post(url, headers=headers, json=request)
+        if allow_dfs is None:
+            assert response.status_code == 422
+            assert "allow_dfs_channels=false" in response.json()["detail"]["message"]
+            start_network.assert_not_called()
+            response = client.post(url, headers=headers, json={**request, "channel": 36})
+        assert response.status_code == 200
+        start_network.assert_called_once()
 
     def test_disabled_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
