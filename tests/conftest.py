@@ -51,7 +51,7 @@ def mock_network_operations(monkeypatch, tmp_path):
     from wilab.wifi import manager
     from wilab.wifi import channels
     from wilab.wifi import hostapd
-    from wilab.network import dhcp, nat
+    from wilab.network import dhcp, nat, subnet
     
     # Mock WiFi interface validation (requires real hardware)
     def mock_validate_interface(iface):
@@ -232,6 +232,7 @@ Band 2:
     monkeypatch.setattr(hostapd, "start_foreground", reject_real_hostapd)
     monkeypatch.setattr(dhcp, "execute_command", mock_execute_command)
     monkeypatch.setattr(nat, "execute_command", mock_execute_command)
+    monkeypatch.setattr(subnet, "execute_command", lambda cmd: "[]")
     
     # Patch commands
     monkeypatch.setattr(commands, "execute_ip", mock_execute_ip)

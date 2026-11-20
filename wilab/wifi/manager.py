@@ -14,6 +14,7 @@ from ..timestamps import format_utc_timestamp
 from ..network.dhcp import DhcpServer, DhcpServerError
 from ..network.nat import NatManager
 from ..network.isolation import IsolationManager
+from ..network.subnet import warn_subnet_collisions
 from ..network.qos import QosManager
 from ..network.qos_profile import QosProfileManager
 from .hostapd import HostapdManager, HostapdError, HostapdRadioFailure, HostapdSegfault
@@ -216,6 +217,11 @@ class NetworkManager:
         subnet = self._get_subnet(device_id)
         net = IPv4Network(subnet)
         gateway = f"{net[1]}/{net.prefixlen}"
+        owned_routes = {
+            (status.subnet, status.interface, str(IPv4Network(status.subnet)[1]))
+            for status in list(self.active.values()) if status.subnet
+        }
+        warn_subnet_collisions(subnet, owned_routes)
         
         # Validate interface
         logger.info(f"Validating interface {cfg_net.interface}")

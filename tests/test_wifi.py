@@ -323,12 +323,14 @@ class TestNetworkLifecycle:
         cfg = load_config()
         mgr = NetworkManager(cfg)
         events = []
+        checked = []
         
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
         monkeypatch.setattr(mgr.nat_manager, 'block_internet', lambda *a: events.append('block'))
+        monkeypatch.setattr("wilab.wifi.manager.warn_subnet_collisions", lambda subnet, owned: checked.append(subnet))
         monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: events.append('ap'))
         
         req = NetworkCreateRequest(
@@ -343,6 +345,7 @@ class TestNetworkLifecycle:
         status = mgr.start_network('wls16', req)
         assert status.internet_enabled is False
         assert events == ['block', 'ap']
+        assert checked == [mgr._get_subnet('wls16')]
 
     def test_failed_hostapd_stop_keeps_internet_block(self, monkeypatch):
         mgr = NetworkManager(load_config())
