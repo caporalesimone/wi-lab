@@ -141,3 +141,19 @@ class TestAllowUnlimitedReservationConfig:
         cfg = load_config()
         assert cfg.allow_unlimited_reservation is False
 
+@pytest.mark.parametrize("country", ["EU", "ETSI", "FCC", "it", "I1", ""])
+def test_invalid_regulatory_country_is_rejected(country):
+    from pydantic import ValidationError
+    from wilab.config import AppConfig
+
+    with pytest.raises(ValidationError, match="country_code"):
+        AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", country_code=country)
+
+
+@pytest.mark.parametrize("country", ["IT", "JP", "US", "XY"])
+def test_country_code_shape_and_valid_japan(country):
+    from wilab.config import AppConfig
+
+    config = AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", country_code=country)
+    assert config.country_code == country
+

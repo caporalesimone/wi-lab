@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from typing import Any, List, Optional
 from ipaddress import IPv4Network
 import yaml
@@ -38,6 +39,15 @@ class AppConfig(BaseModel):
         description="CORS allowed origins. If None or empty, CORS is disabled (secure for production). "
                     "For development, add frontend URLs like ['http://localhost:4200', 'http://192.168.1.100:4200']"
     )
+
+    @field_validator('country_code')
+    @classmethod
+    def validate_country_code(cls, value: str) -> str:
+        if value.strip().upper() in {"EU", "ETSI", "FCC"}:
+            raise ValueError("Use a country code such as IT or US, not a regulatory region")
+        if not re.fullmatch(r"[A-Z]{2}", value):
+            raise ValueError("country_code must be two uppercase ASCII letters")
+        return value
 
     @field_validator('min_timeout')
     @classmethod
