@@ -29,7 +29,7 @@ import { NetworkCreateRequest } from '../../models/network.models';
 })
 export class NetworkFormDialogComponent {
   form: FormGroup;
-  bands = ['2.4ghz', '5ghz', 'dual'];
+  bands = ['2.4ghz', '5ghz'];
   encryptionTypes = ['open', 'wpa', 'wpa2', 'wpa3', 'wpa2-wpa3'];
   txPowerLevels = [1, 2, 3, 4];
 

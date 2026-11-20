@@ -284,6 +284,20 @@ class TestAuthentication:
         assert resp.status_code == 401
         assert resp.json()['detail']['code'] == 401
 
+    def test_dual_band_create_is_rejected_before_radio_work(self, client, valid_token, reservation_id, monkeypatch):
+        manager = dependencies.get_manager(dependencies.get_config())
+        from unittest.mock import Mock
+        start = Mock()
+        monkeypatch.setattr(manager, 'start_network', start)
+        resp = client.post(
+            f'/api/v1/interface/{reservation_id}/network',
+            headers={'Authorization': valid_token},
+            json={'ssid': 'TestAP', 'channel': 6, 'encryption': 'open', 'band': 'dual', 'tx_power_level': 4},
+        )
+        assert resp.status_code == 422
+        assert resp.json()['detail']['code'] == 422
+        start.assert_not_called()
+
     def test_protected_reservation_rejects_non_bearer_scheme(self, client):
         resp = client.post(
             '/api/v1/device-reservation',

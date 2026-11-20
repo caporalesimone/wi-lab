@@ -89,7 +89,7 @@ Content-Type: application/json
 |---|---|---|
 | `ssid` | yes | Network name. |
 | `channel` | yes | Must be valid for `band` and supported and enabled on the antenna. |
-| `band` | yes | `2.4ghz`, `5ghz` or `dual`. |
+| `band` | yes | `2.4ghz` or `5ghz`. An AP uses one band. |
 | `encryption` | yes | `open`, `wpa`, `wpa2`, `wpa3` or `wpa2-wpa3`. |
 | `password` | unless `open` | 8–63 characters for any WPA mode. |
 | `tx_power_level` | yes | `1` (low) to `4` (maximum). |

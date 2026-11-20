@@ -49,8 +49,7 @@ def is_valid_channel_for_band(channel: int, band: str) -> bool:
         return channel in VALID_CHANNELS_24GHZ
     if band == "5ghz":
         return channel in VALID_CHANNELS_5GHZ
-    # "dual" or unknown — accept any channel that belongs to either band.
-    return channel in VALID_CHANNELS_24GHZ or channel in VALID_CHANNELS_5GHZ
+    raise ValueError(f"Unknown band: {band}")
 
 
 def set_regulatory_domain(country_code: str) -> None:
@@ -135,7 +134,7 @@ class ChannelManager:
         elif band == "5ghz":
             pool = info.channels_5ghz
         else:
-            pool = info.channels_24ghz + info.channels_5ghz
+            raise ValueError(f"Unknown band: {band}")
 
         match = next((c for c in pool if c.channel == channel), None)
         if match is None:
