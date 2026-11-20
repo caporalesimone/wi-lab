@@ -21,6 +21,7 @@ auth_token: "secret-token-12345"
 # ==================================================================================================
 
 # Port for REST API server
+# A non-default value is now used by the server; update clients and proxies.
 # API will be available at: http://localhost:8080
 # Swagger UI docs at: http://localhost:8080/docs
 api_port: 8080

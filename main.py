@@ -31,10 +31,10 @@ def main():
     )
     
     app = create_app()
-    logger.info(f"Starting REST API server on 0.0.0.0:8080")
-    logger.info("Visit http://localhost:8080/docs for Swagger UI")
+    logger.info("Starting REST API server on 0.0.0.0:%s", config.api_port)
+    logger.info("Visit http://localhost:%s/docs for Swagger UI", config.api_port)
     
-    uvicorn.run(app, host="0.0.0.0", port=8080, server_header=False, headers=[("x-app-version", __version__)])
+    uvicorn.run(app, host="0.0.0.0", port=config.api_port, server_header=False, headers=[("x-app-version", __version__)])
 
 
 if __name__ == "__main__":
