@@ -272,9 +272,11 @@ export class AppComponent implements OnInit, OnDestroy {
         const detail = raw?.error?.detail;
         const recoveryDelay = raw && retryAfterSeconds(raw, 503, RecoveryCode.DeviceRecovering);
         if (raw?.status === 409 && detail?.code === RecoveryCode.NoDeviceAvailable &&
-            typeof detail.next_available_in === 'number') {
+            (typeof detail.next_available_in === 'number' || detail.next_available_in === null)) {
           this.capacityError = detail as NoDeviceAvailableError;
-          this.startCapacityTimer(detail.next_available_in);
+          if (typeof detail.next_available_in === 'number') {
+            this.startCapacityTimer(detail.next_available_in);
+          }
         } else if (recoveryDelay) {
           this.waitForRecovery(req, recoveryDelay);
           this.refreshStatus();

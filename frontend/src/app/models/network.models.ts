@@ -98,6 +98,6 @@ export interface ApiErrorDetail {
 }
 
 export interface NoDeviceAvailableError extends ApiErrorDetail {
-  next_available_at: string;
-  next_available_in: number;
+  next_available_at: string | null;
+  next_available_in: number | null;
 }

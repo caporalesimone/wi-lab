@@ -68,7 +68,7 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
         200: {"description": "Device reserved successfully"},
         401: {"description": "Unauthorized"},
         409: {
-            "description": "No adapter available. next_available_at is an RFC 3339 UTC timestamp (Z suffix).",
+            "description": "No adapter available. next_available_at is UTC, or null when no release is scheduled.",
             "content": {"application/json": {"example": {"detail": domain_error(
                 ApiErrorCode.NO_DEVICE_AVAILABLE, "No device available",
                 next_available_at="2026-11-19T23:00:00Z", next_available_in=18,

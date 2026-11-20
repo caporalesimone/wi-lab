@@ -8,6 +8,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### Breaking Changes
 
+- Reservation contention returns null availability estimates when no release is scheduled.
 - All `/api/v1` error bodies now use an object with `detail.code` and `detail.reason`. Clients displaying a former string `detail` should read `detail.message`. Recovery codes 1001–1003 are unchanged.
 - API timestamps (`expires_at`, `detail.next_available_at`) now use RFC 3339 UTC with a `Z` suffix. Durations and countdowns remain in seconds.
 

@@ -23,12 +23,14 @@ RESERVATION_TOKEN_BYTES = 4  # 8 hex chars
 class NoDeviceAvailableError(Exception):
     """All devices are currently reserved."""
 
-    def __init__(self, next_available_at: float) -> None:
+    def __init__(self, next_available_at: float | None) -> None:
         self.next_available_at = next_available_at
         super().__init__("No device available")
 
     @property
-    def next_available_in(self) -> int:
+    def next_available_in(self) -> int | None:
+        if self.next_available_at is None:
+            return None
         return max(0, int(self.next_available_at - time.time()))
 
 
@@ -304,9 +306,9 @@ class ReservationManager:
                     first_error = exc
         return first_error
 
-    def _soonest_expiry(self) -> float:
+    def _soonest_expiry(self) -> float | None:
         """Return the earliest expires_at among active reservations (excluding unlimited)."""
         timed = [r.expires_at for r in self._reservations.values() if r.expires_at is not None]
         if not timed:
-            return time.time()
+            return None
         return min(timed)

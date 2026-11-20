@@ -46,7 +46,8 @@
         <!-- Capacity error message -->
         <div *ngIf="capacityError" class="capacity-error">
           <mat-icon color="warn">schedule</mat-icon>
-          <span>All devices busy. Next available in <strong>{{ capacityCountdown }}</strong>s</span>
+          <span *ngIf="capacityError.next_available_in !== null">All devices busy. Next available in <strong>{{ capacityCountdown }}</strong>s</span>
+          <span *ngIf="capacityError.next_available_in === null">All devices busy. No scheduled release.</span>
         </div>
 
         <div *ngIf="recoveryRequest" class="capacity-error">

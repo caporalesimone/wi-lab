@@ -832,13 +832,23 @@ class TestUnlimitedReservation:
         assert abs(soonest - r_timed.expires_at) < 2
 
     def test_soonest_expiry_all_unlimited(self):
-        """_soonest_expiry returns now when all reservations are unlimited."""
+        """Unlimited holds have no scheduled release."""
         mgr = ReservationManager(["dev0"])
         mgr.create(0)
-        before = time.time()
         with mgr._lock:
             soonest = mgr._soonest_expiry()
-        assert soonest >= before
+        assert soonest is None
+
+    def test_api_unlimited_contention_has_null_eta(self, client, valid_token, monkeypatch):
+        config = dependencies.get_config()
+        monkeypatch.setattr(config, "allow_unlimited_reservation", True)
+        headers = {"Authorization": valid_token}
+        assert client.post("/api/v1/device-reservation", headers=headers, json={"duration_seconds": 0}).status_code == 200
+        response = client.post("/api/v1/device-reservation", headers=headers, json={"duration_seconds": 120})
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert detail["code"] == 1005
+        assert detail["next_available_at"] is None and detail["next_available_in"] is None
 
 
 # ======================================================================
