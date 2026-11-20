@@ -573,6 +573,7 @@ sequenceDiagram
     RT->>WK: schedule(antenna, port, band, channel)
     loop up to 10 rounds, at least 60 s apart
         WK->>NM: take device lock, release_device
+        WK->>K: release from NetworkManager, bring down
         WK->>K: precheck: managed, DOWN, no default route
         WK->>K: map interface to port: function port:1.0, not a hub,<br/>single function, single netdev
         WK->>K: same MAC as the first round
@@ -589,6 +590,10 @@ sequenceDiagram
 ```
 
 - A failed precheck skips the reset for that round.
+- After a USB reset the adapter is a new device. NetworkManager or
+  systemd-networkd could bring it up, so the worker releases it from
+  NetworkManager and brings it down again before each check. The runtime rules
+  in [section 10](#10-host-state-and-files) normally keep both managers away.
 - The probe is a server-side check only: it does not prove that a real station
   can associate and get a lease.
 - Other antennas stay fully available during recovery.
@@ -625,6 +630,16 @@ no hostapd, dnsmasq, iptables or tc state is left behind.
 | NAT and isolation rules | iptables `nat` and `FORWARD` | Removed at teardown. Leftovers are reported at startup. |
 | Captive portal chains and sign-ins | iptables `wilab-cp-<interface>` chains; sign-ins in process memory | Removed at teardown and at startup. |
 | Traffic shaping | tc qdiscs, IFB devices | Removed at teardown. |
+| Host network manager exclusion | `/run/NetworkManager/conf.d/90-wilab-unmanaged.conf`, `/run/systemd/network/00-wilab-unmanaged.network` | Written when antennas are added; cleared on reboot. |
+
+When discovery adds antennas, Wi-Lab tells NetworkManager (a `[device]`
+section with `managed=0`, plus `nmcli device set ... managed no` for devices
+already present) and systemd-networkd (`Unmanaged=yes`) to leave **only those
+interfaces** alone. Otherwise they bring Wi-Lab radios up after a reboot or a
+USB reset and start wpa_supplicant or DHCP on them. The NetworkManager rule
+does not use `keyfile.unmanaged-devices`: that key would replace the
+distribution's list, which keeps wired interfaces such as the management
+interface away from NetworkManager.
 
 The upstream interface is resolved from the default route on first use and
 cached; set `upstream_interface` to force it.

@@ -1,3 +1,4 @@
+import json
 from unittest.mock import Mock
 
 import pytest
@@ -89,6 +90,7 @@ def test_usb_recovery_is_bounded_and_only_verified_radio_is_released(monkeypatch
     reservations = ReservationManager([radio])
     reservations.quarantine(reservations.create(60), recovering=True)
     monkeypatch.setattr(recovery, "_require_idle", Mock())
+    monkeypatch.setattr(recovery, "_quiesce", Mock())
     monkeypatch.setattr(recovery, "_usb_target", Mock(return_value=("002/003", "test-mac")))
     reset = Mock()
     monkeypatch.setattr(recovery, "execute_command", reset)
@@ -121,6 +123,7 @@ def test_usb_recovery_refuses_unsafe_target(monkeypatch):
     reservations = ReservationManager([radio])
     reservations.quarantine(reservations.create(60), recovering=True)
     monkeypatch.setattr(recovery, "_require_idle", Mock())
+    monkeypatch.setattr(recovery, "_quiesce", Mock())
     monkeypatch.setattr(recovery, "_usb_target", Mock(side_effect=CommandError("wrong USB port")))
     monkeypatch.setattr(manager.recovery._stopping, "wait", Mock(return_value=False))
     reset = Mock()
@@ -130,6 +133,54 @@ def test_usb_recovery_refuses_unsafe_target(monkeypatch):
 
     reset.assert_not_called()
     assert reservations.recovery_snapshot() == {radio: False}
+
+
+class _HostLink:
+    """Fake ip/nmcli/usbreset layer where a host network manager re-raises the link."""
+
+    def __init__(self, radio: str, upstream: bool = False) -> None:
+        self.radio, self.up, self.upstream = radio, True, upstream
+        self.commands: list[list[str]] = []
+
+    def run(self, cmd, **kwargs):
+        self.commands.append(cmd)
+        if cmd[:2] == ["ip", "-j"] and cmd[3:5] == ["route", "show"]:
+            return json.dumps([{"dev": self.radio}] if self.upstream and cmd[2] == "-4" else [])
+        if cmd[:4] == ["ip", "-j", "link", "show"]:
+            return json.dumps([{"flags": ["BROADCAST", "UP"] if self.up else ["BROADCAST"]}])
+        if cmd[:3] == ["ip", "link", "set"]:
+            self.up = cmd[-1] == "up"
+        if cmd[0] == "usbreset":
+            self.up = True  # the re-enumerated device is managed and raised again
+        return ""
+
+
+@pytest.mark.parametrize("upstream", [False, True])
+def test_usb_recovery_takes_back_a_radio_raised_by_host_managers(monkeypatch, upstream):
+    manager = dependencies.get_manager(dependencies.get_config())
+    radio = manager.config.networks[0].device_id
+    reservations = ReservationManager([radio])
+    reservations.quarantine(reservations.create(60), recovering=True)
+    host = _HostLink(radio, upstream=upstream)
+    monkeypatch.setattr(recovery, "execute_command", host.run)
+    monkeypatch.setattr(recovery, "execute_iw", lambda args: "type managed")
+    monkeypatch.setattr(recovery, "_usb_target", Mock(return_value=("002/003", "test-mac")))
+    monkeypatch.setattr(manager.recovery._stopping, "wait", Mock(return_value=False))
+    monkeypatch.setattr(manager, "release_device", Mock())
+    probe = Mock()
+    monkeypatch.setattr(manager, "probe_recovered_radio", probe)
+
+    manager.recovery._recover(reservations, radio, "2-1", "2.4ghz", 1)
+
+    resets = [c for c in host.commands if c[0] == "usbreset"]
+    if upstream:
+        assert not resets and not any(c[0] == "nmcli" or c[:3] == ["ip", "link", "set"] for c in host.commands)
+        assert reservations.recovery_snapshot() == {radio: False}
+    else:
+        assert len(resets) == 1 and not host.up
+        assert ["nmcli", "device", "set", radio, "managed", "no"] in host.commands
+        probe.assert_called_once()
+        assert reservations.recovery_snapshot() == {}
 
 
 def test_api_viewers_share_recovery_guidance_and_examples():

@@ -56,7 +56,19 @@ sudo iptables -t nat -S | grep wilab-cp
 sudo iptables -S | grep wilab-cp
 ```
 
-### 5. WiFi Interface State
+### 5. Host Network Manager Exclusion
+
+**What:** Runtime rules that make NetworkManager and systemd-networkd ignore Wi-Lab radios  
+**When:** Antennas are added by discovery  
+**Impact:** Only the listed `wlx*` interfaces; the management interface is not touched  
+**Reversible:** Yes - the files live in `/run` and disappear on reboot
+
+```bash
+cat /run/NetworkManager/conf.d/90-wilab-unmanaged.conf /run/systemd/network/00-wilab-unmanaged.network
+nmcli device status; networkctl list
+```
+
+### 6. WiFi Interface State
 
 **What:** Interface switched to AP mode  
 **When:** Network is created  

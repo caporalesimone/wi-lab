@@ -10,6 +10,7 @@ from ..config import AppConfig, NetworkEntry, load_config, scan_new_networks
 from ..network.commands import CommandError
 from ..network.qos import QosManager
 from ..network.qos_profile import QosProfileManager
+from ..network.unmanaged import exclude_from_host_managers
 from ..reservation import Reservation, ReservationManager
 from ..wifi.channels import ChannelManager
 from ..wifi.manager import NetworkManager
@@ -71,6 +72,7 @@ def scan_devices(config: AppConfig, *, quiet: bool = False) -> list[NetworkEntry
             return []
         # Appending preserves the order used for subnet allocation.
         config.networks = [*config.networks, *added]
+        exclude_from_host_managers(n.interface for n in config.networks)
         reservations.add_devices([n.device_id for n in added])
         manager = get_manager(config)
         manager.watchdog.watch([n.device_id for n in added])

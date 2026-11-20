@@ -29,6 +29,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- Keep Wi-Lab radios away from NetworkManager and systemd-networkd with runtime rules under `/run`, and bring a radio down again after a USB reset. Previously a reset adapter could be raised by the host and stay quarantined.
 - Send TCP resets for forwarded client traffic after Internet is disabled.
 - Remove stale Wi-Lab firewall rules after an unclean shutdown without flushing host chains.
 - Restrict each Wi-Lab masquerade rule to the corresponding AP subnet.

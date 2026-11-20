@@ -35,6 +35,27 @@ def _usb_target(interface: str, port: str) -> tuple[str, str]:
     return f"{bus:03d}/{address:03d}", (link / "address").read_text().strip()
 
 
+def _require_not_upstream(interface: str) -> None:
+    for family in ("-4", "-6"):
+        routes = json.loads(execute_command(["ip", "-j", family, "route", "show", "default"]))
+        if any(route.get("dev") == interface for route in routes):
+            raise CommandError("Cannot reset an upstream interface")
+
+
+def _quiesce(interface: str) -> None:
+    """Take the radio back from host network managers and bring it down.
+
+    A USB re-enumeration creates a new device, which NetworkManager or
+    systemd-networkd may manage and bring up again.
+    """
+    _require_not_upstream(interface)
+    try:
+        execute_command(["nmcli", "device", "set", interface, "managed", "no"], check=False)
+    except CommandError:
+        logger.debug("nmcli unavailable while quiescing %s", interface)
+    execute_command(["ip", "link", "set", "dev", interface, "down"])
+
+
 def _require_idle(interface: str) -> None:
     link = json.loads(execute_command(["ip", "-j", "link", "show", "dev", interface]))
     info = execute_iw(["dev", interface, "info"])
@@ -42,10 +63,7 @@ def _require_idle(interface: str) -> None:
         line.strip() for line in info.splitlines()
     }:
         raise CommandError("Recovery requires an idle managed/DOWN interface")
-    for family in ("-4", "-6"):
-        routes = json.loads(execute_command(["ip", "-j", family, "route", "show", "default"]))
-        if any(route.get("dev") == interface for route in routes):
-            raise CommandError("Cannot reset an upstream interface")
+    _require_not_upstream(interface)
 
 
 class RadioRecovery:
@@ -78,6 +96,7 @@ class RadioRecovery:
                         return
                     try:
                         self._manager.release_device(interface)
+                        _quiesce(interface)
                         _require_idle(interface)
                         target, current_mac = _usb_target(interface, port)
                         if mac is not None and current_mac != mac:
@@ -89,6 +108,7 @@ class RadioRecovery:
                             if self._stopping.is_set():
                                 return
                             self._manager.probe_recovered_radio(interface, band, channel)
+                            _quiesce(interface)
                             _require_idle(interface)
                             if self._stopping.is_set():
                                 return
@@ -112,12 +132,13 @@ class RadioRecovery:
                 continue
             if current_mac != mac:
                 raise CommandError("USB adapter identity changed after reset")
-            execute_command(["ip", "link", "set", "dev", interface, "down"])
+            _quiesce(interface)
             execute_iw(["dev", interface, "set", "type", "managed"])
             try:
                 execute_command(["ip", "link", "set", "dev", interface, "up"])
             finally:
                 execute_command(["ip", "link", "set", "dev", interface, "down"])
+            _quiesce(interface)
             _require_idle(interface)
             return True
         raise CommandError("USB adapter did not reappear")

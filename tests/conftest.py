@@ -35,6 +35,8 @@ def _test_config_env(monkeypatch):
     # The discovery service runs with every app; it must not probe real hardware.
     monkeypatch.setattr(discovery, 'discover_radios', lambda **kwargs: [])
     monkeypatch.setattr(discovery, 'default_route_interfaces', set)
+    # Never write host network manager rules under /run from tests.
+    monkeypatch.setattr(dependencies, 'exclude_from_host_managers', lambda interfaces: None)
     monkeypatch.setenv('CONFIG_PATH', TEST_CONFIG_PATH)
     monkeypatch.setattr(dependencies, '_config', None)
     monkeypatch.setattr(dependencies, '_manager', None)
