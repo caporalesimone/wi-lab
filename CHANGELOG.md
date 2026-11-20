@@ -15,6 +15,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### Features
 
+- Add an optional offline configuration check with actionable errors and warnings.
 - Allow clients to retry classified radio startup failures using the same reservation after `Retry-After`. A terminal creation failure returns `500 / 1003` and invalidates the reservation. New reservations still return `503` when blocked by recovery or quarantine.
 - Restart failed active access points or DHCP processes and verify AP and DHCP startup before a USB-reset antenna returns to the pool.
 - Discover AP-capable Wi-Fi interfaces (USB or built-in) automatically instead of requiring each one in `networks`. The section now only assigns display names, and `disable: true` keeps a radio out of Wi-Lab; unlisted interfaces use their interface name. A missing configured interface no longer prevents startup; with no usable adapter, reservations return `503 / 1003`. USB ports are detected automatically for recovery resets; `usb_recovery_port` is ignored.

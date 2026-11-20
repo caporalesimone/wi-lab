@@ -62,6 +62,10 @@ sudo bash uninstall.sh
 
 File: `config.yaml` (copy from `config.example.yaml`).
 
+Run `python main.py --validate-config --config config.yaml` to check configuration
+without starting the service or probing antennas. Errors return exit code 1;
+warnings identify ignored settings and the example token without printing secrets.
+
 Key sections:
 
 ```yaml

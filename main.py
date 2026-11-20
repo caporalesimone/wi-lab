@@ -1,4 +1,5 @@
 import os
+import argparse
 import logging
 import uvicorn
 from wilab.api.dependencies import get_config
@@ -38,5 +39,24 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Wi-Lab access point manager")
+    parser.add_argument("--validate-config", action="store_true", help="validate configuration without starting the service")
+    parser.add_argument("--config", help="configuration file (only with --validate-config)")
+    args = parser.parse_args()
+    if args.config and not args.validate_config:
+        parser.error("--config requires --validate-config")
+    if args.validate_config:
+        from wilab.config import config_path
+        from wilab.config_validation import validate_config_file
+
+        errors, warnings = validate_config_file(config_path(args.config))
+        for warning in warnings:
+            print(f"WARNING: {warning}")
+        for error in errors:
+            print(f"ERROR: {error}")
+        if errors:
+            raise SystemExit(1)
+        print("Configuration is valid.")
+    else:
+        main()
 
