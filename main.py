@@ -1,7 +1,7 @@
 import os
 import logging
 import uvicorn
-from wilab.config import load_config
+from wilab.api.dependencies import get_config
 from wilab.api import create_app
 from wilab.version import __version__
 from wilab.network.safety import log_host_impact_warning, check_existing_wilab_rules
@@ -24,7 +24,7 @@ def main():
     check_existing_wilab_rules()
     
     # Load configuration (exits with descriptive error on failure)
-    config = load_config(os.environ.get('CONFIG_PATH'))
+    config = get_config()
     logger.info(f"Configuration loaded from {os.environ.get('CONFIG_PATH', 'default')}")
     logger.info(
         "Wi-Fi adapters are added by device discovery (subnets from %s)", config.dhcp_base_network,
