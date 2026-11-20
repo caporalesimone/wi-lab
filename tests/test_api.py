@@ -283,6 +283,15 @@ class TestAuthentication:
         resp = client.get('/api/v1/status')
         assert resp.status_code == 401
         assert resp.json()['detail']['code'] == 401
+
+    def test_protected_reservation_rejects_non_bearer_scheme(self, client):
+        resp = client.post(
+            '/api/v1/device-reservation',
+            headers={'Authorization': 'Basic invalid'},
+            json={'duration_seconds': 120},
+        )
+        assert resp.status_code == 401
+        assert resp.json()['detail']['code'] == 401
     
     def test_start_network_without_auth(self, client, reservation_id):
         """Test that network creation without auth is rejected."""

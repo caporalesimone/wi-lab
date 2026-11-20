@@ -44,6 +44,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### ✅ Tests
 
+- Add regression coverage for authentication on protected reservation endpoints.
 - Added `TestHostapdConfigGeneration` covering the presence of `ieee80211d` on all bands and the band-dependent handling of `ieee80211h` (enabled on 5 GHz, absent on 2.4 GHz).
 
 ---
