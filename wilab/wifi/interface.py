@@ -1,12 +1,12 @@
 import logging
-from ..network.commands import execute_command, execute_iw, CommandError
+
+from ..network.commands import CommandError, execute_command, execute_iw
 
 logger = logging.getLogger(__name__)
 
 
 class InterfaceError(Exception):
     """Exception raised for interface validation failures."""
-    pass
 
 
 def validate_interface_exists(interface: str) -> bool:

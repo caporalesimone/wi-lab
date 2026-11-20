@@ -4,13 +4,13 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from ...config import AppConfig
-from ...wifi.manager import NetworkManager
-from ...reservation import ReservationManager
-from ...api.dependencies import get_config, get_manager, get_reservation_manager
 from ...api.auth import require_token
-from ...network.commands import execute_command, CommandError
+from ...api.dependencies import get_config, get_manager, get_reservation_manager
+from ...config import AppConfig
+from ...network.commands import CommandError, execute_command
+from ...reservation import ReservationManager
 from ...version import __version__
+from ...wifi.manager import NetworkManager
 
 router = APIRouter(
     tags=["System"],

@@ -12,13 +12,13 @@ All routes are prefixed with /api/v1.
 
 from fastapi import APIRouter
 
-from .status import router as health_router
-from .network import router as network_router
 from .internet import router as internet_router
-from .txpower import router as txpower_router
+from .network import router as network_router
 from .qos_profile import catalogue_router as qos_catalogue_router
 from .qos_profile import reservation_router as qos_reservation_router
 from .reservation import router as reservation_router
+from .status import router as health_router
+from .txpower import router as txpower_router
 
 # Root router at /api/v1 prefix
 router = APIRouter(prefix="/api/v1")

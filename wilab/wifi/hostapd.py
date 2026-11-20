@@ -1,15 +1,21 @@
 """hostapd configuration generation and process management for WiFi AP mode."""
 
-import os
 import logging
+import os
 import re
 import signal
 import tempfile
 import time
-from typing import Optional, TypedDict
+from typing import TypedDict
+
 from ..network.commands import (
-    CommandError, CommandTimeout, ForegroundProcess, bounded_timeout, execute_command,
-    execute_iw, start_foreground,
+    CommandError,
+    CommandTimeout,
+    ForegroundProcess,
+    bounded_timeout,
+    execute_command,
+    execute_iw,
+    start_foreground,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,7 +57,6 @@ def _classify_output(line: bytes) -> str | None:
 
 class HostapdError(Exception):
     """Exception raised for hostapd operation failures."""
-    pass
 
 
 class HostapdRadioFailure(HostapdError):
@@ -91,7 +96,7 @@ class HostapdManager:
         ssid: str,
         channel: int,
         encryption: str,
-        password: Optional[str],
+        password: str | None,
         hidden: bool,
         band: str,
         country_code: str = "IT",
@@ -174,7 +179,7 @@ class HostapdManager:
         ssid: str,
         channel: int,
         encryption: str,
-        password: Optional[str],
+        password: str | None,
         hidden: bool,
         band: str,
         country_code: str = "IT",

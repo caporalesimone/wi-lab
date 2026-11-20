@@ -19,7 +19,6 @@ import logging
 import re
 import threading
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 from ..network.commands import execute_iw
 
@@ -83,8 +82,8 @@ class ChannelInfo:
 class InterfaceChannels:
     """All supported channels for one physical interface, split by band."""
     interface: str
-    channels_24ghz: List[ChannelInfo] = field(default_factory=list)
-    channels_5ghz: List[ChannelInfo] = field(default_factory=list)
+    channels_24ghz: list[ChannelInfo] = field(default_factory=list)
+    channels_5ghz: list[ChannelInfo] = field(default_factory=list)
 
 
 # ---- Manager ----
@@ -98,7 +97,7 @@ class ChannelManager:
 
     def __init__(self, *, allow_dfs_channels: bool = False) -> None:
         self._allow_dfs_channels = allow_dfs_channels
-        self._cache: Dict[str, InterfaceChannels] = {}
+        self._cache: dict[str, InterfaceChannels] = {}
         self._lock = threading.Lock()
 
     # -- public API --
@@ -118,7 +117,7 @@ class ChannelManager:
                 self._cache[interface] = channels
             return self._cache[interface]
 
-    def invalidate(self, interface: Optional[str] = None) -> None:
+    def invalidate(self, interface: str | None = None) -> None:
         """Drop cached data.  If *interface* is ``None``, flush everything."""
         with self._lock:
             if interface is None:
@@ -168,7 +167,7 @@ class ChannelManager:
     @staticmethod
     def _parse_iw_phy_output(
         output: str, *, allow_dfs_channels: bool = False,
-    ) -> List[ChannelInfo]:
+    ) -> list[ChannelInfo]:
         """Parse the output of ``iw phy<N> channels`` into a list of channels.
 
         Radar detection may be marked on the frequency line or on its own line.
@@ -179,7 +178,7 @@ class ChannelManager:
         )
         power_re = re.compile(r"Maximum TX power:\s+([\d.]+)\s+dBm")
 
-        channels: List[ChannelInfo] = []
+        channels: list[ChannelInfo] = []
         current_freq: int | None = None
         current_chan: int | None = None
         current_disabled = False
@@ -231,8 +230,8 @@ class ChannelManager:
         output = execute_iw(["phy" + phy, "channels"])
         all_channels = self._parse_iw_phy_output(output, allow_dfs_channels=self._allow_dfs_channels)
 
-        ch_24: List[ChannelInfo] = []
-        ch_5: List[ChannelInfo] = []
+        ch_24: list[ChannelInfo] = []
+        ch_5: list[ChannelInfo] = []
         for ch in all_channels:
             if ch.frequency_mhz < _BAND_2_4_MAX_FREQ:
                 ch_24.append(ch)

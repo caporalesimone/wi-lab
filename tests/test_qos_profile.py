@@ -18,7 +18,6 @@ from wilab.models import (
 from wilab.network.qos import QosManager
 from wilab.network.qos_profile import QosProfileManager
 
-
 # ---------------------------------------------------------------------------
 # Model validation tests
 # ---------------------------------------------------------------------------
@@ -503,6 +502,7 @@ class TestQosProfileAPI:
     @pytest.fixture
     def client(self, monkeypatch):
         from fastapi.testclient import TestClient
+
         from wilab.api import create_app
         from wilab.config import load_config
         from wilab.network import qos as qos_mod
@@ -531,8 +531,8 @@ class TestQosProfileAPI:
     def reservation_id(self, client, auth_headers, monkeypatch):
         """Create a reservation and start a network, return reservation_id."""
         from wilab.api import dependencies
-        from wilab.reservation import ReservationManager
         from wilab.config import load_config
+        from wilab.reservation import ReservationManager
 
         cfg = load_config()
         rmgr = ReservationManager([n.device_id for n in cfg.networks])

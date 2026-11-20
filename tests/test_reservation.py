@@ -1,23 +1,26 @@
 """Tests for device reservation module and API endpoints."""
 
-import time
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import Mock
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from wilab.reservation import (
-    ReservationManager, Reservation, NoDeviceAvailableError, ReservationCleanupError,
-)
-from wilab.api import create_app
-from wilab.config import load_config
-from wilab.api import dependencies
+from wilab.api import create_app, dependencies
 from wilab.api.dependencies import hold_reservation
+from wilab.config import load_config
 from wilab.models import NetworkStatus
+from wilab.reservation import (
+    NoDeviceAvailableError,
+    Reservation,
+    ReservationCleanupError,
+    ReservationManager,
+)
 
 
 def test_ten_antenna_concurrent_reservations_are_unique_and_reusable():

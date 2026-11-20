@@ -2,10 +2,15 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from ...api.auth import require_token
+from ...api.dependencies import (
+    ReservationManagerDep,
+    get_manager,
+    hold_reservation,
+    resolve_reservation,
+)
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager
-from ...api.auth import require_token
-from ...api.dependencies import get_manager, hold_reservation, resolve_reservation, ReservationManagerDep
 
 router = APIRouter(
     prefix="/interface", tags=["Internet"],

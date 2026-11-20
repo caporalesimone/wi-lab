@@ -2,22 +2,28 @@
 
 from math import ceil
 from time import monotonic
-from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from ...api.auth import require_token
+from ...api.dependencies import (
+    ReservationManagerDep,
+    get_channel_manager,
+    get_manager,
+    hold_reservation,
+    resolve_reservation,
+)
 from ...models import NetworkCreateRequest, NetworkStatus
 from ...reservation import Reservation
 from ...timestamps import format_utc_timestamp
-from ...wifi.manager import NetworkManager, StartupFailure
 from ...wifi.channels import ChannelManager
-from ...api.auth import require_token
-from ...api.dependencies import (
-    get_manager, get_channel_manager, hold_reservation, resolve_reservation, ReservationManagerDep,
-)
+from ...wifi.manager import NetworkManager, StartupFailure
 from .recovery_responses import (
-    RETRY_AFTER_HEADER, RecoveryCode, recovery_error, recovery_example,
+    RETRY_AFTER_HEADER,
+    RecoveryCode,
+    recovery_error,
+    recovery_example,
 )
 
 CREATE_RETRY_DELAYS = (5, 10)
@@ -329,8 +335,8 @@ class ChannelDetail(BaseModel):
 
 class AvailableChannelsResponse(BaseModel):
     interface: str = Field(description="Physical interface name")
-    channels_24ghz: List[ChannelDetail] = Field(description="2.4 GHz band channels")
-    channels_5ghz: List[ChannelDetail] = Field(description="5 GHz band channels")
+    channels_24ghz: list[ChannelDetail] = Field(description="2.4 GHz band channels")
+    channels_5ghz: list[ChannelDetail] = Field(description="5 GHz band channels")
 
 
 @router.get(

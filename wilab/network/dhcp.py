@@ -1,9 +1,9 @@
 import logging
 import os
-from typing import Optional, List, Tuple
 from ipaddress import IPv4Network
 from pathlib import Path
-from .commands import execute_command, stop_process, CommandError, CommandTimeout
+
+from .commands import CommandError, CommandTimeout, execute_command, stop_process
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,6 @@ DNSMASQ_PID_DIR = "/tmp/wilab-dnsmasq/pids"
 
 class DhcpServerError(Exception):
     """Exception raised for DHCP server issues."""
-    pass
 
 
 class DhcpServer:
@@ -36,7 +35,7 @@ class DhcpServer:
         except OSError as e:
             logger.warning(f"Could not create dnsmasq dir: {e}")
     
-    def _parse_subnet(self, subnet: str) -> Tuple[str, str, str]:
+    def _parse_subnet(self, subnet: str) -> tuple[str, str, str]:
         """
         Parse CIDR subnet into network, gateway, and DHCP range.
         
@@ -269,7 +268,7 @@ class DhcpServer:
             logger.error(f"Error stopping DHCP server for {net_id}: {e}")
             raise DhcpServerError(f"Failed to stop DHCP server for {net_id}: {e}") from e
     
-    def get_subnet_info(self, net_id: str) -> Optional[dict]:
+    def get_subnet_info(self, net_id: str) -> dict | None:
         """
         Get subnet information for a network.
         
@@ -303,7 +302,7 @@ class DhcpServer:
         instance = self._instances.get(net_id)
         return instance is not None and not instance.get("process_stopped") and self._owns_process(instance)
     
-    def list_active(self) -> List[str]:
+    def list_active(self) -> list[str]:
         """Get list of active DHCP server net_ids."""
         return list(self._instances.keys())
     

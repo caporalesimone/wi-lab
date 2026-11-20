@@ -2,9 +2,14 @@
 
 import pytest
 
-from wilab.models import QosRequest, QosStatus, QosQualityAdvanced, NetemParams, DelayDistribution
-from wilab.network.qos import QosManager, _SENTINEL
-
+from wilab.models import (
+    DelayDistribution,
+    NetemParams,
+    QosQualityAdvanced,
+    QosRequest,
+    QosStatus,
+)
+from wilab.network.qos import _SENTINEL, QosManager
 
 # ---------------------------------------------------------------------------
 # Model validation tests

@@ -1,6 +1,6 @@
-from typing import Optional, List
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .wifi.channels import is_valid_channel_for_band
 
@@ -8,11 +8,11 @@ from .wifi.channels import is_valid_channel_for_band
 class NetworkCreateRequest(BaseModel):
     ssid: str
     channel: int
-    password: Optional[str] = None
+    password: str | None = None
     encryption: str = Field(pattern=r"^(open|wpa|wpa2|wpa3|wpa2-wpa3)$")
     band: str = Field(pattern=r"^(2\.4ghz|5ghz)$")
     hidden: bool = False
-    internet_enabled: Optional[bool] = None
+    internet_enabled: bool | None = None
     tx_power_level: int = Field(..., ge=1, le=4, description="TX power level (1=low, 4=max)")
 
     # Swagger/OpenAPI example
@@ -45,7 +45,7 @@ class NetworkCreateRequest(BaseModel):
 
     @field_validator('password')
     @classmethod
-    def validate_password_length(cls, v: Optional[str], info) -> Optional[str]:
+    def validate_password_length(cls, v: str | None, info) -> str | None:
         """Validate password length for WPA/WPA2/WPA3."""
         if v is None:
             return v
@@ -79,33 +79,33 @@ class ClientInfo(BaseModel):
 
 class NetworkTxPower(BaseModel):
     requested_level: int = Field(..., ge=1, le=4, description="Requested TX power level 1-4")
-    reported_level: Optional[int] = Field(None, ge=1, le=4, description="TX power level derived from reported_dbm")
-    reported_dbm: Optional[float] = Field(None, description="TX power currently reported by interface in dBm")
+    reported_level: int | None = Field(None, ge=1, le=4, description="TX power level derived from reported_dbm")
+    reported_dbm: float | None = Field(None, description="TX power currently reported by interface in dBm")
 
 class NetworkStatus(BaseModel):
     interface: str
     active: bool
-    runtime_state: Optional[str] = Field(
+    runtime_state: str | None = Field(
         None, description="Watchdog state: restoring_ap, restoring_dhcp, or dhcp_failed.",
     )
-    ssid: Optional[str] = None
-    channel: Optional[int] = None
-    password: Optional[str] = None
-    encryption: Optional[str] = None
-    band: Optional[str] = None
-    hidden: Optional[bool] = None
-    subnet: Optional[str] = None
+    ssid: str | None = None
+    channel: int | None = None
+    password: str | None = None
+    encryption: str | None = None
+    band: str | None = None
+    hidden: bool | None = None
+    subnet: str | None = None
     internet_enabled: bool = False
-    tx_power_level: Optional[int] = Field(None, description="Internal requested TX power level 1-4", exclude=True)
-    tx_power: Optional[NetworkTxPower] = Field(None, description="Requested and reported TX power details")
-    expires_at: Optional[str] = Field(
+    tx_power_level: int | None = Field(None, description="Internal requested TX power level 1-4", exclude=True)
+    tx_power: NetworkTxPower | None = Field(None, description="Requested and reported TX power details")
+    expires_at: str | None = Field(
         None, description="Expiration timestamp in UTC (RFC 3339 with a Z suffix), null if unlimited",
         json_schema_extra={"format": "date-time", "examples": ["2026-11-19T23:00:00Z"]},
     )
-    expires_in: Optional[int] = Field(None, description="Seconds remaining until network auto-shutdown")
-    dhcp: Optional[dict] = Field(None, description="DHCP server configuration details")
-    clients_connected: Optional[int] = Field(None, description="Number of clients currently connected")
-    clients: Optional[List[ClientInfo]] = Field(None, description="List of connected clients")
+    expires_in: int | None = Field(None, description="Seconds remaining until network auto-shutdown")
+    dhcp: dict | None = Field(None, description="DHCP server configuration details")
+    clients_connected: int | None = Field(None, description="Number of clients currently connected")
+    clients: list[ClientInfo] | None = Field(None, description="List of connected clients")
 
 class InterfaceStatus(BaseModel):
     interface: str
@@ -144,16 +144,16 @@ class QosQualityAdvanced(BaseModel):
     from the simple quality score.
     """
 
-    packet_loss_percent: Optional[float] = Field(
+    packet_loss_percent: float | None = Field(
         None, ge=0, le=100, description="Packet loss percentage (0-100)"
     )
-    delay_ms: Optional[int] = Field(
+    delay_ms: int | None = Field(
         None, ge=0, le=5000, description="Base delay in milliseconds (0-5000)"
     )
-    jitter_ms: Optional[int] = Field(
+    jitter_ms: int | None = Field(
         None, ge=0, le=1000, description="Delay jitter in milliseconds (0-1000)"
     )
-    corruption_percent: Optional[float] = Field(
+    corruption_percent: float | None = Field(
         None, ge=0, le=5, description="Bit corruption percentage (0-5)"
     )
     delay_distribution: DelayDistribution = Field(
@@ -178,27 +178,27 @@ class QosRequest(BaseModel):
     Sending ``null`` resets the setting to unlimited / inactive.
     """
 
-    download_speed_kbit: Optional[int] = Field(
+    download_speed_kbit: int | None = Field(
         None,
         description="Download speed limit in kbit/s (1-1000000), or null to reset",
     )
-    upload_speed_kbit: Optional[int] = Field(
+    upload_speed_kbit: int | None = Field(
         None,
         description="Upload speed limit in kbit/s (1-1000000), or null to reset",
     )
-    download_quality: Optional[int] = Field(
+    download_quality: int | None = Field(
         None,
         description="Download link quality 0-100% (100=perfect), or null to reset",
     )
-    upload_quality: Optional[int] = Field(
+    upload_quality: int | None = Field(
         None,
         description="Upload link quality 0-100% (100=perfect), or null to reset",
     )
-    download_quality_advanced: Optional[QosQualityAdvanced] = Field(
+    download_quality_advanced: QosQualityAdvanced | None = Field(
         None,
         description="Advanced download netem params (overrides quality score)",
     )
-    upload_quality_advanced: Optional[QosQualityAdvanced] = Field(
+    upload_quality_advanced: QosQualityAdvanced | None = Field(
         None,
         description="Advanced upload netem params (overrides quality score)",
     )
@@ -244,12 +244,12 @@ class QosStatus(BaseModel):
 
     interface: str
     active: bool = Field(description="True if any QoS rule is active")
-    download_speed_kbit: Optional[int] = Field(None, description="Current download speed limit in kbit/s")
-    upload_speed_kbit: Optional[int] = Field(None, description="Current upload speed limit in kbit/s")
-    download_quality: Optional[int] = Field(None, description="Current download link quality 0-100%")
-    upload_quality: Optional[int] = Field(None, description="Current upload link quality 0-100%")
-    download_netem_params: Optional[NetemParams] = Field(None, description="Resolved download netem parameters")
-    upload_netem_params: Optional[NetemParams] = Field(None, description="Resolved upload netem parameters")
+    download_speed_kbit: int | None = Field(None, description="Current download speed limit in kbit/s")
+    upload_speed_kbit: int | None = Field(None, description="Current upload speed limit in kbit/s")
+    download_quality: int | None = Field(None, description="Current download link quality 0-100%")
+    upload_quality: int | None = Field(None, description="Current upload link quality 0-100%")
+    download_netem_params: NetemParams | None = Field(None, description="Resolved download netem parameters")
+    upload_netem_params: NetemParams | None = Field(None, description="Resolved upload netem parameters")
 
 
 # --- QoS Profile Models ---
@@ -267,10 +267,10 @@ class QosProfileStep(BaseModel):
     """A single step within a QoS profile."""
 
     duration_sec: int = Field(..., ge=1, description="Duration of this step in seconds")
-    quality: Optional[int] = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Quality score 0-100")
-    dl_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Download speed cap in kbit/s")
-    ul_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Upload speed cap in kbit/s")
-    advanced: Optional[QosQualityAdvanced] = Field(None, description="Advanced netem override (mutually exclusive with quality)")
+    quality: int | None = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Quality score 0-100")
+    dl_speed_kbit: int | None = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Download speed cap in kbit/s")
+    ul_speed_kbit: int | None = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Upload speed cap in kbit/s")
+    advanced: QosQualityAdvanced | None = Field(None, description="Advanced netem override (mutually exclusive with quality)")
 
     @model_validator(mode="after")
     def _check_step_constraints(self) -> "QosProfileStep":
@@ -288,7 +288,7 @@ class QosProfile(BaseModel):
     description: str = Field("", description="Human-readable description of the profile scenario")
     source_file: str = Field("", description="JSON filename this profile was loaded from")
     mode: QosProfileMode = Field(..., description="Playback mode")
-    steps: List[QosProfileStep] = Field(..., min_length=1, description="Ordered list of steps")
+    steps: list[QosProfileStep] = Field(..., min_length=1, description="Ordered list of steps")
 
 
 class QosProfileStartRequest(BaseModel):
@@ -297,12 +297,12 @@ class QosProfileStartRequest(BaseModel):
     Either ``profile_id`` or at least one inline QoS parameter must be set, but not both.
     """
 
-    profile_id: Optional[str] = Field(None, description="Profile from the catalogue")
-    download_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Download speed cap in kbit/s")
-    upload_speed_kbit: Optional[int] = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Upload speed cap in kbit/s")
-    download_quality: Optional[int] = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Download quality 0-100")
-    upload_quality: Optional[int] = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Upload quality 0-100")
-    advanced: Optional[QosQualityAdvanced] = Field(None, description="Advanced netem override for both directions")
+    profile_id: str | None = Field(None, description="Profile from the catalogue")
+    download_speed_kbit: int | None = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Download speed cap in kbit/s")
+    upload_speed_kbit: int | None = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Upload speed cap in kbit/s")
+    download_quality: int | None = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Download quality 0-100")
+    upload_quality: int | None = Field(None, ge=_QOS_QUALITY_MIN, le=_QOS_QUALITY_MAX, description="Upload quality 0-100")
+    advanced: QosQualityAdvanced | None = Field(None, description="Advanced netem override for both directions")
 
     @model_validator(mode="after")
     def _check_xor(self) -> "QosProfileStartRequest":
@@ -334,10 +334,10 @@ class QosProfileState(BaseModel):
 
     interface: str
     active: bool = Field(description="True if a profile is currently running")
-    profile_id: Optional[str] = Field(None, description="Active profile ID")
-    description: Optional[str] = Field(None, description="Active profile description")
-    source_file: Optional[str] = Field(None, description="JSON file this profile was loaded from")
-    mode: Optional[QosProfileMode] = Field(None, description="Playback mode")
-    steps: Optional[int] = Field(None, description="Total number of steps in the profile")
-    current_step: Optional[QosProfileStepState] = Field(None, description="Current step info")
-    total_elapsed_sec: Optional[int] = Field(None, description="Total seconds since profile started")
+    profile_id: str | None = Field(None, description="Active profile ID")
+    description: str | None = Field(None, description="Active profile description")
+    source_file: str | None = Field(None, description="JSON file this profile was loaded from")
+    mode: QosProfileMode | None = Field(None, description="Playback mode")
+    steps: int | None = Field(None, description="Total number of steps in the profile")
+    current_step: QosProfileStepState | None = Field(None, description="Current step info")
+    total_elapsed_sec: int | None = Field(None, description="Total seconds since profile started")

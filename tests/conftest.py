@@ -7,6 +7,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
+
 from wilab.config import load_config
 
 TEST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'test.config.yaml')
@@ -46,12 +47,8 @@ def _test_config_env(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_network_operations(monkeypatch, tmp_path):
     """Auto-mock network operations that require root privileges."""
-    from wilab.network import commands
-    from wilab.wifi import interface
-    from wilab.wifi import manager
-    from wilab.wifi import channels
-    from wilab.wifi import hostapd
-    from wilab.network import dhcp, nat, subnet
+    from wilab.network import commands, dhcp, nat, subnet
+    from wilab.wifi import channels, hostapd, interface, manager
     
     # Mock WiFi interface validation (requires real hardware)
     def mock_validate_interface(iface):

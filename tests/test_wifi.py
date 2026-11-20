@@ -1,13 +1,15 @@
-import pytest
 import signal
 import time
 from types import SimpleNamespace
-from wilab.config import load_config, NetworkEntry
-from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
+
+import pytest
+
+from wilab.config import NetworkEntry, load_config
 from wilab.models import NetworkCreateRequest, NetworkStatus
 from wilab.network.commands import CommandError, CommandTimeout
 from wilab.network.dhcp import DhcpServerError
 from wilab.wifi import hostapd
+from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
 
 
 class TestNetworkManagerInit:

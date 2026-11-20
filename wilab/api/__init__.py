@@ -1,22 +1,22 @@
-from contextlib import asynccontextmanager
-from pathlib import Path
 import logging
 import threading
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ..reservation import ReservationCleanupError
+from ..version import __version__
+from ..wifi.channels import set_regulatory_domain
 from .dependencies import discovery_loop, get_config, get_manager
 from .errors import ApiErrorCode, api_error_response, document_errors, domain_error
 from .routes import router as api_router
-from ..version import __version__
-from ..reservation import ReservationCleanupError
-from ..wifi.channels import set_regulatory_domain
 
 logger = logging.getLogger(__name__)
 

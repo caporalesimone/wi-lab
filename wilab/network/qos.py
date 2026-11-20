@@ -3,10 +3,10 @@
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Dict, Optional, TypeVar
+from typing import TypeVar
 
-from .commands import execute_tc, execute_command, CommandError
 from ..models import NetemParams, QosQualityAdvanced
+from .commands import CommandError, execute_command, execute_tc
 
 logger = logging.getLogger(__name__)
 
@@ -21,15 +21,15 @@ class _InterfaceQosState:
     """In-memory state for a single physical interface."""
 
     interface: str
-    ifb_device: Optional[str] = None
-    download_speed_kbit: Optional[int] = None
-    upload_speed_kbit: Optional[int] = None
-    download_quality: Optional[int] = None
-    upload_quality: Optional[int] = None
-    download_quality_advanced: Optional[QosQualityAdvanced] = None
-    upload_quality_advanced: Optional[QosQualityAdvanced] = None
-    download_netem_params: Optional[NetemParams] = None
-    upload_netem_params: Optional[NetemParams] = None
+    ifb_device: str | None = None
+    download_speed_kbit: int | None = None
+    upload_speed_kbit: int | None = None
+    download_quality: int | None = None
+    upload_quality: int | None = None
+    download_quality_advanced: QosQualityAdvanced | None = None
+    upload_quality_advanced: QosQualityAdvanced | None = None
+    download_netem_params: NetemParams | None = None
+    upload_netem_params: NetemParams | None = None
     # Whether the HTB tree is installed on the device
     htb_installed: bool = False
     ifb_htb_installed: bool = False
@@ -51,7 +51,7 @@ class QosManager:
     """Manages per-interface QoS rules via Linux tc."""
 
     def __init__(self) -> None:
-        self._state: Dict[str, _InterfaceQosState] = {}
+        self._state: dict[str, _InterfaceQosState] = {}
         self._ifb_counter = 0
         self._ifb_lock = threading.Lock()
         logger.info("QosManager initialized")
@@ -84,10 +84,10 @@ class QosManager:
         ul = self._resolve(upload_speed_kbit, state.upload_speed_kbit)
         dl_q = self._resolve(download_quality, state.download_quality)
         ul_q = self._resolve(upload_quality, state.upload_quality)
-        dl_qa: Optional[QosQualityAdvanced] = self._resolve(
+        dl_qa: QosQualityAdvanced | None = self._resolve(
             download_quality_advanced, state.download_quality_advanced
         )
-        ul_qa: Optional[QosQualityAdvanced] = self._resolve(
+        ul_qa: QosQualityAdvanced | None = self._resolve(
             upload_quality_advanced, state.upload_quality_advanced
         )
 
@@ -135,7 +135,7 @@ class QosManager:
         state.upload_netem_params = None
         logger.info(f"QoS cleared for {interface}")
 
-    def get_status(self, interface: str) -> Optional[_InterfaceQosState]:
+    def get_status(self, interface: str) -> _InterfaceQosState | None:
         return self._state.get(interface)
 
     # ------------------------------------------------------------------
@@ -143,8 +143,8 @@ class QosManager:
     # ------------------------------------------------------------------
 
     def _apply_download_throttle(
-        self, interface: str, state: _InterfaceQosState, rate_kbit: Optional[int],
-        quality: Optional[int] = None,
+        self, interface: str, state: _InterfaceQosState, rate_kbit: int | None,
+        quality: int | None = None,
     ) -> None:
         if rate_kbit is None and state.download_speed_kbit is None and quality is None and state.download_quality is None:
             # Nothing to do and nothing was set
@@ -171,8 +171,8 @@ class QosManager:
     # ------------------------------------------------------------------
 
     def _apply_upload_throttle(
-        self, interface: str, state: _InterfaceQosState, rate_kbit: Optional[int],
-        quality: Optional[int] = None,
+        self, interface: str, state: _InterfaceQosState, rate_kbit: int | None,
+        quality: int | None = None,
     ) -> None:
         if rate_kbit is None and state.upload_speed_kbit is None and quality is None and state.upload_quality is None:
             return
@@ -343,8 +343,8 @@ class QosManager:
         )
 
     def _resolved_netem(
-        self, quality: Optional[int], advanced: Optional[QosQualityAdvanced]
-    ) -> Optional[NetemParams]:
+        self, quality: int | None, advanced: QosQualityAdvanced | None
+    ) -> NetemParams | None:
         """Return resolved netem params based on quality + advanced override."""
         if advanced is not None:
             return self._advanced_to_netem_params(advanced)
@@ -357,8 +357,8 @@ class QosManager:
         device: str,
         state: _InterfaceQosState,
         direction: str,
-        quality: Optional[int],
-        advanced: Optional[QosQualityAdvanced],
+        quality: int | None,
+        advanced: QosQualityAdvanced | None,
     ) -> None:
         """Apply or remove netem qdisc on *device* for the given direction."""
         params = self._resolved_netem(quality, advanced)

@@ -1,12 +1,22 @@
 import subprocess
 import sys
 import time
-import pytest
 from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from wilab.network.commands import (
-    CommandError, CommandTimeout, ForegroundProcess, execute_command,
-    execute_iptables, execute_ip, execute_sysctl, execute_pkill, start_foreground, stop_process,
+    CommandError,
+    CommandTimeout,
+    ForegroundProcess,
+    execute_command,
+    execute_ip,
+    execute_iptables,
+    execute_pkill,
+    execute_sysctl,
+    start_foreground,
+    stop_process,
 )
 from wilab.wifi.hostapd import _classify_output
 

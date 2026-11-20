@@ -4,6 +4,15 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from ...api.auth import require_token
+from ...api.dependencies import (
+    ReservationManagerDep,
+    get_manager,
+    get_qos_manager,
+    get_qos_profile_manager,
+    hold_reservation,
+    resolve_reservation,
+)
 from ...models import (
     QosProfile,
     QosProfileStartRequest,
@@ -14,15 +23,6 @@ from ...network.qos import QosManager
 from ...network.qos_profile import QosProfileManager
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager
-from ...api.auth import require_token
-from ...api.dependencies import (
-    get_manager,
-    get_qos_manager,
-    get_qos_profile_manager,
-    hold_reservation,
-    resolve_reservation,
-    ReservationManagerDep,
-)
 
 # ---------------------------------------------------------------------------
 # Catalogue router — global, no auth

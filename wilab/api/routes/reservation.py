@@ -1,7 +1,6 @@
 """Device reservation endpoints (create, query, release)."""
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from pydantic import BaseModel, Field, field_validator
@@ -10,10 +9,17 @@ from ...api.auth import require_token
 from ...api.dependencies import get_config, get_reservation_manager
 from ...api.errors import ApiErrorCode, domain_error
 from ...config import AppConfig
-from ...reservation import DeviceRecoveryUnavailable, ReservationManager, NoDeviceAvailableError
+from ...reservation import (
+    DeviceRecoveryUnavailable,
+    NoDeviceAvailableError,
+    ReservationManager,
+)
 from ...timestamps import format_utc_timestamp
 from .recovery_responses import (
-    RETRY_AFTER_HEADER, RecoveryCode, recovery_error, recovery_example,
+    RETRY_AFTER_HEADER,
+    RecoveryCode,
+    recovery_error,
+    recovery_example,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,11 +49,11 @@ class ReservationResponse(BaseModel):
     reservation_id: str
     display_name: str
     interface: str
-    expires_at: Optional[str] = Field(
+    expires_at: str | None = Field(
         None, description="Expiration timestamp in UTC (RFC 3339 with a Z suffix), null if unlimited",
         json_schema_extra={"format": "date-time", "examples": ["2026-11-19T23:00:00Z"]},
     )
-    expires_in: Optional[int] = Field(None, description="Seconds remaining until expiry, null if unlimited")
+    expires_in: int | None = Field(None, description="Seconds remaining until expiry, null if unlimited")
 
 
 def _display_name_for(device_id: str, config: AppConfig) -> str:

@@ -1,8 +1,9 @@
 import logging
 import os
 import re
-from typing import Any, List, Optional
 from ipaddress import IPv4Network
+from typing import Any
+
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
@@ -34,8 +35,8 @@ class AppConfig(BaseModel):
     allow_dfs_channels: bool = False
     dns_server: str = "192.168.10.21"
     internet_enabled_by_default: bool = True
-    networks: List[NetworkEntry] = Field(default_factory=list)
-    cors_origins: Optional[List[str]] = Field(
+    networks: list[NetworkEntry] = Field(default_factory=list)
+    cors_origins: list[str] | None = Field(
         default=None,
         description="CORS allowed origins. If None or empty, CORS is disabled (secure for production). "
                     "For development, add frontend URLs like ['http://localhost:4200', 'http://192.168.1.100:4200']"
@@ -79,7 +80,7 @@ class AppConfig(BaseModel):
 
     @field_validator('networks')
     @classmethod
-    def validate_network_count(cls, v: List[NetworkEntry], info) -> List[NetworkEntry]:
+    def validate_network_count(cls, v: list[NetworkEntry], info) -> list[NetworkEntry]:
         # Check that dhcp_base_network + len(networks) doesn't overflow third octet
         if 'dhcp_base_network' not in info.data:
             return v
@@ -228,7 +229,7 @@ def scan_new_networks(
     return added
 
 
-def load_config(path: Optional[str] = None) -> AppConfig:
+def load_config(path: str | None = None) -> AppConfig:
     """Load and validate the configuration.
 
     No antenna is managed yet: the discovery service started with the API adds

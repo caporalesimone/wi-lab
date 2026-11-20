@@ -1,20 +1,19 @@
-import subprocess
 import logging
 import os
+import subprocess
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from threading import Lock, Thread
-from typing import BinaryIO, Iterator, List, Optional
+from typing import BinaryIO
 
 logger = logging.getLogger(__name__)
 
 
 class CommandError(Exception):
     """Exception raised when shell command execution fails."""
-    pass
 
 
 class CommandTimeout(CommandError):
@@ -207,17 +206,17 @@ def execute_command(
         raise CommandError(f"Command not found: {cmd[0]}") from e
 
 
-def execute_iptables(args: List[str]) -> str:
+def execute_iptables(args: list[str]) -> str:
     """Execute iptables command."""
     return execute_command(["iptables", *args])
 
 
-def execute_ip(args: List[str]) -> str:
+def execute_ip(args: list[str]) -> str:
     """Execute ip command (iproute2)."""
     return execute_command(["ip", *args])
 
 
-def execute_sysctl(key: str, value: Optional[str] = None) -> str:
+def execute_sysctl(key: str, value: str | None = None) -> str:
     """
     Execute sysctl command.
     
@@ -231,7 +230,7 @@ def execute_sysctl(key: str, value: Optional[str] = None) -> str:
         return execute_command(["sysctl", "-w", f"{key}={value}"])
 
 
-def execute_pkill(pattern: str, signal: Optional[str] = None) -> str:
+def execute_pkill(pattern: str, signal: str | None = None) -> str:
     """Kill processes by pattern."""
     cmd = ["pkill"]
     if signal:
@@ -240,11 +239,11 @@ def execute_pkill(pattern: str, signal: Optional[str] = None) -> str:
     return execute_command(cmd, check=False)
 
 
-def execute_iw(args: List[str]) -> str:
+def execute_iw(args: list[str]) -> str:
     """Execute iw command (wireless tools)."""
     return execute_command(["iw", *args])
 
 
-def execute_tc(args: List[str]) -> str:
+def execute_tc(args: list[str]) -> str:
     """Execute tc command (traffic control)."""
     return execute_command(["tc", *args])

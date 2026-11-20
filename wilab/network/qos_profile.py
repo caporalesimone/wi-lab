@@ -7,7 +7,6 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import jsonschema
 
@@ -38,7 +37,7 @@ class _ActiveProfile:
     step_started_at: float = 0.0
     started_at: float = 0.0
     stop_event: threading.Event = field(default_factory=threading.Event)
-    thread: Optional[threading.Thread] = None
+    thread: threading.Thread | None = None
     active: bool = True
 
 
@@ -47,8 +46,8 @@ class QosProfileManager:
 
     def __init__(self, catalogue_dir: str) -> None:
         self._catalogue_dir = Path(catalogue_dir)
-        self._profiles: Dict[str, QosProfile] = {}
-        self._active: Dict[str, _ActiveProfile] = {}  # interface -> _ActiveProfile
+        self._profiles: dict[str, QosProfile] = {}
+        self._active: dict[str, _ActiveProfile] = {}  # interface -> _ActiveProfile
         self._lock = threading.Lock()
         self._load_catalogue()
         logger.info(
@@ -128,10 +127,10 @@ class QosProfileManager:
     # Public API — catalogue
     # ------------------------------------------------------------------
 
-    def list_profiles(self) -> List[QosProfile]:
+    def list_profiles(self) -> list[QosProfile]:
         return list(self._profiles.values())
 
-    def get_profile(self, profile_id: str) -> Optional[QosProfile]:
+    def get_profile(self, profile_id: str) -> QosProfile | None:
         return self._profiles.get(profile_id)
 
     # ------------------------------------------------------------------
@@ -143,7 +142,7 @@ class QosProfileManager:
             ap = self._active.get(interface)
             return ap is not None and ap.active
 
-    def get_state(self, interface: str) -> Optional[_ActiveProfile]:
+    def get_state(self, interface: str) -> _ActiveProfile | None:
         with self._lock:
             return self._active.get(interface)
 
@@ -203,11 +202,11 @@ class QosProfileManager:
 
     @staticmethod
     def build_inline_profile(
-        download_speed_kbit: Optional[int] = None,
-        upload_speed_kbit: Optional[int] = None,
-        download_quality: Optional[int] = None,
-        upload_quality: Optional[int] = None,
-        advanced: Optional[QosQualityAdvanced] = None,
+        download_speed_kbit: int | None = None,
+        upload_speed_kbit: int | None = None,
+        download_quality: int | None = None,
+        upload_quality: int | None = None,
+        advanced: QosQualityAdvanced | None = None,
     ) -> QosProfile:
         """Create an ephemeral once-hold-last profile from inline QoS parameters."""
         # Map symmetric quality fields into the step model

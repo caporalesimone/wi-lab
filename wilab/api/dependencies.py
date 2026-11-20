@@ -1,16 +1,18 @@
-from fastapi import Depends, HTTPException, Path
 import logging
 import threading
-from contextlib import contextmanager
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Annotated
+
+from fastapi import Depends, HTTPException, Path
+
 from ..config import AppConfig, NetworkEntry, load_config, scan_new_networks
-from ..wifi.manager import NetworkManager
-from ..wifi.channels import ChannelManager
-from ..reservation import ReservationManager, Reservation
+from ..network.commands import CommandError
 from ..network.qos import QosManager
 from ..network.qos_profile import QosProfileManager
-from ..network.commands import CommandError
+from ..reservation import Reservation, ReservationManager
+from ..wifi.channels import ChannelManager
+from ..wifi.manager import NetworkManager
 
 logger = logging.getLogger(__name__)
 

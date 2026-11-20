@@ -1,8 +1,10 @@
-import pytest
 import os
 from ipaddress import IPv4Network
-from wilab.network.dhcp import DhcpServer, DhcpServerError
+
+import pytest
+
 from wilab.network.commands import CommandError
+from wilab.network.dhcp import DhcpServer, DhcpServerError
 
 
 class TestDhcpServerInit:

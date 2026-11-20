@@ -1,8 +1,8 @@
 """Network isolation using iptables to prevent inter-subnet traffic."""
 
 import logging
-from typing import List, Set
-from .commands import execute_iptables, CommandError
+
+from .commands import CommandError, execute_iptables
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ class IsolationManager:
     
     def __init__(self):
         """Initialize isolation manager."""
-        self._active_subnets: Set[str] = set()
+        self._active_subnets: set[str] = set()
         logger.info("IsolationManager initialized")
     
     def add_network(self, subnet: str) -> None:
@@ -114,7 +114,7 @@ class IsolationManager:
             # Don't fail if rule doesn't exist (might have been cleaned up already)
             logger.warning(f"Could not remove block rule {source} -> {destination}: {e}")
     
-    def get_active_subnets(self) -> List[str]:
+    def get_active_subnets(self) -> list[str]:
         """Get list of subnets with active isolation rules."""
         return sorted(list(self._active_subnets))
     

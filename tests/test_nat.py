@@ -1,8 +1,9 @@
 """Tests for NAT and Internet forwarding management."""
 
 import pytest
-from wilab.network.nat import NatManager
+
 from wilab.network.commands import CommandError
+from wilab.network.nat import NatManager
 
 
 def test_stale_cleanup_removes_only_owned_rules_and_duplicates(monkeypatch):

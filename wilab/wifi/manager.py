@@ -1,32 +1,41 @@
-import time
 import logging
 import os
-from typing import Dict, Optional, List
+import re
+import secrets
+import threading
+import time
+from _thread import RLock
+from collections.abc import Callable
 from ipaddress import IPv4Network
 from itertools import islice
-import re
-import threading
-import secrets
-from collections.abc import Callable
-from _thread import RLock
+
 from ..config import AppConfig
-from ..models import NetworkCreateRequest, NetworkStatus, ClientInfo, NetworkTxPower
-from ..timestamps import format_utc_timestamp
+from ..models import ClientInfo, NetworkCreateRequest, NetworkStatus, NetworkTxPower
+from ..network.commands import (
+    CommandError,
+    command_deadline,
+    execute_command,
+    execute_ip,
+    execute_iw,
+)
 from ..network.dhcp import DhcpServer, DhcpServerError
-from ..network.nat import NatManager
 from ..network.isolation import IsolationManager
-from ..network.subnet import host_ipv4_networks
+from ..network.nat import NatManager
 from ..network.qos import QosManager
 from ..network.qos_profile import QosProfileManager
-from .hostapd import HostapdManager, HostapdError, HostapdRadioFailure, HostapdSegfault
+from ..network.subnet import host_ipv4_networks
+from ..reservation import Reservation, ReservationManager
+from ..timestamps import format_utc_timestamp
+from .channels import ChannelManager
+from .hostapd import HostapdError, HostapdManager, HostapdRadioFailure, HostapdSegfault
+from .interface import (
+    InterfaceError,
+    validate_interface_ap_mode,
+    validate_interface_exists,
+    validate_interface_wireless,
+)
 from .recovery import RadioRecovery
 from .watchdog import NetworkWatchdog
-from ..reservation import Reservation, ReservationManager
-from .channels import ChannelManager
-from .interface import validate_interface_exists, validate_interface_wireless, validate_interface_ap_mode, InterfaceError
-from ..network.commands import (
-    CommandError, command_deadline, execute_command, execute_ip, execute_iw,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +60,7 @@ class NetworkManager:
     
     def __init__(self, config: AppConfig):
         self.config = config
-        self.active: Dict[str, NetworkStatus] = {}
+        self.active: dict[str, NetworkStatus] = {}
         self.dhcp_server = DhcpServer()
         self.nat_manager = NatManager(upstream_interface=config.upstream_interface)
         self.hostapd_manager = HostapdManager()
@@ -451,7 +460,7 @@ class NetworkManager:
         
         logger.info(f"Network {device_id} stopped")
 
-    def get_status(self, device_id: str) -> Optional[NetworkStatus]:
+    def get_status(self, device_id: str) -> NetworkStatus | None:
         with self.device_lock(device_id):
             return self._get_status(device_id)
 
@@ -517,7 +526,7 @@ class NetworkManager:
         
         return st
 
-    def get_summary(self, device_id: str) -> Optional[dict]:
+    def get_summary(self, device_id: str) -> dict | None:
         """Backward-compatible summary view for a network."""
         st = self.get_status(device_id)
         if st is None:
@@ -610,7 +619,7 @@ class NetworkManager:
         
         return st
 
-    def list_clients(self, device_id: str) -> List[ClientInfo]:
+    def list_clients(self, device_id: str) -> list[ClientInfo]:
         """
         List currently connected WiFi clients using real-time data from iw station dump.
         Optionally enriches with IP from DHCP lease file if available.
@@ -706,7 +715,7 @@ class NetworkManager:
 
     # ---- TX power management ----
 
-    def _read_current_txpower(self, interface: str) -> Optional[float]:
+    def _read_current_txpower(self, interface: str) -> float | None:
         """Read current TX power from interface in dBm. Returns None if unavailable."""
         try:
             output = execute_iw(["dev", interface, "info"])
@@ -727,7 +736,7 @@ class NetworkManager:
                 return {"frequency_mhz": ch.frequency_mhz, "max_dbm": ch.max_power_dbm}
         raise ValueError(f"Channel {channel} not supported on interface {interface}")
 
-    def _compute_level_dbm(self, max_dbm: float) -> Dict[int, float]:
+    def _compute_level_dbm(self, max_dbm: float) -> dict[int, float]:
         # Linearly split max power into four steps
         levels = {
             1: round(max_dbm * 0.25, 1),
@@ -742,7 +751,7 @@ class NetworkManager:
         levels[4] = max(levels[3], levels[4])
         return levels
 
-    def _reported_level_from_dbm(self, levels_dbm: Dict[int, float], reported_dbm: Optional[float]) -> Optional[int]:
+    def _reported_level_from_dbm(self, levels_dbm: dict[int, float], reported_dbm: float | None) -> int | None:
         if reported_dbm is None:
             return None
         return min(levels_dbm, key=lambda lvl: abs(levels_dbm[lvl] - reported_dbm))

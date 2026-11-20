@@ -1,12 +1,12 @@
 import pytest
 from fastapi.testclient import TestClient
-from wilab.api import create_app
+
+from wilab.api import create_app, dependencies
 from wilab.config import load_config
-from wilab.version import __version__
-from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
-from wilab.api import dependencies
 from wilab.models import ClientInfo
 from wilab.reservation import ReservationManager
+from wilab.version import __version__
+from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
 
 
 @pytest.fixture
@@ -131,8 +131,9 @@ class TestStatusEndpoint:
     
     def test_status_degraded_on_dhcp_down(self, client, valid_token, monkeypatch):
         """Test status returns degraded when DHCP is down but network is active."""
+        from wilab.api.dependencies import get_config
+        from wilab.api.dependencies import get_manager as original_get_manager
         from wilab.models import NetworkStatus
-        from wilab.api.dependencies import get_manager as original_get_manager, get_config
         
         # Get the real manager once, then mock it
         real_mgr = original_get_manager(get_config())
@@ -163,7 +164,8 @@ class TestStatusEndpoint:
     
     def test_status_upstream_error_handling(self, client, valid_token, monkeypatch):
         """Test status gracefully handles upstream interface errors."""
-        from wilab.api.dependencies import get_manager as original_get_manager, get_config
+        from wilab.api.dependencies import get_config
+        from wilab.api.dependencies import get_manager as original_get_manager
         from wilab.network.commands import CommandError
         
         # Get the real manager once
@@ -1022,7 +1024,8 @@ class TestReservationRequiredForOperations:
     def test_expired_reservation_returns_404(self, client, valid_token, monkeypatch):
         """Expired reservation token is rejected with 404."""
         import time
-        from wilab.api.dependencies import get_reservation_manager, get_config
+
+        from wilab.api.dependencies import get_config, get_reservation_manager
 
         rmgr = get_reservation_manager(get_config())
         r = rmgr.create(3600)

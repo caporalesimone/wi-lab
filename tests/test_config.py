@@ -1,6 +1,8 @@
 import os
+
 import pytest
-from wilab.config import load_config, AppConfig, NetworkEntry
+
+from wilab.config import AppConfig, NetworkEntry, load_config
 
 
 class TestConfigLoading:
@@ -144,6 +146,7 @@ class TestAllowUnlimitedReservationConfig:
 @pytest.mark.parametrize("country", ["EU", "ETSI", "FCC", "it", "I1", ""])
 def test_invalid_regulatory_country_is_rejected(country):
     from pydantic import ValidationError
+
     from wilab.config import AppConfig
 
     with pytest.raises(ValidationError, match="country_code"):

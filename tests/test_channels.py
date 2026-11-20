@@ -4,16 +4,15 @@ from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
-from wilab.api import create_app
+
+from wilab.api import create_app, dependencies
 from wilab.config import load_config
+from wilab.reservation import ReservationManager
 from wilab.wifi.channels import (
+    VALID_CHANNELS_5GHZ,
     ChannelManager,
     is_valid_channel_for_band,
-    VALID_CHANNELS_5GHZ,
 )
-from wilab.api import dependencies
-from wilab.reservation import ReservationManager
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -5,15 +5,14 @@ Each reservation binds a device to a cryptographically secure token
 for a specified duration.
 """
 
+import logging
 import secrets
 import threading
 import time
-import logging
 from _thread import RLock
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from collections.abc import Callable, Iterator
-from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +52,13 @@ class Reservation:
     device_id: str
     duration_seconds: int
     created_at: float
-    expires_at: Optional[float]  # None = unlimited (no expiry)
+    expires_at: float | None  # None = unlimited (no expiry)
     radio_failures: int = 0
     retry_at: float = 0.0
     release_requests: int = 0
 
     @property
-    def expires_in(self) -> Optional[int]:
+    def expires_in(self) -> int | None:
         """Seconds remaining until expiry (clamped to 0). None if unlimited."""
         if self.expires_at is None:
             return None
@@ -82,8 +81,8 @@ class ReservationManager:
         device_lock: Callable[[str], RLock] | None = None,
     ) -> None:
         self._device_ids = list(device_ids)
-        self._reservations: Dict[str, Reservation] = {}   # reservation_id -> Reservation
-        self._device_to_rid: Dict[str, str] = {}           # device_id -> reservation_id
+        self._reservations: dict[str, Reservation] = {}   # reservation_id -> Reservation
+        self._device_to_rid: dict[str, str] = {}           # device_id -> reservation_id
         self._lock = threading.RLock()
         self._blocked: dict[str, bool] = {}
         self._own_locks: dict[str, RLock] | None = None
@@ -171,7 +170,7 @@ class ReservationManager:
         logger.info("Reservation created for device %s (duration %ds)", device_id, duration_seconds)
         return reservation
 
-    def get(self, reservation_id: str) -> Optional[Reservation]:
+    def get(self, reservation_id: str) -> Reservation | None:
         """Return reservation if still valid, else None."""
         with self._lock:
             r = self._reservations.get(reservation_id)
@@ -213,7 +212,7 @@ class ReservationManager:
             count += self._delete(reservation)
         return count
 
-    def device_for(self, reservation_id: str) -> Optional[str]:
+    def device_for(self, reservation_id: str) -> str | None:
         """Resolve reservation_id to device_id, or None if invalid/expired."""
         r = self.get(reservation_id)
         return r.device_id if r else None
@@ -255,7 +254,7 @@ class ReservationManager:
     # Never wait for a device lock while holding self._lock.
     # ------------------------------------------------------------------
 
-    def _first_available(self) -> Optional[str]:
+    def _first_available(self) -> str | None:
         for did in self._device_ids:
             if did not in self._device_to_rid and did not in self._blocked:
                 return did

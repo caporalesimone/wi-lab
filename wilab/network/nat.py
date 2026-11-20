@@ -3,7 +3,7 @@
 import logging
 import shlex
 from itertools import pairwise
-from typing import Optional
+
 from .commands import CommandError, execute_command, execute_iptables, execute_sysctl
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class NatManager:
             upstream_interface: Interface to use for Internet (e.g., "eth0") or "auto" for autodiscovery
         """
         self.upstream_interface = upstream_interface
-        self._resolved_upstream: Optional[str] = None
+        self._resolved_upstream: str | None = None
         self._blocked_rules: dict[str, list[list[str]]] = {}
         self._nat_networks: set[str] = set()
         logger.info(f"NatManager initialized with upstream={upstream_interface}")
@@ -121,7 +121,7 @@ class NatManager:
         except Exception as e:
             logger.warning(f"Failed to disable IP forwarding: {e}")
     
-    def _rule_exists(self, table: Optional[str], args: list) -> bool:
+    def _rule_exists(self, table: str | None, args: list) -> bool:
         """
         Check if an iptables rule exists.
         
