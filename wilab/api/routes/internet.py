@@ -64,6 +64,7 @@ def internet_enable(
         },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "Reservation not found or expired"},
+        500: {"description": "Internet access could not be disabled"},
     },
 )
 def internet_disable(
@@ -73,7 +74,7 @@ def internet_disable(
     manager: NetworkManager = Depends(get_manager),
 ):
     """
-    Disable Internet access for connected WiFi clients (remove NAT forwarding).
+    Disable Internet access for connected WiFi clients, including existing flows.
 
     Requires a valid reservation token.
     """
@@ -84,3 +85,5 @@ def internet_disable(
             return {"detail": f"Network {device_id} internet disabled successfully"}
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
+        except RuntimeError as e:
+            raise HTTPException(status_code=500, detail=str(e))

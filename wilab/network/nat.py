@@ -21,6 +21,8 @@ class NatManager:
         """
         self.upstream_interface = upstream_interface
         self._resolved_upstream: Optional[str] = None
+        self._blocked_rules: dict[str, list[list[str]]] = {}
+        self._nat_networks: set[str] = set()
         logger.info(f"NatManager initialized with upstream={upstream_interface}")
 
     def remove_stale_rules(self) -> None:
@@ -139,6 +141,47 @@ class NatManager:
             return True
         except Exception:
             return False
+
+    def block_internet(self, wifi_interface: str, net_id: str) -> None:
+        """Block forwarded traffic for an AP, including established flows."""
+        if net_id in self._blocked_rules:
+            if len(self._blocked_rules[net_id]) == 2:
+                return
+            raise RuntimeError(f"Incomplete Internet block for {net_id}; cleanup required")
+        comment = ["-m", "comment", "--comment", f"wilab-block-{net_id}"]
+        rules = [
+            ["FORWARD", "-i", wifi_interface, "-j", "REJECT", *comment],
+            ["FORWARD", "-o", wifi_interface, "-j", "DROP", *comment],
+        ]
+        installed = self._blocked_rules[net_id] = []
+        try:
+            for rule in reversed(rules):
+                execute_iptables(["-I", rule[0], "1", *rule[1:]])
+                installed.append(rule)
+        except CommandError as exc:
+            raise RuntimeError(f"Cannot block Internet for {net_id}: {exc}") from exc
+
+    def has_pending_network(self, net_id: str) -> bool:
+        return net_id in self._blocked_rules or net_id in self._nat_networks
+
+    def unblock_internet(self, net_id: str) -> None:
+        """Remove tracked blocks, retaining failed rules for another cleanup."""
+        rules = self._blocked_rules.get(net_id, [])
+        removed: list[list[str]] = []
+        while rules:
+            rule = rules[-1]
+            try:
+                execute_iptables(["-D", *rule])
+            except CommandError as exc:
+                for removed_rule in reversed(removed):
+                    try:
+                        execute_iptables(["-I", removed_rule[0], "1", *removed_rule[1:]])
+                        rules.append(removed_rule)
+                    except CommandError as restore_exc:
+                        logger.error("Cannot restore Internet block for %s: %s", net_id, restore_exc)
+                raise RuntimeError(f"Cannot remove Internet block for {net_id}: {exc}") from exc
+            removed.append(rules.pop())
+        self._blocked_rules.pop(net_id, None)
     
     def enable_nat(self, wifi_interface: str, net_id: str, subnet: str) -> None:
         """
@@ -152,6 +195,7 @@ class NatManager:
             RuntimeError: If iptables commands fail
         """
         upstream = self.get_upstream_interface()
+        self._nat_networks.add(net_id)
         
         logger.info(f"Enabling NAT for {net_id}: {wifi_interface} -> {upstream}")
         
@@ -174,7 +218,7 @@ class NatManager:
                     if not self._rule_exists(None, protect_rule):
                         logger.warning("FORWARD policy is DROP - adding accept rule for existing connections first")
                         execute_iptables([
-                            "-I", "FORWARD", "1",
+                            "-I", "FORWARD", str(1 + sum(len(r) for r in self._blocked_rules.values())),
                             "-m", "conntrack",
                             "--ctstate", "ESTABLISHED,RELATED",
                             "-j", "ACCEPT",
@@ -260,6 +304,7 @@ class NatManager:
             else:
                 logger.debug(f"FORWARD egress rule already exists for {net_id}")
             
+            self.unblock_internet(net_id)
             logger.info(f"NAT enabled for {net_id} ({wifi_interface})")
         
         except Exception as e:
@@ -274,62 +319,32 @@ class NatManager:
             wifi_interface: WiFi interface to disable NAT for
             net_id: Network identifier to match rules (e.g., "ap-01")
         """
-        upstream = self.get_upstream_interface()
-        
-        logger.info(f"Disabling NAT for {net_id}: {wifi_interface} -> {upstream}")
-        
-        try:
-            # Remove MASQUERADE rule (with net_id-specific comment filter)
-            # Use -D (delete) instead of -A (append)
-            # Loop to remove all instances (in case of duplicates from previous runs)
-            for _ in range(10):  # Max 10 attempts to avoid infinite loop
-                try:
-                    execute_iptables([
-                        "-t", "nat",
-                        "-D", "POSTROUTING",
-                        "-s", subnet,
-                        "-o", upstream,
-                        "-j", "MASQUERADE",
-                        "-m", "comment",
-                        "--comment", f"wilab-nat-{net_id}"
-                    ])
-                except Exception:
-                    break  # No more rules to delete
-            
-            # Remove FORWARD rules (with net_id-specific comment filter)
-            for _ in range(10):
-                try:
-                    execute_iptables([
-                        "-D", "FORWARD",
-                        "-i", wifi_interface,
-                        "-o", upstream,
-                        "-j", "ACCEPT",
-                        "-m", "comment",
-                        "--comment", f"wilab-forward-{net_id}"
-                    ])
-                except Exception:
-                    break
-            
-            for _ in range(10):
-                try:
-                    execute_iptables([
-                        "-D", "FORWARD",
-                        "-i", upstream,
-                        "-o", wifi_interface,
-                        "-m", "state",
-                        "--state", "RELATED,ESTABLISHED",
-                        "-j", "ACCEPT",
-                        "-m", "comment",
-                        "--comment", f"wilab-forward-{net_id}"
-                    ])
-                except Exception:
-                    break
-            
-            logger.info(f"NAT disabled for {net_id} ({wifi_interface})")
-        
-        except Exception as e:
-            # Don't fail if rules don't exist (might have been cleaned up already)
-            logger.warning(f"Error disabling NAT for {net_id} ({wifi_interface}): {e}")
+        self.block_internet(wifi_interface, net_id)
+        self._remove_nat_rules(wifi_interface, net_id, subnet)
+
+    def release_network(self, wifi_interface: str, net_id: str, subnet: str) -> None:
+        if net_id in self._nat_networks:
+            self._remove_nat_rules(wifi_interface, net_id, subnet)
+            self._nat_networks.discard(net_id)
+        self.unblock_internet(net_id)
+
+    def _remove_nat_rules(self, wifi_interface: str, net_id: str, subnet: str) -> None:
+        for table, chain, comment in (
+            ("nat", "POSTROUTING", f"wilab-nat-{net_id}"),
+            (None, "FORWARD", f"wilab-forward-{net_id}"),
+        ):
+            prefix = ["-t", table] if table else []
+            try:
+                listing = execute_command(["iptables", *prefix, "-S", chain])
+                for line in listing.splitlines():
+                    tokens = shlex.split(line)
+                    if tokens[:2] == ["-A", chain] and comment in [
+                        value for option, value in pairwise(tokens) if option == "--comment"
+                    ]:
+                        execute_iptables([*prefix, "-D", *tokens[1:]])
+            except (CommandError, ValueError) as exc:
+                raise RuntimeError(f"Cannot remove NAT rules for {net_id}: {exc}") from exc
+        logger.info("NAT disabled for %s (%s)", net_id, wifi_interface)
     
     def flush_all_rules(self) -> None:
         """Flush all NAT and FORWARD rules (use with caution)."""

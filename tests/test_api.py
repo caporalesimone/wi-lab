@@ -865,6 +865,23 @@ class TestTxPowerPostEndpoint:
 
 class TestInternetControlEndpoints:
     """Tests for internet enable/disable endpoints."""
+
+    def test_disable_internet_failure_returns_500(self, client, valid_token, reservation_id, monkeypatch):
+        manager = NetworkManager(load_config())
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+
+        def fail(_device):
+            raise RuntimeError("firewall failed")
+
+        monkeypatch.setattr(manager, 'disable_internet', fail)
+        response = client.post(
+            f'/api/v1/interface/{reservation_id}/internet/disable',
+            headers={'Authorization': valid_token}
+        )
+        assert response.status_code == 500
+        assert response.json()['detail'] == {
+            'code': 500, 'reason': 'internal_server_error', 'message': 'firewall failed'
+        }
     
     def test_enable_internet_success(self, client, valid_token, reservation_id, monkeypatch):
         """Test enabling internet on active network succeeds and returns detail message."""

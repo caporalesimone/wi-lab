@@ -24,6 +24,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 - Remove stale Wi-Lab firewall rules after an unclean shutdown without flushing host chains.
 - Restrict each Wi-Lab masquerade rule to the corresponding AP subnet.
+- Disabling Internet cuts existing forwarded connections on the selected AP.
 - Listen on the configured API port instead of always using 8080.
 - Report common invalid regulatory regions at startup.
 - Prevent concurrent reservations in one service process from sharing an antenna, and wait for network cleanup before reassigning it. Failed cleanup keeps the device held and returns 503 when it prevents an operation.

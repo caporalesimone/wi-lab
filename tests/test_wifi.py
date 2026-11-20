@@ -4,7 +4,7 @@ import time
 from types import SimpleNamespace
 from wilab.config import load_config, NetworkEntry
 from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
-from wilab.models import NetworkCreateRequest
+from wilab.models import NetworkCreateRequest, NetworkStatus
 from wilab.network.commands import CommandError, CommandTimeout
 from wilab.network.dhcp import DhcpServerError
 from wilab.wifi import hostapd
@@ -322,13 +322,14 @@ class TestNetworkLifecycle:
         """Test starting network with internet disabled."""
         cfg = load_config()
         mgr = NetworkManager(cfg)
+        events = []
         
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
-        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: {})
-        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: {})
+        monkeypatch.setattr(mgr.nat_manager, 'block_internet', lambda *a: events.append('block'))
+        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: events.append('ap'))
         
         req = NetworkCreateRequest(
             ssid='TestAP',
@@ -341,6 +342,45 @@ class TestNetworkLifecycle:
         
         status = mgr.start_network('wls16', req)
         assert status.internet_enabled is False
+        assert events == ['block', 'ap']
+
+    def test_failed_hostapd_stop_keeps_internet_block(self, monkeypatch):
+        mgr = NetworkManager(load_config())
+        released = []
+
+        def fail(_device):
+            raise RuntimeError("hostapd did not stop")
+
+        monkeypatch.setattr(mgr.hostapd_manager, 'stop', fail)
+        monkeypatch.setattr(mgr.dhcp_server, 'stop', lambda *args: None)
+        monkeypatch.setattr(mgr.nat_manager, 'release_network', lambda *args: released.append(args))
+        with pytest.raises(RuntimeError, match="hostapd did not stop"):
+            mgr.stop_network('wls16')
+        assert not released
+
+    def test_partial_offline_block_is_cleaned_before_ap_start(self, monkeypatch):
+        mgr = NetworkManager(load_config())
+        calls = []
+        ap_started = []
+
+        def iptables(args):
+            calls.append(args)
+            if len(calls) == 2:
+                raise CommandError("block failed")
+
+        monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
+        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *args, **kwargs: ap_started.append(True))
+        monkeypatch.setattr(mgr.hostapd_manager, 'stop', lambda *args: None)
+        monkeypatch.setattr(mgr.dhcp_server, 'stop', lambda *args: None)
+        req = NetworkCreateRequest(
+            ssid='TestAP', channel=6, encryption='open', band='2.4ghz',
+            tx_power_level=4, internet_enabled=False,
+        )
+        with pytest.raises(ValueError, match="block Internet"):
+            mgr.start_network('wls16', req)
+        assert not ap_started
+        assert not mgr.nat_manager.has_pending_network('wls16')
+        assert calls[-1][:2] == ['-D', 'FORWARD']
     
     def test_start_network_with_reservation_expiry(self, monkeypatch):
         """Test starting network with explicit expires_at_timestamp from reservation."""
@@ -446,6 +486,19 @@ class TestNetworkLifecycle:
 
 class TestInternetControl:
     """Tests for internet enable/disable."""
+
+    def test_failed_disable_keeps_enabled_state(self, monkeypatch):
+        mgr = NetworkManager(load_config())
+        device = 'wls16'
+        mgr.active[device] = NetworkStatus(interface=device, active=True, internet_enabled=True)
+
+        def fail(*args):
+            raise RuntimeError("block failed")
+
+        monkeypatch.setattr(mgr.nat_manager, 'disable_nat', fail)
+        with pytest.raises(RuntimeError, match="Cannot disable Internet"):
+            mgr.disable_internet(device)
+        assert mgr.active[device].internet_enabled is True
     
     def test_enable_internet(self, monkeypatch):
         """Test enabling internet for a network."""

@@ -118,10 +118,13 @@ class NetworkManager:
     def release_device(self, device_id: str) -> None:
         """Stop all tracked resources before a device can be reassigned."""
         with self.device_lock(device_id):
+            with self._firewall_lock:
+                firewall_pending = self.nat_manager.has_pending_network(device_id)
             if (
                 device_id in self.active
                 or device_id in self.hostapd_manager._instances
                 or device_id in self.dhcp_server.list_active()
+                or firewall_pending
             ):
                 self.stop_network(device_id)
             if device_id in self.active:
@@ -238,6 +241,14 @@ class NetworkManager:
             stage = "start AP"
             try:
                 with command_deadline(retry_deadline if retrying else None):
+                    if not internet_enabled:
+                        stage = "block Internet"
+                        try:
+                            with self._firewall_lock:
+                                self.nat_manager.block_internet(cfg_net.interface, device_id)
+                        except RuntimeError as exc:
+                            raise CommandError(str(exc)) from exc
+                    stage = "start AP"
                     self.hostapd_manager.start(
                         net_id=device_id,
                         interface=cfg_net.interface,
@@ -384,17 +395,19 @@ class NetworkManager:
                 errors.append(f"QoS: {e}")
 
         # Stop hostapd
+        hostapd_stopped = False
         try:
             self.hostapd_manager.stop(device_id)
+            hostapd_stopped = True
         except Exception as e:
             logger.error(f"Error stopping hostapd: {e}")
             errors.append(f"hostapd: {e}")
         
         # Disable NAT if it was enabled
-        if device_id in self.active and self.active[device_id].internet_enabled and cfg_net:
+        if cfg_net and hostapd_stopped:
             try:
                 with self._firewall_lock:
-                    self.nat_manager.disable_nat(cfg_net.interface, device_id, self._get_subnet(device_id))
+                    self.nat_manager.release_network(cfg_net.interface, device_id, self._get_subnet(device_id))
             except Exception as e:
                 logger.error(f"Error disabling NAT: {e}")
                 errors.append(f"NAT: {e}")
@@ -573,7 +586,7 @@ class NetworkManager:
                 logger.info(f"NAT rules removed for {device_id}")
             except Exception as e:
                 logger.error(f"Failed to disable NAT: {e}")
-                # Continue anyway to update state
+                raise RuntimeError(f"Cannot disable Internet: {e}") from e
         
         st.internet_enabled = False
         if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp is not None:

@@ -55,9 +55,21 @@ def test_stale_cleanup_logs_failures_and_continues(monkeypatch, caplog):
 
 
 def test_nat_rules_use_only_the_selected_network_subnet(monkeypatch):
+    import shlex
+
     calls = []
     monkeypatch.setattr("wilab.network.nat.execute_iptables", calls.append)
     monkeypatch.setattr("wilab.network.nat.execute_sysctl", lambda *args: None)
+    def list_rules(cmd):
+        if "-C" in cmd:
+            raise CommandError("missing")
+        chain = cmd[-1]
+        return "\n".join(
+            shlex.join(call[2:] if call[:2] == ["-t", "nat"] else call)
+            for call in calls
+            if (call[:2] == ["-A", chain] or call[:4] == ["-t", "nat", "-A", chain])
+        )
+    monkeypatch.setattr("wilab.network.nat.execute_command", list_rules)
     nat = NatManager("eth0")
     nat.enable_nat("wlan0", "a", "192.168.120.0/24")
     nat.enable_nat("wlan1", "b", "192.168.121.0/24")
@@ -67,6 +79,61 @@ def test_nat_rules_use_only_the_selected_network_subnet(monkeypatch):
     assert len(added) == 2
     assert "192.168.120.0/24" in added[0] and "192.168.121.0/24" in added[1]
     assert removed and all("192.168.120.0/24" in c and "wilab-nat-a" in c for c in removed)
+
+
+def test_internet_block_precedes_protection_and_is_removed_on_reenable(monkeypatch):
+    calls = []
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", calls.append)
+    monkeypatch.setattr("wilab.network.nat.execute_sysctl", lambda *args: None)
+    monkeypatch.setattr("wilab.network.nat.execute_command", lambda cmd: "-P FORWARD DROP" if "-S" in cmd else (_ for _ in ()).throw(CommandError("missing")))
+    nat = NatManager("eth0")
+    nat.disable_nat("wlan0", "a", "192.168.120.0/24")
+    assert calls[0][:3] == ["-I", "FORWARD", "1"]
+    assert calls[1][:3] == ["-I", "FORWARD", "1"]
+    calls.clear()
+    nat.enable_nat("wlan1", "b", "192.168.121.0/24")
+    protect = next(c for c in calls if "wilab-protect-existing" in c)
+    assert protect[:3] == ["-I", "FORWARD", "3"]
+    calls.clear()
+    nat.enable_nat("wlan0", "a", "192.168.120.0/24")
+    assert calls[-1][:2] == ["-D", "FORWARD"]
+    assert not nat._blocked_rules
+
+
+def test_partial_internet_block_never_reports_success_and_can_be_cleaned(monkeypatch):
+    calls = []
+
+    def iptables(args):
+        calls.append(args)
+        if len(calls) == 2:
+            raise CommandError("failed")
+
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
+    nat = NatManager("eth0")
+    with pytest.raises(RuntimeError, match="Cannot block"):
+        nat.block_internet("wlan0", "a")
+    with pytest.raises(RuntimeError, match="Incomplete"):
+        nat.block_internet("wlan0", "a")
+    nat.unblock_internet("a")
+    assert calls[-1][:2] == ["-D", "FORWARD"]
+    assert not nat._blocked_rules
+
+
+def test_unblock_failure_restores_previously_removed_rule(monkeypatch):
+    calls = []
+
+    def iptables(args):
+        calls.append(args)
+        if len(calls) == 4:
+            raise CommandError("delete failed")
+
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
+    nat = NatManager("eth0")
+    nat.block_internet("wlan0", "a")
+    with pytest.raises(RuntimeError, match="Cannot remove Internet block"):
+        nat.unblock_internet("a")
+    assert len(nat._blocked_rules["a"]) == 2
+    assert calls[-1][:3] == ["-I", "FORWARD", "1"]
 
 
 class TestNatManagerInit:
@@ -323,6 +390,14 @@ class TestDisableNat:
             "wilab.network.nat.execute_iptables",
             lambda args: iptables_calls.append(args)
         )
+        def listing(cmd):
+            if cmd[-1] == "POSTROUTING":
+                return "-A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE -m comment --comment wilab-nat-test-net"
+            return "\n".join([
+                "-A FORWARD -i wlan0 -o eth0 -j ACCEPT -m comment --comment wilab-forward-test-net",
+                "-A FORWARD -i eth0 -o wlan0 -m state --state RELATED,ESTABLISHED -j ACCEPT -m comment --comment wilab-forward-test-net",
+            ])
+        monkeypatch.setattr("wilab.network.nat.execute_command", listing)
         
         nat.disable_nat("wlan0", "test-net", "192.168.120.0/24")
         
@@ -357,12 +432,29 @@ class TestDisableNat:
         nat = NatManager(upstream_interface="eth0")
         
         def mock_iptables(args):
-            raise CommandError("iptables: Bad rule (does a matching rule exist in that chain?)")
+            if "-D" in args:
+                raise CommandError("iptables: Bad rule (does a matching rule exist in that chain?)")
         
         monkeypatch.setattr("wilab.network.nat.execute_iptables", mock_iptables)
+        monkeypatch.setattr("wilab.network.nat.execute_command", lambda cmd: "")
         
         # Should not raise
         nat.disable_nat("wlan0", "test-net", "192.168.120.0/24")
+
+    def test_cleanup_failure_retains_block_and_pending_state(self, monkeypatch):
+        nat = NatManager("eth0")
+        nat._nat_networks.add("test-net")
+        monkeypatch.setattr("wilab.network.nat.execute_iptables", lambda args: None)
+        nat.block_internet("wlan0", "test-net")
+
+        def fail(_cmd):
+            raise CommandError("cannot list rules")
+
+        monkeypatch.setattr("wilab.network.nat.execute_command", fail)
+        with pytest.raises(RuntimeError, match="Cannot remove NAT rules"):
+            nat.release_network("wlan0", "test-net", "192.168.120.0/24")
+        assert nat.has_pending_network("test-net")
+        assert len(nat._blocked_rules["test-net"]) == 2
 
 
 class TestFlushRules:
