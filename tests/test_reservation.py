@@ -20,6 +20,29 @@ from wilab.api.dependencies import hold_reservation
 from wilab.models import NetworkStatus
 
 
+def test_ten_antenna_concurrent_reservations_are_unique_and_reusable():
+    devices = [f"radio-{i}" for i in range(10)]
+    manager = ReservationManager(devices)
+    barrier = threading.Barrier(12, timeout=5)
+
+    def reserve():
+        barrier.wait()
+        try:
+            return manager.create(120)
+        except NoDeviceAvailableError:
+            return None
+
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        futures = [executor.submit(reserve) for _ in range(12)]
+        results = [future.result(timeout=10) for future in futures]
+    allocated = [reservation for reservation in results if reservation is not None]
+    assert len(allocated) == 10
+    assert {reservation.device_id for reservation in allocated} == set(devices)
+    assert len({reservation.reservation_id for reservation in allocated}) == 10
+    assert manager.delete(allocated[0].reservation_id)
+    assert manager.create(120).device_id == allocated[0].device_id
+
+
 # ======================================================================
 # Unit tests for ReservationManager
 # ======================================================================
