@@ -70,6 +70,9 @@ To share the current API documentation offline, run
 `python scripts/export_api_docs.py --out api-docs`. The resulting ZIP contains
 OpenAPI JSON, Swagger UI and ReDoc. Pinned renderer assets are downloaded when
 building the bundle; the pages themselves do not require a running service.
+Pull requests and pushes to `main` run backend tests, type-checking and the
+frontend build in CI, and publish the documentation bundle as an artifact.
+`make lint` remains a local check while existing Ruff findings are addressed.
 
 Key sections:
 

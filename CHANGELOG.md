@@ -15,6 +15,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### Features
 
+- Run backend tests, type checks and the frontend build in CI and publish API documentation.
 - Export the current API schema and offline Swagger/ReDoc documentation.
 - Explain adapter-dependent TX power control in the frontend.
 - Warn when an assigned AP subnet overlaps a host route, without blocking startup.
