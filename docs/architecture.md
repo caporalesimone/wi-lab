@@ -2,7 +2,8 @@
 
 This document describes how the Wi-Lab backend works: components, startup,
 threads and locks, the reservation lifecycle, the AP creation pipeline in
-detail, the retry layers, the watchdog and automatic USB recovery. The client
+detail, the retry layers, the watchdog, automatic USB recovery and the manual
+recovery procedure. The client
 side of AP creation is described in [AP creation procedure](ap-creation-procedure.md).
 
 ## 1. Overview
@@ -204,6 +205,13 @@ flowchart TD
 
 An interface still being renamed by udev is skipped, never saved under its
 temporary kernel name; the next scan picks it up with its final name.
+
+**Wi-Fi interfaces used by the host.** `disable: true` excludes a radio on every
+scan, whatever its state. Without it, a Wi-Fi interface the host uses as a
+client is protected only by its default route, which exists only while it is
+connected: if it is disconnected during a scan, Wi-Lab can add it to the pool,
+exclude it from NetworkManager and use it as an AP. List such interfaces with
+`disable: true`. Recommended: do not connect the Wi-Lab host via Wi-Fi.
 
 The AP allocator scans `/24` subnets from `dhcp_base_network` in antenna pool
 order, skipping overlaps with host IPv4 routes and subnets assigned to other
@@ -592,13 +600,79 @@ sequenceDiagram
 - A failed precheck skips the reset for that round.
 - After a USB reset the adapter is a new device. NetworkManager or
   systemd-networkd could bring it up, so the worker releases it from
-  NetworkManager and brings it down again before each check. The runtime rules
-  in [section 10](#10-host-state-and-files) normally keep both managers away.
+  NetworkManager and brings it down again before each check. See
+  [section 10](#10-host-state-and-files) for how both managers are kept away.
 - The probe is a server-side check only: it does not prove that a real station
   can associate and get a lease.
 - Other antennas stay fully available during recovery.
 - For hardware that does not recover, use the
-  [manual recovery procedure](manual_recovery.md).
+  [manual recovery procedure](#81-manual-recovery).
+
+### 8.1 Manual recovery
+
+Use it when automatic recovery was not possible (non-USB adapter, refused
+target, upstream interface) or exhausted its attempts (`recovery_state:
+unavailable`). It resets **one USB device**, never a hub or the controller. A
+successful reset does not establish or fix the underlying cause. Quarantine is
+in memory: a service restart clears it but does not repair the adapter.
+
+Observed case: a MediaTek `mt7921u` adapter in a KVM guest whose interface
+could not be brought up (`RTNETLINK answers: Connection timed out`) was restored
+by a targeted USB reset. This is an observation, not a guarantee for other
+hardware.
+
+**Before starting**
+
+- Stopping Wi-Lab affects every adapter. Agree a maintenance window and check
+  `GET /api/v1/status`: no reservations and no active networks. Ask owners to
+  release theirs; do not use the global release endpoint.
+- Check that nothing outside Wi-Lab uses the adapter, and that it is neither the
+  management nor the upstream interface (`ip -br link`, `ip route show default`,
+  `iw dev`). Keep console access (for example KVM) in case the management
+  connection is lost.
+- Do not share tokens, reservation IDs, WPA passwords, configuration files or
+  unredacted logs. `/tmp/wilab-hostapd/` may contain a passphrase.
+
+**Procedure** (the interface name is an example):
+
+```sh
+IFACE=wlx001122334455
+journalctl -u wi-lab.service --since '15 minutes ago' --no-pager   # failure context
+sudo journalctl -k --since '15 minutes ago' --no-pager             # USB, firmware, segfaults
+
+sudo systemctl stop wi-lab.service
+
+# Map the interface to exactly one USB device; stop if anything is ambiguous.
+USB_DEVICE=$(dirname "$(readlink -f "/sys/class/net/$IFACE/device")")
+cat "$USB_DEVICE"/{idVendor,idProduct,busnum,devnum}; lsusb -t
+BUS=$(cat "$USB_DEVICE/busnum"); DEVICE=$(cat "$USB_DEVICE/devnum")   # read right before the reset
+sudo usbreset "$(printf '%03d/%03d' "$BUS" "$DEVICE")"
+
+# Verify: same name, driver bound, link can go up and back down.
+ip -br link; iw dev; sudo journalctl -k --since '2 minutes ago' --no-pager
+sudo timeout 15s ip link set dev "$IFACE" up && sudo timeout 15s ip link set dev "$IFACE" down
+
+sudo systemctl start wi-lab.service
+```
+
+- Select the device by bus/device number, never by vendor/product ID: identical
+  adapters share them. Bus/device numbers change after a reconnection.
+- While Wi-Lab is stopped, its rule in `/run` still keeps systemd-networkd away
+  from the adapter (until reboot). NetworkManager may take a re-enumerated
+  adapter again: before testing the link run
+  `sudo nmcli device set "$IFACE" managed no`. The interface keeps its
+  `wlx<MAC>` name; if it comes back with another name, discovery adds it as a
+  new antenna.
+- If bringing the link up still times out, the adapter is not recovered: start
+  Wi-Lab anyway (other adapters keep working) and escalate.
+- Validate with Wi-Lab: reserve the adapter, create a temporary WPA2 network,
+  connect an external client (association and DHCP), then release. An API or
+  `iw` check alone does not prove that clients can connect.
+
+If it fails again, record interface, USB topology, driver, firmware, kernel and
+`hostapd` versions; on a VM compare with the physical host and review USB
+passthrough and power. Do not reset the shared controller, reload shared
+driver modules or retry in a loop.
 
 ## 9. Expiry and shutdown
 
@@ -630,16 +704,26 @@ no hostapd, dnsmasq, iptables or tc state is left behind.
 | NAT and isolation rules | iptables `nat` and `FORWARD` | Removed at teardown. Leftovers are reported at startup. |
 | Captive portal chains and sign-ins | iptables `wilab-cp-<interface>` chains; sign-ins in process memory | Removed at teardown and at startup. |
 | Traffic shaping | tc qdiscs, IFB devices | Removed at teardown. |
-| Host network manager exclusion | `/run/NetworkManager/conf.d/90-wilab-unmanaged.conf`, `/run/systemd/network/00-wilab-unmanaged.network` | Written when antennas are added; cleared on reboot. |
+| Host network manager exclusion | NetworkManager runtime device state; `/run/systemd/network/00-wilab-unmanaged.network` | Applied when antennas are added; cleared on reboot. |
 
-When discovery adds antennas, Wi-Lab tells NetworkManager (a `[device]`
-section with `managed=0`, plus `nmcli device set ... managed no` for devices
-already present) and systemd-networkd (`Unmanaged=yes`) to leave **only those
-interfaces** alone. Otherwise they bring Wi-Lab radios up after a reboot or a
-USB reset and start wpa_supplicant or DHCP on them. The NetworkManager rule
-does not use `keyfile.unmanaged-devices`: that key would replace the
-distribution's list, which keeps wired interfaces such as the management
-interface away from NetworkManager.
+When discovery adds antennas, Wi-Lab keeps the host's network managers away
+from **only those interfaces**. Otherwise they bring Wi-Lab radios up after a
+reboot or a USB reset and start wpa_supplicant or DHCP on them.
+
+- **NetworkManager:** `nmcli device set <radio> managed no` for each radio.
+  Wi-Lab never writes NetworkManager configuration or reloads it: a reload
+  re-reads the settings of every interface, and a wrong rule once handed the
+  management interface to NetworkManager, which obtained a different DHCP
+  address. A radio that re-enumerates is new to NetworkManager; the recovery
+  worker releases it again, and so does every AP start.
+- **systemd-networkd:** a rule matching only the radios' names sets
+  `Unmanaged=yes`. `networkctl reload` reconfigures only links whose matching
+  configuration changed, so other interfaces are not touched.
+
+Recommended host setup: the Wi-Lab host should not use Wi-Fi for its own
+connectivity, and every Wi-Fi adapter on it should belong to Wi-Lab. Keep any
+other Wi-Fi adapter out with `disable: true` (see
+[Antenna detection](#antenna-detection)).
 
 The upstream interface is resolved from the default route on first use and
 cached; set `upstream_interface` to force it.

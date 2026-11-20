@@ -178,8 +178,7 @@ Detailed guides live in the `docs/` folder:
 | Document | Topic |
 |----------|-------|
 | [ap-creation-procedure.md](docs/ap-creation-procedure.md) | Client guide: reservation, AP creation, retries |
-| [architecture.md](docs/architecture.md) | Backend architecture, threads, AP pipeline, recovery |
-| [manual_recovery.md](docs/manual_recovery.md) | Manual recovery of a blocked USB Wi-Fi adapter |
+| [architecture.md](docs/architecture.md) | Backend architecture, threads, AP pipeline, recovery, manual adapter recovery |
 | [swagger.md](docs/swagger.md) | API exploration via Swagger UI |
 | [networking.md](docs/networking.md) | Subnet layout, iptables, NAT internals |
 | [unit-testing.md](docs/unit-testing.md) | Test suite structure and pytest usage |

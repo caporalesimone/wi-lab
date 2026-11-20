@@ -364,4 +364,4 @@ Details and diagrams are in [Architecture](architecture.md).
   automatically in the background. Until it is verified, it is reported as
   `recovering` and cannot be reserved; other antennas stay available. See
   [Architecture](architecture.md#8-quarantine-and-automatic-usb-recovery) and the
-  [manual recovery procedure](manual_recovery.md).
+  [manual recovery procedure](architecture.md#81-manual-recovery).
