@@ -34,6 +34,7 @@ All notable changes to Wi-Lab are documented in this file.
 ### 🔧 Maintenance
 
 - Read the initial configuration once while keeping periodic antenna configuration refreshes.
+- Fix the PyYAML type-stub requirement for fresh development installs.
 - **hostapd regulatory compliance** — The generated hostapd configuration now enables `ieee80211d=1` (advertise country code and apply the regulatory domain) on all bands, and `ieee80211h=1` (DFS/TPC) on 5 GHz where regulatory rules require it.
 - Documented safe recovery of a blocked USB Wi-Fi adapter.
 - Added an [AP creation procedure](docs/ap-creation-procedure.md) for client developers and a backend [architecture](docs/architecture.md) guide with startup, threading, creation, retry, watchdog and recovery diagrams.
