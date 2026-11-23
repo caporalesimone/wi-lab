@@ -166,16 +166,15 @@ in corso deve dare `409/1001`, non `500/1003`, e l'antenna deve tornare da sola 
 
 ### Test con root o intervento fisico
 
-Non eseguibili dal tester. Io ho accesso alla macchina ma senza `sudo`, quindi oggi non posso farli.
-Con `sudo` posso simulare il distacco USB via sysfs (`authorized` a 0 e poi a 1) e fare i `kill`.
-Il distacco fisico e le prove con un telefono richiedono una persona vicino alla macchina.
+Non eseguibili dal tester. Li eseguo io con `sudo` (distacco USB simulato via sysfs,
+`kill`, `systemctl`); le prove con un telefono e il ricollegamento fisico di un'antenna che la VM
+ha perso richiedono una persona vicino alla macchina.
+
+Attenzione: il distacco simulato con un AP attivo può bloccare la VM per circa 60 s e far staccare
+la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricollegamento fisico.
 
 | ID | Intervento | Esito atteso |
 |---|---|---|
-| WD-5 | Durante una create su antenna-1, staccare la USB e riattaccarla dopo circa 5 s. | `409/1001` con `Retry-After: 5`, non `500/1003`. Journal: `disappeared during startup`, `is gone; skipping interface reset`, nessun `Startup rollback failed`. |
-| WD-5 | Come sopra, ma con l'antenna staccata per più di 20 s mentre il client ripete la POST. | Terzo tentativo `500/1003`; antenna `recovering`, non `unavailable`; riattaccata entro 10 minuti torna libera (`USB recovery verified`). |
-| WD-5 | Antenna libera: staccare e riattaccare la USB. | Nessuna quarantena; la create successiva funziona. |
-| WD-5 | Rete attiva: staccare la USB per 30 s e riattaccarla. | Rete ripristinata, oppure reservation invalidata con antenna `recovering` e poi libera. Mai `unavailable` permanente. |
 | WD-4 | Antenna staccata per più di 11 minuti, poi riattaccata. | `recovering` → `unavailable` → libera da sola entro il backoff, senza riavvio. Journal: `still unavailable after re-probe N; next attempt in S s` e poi `passed the probe and is allocatable again`. Durante la verifica `ens18` non viene toccata. |
 | WD-5 (p. 3) | Antenna che ricompare con un nome diverso. | La voce vecchia viene ritirata; `/status` non resta `degraded`. |
 | WD-1, WD-8 | Rete attiva (con profilo QoS per WD-8): `kill -9` di hostapd 3 volte a distanza di minuti. | Ogni volta `restoring_ap` e poi rete attiva; profilo QoS di nuovo attivo. |
