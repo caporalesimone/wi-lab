@@ -61,7 +61,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 20 | [NET-10](Fable-Notes.md#L2771) |  | Gestire conflitti sulla porta 80, richieste malformate e regole firewall. |
 | 21 | [NET-4](Fable-Notes.md#L2809) | ✅ | Rimuovere il messaggio di log fuorviante sull'isolamento. |
 | 22 | [HAP-7](Fable-Notes.md#L2832) |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
-| 23 | [RACE-2](Fable-Notes.md#L2852) |  | Costruire `/status` da uno snapshot coerente dello stato condiviso. |
+| 23 | [RACE-2](Fable-Notes.md#L2852) | ✅ | Costruire `/status` da uno snapshot coerente dello stato condiviso. |
 | 24 | [RACE-3](Fable-Notes.md#L2873) |  | Sincronizzare le operazioni QoS per interfaccia. |
 | 25 | [PERF-3](Fable-Notes.md#L2898) |  | Memorizzare brevemente i risultati dei controlli di salute. |
 | 26 | [PERF-1](Fable-Notes.md#L2932) | ✅ parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. Fatti i tagli a basso rischio (validazioni `iw`, `dnsmasq --version`, `nmcli --version`). Non fatto di proposito `iptables-restore` in blocco: cambierebbe come si installano e tolgono tutte le regole, appena consolidato con NET-2, SEC-3 e WD-7. |
@@ -156,7 +156,7 @@ in corso deve dare `409/1001`, non `500/1003`, e l'antenna deve tornare da sola 
 | HAP-3, HAP-2 | Run lunga di create con statistiche per `status` e `detail.code`. | Solo `200`, `409/1001` o `500/1003`; mai `500` generico. |  |
 | HAP-4, WD-10 | Run lunga con M1. | Nessuna quarantena dopo una create con `409/1001` isolato; nessun `restoring_ap` su reti senza guasti. |  |
 | RACE-1 | Create su canale DFS (es. 100) e, nello stesso momento, 45 `GET .../network` più `/status`. | `/status` risponde subito; le altre richieste ottengono `200` o `503 / 1006` con `Retry-After: 2` entro circa 5 s, non un timeout. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) (senza DFS) |
-| RACE-2 | `/status` in ciclo stretto durante create/delete ripetuti. | Nessun `degraded` spurio. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| RACE-2 | `/status` in ciclo stretto durante create/delete ripetuti. | Nessun `degraded` spurio. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | HAP-9 | Con DFS abilitato, create sul canale 124. | Risposta coerente (attesa gestita o rifiuto esplicito), non un timeout del client a 75 s. |  |
 | HAP-10 | Create con `wpa2-wpa3` e con `wpa`. | `200` per entrambe. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | NET-11 | QoS con `download_quality: 40`, `upload_quality: 90`. | Rifiuto esplicito, oppure applicazione accettata con valori diversi nelle due direzioni (`GET .../qos`). |  |

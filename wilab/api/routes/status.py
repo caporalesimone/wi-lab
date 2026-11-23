@@ -126,7 +126,9 @@ def system_status(
       has not run for 3 minutes (`checks.loops.stale`). Wi-Lab restarts
       itself through the systemd watchdog as soon as no reservation is
       active and no USB recovery is running; until then it keeps serving;
-    - networks are active and a check in `checks` fails (`dnsmasq.running`,
+    - networks are active and a check in `checks` fails. A network with a
+      start, stop or restore in progress is not judged, so a create/delete
+      never makes the status flap to `degraded` (`dnsmasq.running`,
       `iptables_nat.configured` or `upstream_interface.reachable` is false).
 
     A quarantined adapter is never allocatable, even with `reserved: false`.
@@ -146,6 +148,15 @@ def system_status(
             - checks: Component health details
     """
     return _system_status(manager, config, reservation_mgr)
+
+
+def _not_busy(manager: NetworkManager, device: str) -> bool:
+    """True if no start, stop or restore holds the device; never waits (RACE-2)."""
+    lock = manager.device_lock(device)
+    if not lock.acquire(blocking=False):
+        return False
+    lock.release()
+    return True
 
 
 def _system_status(
@@ -207,8 +218,14 @@ def _system_status(
             "error": str(e),
         }
 
-    active_count = len(manager.active)
-    
+    # RACE-2: one snapshot of the active networks for the whole answer, and health is
+    # judged only on networks with no operation in progress. A start publishes its
+    # network only when it is complete, but a stop removes DHCP and NAT before it
+    # leaves `active`: judging that network would report a passing `degraded`.
+    snapshot = manager.active.copy()
+    settled = [device for device in snapshot if _not_busy(manager, device)]
+    active_count = len(snapshot)
+
     if not active_count:
         # Standby - service is healthy but no networks are active
         status_data["status"] = "standby"
@@ -222,7 +239,7 @@ def _system_status(
                 health_data["checks"]["upstream_interface"].get("reachable") is not False,
             ]
         )
-        status_data["status"] = "ok" if all_ok else "degraded"
+        status_data["status"] = "ok" if all_ok or not settled else "degraded"
         status_data["active_networks"] = active_count
 
     # Add networks with reservation info, checks, and rest of data

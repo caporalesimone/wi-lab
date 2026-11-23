@@ -122,7 +122,6 @@ def test_txpower_change_is_fast(wilab: WiLab) -> None:
     assert time.monotonic() - start < 3
 
 
-@pending("RACE-2")
 def test_status_never_flaps_to_degraded_during_create_delete(wilab: WiLab) -> None:
     antenna = wilab.reserve()
     stop = threading.Event()
