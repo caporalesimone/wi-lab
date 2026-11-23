@@ -8,6 +8,7 @@ import pytest
 
 from wilab.network.commands import (
     CommandError,
+    CommandStuck,
     CommandTimeout,
     ForegroundProcess,
     execute_command,
@@ -17,6 +18,7 @@ from wilab.network.commands import (
     execute_sysctl,
     start_foreground,
     stop_process,
+    stuck_commands,
 )
 from wilab.wifi.hostapd import _classify_output
 
@@ -26,34 +28,31 @@ class TestCommandExecution:
 
     def test_execute_command_uses_default_timeout(self):
         """Test default timeout is 8 seconds."""
-        with patch('wilab.network.commands.subprocess.run') as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout='ok', stderr='')
+        with patch('wilab.network.commands._run', return_value=(0, 'ok', '')) as mock_run:
             execute_command(['echo', 'hello'])
-            assert mock_run.call_args.kwargs['timeout'] == 8.0
+            assert mock_run.call_args.args[1] == 8.0
 
     def test_execute_command_enforces_min_timeout(self):
         """Test timeout lower than 5 seconds is clamped to 5."""
-        with patch('wilab.network.commands.subprocess.run') as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout='ok', stderr='')
+        with patch('wilab.network.commands._run', return_value=(0, 'ok', '')) as mock_run:
             execute_command(['echo', 'hello'], timeout=1.0)
-            assert mock_run.call_args.kwargs['timeout'] == 5.0
+            assert mock_run.call_args.args[1] == 5.0
 
     def test_deadline_clamps_timeout_and_does_not_leak(self, monkeypatch):
         from wilab.network import commands
 
         now = 10.0
         monkeypatch.setattr(commands, "time", SimpleNamespace(monotonic=lambda: now))
-        with patch.object(commands.subprocess, "run") as run:
-            run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+        with patch.object(commands, "_run", return_value=(0, "", "")) as run:
             with commands.command_deadline(10.5):
                 execute_command(["ip", "addr", "show"])
-                assert run.call_args.kwargs["timeout"] == 0.5
+                assert run.call_args.args[1] == 0.5
                 now = 10.5
                 with pytest.raises(CommandError, match="Deadline expired"):
                     execute_command(["dnsmasq", "--test"])
                 assert run.call_count == 1
             execute_command(["ip", "addr", "show"])
-            assert run.call_args.kwargs["timeout"] == 8.0
+            assert run.call_args.args[1] == 8.0
     
     def test_execute_command_success(self):
         """Test successful command execution."""
@@ -273,8 +272,11 @@ def test_foreground_stop_escalates_and_verifies_exit(exits_after_kill):
     if exits_after_kill:
         process.stop()
     else:
-        with pytest.raises(CommandTimeout, match="did not exit"):
+        with pytest.raises(CommandStuck, match="stuck in the kernel"):
             process.stop()
+        assert stuck_commands() == 1
+        child.poll.return_value = 0  # it finally exits
+        assert stuck_commands() == 0
     child.terminate.assert_called_once()
     child.kill.assert_called_once()
     assert child.wait.call_count == 2
@@ -451,3 +453,71 @@ class TestCommandEdgeCases:
         """Test command handling unicode output."""
         result = execute_command(['echo', 'test-äöü'])
         assert 'test' in result
+
+
+class _HungChild:
+    """A Popen stand-in whose process ignores SIGKILL until released (STAB-1)."""
+
+    def __init__(self, *args, **kwargs):
+        import threading
+        self.args = args[0] if args else kwargs.get("args")
+        self.pid = 4242
+        self.returncode = None
+        self.killed = False
+        self.released = threading.Event()
+
+    def communicate(self, timeout=None):
+        if not self.released.wait(timeout):
+            raise subprocess.TimeoutExpired(self.args, timeout)
+        self.returncode = -9
+        return "", ""
+
+    def kill(self):
+        self.killed = True
+
+    def poll(self):
+        return -9 if self.released.is_set() else None
+
+
+class TestStuckCommands:
+    """STAB-1: a command stuck in the kernel must not block the caller forever."""
+
+    @pytest.fixture(autouse=True)
+    def _no_stuck_children(self, monkeypatch):
+        from wilab.network import commands
+
+        monkeypatch.setattr(commands, "_stuck_children", [])
+
+    def test_command_stuck_after_sigkill_raises_within_grace(self, monkeypatch):
+        from wilab.network import commands
+
+        children: list[_HungChild] = []
+
+        def popen(*args, **kwargs):
+            children.append(_HungChild(*args, **kwargs))
+            return children[-1]
+
+        monkeypatch.setattr(commands.subprocess, "Popen", popen)
+        monkeypatch.setattr(commands, "KILL_GRACE", 0.2)
+        start = time.monotonic()
+        with pytest.raises(CommandStuck, match="stuck in the kernel: ip link set wlan0 down"):
+            execute_command(["ip", "link", "set", "wlan0", "down"], timeout=0.1, exact_timeout=True)
+        assert time.monotonic() - start < 2
+        assert children[0].killed
+        assert stuck_commands() == 1
+        children[0].released.set()  # the kernel finally lets it go
+        assert stuck_commands() == 0
+
+    def test_stuck_is_a_timeout_so_callers_keep_their_handling(self):
+        assert issubclass(CommandStuck, CommandTimeout)
+        assert issubclass(CommandStuck, CommandError)
+
+    def test_killed_command_that_exits_is_a_plain_timeout(self):
+        with pytest.raises(CommandTimeout) as info:
+            execute_command(["sleep", "5"], timeout=0.2, exact_timeout=True)
+        assert not isinstance(info.value, CommandStuck)
+        assert stuck_commands() == 0
+
+    def test_non_utf8_output_does_not_raise(self):
+        out = execute_command([sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'ok\\xff')"])
+        assert out.startswith("ok")

@@ -7,13 +7,14 @@ from fastapi import APIRouter, Depends
 from ...api.auth import require_token
 from ...api.dependencies import get_config, get_manager, get_reservation_manager
 from ...config import AppConfig
-from ...network.commands import CommandError, execute_command
+from ...network.commands import CommandError, execute_command, stuck_commands
 from ...reservation import ReservationManager
 from ...version import __version__
 from ...wifi.manager import NetworkManager
 
 _POLICY_EXAMPLE = {"min_seconds": 60, "max_seconds": 86400, "allow_unlimited": False}
 _CHECKS_OK_EXAMPLE = {
+    "commands": {"stuck": 0},
     "dnsmasq": {"running": False, "instances": 0},
     "iptables_nat": {"configured": True, "errors": []},
     "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
@@ -33,7 +34,8 @@ router = APIRouter(
             "description": (
                 "Health and allocation snapshot. `status` is `standby`, `ok` or `degraded`; "
                 "`degraded` means at least one adapter is quarantined (`recovery_state`), a "
-                "reserved network is being repaired or has lost DHCP (`runtime_state`), or a "
+                "reserved network is being repaired or has lost DHCP (`runtime_state`), a "
+                "host command is stuck in the kernel (`checks.commands.stuck`), or a "
                 "health check failed while networks are active. A reserved or quarantined "
                 "adapter is not allocatable."
             ),
@@ -112,6 +114,10 @@ def system_status(
       (the watchdog is repairing it), `dhcp_failed` (AP up, new clients get
       no address) or `restore_failed` (AP down after a failed restart; the
       watchdog retries with backoff);
+    - a host command (`ip`, `iw`, `tc`, ...) did not exit even after SIGKILL
+      (`checks.commands.stuck` > 0). It is stuck in the kernel, usually a hung
+      Wi-Fi driver; Wi-Lab no longer waits for it, but the adapter may need a
+      reset or the host a reboot. The count drops when the process exits;
     - networks are active and a check in `checks` fails (`dnsmasq.running`,
       `iptables_nat.configured` or `upstream_interface.reachable` is false).
 
@@ -144,6 +150,8 @@ def _system_status(
 
     # === HEALTH CHECK ===
     health_data: dict[str, Any] = {"checks": {}}
+    stuck = stuck_commands()
+    health_data["checks"]["commands"] = {"stuck": stuck}
 
     # Check dnsmasq instances
     dhcp_status = manager.dhcp_server.status()
@@ -224,7 +232,7 @@ def _system_status(
             entry["recovery_state"] = "recovering" if recovery[n.device_id] else "unavailable"
         networks_info.append(entry)
     status_data["networks"] = networks_info
-    if recovery or runtime_degraded:
+    if recovery or runtime_degraded or stuck:
         status_data["status"] = "degraded"
     status_data["reservation_policy"] = {
         "min_seconds": config.min_timeout,

@@ -84,6 +84,15 @@ class TestStatusEndpoint:
         data = resp.json()
         assert data['status'] == 'standby'
         assert data['active_networks'] == 0
+        assert data['checks']['commands'] == {'stuck': 0}
+
+    def test_status_degraded_when_a_command_is_stuck_in_the_kernel(self, client, valid_token, monkeypatch):
+        """STAB-1: a child that survived SIGKILL makes the service degraded, even in standby."""
+        monkeypatch.setattr('wilab.api.routes.status.stuck_commands', lambda: 2)
+        data = client.get('/api/v1/status', headers={'Authorization': valid_token}).json()
+        assert data['active_networks'] == 0
+        assert data['status'] == 'degraded'
+        assert data['checks']['commands'] == {'stuck': 2}
     
     def test_status_response_structure(self, client, valid_token):
         """Test status response contains all required fields."""

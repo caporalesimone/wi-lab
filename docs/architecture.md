@@ -846,12 +846,18 @@ cached; set `upstream_interface` to force it.
 
 ## 12. Known limitations
 
-- **A USB reset stuck in the kernel blocks its antenna.** If `usbreset` enters
-  an uninterruptible kernel state, its timeout cannot terminate it. The recovery
-  thread then waits forever while holding that antenna's device lock: the
-  antenna stays `recovering`, and service shutdown also waits on that lock until
-  systemd kills the process. Other antennas keep working. Recovering the adapter
-  then requires unplugging it or restarting the VM or host.
+- **A command stuck in the kernel is reported, not fixed.** A hung Wi-Fi
+  driver can leave `ip`, `iw` or `usbreset` in an uninterruptible kernel call
+  where even SIGKILL does not end it. Wi-Lab kills every command at its timeout
+  and stops waiting `KILL_GRACE` (2 s) after the SIGKILL (Fable STAB-1): the
+  caller gets `CommandStuck` (a `CommandTimeout`), so the operation fails and
+  releases the device lock instead of blocking the thread, the lock and the API
+  forever. The process is logged at `CRITICAL`, counted in
+  `GET /api/v1/status` → `checks.commands.stuck`, and makes the service
+  `degraded` until it exits. The process, and any kernel lock it holds, stays;
+  other commands may then time out too. Recovering the adapter can require
+  unplugging it or rebooting the VM or host, which is the maintainer's call:
+  Wi-Lab does not restart itself (no systemd `WatchdogSec`).
 - Antennas are added at runtime but never removed: an antenna unplugged while in
   the pool stays listed (as `unavailable` once it fails) until the service
   restarts. A returning adapter keeps its `wlx<MAC>` name and is re-probed; one

@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from threading import Lock, Thread
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,57 @@ class CommandError(Exception):
 
 class CommandTimeout(CommandError):
     """The command did not finish before its deadline."""
+
+
+class CommandStuck(CommandTimeout):
+    """The child did not exit even after SIGKILL: it is stuck in the kernel (STAB-1)."""
+
+
+# Seconds to wait for a killed child to exit. A child that outlives this is in an
+# uninterruptible kernel call (a hung Wi-Fi driver holding the RTNL lock, for example):
+# waiting for it would block the calling thread, and the device lock it holds, forever.
+KILL_GRACE = 2.0
+
+# Children that never exited after SIGKILL. Kept referenced so they can be reaped
+# when they finally exit; their count is reported by GET /status.
+_stuck_children: list[subprocess.Popen[Any]] = []
+_stuck_lock = Lock()
+
+
+def _remember_stuck(process: subprocess.Popen[Any], what: str) -> None:
+    with _stuck_lock:
+        _stuck_children.append(process)
+    logger.critical(
+        "%s (pid %d) did not exit after SIGKILL; it is stuck in the kernel. "
+        "The adapter may need a reset or the host a reboot",
+        what, process.pid,
+    )
+
+
+def stuck_commands() -> int:
+    """Number of children that never exited after SIGKILL; reaps the ones that finally did."""
+    with _stuck_lock:
+        _stuck_children[:] = [p for p in _stuck_children if p.poll() is None]
+        return len(_stuck_children)
+
+
+def _run(cmd: list[str], timeout: float) -> tuple[int, str, str]:
+    """Run a command and never wait for it without a limit (unlike subprocess.run)."""
+    process = subprocess.Popen(
+        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, errors="replace",
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        try:
+            process.communicate(timeout=KILL_GRACE)
+        except subprocess.TimeoutExpired:
+            _remember_stuck(process, f"Command {cmd[0]}")
+            raise CommandStuck(f"Command stuck in the kernel: {' '.join(cmd)}") from None
+        raise CommandTimeout(f"Command timed out: {' '.join(cmd)}") from None
+    return process.returncode, stdout, stderr
 
 
 _command_deadline: ContextVar[float | None] = ContextVar(
@@ -95,7 +146,11 @@ class ForegroundProcess:
                 self._process.wait(timeout=2.0)
             except subprocess.TimeoutExpired:
                 self._process.kill()
-                self._process.wait(timeout=2.0)
+                try:
+                    self._process.wait(timeout=KILL_GRACE)
+                except subprocess.TimeoutExpired:
+                    _remember_stuck(self._process, f"Process {self._process.args!r}")
+                    raise CommandStuck(f"Process {self._process.pid} stuck in the kernel") from None
         except subprocess.TimeoutExpired as e:
             raise CommandTimeout(f"Process {self._process.pid} did not exit") from e
         except OSError as e:
@@ -174,6 +229,8 @@ def execute_command(
         
     Raises:
         CommandError: If command fails and check=True
+        CommandTimeout: If the command does not finish in time (it is killed)
+        CommandStuck: If the command does not exit even after SIGKILL
     """
     if not cmd:
         raise CommandError("Empty command")
@@ -182,26 +239,18 @@ def execute_command(
             timeout if exact_timeout else max(5.0, timeout)
         )
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=effective_timeout
-        )
-        
-        if check and result.returncode != 0:
+        returncode, stdout, stderr = _run(cmd, effective_timeout)
+
+        if check and returncode != 0:
             logger.error(
-                f"Command failed: {' '.join(cmd)}\nstderr: {result.stderr}"
+                f"Command failed: {' '.join(cmd)}\nstderr: {stderr}"
             )
             raise CommandError(
-                f"Command '{cmd[0]}' failed with code {result.returncode}: {result.stderr}"
+                f"Command '{cmd[0]}' failed with code {returncode}: {stderr}"
             )
-        
-        return result.stdout
-    
-    except subprocess.TimeoutExpired as e:
-        raise CommandTimeout(f"Command timed out: {' '.join(cmd)}") from e
+
+        return stdout
+
     except FileNotFoundError as e:
         raise CommandError(f"Command not found: {cmd[0]}") from e
 

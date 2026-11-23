@@ -61,7 +61,8 @@ Examples** select `standby`, `ok` or `degraded_quarantine`. `status:
 (`networks[].recovery_state`: `recovering` or `unavailable`), a reserved
 network is being repaired, lost DHCP or could not be restarted
 (`networks[].runtime_state`: `restoring_ap`, `restoring_dhcp`, `dhcp_failed`,
-`restore_failed`), or a
+`restore_failed`), a host command is stuck in the kernel
+(`checks.commands.stuck` > 0), or a
 health check in `checks` failed while networks are active. Clients must poll
 this endpoint to learn about quarantined adapters: a quarantined adapter can
 show `reserved: false` but is not allocatable, and only its former owner is
