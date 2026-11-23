@@ -6,6 +6,20 @@ from wilab.network.commands import CommandError
 from wilab.network.nat import NatManager
 
 
+def _recording_iptables(calls, listing=lambda args: ""):
+    """Fake execute_iptables: lists with `listing`, reports every rule as missing, records changes."""
+
+    def iptables(args):
+        if "-S" in args:
+            return listing(args)
+        if "-C" in args:
+            raise CommandError("iptables: Bad rule (does a matching rule exist in that chain?)")
+        calls.append(args)
+        return ""
+
+    return iptables
+
+
 def test_stale_cleanup_removes_only_owned_rules_and_duplicates(monkeypatch):
     rules = {
         "FORWARD": [
@@ -21,17 +35,16 @@ def test_stale_cleanup_removes_only_owned_rules_and_duplicates(monkeypatch):
     }
     import shlex
 
-    def list_rules(cmd):
-        return "\n".join(rules[cmd[-1]])
-
-    def delete_rule(args):
+    def iptables(args):
+        if "-S" in args:
+            return "\n".join(rules[args[-1]])
         chain = args[3] if args[:2] == ["-t", "nat"] else args[1]
         rule = args[3:] if args[:2] == ["-t", "nat"] else args[1:]
         index = next(i for i, line in enumerate(rules[chain]) if shlex.split(line)[1:] == rule)
         rules[chain].pop(index)
+        return ""
 
-    monkeypatch.setattr("wilab.network.nat.execute_command", list_rules)
-    monkeypatch.setattr("wilab.network.nat.execute_iptables", delete_rule)
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
     manager = NatManager()
     manager.remove_stale_rules()
     manager.remove_stale_rules()
@@ -40,16 +53,14 @@ def test_stale_cleanup_removes_only_owned_rules_and_duplicates(monkeypatch):
 
 
 def test_stale_cleanup_logs_failures_and_continues(monkeypatch, caplog):
-    def listing(cmd):
-        if cmd[-1] == "FORWARD":
+    def iptables(args):
+        if "-S" not in args:
+            raise CommandError("deletion failed")
+        if args[-1] == "FORWARD":
             raise CommandError("listing failed")
         return '-A POSTROUTING -m comment --comment wilab-nat-wlan0 -j MASQUERADE'
 
-    def delete(args):
-        raise CommandError("deletion failed")
-
-    monkeypatch.setattr("wilab.network.nat.execute_command", listing)
-    monkeypatch.setattr("wilab.network.nat.execute_iptables", delete)
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
     NatManager().remove_stale_rules()
     assert "Cannot list stale" in caplog.text
     assert "Cannot remove stale" in caplog.text
@@ -59,18 +70,22 @@ def test_nat_rules_use_only_the_selected_network_subnet(monkeypatch):
     import shlex
 
     calls = []
-    monkeypatch.setattr("wilab.network.nat.execute_iptables", calls.append)
     monkeypatch.setattr("wilab.network.nat.execute_sysctl", lambda *args: None)
-    def list_rules(cmd):
-        if "-C" in cmd:
+
+    def iptables(args):
+        if "-C" in args:
             raise CommandError("missing")
-        chain = cmd[-1]
-        return "\n".join(
-            shlex.join(call[2:] if call[:2] == ["-t", "nat"] else call)
-            for call in calls
-            if (call[:2] == ["-A", chain] or call[:4] == ["-t", "nat", "-A", chain])
-        )
-    monkeypatch.setattr("wilab.network.nat.execute_command", list_rules)
+        if "-S" in args:
+            chain = args[-1]
+            return "\n".join(
+                shlex.join(call[2:] if call[:2] == ["-t", "nat"] else call)
+                for call in calls
+                if (call[:2] == ["-A", chain] or call[:4] == ["-t", "nat", "-A", chain])
+            )
+        calls.append(args)
+        return ""
+
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
     nat = NatManager("eth0")
     nat.enable_nat("wlan0", "a", "192.168.120.0/24")
     nat.enable_nat("wlan1", "b", "192.168.121.0/24")
@@ -84,9 +99,17 @@ def test_nat_rules_use_only_the_selected_network_subnet(monkeypatch):
 
 def test_internet_block_precedes_protection_and_is_removed_on_reenable(monkeypatch):
     calls = []
-    monkeypatch.setattr("wilab.network.nat.execute_iptables", calls.append)
     monkeypatch.setattr("wilab.network.nat.execute_sysctl", lambda *args: None)
-    monkeypatch.setattr("wilab.network.nat.execute_command", lambda cmd: "-P FORWARD DROP" if "-S" in cmd else (_ for _ in ()).throw(CommandError("missing")))
+
+    def iptables(args):
+        if "-S" in args:
+            return "-P FORWARD DROP"
+        if "-C" in args:
+            raise CommandError("missing")
+        calls.append(args)
+        return ""
+
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
     nat = NatManager("eth0")
     nat.disable_nat("wlan0", "a", "192.168.120.0/24")
     assert calls[0][:3] == ["-I", "FORWARD", "1"]
@@ -292,10 +315,7 @@ class TestEnableNat:
         iptables_calls = []
         sysctl_calls = []
         
-        monkeypatch.setattr(
-            "wilab.network.nat.execute_iptables",
-            lambda args: iptables_calls.append(args)
-        )
+        monkeypatch.setattr("wilab.network.nat.execute_iptables", _recording_iptables(iptables_calls))
         def mock_sysctl(key, value=None):
             sysctl_calls.append((key, value))
             return ""
@@ -337,23 +357,11 @@ class TestEnableNat:
         iptables_calls = []
         
         # Mock upstream discovery - distinguish between ip route and iptables -C commands
-        def mock_execute_command(cmd):
-            if isinstance(cmd, list) and len(cmd) > 1:
-                if cmd[1] == "route" or "route" in cmd:
-                    return "default via 10.0.0.1 dev eth1"
-                elif "-C" in cmd:
-                    # Rule check always returns "not found" (exception)
-                    raise Exception("Rule not found")
-            return "default via 10.0.0.1 dev eth1"
-        
         monkeypatch.setattr(
             "wilab.network.nat.execute_command",
-            mock_execute_command
+            lambda cmd: "default via 10.0.0.1 dev eth1",
         )
-        monkeypatch.setattr(
-            "wilab.network.nat.execute_iptables",
-            lambda args: iptables_calls.append(args)
-        )
+        monkeypatch.setattr("wilab.network.nat.execute_iptables", _recording_iptables(iptables_calls))
         def mock_sysctl(key, value=None):
             return ""
         monkeypatch.setattr("wilab.network.nat.execute_sysctl", mock_sysctl)
@@ -389,18 +397,15 @@ class TestDisableNat:
         nat = NatManager(upstream_interface="eth0")
         
         iptables_calls = []
-        monkeypatch.setattr(
-            "wilab.network.nat.execute_iptables",
-            lambda args: iptables_calls.append(args)
-        )
-        def listing(cmd):
-            if cmd[-1] == "POSTROUTING":
+
+        def listing(args):
+            if args[-1] == "POSTROUTING":
                 return "-A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE -m comment --comment wilab-nat-test-net"
             return "\n".join([
                 "-A FORWARD -i wlan0 -o eth0 -j ACCEPT -m comment --comment wilab-forward-test-net",
                 "-A FORWARD -i eth0 -o wlan0 -m state --state RELATED,ESTABLISHED -j ACCEPT -m comment --comment wilab-forward-test-net",
             ])
-        monkeypatch.setattr("wilab.network.nat.execute_command", listing)
+        monkeypatch.setattr("wilab.network.nat.execute_iptables", _recording_iptables(iptables_calls, listing))
         
         nat.disable_nat("wlan0", "test-net", "192.168.120.0/24")
         
@@ -437,9 +442,9 @@ class TestDisableNat:
         def mock_iptables(args):
             if "-D" in args:
                 raise CommandError("iptables: Bad rule (does a matching rule exist in that chain?)")
-        
+            return ""
+
         monkeypatch.setattr("wilab.network.nat.execute_iptables", mock_iptables)
-        monkeypatch.setattr("wilab.network.nat.execute_command", lambda cmd: "")
         
         # Should not raise
         nat.disable_nat("wlan0", "test-net", "192.168.120.0/24")
@@ -450,10 +455,12 @@ class TestDisableNat:
         monkeypatch.setattr("wilab.network.nat.execute_iptables", lambda args: None)
         nat.block_internet("wlan0", "test-net")
 
-        def fail(_cmd):
-            raise CommandError("cannot list rules")
+        def fail(args):
+            if "-S" in args:
+                raise CommandError("cannot list rules")
+            return ""
 
-        monkeypatch.setattr("wilab.network.nat.execute_command", fail)
+        monkeypatch.setattr("wilab.network.nat.execute_iptables", fail)
         with pytest.raises(RuntimeError, match="Cannot remove NAT rules"):
             nat.release_network("wlan0", "test-net")
         assert nat.has_pending_network("test-net")

@@ -21,9 +21,8 @@ CLIENT_MAC = "aa:bb:cc:dd:ee:01"
 def iptables(monkeypatch):
     """Record iptables changes; listings show one installed portal for wls16."""
     calls: list[list[str]] = []
-    monkeypatch.setattr(captive, "execute_iptables", lambda args: calls.append(args) or "")
 
-    def listing(cmd, **kwargs):
+    def listing(cmd):
         table = cmd[cmd.index("-t") + 1] if "-t" in cmd else "filter"
         chain = cmd[-1] if cmd[-1] != "-S" else None
         if chain == "PREROUTING":
@@ -35,7 +34,13 @@ def iptables(monkeypatch):
             )
         return f"-P INPUT ACCEPT\n-N wilab-cp-wls16\n-N wilab-cp-other\n-N unrelated-{table}\n"
 
-    monkeypatch.setattr(captive, "execute_command", listing)
+    def iptables_call(args):
+        if "-S" in args:
+            return listing(args)
+        calls.append(args)
+        return ""
+
+    monkeypatch.setattr(captive, "execute_iptables", iptables_call)
     return calls
 
 
@@ -194,6 +199,7 @@ def test_portal_failure_rolls_back_the_network(monkeypatch, iptables):
     def fail_on_chain(args):
         if "-N" in args:
             raise CommandError("chain exists")
+        return ""
 
     monkeypatch.setattr(captive, "execute_iptables", fail_on_chain)
     with pytest.raises(StartupFailure, match="captive portal"):

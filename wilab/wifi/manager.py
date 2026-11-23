@@ -781,12 +781,17 @@ class NetworkManager:
             "expires": format_utc_timestamp(expires) or "no expiry",
         }
 
+    def firewall_status(self) -> dict:
+        """Read the firewall state without colliding with a rule change (NET-1)."""
+        with self._firewall_lock:
+            return self.nat_manager.status()
+
     def services_status(self) -> dict:
         """Return minimal service status (dnsmasq, hostapd, iptables)."""
         return {
             "dnsmasq": self.dhcp_server.status(),
             "hostapd": self.hostapd_manager.status(),
-            "iptables": self.nat_manager.status(),
+            "iptables": self.firewall_status(),
         }
     
     def shutdown_all(self) -> None:

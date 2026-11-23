@@ -236,7 +236,6 @@ Band 2:
     monkeypatch.setattr(dhcp, "execute_command", mock_execute_command)
     monkeypatch.setattr(nat, "execute_command", mock_execute_command)
     monkeypatch.setattr(subnet, "execute_command", lambda cmd, **kwargs: "[]")
-    monkeypatch.setattr(captive, "execute_command", mock_execute_command)
 
     class _UnboundPortalServer:
         """Stands in for the portal web server, which would bind the AP gateway."""

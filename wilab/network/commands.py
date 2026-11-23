@@ -206,9 +206,15 @@ def execute_command(
         raise CommandError(f"Command not found: {cmd[0]}") from e
 
 
+# Seconds iptables waits for the xtables lock instead of failing at once (NET-1).
+# The legacy backend takes a global lock for every call, reads included, and
+# Docker, ufw or fail2ban can hold it; the nf_tables backend accepts and ignores -w.
+IPTABLES_LOCK_WAIT = "5"
+
+
 def execute_iptables(args: list[str]) -> str:
-    """Execute iptables command."""
-    return execute_command(["iptables", *args])
+    """Execute iptables, waiting for the xtables lock. Every iptables call must go through here."""
+    return execute_command(["iptables", "-w", IPTABLES_LOCK_WAIT, *args])
 
 
 def execute_ip(args: list[str]) -> str:

@@ -154,7 +154,7 @@ def _system_status(
 
     # Check iptables NAT configuration
     try:
-        nat_status = manager.nat_manager.status()
+        nat_status = manager.firewall_status()
         has_nat_rules = bool(
             nat_status.get("nat") and "MASQUERADE" in nat_status.get("nat", "")
         )
@@ -275,7 +275,7 @@ def _debug_info(
     
     # Check iptables NAT
     try:
-        nat_status = manager.nat_manager.status()
+        nat_status = manager.firewall_status()
         nat_configured = bool(
             nat_status.get("nat") and "MASQUERADE" in nat_status.get("nat", "")
         )

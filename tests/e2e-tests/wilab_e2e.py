@@ -96,6 +96,28 @@ class Server:
             holder.wait(timeout=10)
 
     @staticmethod
+    def iptables_backend() -> str:
+        out = subprocess.run(["iptables", "--version"], capture_output=True, text=True, check=False).stdout
+        return "legacy" if "legacy" in out else "nf_tables"
+
+    @contextmanager
+    def hold_xtables_lock(self, seconds: float) -> Iterator[None]:
+        """Hold the legacy xtables lock for `seconds` in the background, like Docker or ufw would."""
+        password = self.sudo_file.read_bytes().splitlines()[0]
+        holder = subprocess.Popen(
+            ["sudo", "-k", "-S", "-p", "", "flock", "/run/xtables.lock", "sleep", str(seconds)],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        assert holder.stdin is not None
+        holder.stdin.write(password + b"\n")
+        holder.stdin.close()
+        time.sleep(0.5)  # let flock take the lock
+        try:
+            yield
+        finally:
+            holder.wait(timeout=seconds + 10)
+
+    @staticmethod
     def journal(since: float) -> str:
         return subprocess.run(
             ["journalctl", "-u", SERVICE, "--since", f"@{int(since)}", "--no-pager", "-o", "cat"],

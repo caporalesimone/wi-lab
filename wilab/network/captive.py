@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import IPv4Address
 from itertools import pairwise
 
-from .commands import CommandError, execute_command, execute_iptables
+from .commands import CommandError, execute_iptables
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def _chain(net_id: str) -> str:
 
 def _iptables_listing(table: str | None, chain: str | None = None) -> list[list[str]]:
     prefix = ["-t", table] if table else []
-    output = execute_command(["iptables", *prefix, "-S", *([chain] if chain else [])])
+    output = execute_iptables([*prefix, "-S", *([chain] if chain else [])])
     return [shlex.split(line) for line in output.splitlines() if line.strip()]
 
 

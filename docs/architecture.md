@@ -258,7 +258,7 @@ flowchart TB
 |---|---|---|
 | Device lock (`RLock` per antenna) | `NetworkManager.device_lock()` | Start, stop, status, cleanup, watchdog restore and USB recovery of one antenna. Different antennas never wait for each other. |
 | Store lock | `ReservationManager._lock` | Reservation maps and quarantine state. Held only briefly. |
-| Firewall lock | `NetworkManager._firewall_lock` | iptables changes (NAT, isolation) shared by all antennas. |
+| Firewall lock | `NetworkManager._firewall_lock` | iptables changes (NAT, isolation, captive portal) shared by all antennas, and the firewall reads of `/status` and `/debug` (`firewall_status()`), so a read never collides with a change. Every `iptables` call goes through `execute_iptables()`, which adds `-w 5`: with the legacy backend iptables then waits up to 5 s for the global xtables lock (also taken by Docker, ufw or fail2ban) instead of failing at once (NET-1). The nf_tables backend accepts and ignores `-w`. |
 | Scan lock | `dependencies._scan_lock` | One device scan at a time. |
 | Singleton lock | `dependencies._singleton_lock` | Lazy creation of the managers. |
 

@@ -30,7 +30,7 @@ class NatManager:
         for table, chain in ((None, "FORWARD"), ("nat", "POSTROUTING")):
             prefix = ["-t", table] if table else []
             try:
-                listing = execute_command(["iptables", *prefix, "-S", chain])
+                listing = execute_iptables([*prefix, "-S", chain])
             except CommandError as exc:
                 logger.warning("Cannot list stale Wi-Lab rules in %s: %s", chain, exc)
                 continue
@@ -133,11 +133,9 @@ class NatManager:
             True if rule exists, False otherwise
         """
         try:
-            cmd = ["iptables"]
-            if table:
-                cmd.extend(["-t", table])
-            cmd.extend(["-C"] + args)
-            execute_command(cmd)
+            cmd = ["-t", table] if table else []
+            cmd.extend(["-C", *args])
+            execute_iptables(cmd)
             return True
         except Exception:
             return False
@@ -204,7 +202,7 @@ class NatManager:
             # SAFETY: Check default FORWARD policy first
             # If policy is DROP, we need to be extremely careful with rule order
             try:
-                forward_policy = execute_command(["iptables", "-S", "FORWARD"])
+                forward_policy = execute_iptables(["-S", "FORWARD"])
                 if "-P FORWARD DROP" in forward_policy:
                     # Add rule to accept ESTABLISHED connections FIRST to protect existing SSH
                     # Only add if not already present
@@ -336,7 +334,7 @@ class NatManager:
         ):
             prefix = ["-t", table] if table else []
             try:
-                listing = execute_command(["iptables", *prefix, "-S", chain])
+                listing = execute_iptables([*prefix, "-S", chain])
                 for line in listing.splitlines():
                     tokens = shlex.split(line)
                     if tokens[:2] == ["-A", chain] and comment in [
@@ -362,11 +360,11 @@ class NatManager:
         fwd_rules = None
         errors = []
         try:
-            nat_rules = execute_command(["iptables", "-t", "nat", "-S"])
+            nat_rules = execute_iptables(["-t", "nat", "-S"])
         except Exception as e:
             errors.append(f"nat: {e}")
         try:
-            fwd_rules = execute_command(["iptables", "-S", "FORWARD"])
+            fwd_rules = execute_iptables(["-S", "FORWARD"])
         except Exception as e:
             errors.append(f"forward: {e}")
         return {

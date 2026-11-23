@@ -61,6 +61,8 @@ The sudo password is used with `sudo -k -S` and is never printed. Only `tee` on 
 | `test_e2e_watchdog.py` | hostapd killed twice with `kill -9`: each time the watchdog restores the AP (`active`, no `runtime_state`), with no quarantine and the reservation kept. | WD-1 | `kill`, `iw`, journal |
 | `test_e2e_watchdog.py` | hostapd killed while UDP port 67 is held on the interface, so the restore fails on dnsmasq: `runtime_state: restore_failed`, `active: false`, service `degraded`, no quarantine; after the port is freed a retry restores the AP. | WD-2 | `kill`, port 67 holder, journal |
 | `test_e2e_watchdog.py` | Same failure, then `DELETE .../network`: `200`, retries stop, the reservation stays valid and a new create works. | WD-2 | `kill`, port 67 holder |
+| `test_e2e_firewall.py` | Parallel create/delete on every antenna while `/status` is polled every 0.2 s: all `200`, no quarantine, no "xtables lock" error in the journal. | NET-1 | journal |
+| `test_e2e_firewall.py` | Legacy backend only: another process holds the xtables lock for 2 s; a create waits and returns `200`. Skipped on nf_tables. | NET-1 | `flock /run/xtables.lock` |
 
 The tests pick the first antenna listed in `/status` and find its USB port from sysfs, so no
 port is hard-coded.

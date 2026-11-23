@@ -2,7 +2,7 @@
 
 import logging
 
-from .commands import execute_command
+from .commands import execute_command, execute_iptables
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +33,13 @@ def list_wilab_rules() -> dict:
     
     try:
         # Check NAT table
-        nat_output = execute_command(["iptables", "-t", "nat", "-L", "POSTROUTING", "-n", "-v"])
+        nat_output = execute_iptables(["-t", "nat", "-L", "POSTROUTING", "-n", "-v"])
         for line in nat_output.split('\n'):
             if 'wilab-nat' in line:
                 rules["nat"].append(line.strip())
         
         # Check FORWARD chain
-        forward_output = execute_command(["iptables", "-L", "FORWARD", "-n", "-v"])
+        forward_output = execute_iptables(["-L", "FORWARD", "-n", "-v"])
         for line in forward_output.split('\n'):
             if 'wilab-' in line:
                 rules["forward"].append(line.strip())
