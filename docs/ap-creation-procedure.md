@@ -192,8 +192,9 @@ A success resets the counter. Further rules:
 
 - `GET /api/v1/interface/{reservation_id}/network` returns SSID, channel,
   subnet, DHCP details, connected clients and remaining time.
-- Wi-Lab's watchdog checks every running AP about every 5 seconds and can
-  restart it **once** with the same settings and reservation. While this
+- Wi-Lab's watchdog checks every running AP about every 5 seconds and restarts
+  it with the same settings and reservation, up to 3 times per hour per
+  antenna; a fourth failure within the hour quarantines the antenna. While this
   happens, `GET .../network` and `GET /api/v1/status` report `runtime_state`:
 
   | `runtime_state` | Meaning | Client action |

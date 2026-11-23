@@ -16,6 +16,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- The watchdog restores a failed AP up to 3 times per hour per antenna instead of once in the life of a network (Fable WD-1). Previously a second hostapd failure, even a month after the first, quarantined the antenna, invalidated the reservation and reset the USB port. The budget belongs to the antenna, so recreating the network does not reset it.
 - Quarantined adapters with no USB recovery running (`recovery_state: unavailable`) are re-probed periodically and return to the pool when an AP + DHCP probe passes, without a service restart (Fable WD-4). First attempt after 30 s, then 60 s, 120 s, 300 s, 600 s and every 15 min. Covers failed cleanups, non-radio faults, non-USB adapters and exhausted USB recovery.
 - Stopping a network on an adapter that disconnected no longer fails on `Cannot find device`: the interface reset is skipped when the interface is gone, so cleanup completes (Fable WD-5, points 1–2). Previously the startup rollback failed and the adapter stayed quarantined until a restart, even after it came back seconds later.
 - An interface that disappears during AP startup (USB disconnect, driver reset) is a radio failure: the client gets `409 / 1001` with `Retry-After` and keeps its reservation, instead of `500 / 1003`. A third consecutive failure quarantines the adapter with a radio fault, so USB recovery can run.

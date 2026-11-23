@@ -597,7 +597,7 @@ flowchart TD
     DH -->|yes| T
     DH -->|"no, first time"| RD["restoring_dhcp: restart dnsmasq only"]
     DH -->|"no, already restarted"| DF["runtime_state = dhcp_failed<br/>AP stays up"]
-    RA{"AP already restarted once<br/>for this network?"}
+    RA{"3 AP restores on this antenna<br/>in the last hour?"}
     RA -->|no| RS["restoring_ap: teardown, start again with the<br/>original settings, no internal retry"]
     RA -->|yes| Q["quarantine, invalidate reservation"]
     RS -->|success| T
@@ -607,6 +607,12 @@ flowchart TD
 ```
 
 - No connected stations is not a failure.
+- **Restore budget (WD-1):** an antenna can have its AP restored up to 3 times in
+  any hour (`RESTORE_LIMIT`, `RESTORE_WINDOW`). A further failure inside that
+  hour quarantines it. The budget belongs to the antenna, not to the network:
+  deleting and recreating the network does not reset it. A long-lived
+  reservation can therefore survive one outage a day indefinitely, while an AP
+  that keeps dying is taken out of the pool.
 - The restart keeps the reservation and its expiry. Clients must reconnect; QoS
   is cleared by the teardown and must be reapplied.
 - Release or expiry cancels a pending restart. If a restart already ran, its

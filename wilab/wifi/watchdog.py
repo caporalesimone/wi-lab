@@ -2,6 +2,8 @@
 
 import logging
 import threading
+import time
+from collections import deque
 from typing import TYPE_CHECKING
 
 from ..models import NetworkCreateRequest, NetworkStatus
@@ -12,6 +14,10 @@ if TYPE_CHECKING:
     from .manager import NetworkManager
 
 logger = logging.getLogger(__name__)
+# AP restore budget per adapter: at most RESTORE_LIMIT restores in any RESTORE_WINDOW
+# seconds. The next failure inside the window quarantines the adapter.
+RESTORE_LIMIT = 3
+RESTORE_WINDOW = 3600.0
 
 
 class NetworkWatchdog:
@@ -44,7 +50,9 @@ class NetworkWatchdog:
     def _watch(self, reservations: ReservationManager, device: str) -> None:
         current = None
         misses = 0
-        attempted_ap = False
+        # Monotonic times of recent AP restores. The budget belongs to the adapter,
+        # so it is not reset when the client recreates the network.
+        restores: deque[float] = deque()
         attempted_dhcp = False
         while not self.stopping.wait(5):
             lock = self.manager.device_lock(device)
@@ -58,17 +66,26 @@ class NetworkWatchdog:
                 if status is not current:
                     self.states.pop(device, None)
                     current, misses = status, 0
-                    attempted_ap = attempted_dhcp = False
+                    attempted_dhcp = False
                 if status is None or reservation is None or self._cancelled(reservation):
                     continue
                 alive = self.manager.hostapd_manager.is_running(device)
                 misses = 0 if alive and self.manager.hostapd_manager.is_enabled(device) else misses + 1
                 if not alive or misses >= 3:
                     self.states[device] = (reservation, "restoring_ap")
+                    now = time.monotonic()
+                    while restores and now - restores[0] > RESTORE_WINDOW:
+                        restores.popleft()
+                    exhausted = len(restores) >= RESTORE_LIMIT
+                    if exhausted:
+                        logger.warning(
+                            "AP on %s failed again after %d restores in %.0f s; quarantining",
+                            device, len(restores), RESTORE_WINDOW,
+                        )
                     try:
-                        self._restore_ap(reservations, reservation, status, attempted_ap)
+                        self._restore_ap(reservations, reservation, status, exhausted)
                         current = self.manager.active.get(device)
-                        attempted_ap = True
+                        restores.append(now)
                         misses = 0
                     finally:
                         self.states.pop(device, None)
@@ -94,7 +111,7 @@ class NetworkWatchdog:
 
     def _restore_ap(
         self, reservations: ReservationManager, reservation: Reservation,
-        status: NetworkStatus, already_attempted: bool,
+        status: NetworkStatus, budget_exhausted: bool,
     ) -> None:
         from .manager import StartupFailure
 
@@ -113,7 +130,7 @@ class NetworkWatchdog:
             return
         if self._cancelled(reservation):
             return
-        if already_attempted:
+        if budget_exhausted:
             self.manager.quarantine_radio(
                 reservations, reservation, radio_fault=radio_known, band=band, channel=channel,
             )

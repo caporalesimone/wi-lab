@@ -59,6 +59,14 @@ class Server:
         return False
 
     @staticmethod
+    def pids(name: str) -> list[int]:
+        out = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True, check=False).stdout
+        return [int(pid) for pid in out.split()]
+
+    def kill(self, pid: int) -> None:
+        self.sudo(["kill", "-9", str(pid)])
+
+    @staticmethod
     def journal(since: float) -> str:
         return subprocess.run(
             ["journalctl", "-u", SERVICE, "--since", f"@{int(since)}", "--no-pager", "-o", "cat"],
