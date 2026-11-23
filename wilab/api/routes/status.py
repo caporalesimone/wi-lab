@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
+from ... import heartbeat
 from ...api.auth import require_token
 from ...api.dependencies import get_config, get_manager, get_reservation_manager
 from ...config import AppConfig
@@ -15,6 +16,7 @@ from ...wifi.manager import NetworkManager
 _POLICY_EXAMPLE = {"min_seconds": 60, "max_seconds": 86400, "allow_unlimited": False}
 _CHECKS_OK_EXAMPLE = {
     "commands": {"stuck": 0},
+    "loops": {"stale": []},
     "dnsmasq": {"running": False, "instances": 0},
     "iptables_nat": {"configured": True, "errors": []},
     "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
@@ -35,7 +37,8 @@ router = APIRouter(
                 "Health and allocation snapshot. `status` is `standby`, `ok` or `degraded`; "
                 "`degraded` means at least one adapter is quarantined (`recovery_state`), a "
                 "reserved network is being repaired or has lost DHCP (`runtime_state`), a "
-                "host command is stuck in the kernel (`checks.commands.stuck`), or a "
+                "host command is stuck in the kernel (`checks.commands.stuck`), a "
+                "background loop stalled (`checks.loops.stale`), or a "
                 "health check failed while networks are active. A reserved or quarantined "
                 "adapter is not allocatable."
             ),
@@ -119,6 +122,10 @@ def system_status(
       (`checks.commands.stuck` > 0). It is stuck in the kernel, usually a hung
       Wi-Fi driver; Wi-Lab no longer waits for it, but the adapter may need a
       reset or the host a reboot. The count drops when the process exits;
+    - a background loop (`expiry`, `discovery`, `reprobe`, `watchdog:<if>`)
+      has not run for 3 minutes (`checks.loops.stale`). Wi-Lab restarts
+      itself through the systemd watchdog as soon as no reservation is
+      active and no USB recovery is running; until then it keeps serving;
     - networks are active and a check in `checks` fails (`dnsmasq.running`,
       `iptables_nat.configured` or `upstream_interface.reachable` is false).
 
@@ -153,6 +160,8 @@ def _system_status(
     health_data: dict[str, Any] = {"checks": {}}
     stuck = stuck_commands()
     health_data["checks"]["commands"] = {"stuck": stuck}
+    stale_loops = heartbeat.stale_loops()
+    health_data["checks"]["loops"] = {"stale": stale_loops}
 
     # Check dnsmasq instances
     dhcp_status = manager.dhcp_server.status()
@@ -233,7 +242,7 @@ def _system_status(
             entry["recovery_state"] = "recovering" if recovery[n.device_id] else "unavailable"
         networks_info.append(entry)
     status_data["networks"] = networks_info
-    if recovery or runtime_degraded or stuck:
+    if recovery or runtime_degraded or stuck or stale_loops:
         status_data["status"] = "degraded"
     status_data["reservation_policy"] = {
         "min_seconds": config.min_timeout,

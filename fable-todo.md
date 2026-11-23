@@ -13,7 +13,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [WD-4](Fable-Notes.md#L558) | ✅ | Rendere la quarantena recuperabile e completare il cleanup. |
 | 1 | [NET-1](Fable-Notes.md#L619) | ✅ | Attendere il lock di iptables durante le operazioni firewall. |
 | 1 | [HAP-1](Fable-Notes.md#L693) | ✅ | Riconoscere correttamente gli SSID con escape restituiti da hostapd. |
-| 1 | [STAB-1](Fable-Notes.md#L755) | ✅ parz. | Limitare l'attesa dei processi e recuperare dai comandi bloccati. Fatti il runner che smette di aspettare 2 s dopo il SIGKILL e il conteggio in `/status` (`checks.commands.stuck`, `degraded`). Non fatto il watchdog di systemd (`WatchdogSec`), che riavvierebbe il servizio da solo: da decidere. |
+| 1 | [STAB-1](Fable-Notes.md#L755) | ✅ | Limitare l'attesa dei processi e recuperare dai comandi bloccati. Il runner smette di aspettare 2 s dopo il SIGKILL (`checks.commands.stuck`); se un ciclo interno si blocca, Wi-Lab si riavvia tramite il watchdog di systemd solo quando non ci sono reservation attive. Un comando bloccato nel kernel non fa riavviare. |
 | 1 | [NET-2](Fable-Notes.md#L860) | ✅ | Non dichiarare riuscita una rete se NAT o isolamento non sono configurati. |
 | 1 | [HAP-3](Fable-Notes.md#L928) | ✅ | Classificare in modo coerente i guasti di inizializzazione hostapd. |
 | 1 | [HAP-2](Fable-Notes.md#L1003) | ✅ | Uniformare la classificazione dei guasti hostapd disabilitati. |

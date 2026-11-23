@@ -5,10 +5,17 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
+from wilab import heartbeat
 from wilab.api import create_app, dependencies
 from wilab.models import NetworkStatus
 from wilab.wifi import watchdog as watchdog_module
 from wilab.wifi.manager import StartupFailure
+
+
+@pytest.fixture(autouse=True)
+def _no_heartbeat(monkeypatch):
+    # The tests replace time.monotonic with a scripted clock; heartbeats would consume it.
+    monkeypatch.setattr(heartbeat, "beat", lambda _name: None)
 
 
 def _setup(monkeypatch, times, recreate_at=None):

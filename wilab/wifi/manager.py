@@ -9,6 +9,7 @@ from collections.abc import Callable
 from ipaddress import IPv4Network
 from itertools import islice
 
+from .. import heartbeat
 from ..config import AppConfig
 from ..models import ClientInfo, NetworkCreateRequest, NetworkStatus, NetworkTxPower
 from ..network.captive import CaptivePortal, CaptivePortalError
@@ -964,6 +965,7 @@ class NetworkManager:
     def _expiry_loop(self) -> None:
         """Background loop to auto-expire networks without requiring API calls."""
         while not self.watchdog.stopping.wait(5):
+            heartbeat.beat("expiry")
             try:
                 now = time.time()
                 # Copy keys to avoid mutation during iteration

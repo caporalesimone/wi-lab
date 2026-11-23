@@ -5,7 +5,12 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+# Type=notify: Wi-Lab reports READY=1 after startup and pings the watchdog.
+# It stops pinging only when a background loop has stalled and no reservation
+# is active, so WatchdogSec restarts it without taking anyone's network (STAB-1).
+Type=notify
+NotifyAccess=main
+WatchdogSec=90s
 WorkingDirectory=WILAB_DIR
 ExecStart=VENV_PATH/bin/python WILAB_DIR/main.py
 Restart=always

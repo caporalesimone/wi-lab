@@ -7,6 +7,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from .. import heartbeat
 from ..models import NetworkCreateRequest, NetworkStatus
 from ..network.dhcp import DhcpServerError
 from ..reservation import Reservation, ReservationManager
@@ -77,6 +78,7 @@ class NetworkWatchdog:
         dhcp_restores: deque[float] = deque()  # same, for DHCP-only restarts (WD-3)
         restart_network = False  # DHCP could not be repaired alone: restore the whole AP
         while not self.stopping.wait(5):
+            heartbeat.beat(f"watchdog:{device}")
             lock = self.manager.device_lock(device)
             if not lock.acquire(blocking=False):
                 continue

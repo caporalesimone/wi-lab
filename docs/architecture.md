@@ -875,7 +875,19 @@ cached; set `upstream_interface` to force it.
   `degraded` until it exits. The process, and any kernel lock it holds, stays;
   other commands may then time out too. Recovering the adapter can require
   unplugging it or rebooting the VM or host, which is the maintainer's call:
-  Wi-Lab does not restart itself (no systemd `WatchdogSec`).
+  a stuck command never makes Wi-Lab restart itself, because a new process
+  would hang on the same kernel lock.
+- **Self-restart only when idle (STAB-1).** The unit is `Type=notify` with
+  `WatchdogSec=90s`. Every background loop (`expiry`, `discovery`,
+  `reprobe`, `watchdog:<interface>`) records a heartbeat per iteration
+  (`wilab/heartbeat.py`), and a thread pings systemd every 20 s. If a loop
+  has not run for 3 minutes, `/status` lists it in `checks.loops.stale` and
+  is `degraded`. The pings stop, so systemd restarts the service, only while
+  no reservation is valid and no USB recovery is running (read without
+  locks, so a stalled lock holder cannot block the check). With a
+  reservation active the service keeps running and restarts as soon as it
+  is idle. Only the Wi-Lab service restarts, never the machine. Restarts
+  count towards the unit's start limit.
 - Antennas are added at runtime but never removed: an antenna unplugged while in
   the pool stays listed (as `unavailable` once it fails) until the service
   restarts. A returning adapter keeps its `wlx<MAC>` name and is re-probed; one

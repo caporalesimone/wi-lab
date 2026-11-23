@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Path
 
+from .. import heartbeat
 from ..config import AppConfig, NetworkEntry, load_config, scan_new_networks
 from ..network.commands import CommandError
 from ..network.qos import QosManager
@@ -101,6 +102,7 @@ def discovery_loop(config: AppConfig, stop: threading.Event) -> None:
     searching: bool | None = None
     last_error: str | None = None
     while not stop.wait(interval):
+        heartbeat.beat("discovery")
         try:
             scan_devices(config, quiet=not first)
         except ValueError as exc:

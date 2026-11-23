@@ -143,6 +143,22 @@ class ReservationManager:
         with self._lock:
             return self._blocked.copy()
 
+    def is_idle(self) -> bool:
+        """No valid reservation and no USB recovery running.
+
+        Reads without the store lock, so a stalled lock holder cannot block the
+        check that decides whether Wi-Lab may restart itself (STAB-1). An
+        expired reservation that was not purged yet counts as gone.
+        """
+        for _ in range(3):
+            try:
+                reservations = list(self._reservations.values())
+                recovering = any(list(self._blocked.values()))
+            except RuntimeError:  # dict changed during the copy; read again
+                continue
+            return not recovering and all(r.is_expired for r in reservations)
+        return False
+
     def add_devices(self, device_ids: list[str]) -> None:
         """Make newly discovered devices allocatable; known devices are ignored."""
         with self._lock:

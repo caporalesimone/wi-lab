@@ -11,11 +11,17 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .. import heartbeat
 from ..network.captive import remove_stale_captive_rules
 from ..reservation import ReservationCleanupError
 from ..version import __version__
 from ..wifi.channels import set_regulatory_domain
-from .dependencies import discovery_loop, get_config, get_manager
+from .dependencies import (
+    discovery_loop,
+    get_config,
+    get_manager,
+    get_reservation_manager,
+)
 from .errors import ApiErrorCode, api_error_response, document_errors, domain_error
 from .routes import router as api_router
 
@@ -129,8 +135,20 @@ async def lifespan(app: FastAPI):
     )
     discovery_thread.start()
 
+    # systemd watchdog (STAB-1): restart only when a loop stalled and Wi-Lab is idle.
+    reservations = get_reservation_manager(cfg)
+    stop_notify = threading.Event()
+    if heartbeat.watchdog_enabled():
+        threading.Thread(
+            target=heartbeat.notify_loop, args=(stop_notify, reservations.is_idle),
+            name="systemd-watchdog", daemon=True,
+        ).start()
+    heartbeat.sd_notify("READY=1")
+
     yield
 
+    stop_notify.set()
+    heartbeat.sd_notify("STOPPING=1")
     stop_discovery.set()
     discovery_thread.join(timeout=10)
     # Shutdown: gracefully stop any active networks

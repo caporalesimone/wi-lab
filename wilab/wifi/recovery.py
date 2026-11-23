@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .. import heartbeat
 from ..network.commands import CommandError, execute_command, execute_iw
 from .interface import interface_present
 
@@ -98,6 +99,7 @@ class RadioRecovery:
 
         def loop() -> None:
             while not self._stopping.wait(REPROBE_TICK):
+                heartbeat.beat("reprobe")
                 try:
                     self.reprobe_unavailable(reservations)
                 except Exception:

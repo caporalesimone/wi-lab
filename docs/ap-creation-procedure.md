@@ -262,7 +262,7 @@ usable. Poll it (for example every 10–30 s) and show the result to the user.
 |---|---|
 | `standby` | No AP is active and no antenna is quarantined. |
 | `ok` | APs are active and every health check passes. |
-| `degraded` | At least one antenna is quarantined, a reserved AP is being repaired or has lost DHCP, a host command is stuck in the kernel, or a health check failed while APs are active. |
+| `degraded` | At least one antenna is quarantined, a reserved AP is being repaired or has lost DHCP, a host command is stuck in the kernel, a background loop stalled, or a health check failed while APs are active. |
 
 Find the cause in `networks[]` and `checks`:
 
@@ -286,6 +286,7 @@ Find the cause in `networks[]` and `checks`:
 | `runtime_state` | `dhcp_failed` | DHCP could not be repaired alone; the whole network is restarted within 5 s. | Owner: wait. |
 | `runtime_state` | `restore_failed` | AP down after a failed restart; the watchdog retries with backoff. | Owner: wait, or `DELETE .../network` to stop the retries. |
 | `checks.commands.stuck` | greater than 0 | A host command (`ip`, `iw`, `usbreset`, ...) did not exit even after SIGKILL: usually a hung Wi-Fi driver. Operations on the affected adapter fail instead of hanging. Set in standby too. | Report it to the operator: the adapter may need a reset or the host a reboot. |
+| `checks.loops.stale` | not empty | A Wi-Lab background loop has not run for 3 minutes. Wi-Lab restarts itself as soon as no reservation is active. | Report it; release reservations you no longer need. |
 | `checks.*` | `running`/`configured`/`reachable` false | A shared component failed while APs are active. | Report it; Internet access may not work. |
 
 - `reserved: false` does **not** mean the antenna can be reserved: an entry
