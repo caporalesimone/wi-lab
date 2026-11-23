@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .. import heartbeat
 from ..network.captive import remove_stale_captive_rules
 from ..reservation import DeviceBusyError, ReservationCleanupError
+from ..runtime_cleanup import cleanup_runtime
 from ..version import __version__
 from ..wifi.channels import set_regulatory_domain
 from .dependencies import (
@@ -131,6 +132,8 @@ async def lifespan(app: FastAPI):
     manager = get_manager(cfg)
     manager.nat_manager.remove_stale_rules()
     remove_stale_captive_rules()
+    # Processes, runtime files and QoS devices of a previous unclean run (STAB-4).
+    cleanup_runtime()
 
     # Set regulatory domain before any channel query
     set_regulatory_domain(cfg.country_code)

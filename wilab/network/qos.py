@@ -15,6 +15,9 @@ _SENTINEL = object()  # marker for "field not provided in request"
 # Maximum rate used when quality-only (no speed limit) to keep HTB tree
 _UNLIMITED_RATE_KBIT = 1_000_000
 
+# Name prefix of the IFB devices Wi-Lab creates for upload shaping (15 chars max per name).
+IFB_PREFIX = "wilab-ifb"
+
 
 @dataclass
 class _InterfaceQosState:
@@ -307,7 +310,9 @@ class QosManager:
 
     def _allocate_ifb(self) -> str:
         with self._ifb_lock:
-            name = f"ifb{self._ifb_counter}"
+            # Own prefix, so startup can remove devices a crashed run left (STAB-4)
+            # without touching ifb devices of other software.
+            name = f"{IFB_PREFIX}{self._ifb_counter}"
             self._ifb_counter += 1
             return name
 

@@ -125,6 +125,7 @@ sequenceDiagram
     L->>C: get_config() (runtime instance)
     L->>NM: get_manager() creates NetworkManager
     L->>L: remove leftover NAT and captive portal rules
+    L->>L: stop orphan hostapd/dnsmasq, empty runtime dirs,<br/>delete wilab-ifb devices (STAB-4)
     NM->>NM: start expiry thread (every 5 s)
     L->>L: set regulatory domain (iw reg set)
     L->>D: start device discovery
@@ -180,8 +181,21 @@ log at debug level, so they do not fill the journal.
 
 The cost is small: on a host with two USB antennas a scan takes about 30 ms of
 wall time and about 20 ms of CPU, running 7 short commands (`ip`, `iw`,
-`udevadm`). A scan does not take device locks and does not touch the radios, so
-it does not disturb running APs.
+`udevadm`). A scan does not take device locks and does not touch the radios of
+existing antennas, so it does not disturb running APs.
+
+**Cleanup of an unclean shutdown (Fable STAB-4).** At startup, before discovery,
+`cleanup_runtime()` (`wilab/runtime_cleanup.py`) stops hostapd and dnsmasq
+processes whose arguments point into `/tmp/wilab-hostapd` or
+`/tmp/wilab-dnsmasq` (they survive only when the service is not run by
+systemd), empties those directories, so a stale dnsmasq PID file can no longer
+fail every start with "Existing dnsmasq PID file", and deletes `wilab-ifbN`
+devices. QoS names its upload devices `wilab-ifbN` for this reason; plain
+`ifbN` devices may belong to other software and are left alone. When discovery
+adds an antenna, `reset_interface()` takes its device lock once and brings it
+down, to managed mode, without IPv4 addresses and without `root`/`ingress`
+qdiscs, so a netem rule or a gateway address of the previous run cannot degrade
+the next network or shift its subnet.
 
 ### Antenna detection
 

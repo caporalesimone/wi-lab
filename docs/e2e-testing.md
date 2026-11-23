@@ -30,6 +30,7 @@ touch hardware by accident.
 | `WILAB_E2E_USB=1` | off | Allow simulated USB unplugs (`authorized` 0 → 1). |
 | `WILAB_E2E_USB_ACTIVE_AP=1` | off | Also allow an unplug while an AP is running (see the warning below). |
 | `WILAB_E2E_SLOW=1` | off | Allow long tests (15 minutes or more). |
+| `WILAB_E2E_RESTART=1` | off | Allow tests that kill and restart the service (every client loses its reservations). |
 | `WILAB_E2E_URL` | `http://localhost:8080` | API base URL. |
 | `WILAB_E2E_TOKEN` | `auth_token` from the config | Bearer token. |
 | `WILAB_E2E_CONFIG` | `<repo>/config.yaml` | Config file to read the token from. |
@@ -64,6 +65,7 @@ The sudo password is used with `sudo -k -S` and is never printed. Only `tee` on 
 | `test_e2e_watchdog.py` | dnsmasq killed twice: each time the watchdog restarts DHCP alone, the AP stays up, no network restore and no quarantine. | WD-3 | `kill`, journal |
 | `test_e2e_watchdog.py` | dnsmasq killed while UDP port 67 is held: the DHCP restart fails, the watchdog restores the whole network, which fails on DHCP too (`restore_failed`); after the port is freed the network comes back. | WD-3, WD-2 | `kill`, port 67 holder, journal |
 | `test_e2e_network_check.py` | The AP gateway address and the network's MASQUERADE rule are removed by hand: within 45 s the watchdog restores both in place, the network stays active with no `runtime_state`, no quarantine. | WD-7 | `ip addr del`, `iptables -D` (only Wi-Lab's own), journal |
+| `test_e2e_unclean_restart.py` (service_restart) | A network runs a QoS profile; the service main process gets `SIGKILL` and systemd restarts it: no netem/HTB qdisc and no IPv4 address left on the radio, no `wilab-ifb` device, no "Existing dnsmasq PID file", and a new create returns `200`. | STAB-4 | `systemctl kill`, `tc`, `ip`, journal |
 | `test_e2e_firewall.py` | Parallel create/delete on every antenna while `/status` is polled every 0.2 s: all `200`, no quarantine, no "xtables lock" error in the journal. | NET-1 | journal |
 | `test_e2e_firewall.py` | Legacy backend only: another process holds the xtables lock for 2 s; a create waits and returns `200`. Skipped on nf_tables. | NET-1 | `flock /run/xtables.lock` |
 | `test_e2e_firewall.py` | A `200` create has the firewall it reports: with `internet_enabled: true` the MASQUERADE and FORWARD rules exist in iptables, with `false` there is no MASQUERADE rule; the journal shows "Isolation rules applied" and never "Isolation disabled for testing"; delete removes the rules. The failure path has no safe live trigger and is covered by unit tests. | NET-2, NET-4 | `iptables -S` (root), journal |

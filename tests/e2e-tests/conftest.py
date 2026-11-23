@@ -34,6 +34,7 @@ _GATES = [
     ("usb", "WILAB_E2E_USB", "simulated USB unplug needs WILAB_E2E_USB=1"),
     ("usb_active_ap", "WILAB_E2E_USB_ACTIVE_AP", "unplug with an active AP needs WILAB_E2E_USB_ACTIVE_AP=1"),
     ("slow", "WILAB_E2E_SLOW", "long test needs WILAB_E2E_SLOW=1"),
+    ("service_restart", "WILAB_E2E_RESTART", "killing and restarting the service needs WILAB_E2E_RESTART=1"),
 ]
 
 

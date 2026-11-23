@@ -88,6 +88,31 @@ class Server:
         return [int(pid) for pid in out.split()]
 
     @staticmethod
+    def qdiscs(interface: str) -> str:
+        return subprocess.run(
+            ["tc", "qdisc", "show", "dev", interface], capture_output=True, text=True, check=True,
+        ).stdout
+
+    @staticmethod
+    def wilab_ifbs() -> list[str]:
+        out = subprocess.run(
+            ["ip", "-o", "link", "show", "type", "ifb"], capture_output=True, text=True, check=True,
+        ).stdout
+        names = [line.split(":")[1].strip().split("@")[0] for line in out.splitlines() if ":" in line]
+        return [name for name in names if name.startswith("wilab-ifb")]
+
+    @staticmethod
+    def ipv4_addresses(interface: str) -> list[str]:
+        out = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show", "dev", interface], capture_output=True, text=True, check=True,
+        ).stdout
+        return [w for line in out.splitlines() for w in line.split() if "/" in w and w[0].isdigit()]
+
+    def kill_service_main(self) -> None:
+        """SIGKILL only the main process: an unclean shutdown, then Restart=always."""
+        self.sudo(["systemctl", "kill", "--kill-whom=main", "--signal=SIGKILL", SERVICE])
+
+    @staticmethod
     def service_started_at() -> float:
         stamp = subprocess.run(
             ["systemctl", "show", SERVICE, "-p", "ActiveEnterTimestamp", "--value"],

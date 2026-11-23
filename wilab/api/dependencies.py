@@ -14,6 +14,7 @@ from ..network.qos_profile import QosProfileManager
 from ..network.unmanaged import exclude_from_host_managers
 from ..reservation import Reservation, ReservationManager
 from ..wifi.channels import ChannelManager
+from ..wifi.interface import reset_interface
 from ..wifi.manager import NetworkManager
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,10 @@ def scan_devices(config: AppConfig, *, quiet: bool = False) -> list[NetworkEntry
         exclude_from_host_managers(n.interface for n in config.networks)
         reservations.add_devices([n.device_id for n in added])
         manager = get_manager(config)
+        for net in added:
+            # Clean what a previous run left on the radio (STAB-4); nobody uses it yet.
+            with manager.device_lock(net.device_id):
+                reset_interface(net.interface)
         manager.watchdog.watch([n.device_id for n in added])
         for net in added:
             logger.info(

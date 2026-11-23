@@ -202,7 +202,7 @@ class TestQosManagerThrottle:
 
         st0 = qos.get_status("wlan1")
         assert st0 is not None
-        assert st0.ifb_device == "ifb1"
+        assert st0.ifb_device == "wilab-ifb1"
 
 
 class TestQosManagerSentinel:
