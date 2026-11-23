@@ -4,28 +4,53 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
-## [Unreleased]
+## [4.0.0] - 2026-11-20
 
 ### Breaking Changes
 
+- Reservation contention returns null availability estimates when no release is scheduled.
+- AP creation requires a single 2.4 GHz or 5 GHz band; `dual` returns 422.
+- Release all reservations moved from `DELETE /api/v1/device-reservation` to `DELETE /api/v1/device-reservation/all`, and now requires the `X-Confirm-Password` header matching the new `protected_commands_password` setting (disabled when unset). A malformed single-release URL can no longer release everything.
+- All `/api/v1` error bodies now use an object with `detail.code` and `detail.reason`. Clients displaying a former string `detail` should read `detail.message`. Recovery codes 1001–1003 are unchanged.
+- API timestamps (`expires_at`, `detail.next_available_at`) now use RFC 3339 UTC with a `Z` suffix. Durations and countdowns remain in seconds.
 - Internet, TX power and QoS profile requests on a valid reservation without a running network return `409` with `detail.code: 1007` (`network_not_active`); Internet and TX power returned `404`, which clients could not tell apart from an expired reservation (Fable API-2).
 - A create that quarantines the adapter and invalidates the reservation (`detail.code: 1003`, `reservation_invalidated: true`) now returns `503` instead of `500`, so clients and proxies no longer treat it as a retryable server error; the code and body are unchanged (Fable API-4).
 
 ### Features
 
+- Add an optional captive portal to AP creation (`captive_portal`). Its sign-in button releases only the client that pressed it.
+- Block DFS channels in the channel listing and reject AP creation on them by default; opt in with `allow_dfs_channels: true`.
+- Run backend tests, type checks and the frontend build in CI and publish API documentation.
+- Export the current API schema and offline Swagger/ReDoc documentation.
+- Explain adapter-dependent TX power control in the frontend.
+- Skip AP subnets that overlap host IPv4 routes when selecting a DHCP subnet.
+- Add an optional offline configuration check with actionable errors and warnings.
+- Allow clients to retry classified radio startup failures using the same reservation after `Retry-After`. A terminal creation failure returns `503 / 1003` and invalidates the reservation. New reservations still return `503` when blocked by recovery or quarantine.
+- Restart failed active access points or DHCP processes and verify AP and DHCP startup before a USB-reset antenna returns to the pool.
+- Discover AP-capable Wi-Fi interfaces (USB or built-in) automatically instead of requiring each one in `networks`. The section now only assigns display names, and `disable: true` keeps a radio out of Wi-Lab; unlisted interfaces use their interface name. A missing configured interface no longer prevents startup; with no usable adapter, reservations return `503 / 1003`. USB ports are detected automatically for recovery resets; `usb_recovery_port` is ignored.
+- Add a device discovery service: Wi-Lab starts without antennas and scans as soon as the API starts, then every 5 seconds while none is available and every 30 seconds afterwards. Antennas plugged in later are added without a restart. Each scan re-reads `networks` (display names and `disable`) and only adds devices; existing antennas, subnets and reservations are unchanged. Interfaces still being renamed by udev are skipped until they have their final name.
 - Frontend: requests answered `503 / 1006` (antenna busy) are repeated automatically after `Retry-After`, and `1006`/`1007` errors show a readable explanation instead of the raw body.
 - Frontend: a captive portal switch on each reserved antenna card chooses whether the next network starts with a portal page (it presets the start dialog, which has the same switch), and a running network shows the captive portal as On or Off with its URL and a header badge.
 
-### Testing
-
-- Tests are split into `tests/unit-tests/` (the existing suite: mocked hardware, run by `make test-local` and CI) and `tests/e2e-tests/` (new). The e2e tests run on the Wi-Lab machine against the running service and combine API calls with server actions: journal checks, the SSID on the air via `iw`, and USB unplugs simulated through sysfs. They cover BUG-1, HAP-1, WD-4 and WD-5, are skipped unless `WILAB_E2E=1`, and have their own flags for USB unplugs and long tests (`make test-e2e`, `make test-e2e-usb`, see `docs/e2e-testing.md`).
-
-### Documentation
-
-- Document `GET /api/v1/status` health values (`standby`, `ok`, `degraded`), what makes the service `degraded` (quarantined adapter, network being repaired, failed health check) and how clients learn about quarantined adapters, in Swagger (three response examples), the API overview, the AP creation procedure (2.8) and the Swagger guide.
-
 ### 🐛 Bug Fixes
 
+- Report a hostapd exit during AP startup within about 1 s instead of after the full 10 s readiness timeout. A hostapd exit after a failed beacon setup previously returned a generic `500` after about 10.3 s.
+- Retry transient radio failures inside the create request on both bands (hostapd segfault, beacon setup failure, radio or readiness timeout): up to 3 starts, 1 s apart, within 20 s. Clients receive `409 / 1001` only when all internal starts fail.
+- Keep Wi-Lab radios away from NetworkManager (per-device release, no configuration reload) and systemd-networkd (runtime rule under `/run`), and bring a radio down again after a USB reset. Previously a reset adapter could be raised by the host and stay quarantined.
+- Send TCP resets for forwarded client traffic after Internet is disabled.
+- Remove stale Wi-Lab firewall rules after an unclean shutdown without flushing host chains.
+- Restrict each Wi-Lab masquerade rule to the corresponding AP subnet.
+- Disabling Internet cuts existing forwarded connections on the selected AP.
+- Listen on the configured API port instead of always using 8080.
+- Report common invalid regulatory regions at startup.
+- Prevent concurrent reservations in one service process from sharing an antenna, and wait for network cleanup before reassigning it. Failed cleanup keeps the device held and returns 503 when it prevents an operation.
+- Stop active QoS profiles when their network is released or expires.
+- Keep independent API requests responsive during slow device operations.
+- Leave Wi-Fi interfaces managed and down after a network stops to avoid an unnecessary activation cycle.
+- Verify that the access point is enabled before assigning its gateway and starting DHCP. Roll back incomplete network starts.
+- Retry a transient hostapd startup segfault once on 2.4 GHz after successful cleanup, without requiring the client to resubmit the request.
+- Clean up timed-out access point starts by tracking hostapd directly instead of waiting for a PID file.
+- Keep other adapters and system status responsive during a slow AP startup or cleanup.
 - `wilab/wifi` is a regular Python package (`__init__.py`) like `wilab/network` and `wilab/api`, instead of an implicit namespace package (Fable ARCH-12).
 - A channel refused from the cached channel list is checked once more against a fresh `iw` reading, so 5 GHz channels cached before the regulatory domain was applied are no longer refused until a restart; the API and the TX power code share one channel cache, refreshed after a USB recovery or a failed start (Fable BUG-4).
 - `/status` health checks now look at Wi-Lab's own processes and rules per network: a network without Internet is no longer `degraded` on a host without NAT rules, Docker's MASQUERADE no longer hides a missing Wi-Lab rule, a link that is DOWN is no longer reported up, and hostapd is checked too (new `checks.hostapd`, `missing` lists); `/debug` uses the same checks (Fable BUG-2).
@@ -55,52 +80,6 @@ All notable changes to Wi-Lab are documented in this file.
 - The create request is validated before touching the antenna: SSID, password and channel rules, and no line injection into `hostapd.conf` (Fable BUG-1).
 - APs with SSIDs that hostapd reports with escapes (non-ASCII, quotes, backslashes) become ready instead of ending in quarantine (Fable HAP-1).
 
----
-
-## [4.0.0] - 2026-11-20
-
-### Breaking Changes
-
-- Reservation contention returns null availability estimates when no release is scheduled.
-- AP creation requires a single 2.4 GHz or 5 GHz band; `dual` returns 422.
-- Release all reservations moved from `DELETE /api/v1/device-reservation` to `DELETE /api/v1/device-reservation/all`, and now requires the `X-Confirm-Password` header matching the new `protected_commands_password` setting (disabled when unset). A malformed single-release URL can no longer release everything.
-- All `/api/v1` error bodies now use an object with `detail.code` and `detail.reason`. Clients displaying a former string `detail` should read `detail.message`. Recovery codes 1001–1003 are unchanged.
-- API timestamps (`expires_at`, `detail.next_available_at`) now use RFC 3339 UTC with a `Z` suffix. Durations and countdowns remain in seconds.
-
-### Features
-
-- Add an optional captive portal to AP creation (`captive_portal`). Its sign-in button releases only the client that pressed it.
-- Block DFS channels in the channel listing and reject AP creation on them by default; opt in with `allow_dfs_channels: true`.
-- Run backend tests, type checks and the frontend build in CI and publish API documentation.
-- Export the current API schema and offline Swagger/ReDoc documentation.
-- Explain adapter-dependent TX power control in the frontend.
-- Skip AP subnets that overlap host IPv4 routes when selecting a DHCP subnet.
-- Add an optional offline configuration check with actionable errors and warnings.
-- Allow clients to retry classified radio startup failures using the same reservation after `Retry-After`. A terminal creation failure returns `500 / 1003` and invalidates the reservation. New reservations still return `503` when blocked by recovery or quarantine.
-- Restart failed active access points or DHCP processes and verify AP and DHCP startup before a USB-reset antenna returns to the pool.
-- Discover AP-capable Wi-Fi interfaces (USB or built-in) automatically instead of requiring each one in `networks`. The section now only assigns display names, and `disable: true` keeps a radio out of Wi-Lab; unlisted interfaces use their interface name. A missing configured interface no longer prevents startup; with no usable adapter, reservations return `503 / 1003`. USB ports are detected automatically for recovery resets; `usb_recovery_port` is ignored.
-- Add a device discovery service: Wi-Lab starts without antennas and scans as soon as the API starts, then every 5 seconds while none is available and every 30 seconds afterwards. Antennas plugged in later are added without a restart. Each scan re-reads `networks` (display names and `disable`) and only adds devices; existing antennas, subnets and reservations are unchanged. Interfaces still being renamed by udev are skipped until they have their final name.
-
-### 🐛 Bug Fixes
-
-- Report a hostapd exit during AP startup within about 1 s instead of after the full 10 s readiness timeout. A hostapd exit after a failed beacon setup previously returned a generic `500` after about 10.3 s.
-- Retry transient radio failures inside the create request on both bands (hostapd segfault, beacon setup failure, radio or readiness timeout): up to 3 starts, 1 s apart, within 15 s. Clients receive `409 / 1001` only when all internal starts fail.
-- Keep Wi-Lab radios away from NetworkManager (per-device release, no configuration reload) and systemd-networkd (runtime rule under `/run`), and bring a radio down again after a USB reset. Previously a reset adapter could be raised by the host and stay quarantined.
-- Send TCP resets for forwarded client traffic after Internet is disabled.
-- Remove stale Wi-Lab firewall rules after an unclean shutdown without flushing host chains.
-- Restrict each Wi-Lab masquerade rule to the corresponding AP subnet.
-- Disabling Internet cuts existing forwarded connections on the selected AP.
-- Listen on the configured API port instead of always using 8080.
-- Report common invalid regulatory regions at startup.
-- Prevent concurrent reservations in one service process from sharing an antenna, and wait for network cleanup before reassigning it. Failed cleanup keeps the device held and returns 503 when it prevents an operation.
-- Stop active QoS profiles when their network is released or expires.
-- Keep independent API requests responsive during slow device operations.
-- Leave Wi-Fi interfaces managed and down after a network stops to avoid an unnecessary activation cycle.
-- Verify that the access point is enabled before assigning its gateway and starting DHCP. Roll back incomplete network starts.
-- Retry a transient hostapd startup segfault once on 2.4 GHz after successful cleanup, without requiring the client to resubmit the request.
-- Clean up timed-out access point starts by tracking hostapd directly instead of waiting for a PID file.
-- Keep other adapters and system status responsive during a slow AP startup or cleanup.
-
 ### 🔧 Maintenance
 
 - Read the initial configuration once while keeping periodic antenna configuration refreshes.
@@ -111,12 +90,65 @@ All notable changes to Wi-Lab are documented in this file.
 - Added an [AP creation procedure](docs/ap-creation-procedure.md) for client developers and a backend [architecture](docs/architecture.md) guide with startup, threading, creation, retry, watchdog and recovery diagrams.
 - Explain the reservation and recovery lifecycle in Swagger and ReDoc, including retry, quarantine and watchdog response examples.
 - Include the API operation, HTTP status, and error code in journal entries for server errors, without request or response data.
+- Document `GET /api/v1/status` health values (`standby`, `ok`, `degraded`), what makes the service `degraded` (quarantined adapter, network being repaired, failed health check) and how clients learn about quarantined adapters, in Swagger (three response examples), the API overview, the AP creation procedure (2.8) and the Swagger guide.
 
 ### ✅ Tests
 
 - Add regression coverage for authentication on protected reservation endpoints.
 - Test unique concurrent reservations and device reuse on a ten-antenna pool.
 - Added `TestHostapdConfigGeneration` covering the presence of `ieee80211d` on all bands and the band-dependent handling of `ieee80211h` (enabled on 5 GHz, absent on 2.4 GHz).
+- Tests are split into `tests/unit-tests/` (the existing suite: mocked hardware, run by `make test-local` and CI) and `tests/e2e-tests/` (new). The e2e tests run on the Wi-Lab machine against the running service and combine API calls with server actions: journal checks, the SSID on the air via `iw`, and USB unplugs simulated through sysfs. They cover BUG-1, HAP-1, WD-4 and WD-5, are skipped unless `WILAB_E2E=1`, and have their own flags for USB unplugs and long tests (`make test-e2e`, `make test-e2e-usb`, see `docs/e2e-testing.md`).
+
+### 🔌 API changes from 3.x (client migration)
+
+**All endpoints**
+
+- Error body: `detail` is an object `{code, reason, message, ...}` (was a string, or `{error, ...}` on reserve). Branch on `detail.code`, show `detail.message`.
+- Timestamps (`expires_at`, `detail.next_available_at`): RFC 3339 UTC, e.g. `2026-11-19T23:00:00Z` (was `YYYY-MM-DD HH:MM:SS`, local time).
+
+**Reservation**
+
+- `DELETE /api/v1/device-reservation` (release all): removed. Use `DELETE /api/v1/device-reservation/all` with header `X-Confirm-Password`.
+- `POST /api/v1/device-reservation`:
+  - `409`: now `detail.code: 1005`; `next_available_at` / `next_available_in` are `null` when no release is scheduled.
+  - new `503 / 1002`: an antenna is recovering; retry after `Retry-After` (10 s).
+  - new `503 / 1003`: no usable antenna (all quarantined or none found).
+- Reserve, get and release: new `503 / 1004` when the cleanup of an expired reservation fails.
+
+**Network**
+
+- `POST /api/v1/interface/{id}/network`:
+  - `band: "dual"` removed (`422`).
+  - new optional field `captive_portal` (default `false`).
+  - stricter validation, `422`: `ssid` 1–32 bytes, `password` 8–63 bytes, no control characters, channel must match the band, DFS channels refused unless the server allows them.
+  - new `409 / 1001` + `Retry-After` (5 s, then 10 s): repeat the same request with the same ID.
+  - new `503 / 1003` with `reservation_invalidated: true`: discard the ID.
+  - `500`: startup failed, reservation still valid.
+  - `409` without code: network already active, or a watchdog restore in progress.
+  - can take up to about 20 s: use a read timeout of at least 60 s.
+- `GET /api/v1/interface/{id}/network`: new fields `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`), `captive_portal`, `captive_portal_url`, `clients[].captive_authorized`.
+- `DELETE /api/v1/interface/{id}/network`: also cancels a pending `restore_failed`, and returns `200`.
+- `GET /api/v1/interface/{id}/network/available-channels`: DFS channels are `disabled: true` unless the server allows them.
+
+**Internet, TX power, QoS profile**
+
+- No running network: `409 / 1007` on Internet enable/disable, TX power GET/POST and QoS profile POST/GET/DELETE. Before: `404` on Internet, TX power and QoS GET/DELETE.
+- `404` on these endpoints now only means the reservation is gone.
+
+**Every `/api/v1/interface/{id}/...` endpoint except the create**
+
+- New `503 / 1006` + `Retry-After: 2`: the antenna is busy with another operation. Repeat the request.
+
+**Status**
+
+- `GET /api/v1/status`:
+  - `networks[]` gains `recovery_state` (`recovering`, `unavailable`) and `runtime_state`.
+  - `checks` gains `hostapd`, `commands`, `loops`, and `missing` lists in `dnsmasq` and `iptables_nat`.
+  - `degraded` now also covers quarantined antennas, networks being repaired, stuck commands and stalled loops.
+
+**Access**
+
+- Clients connected to a Wi-Lab AP can no longer reach the API (nor any other host service). Call the API from the management network.
 
 ---
 
