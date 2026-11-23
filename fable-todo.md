@@ -90,7 +90,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 49 | [ARCH-10](Fable-Notes.md#L3663) |  | Definire regole di logging e limitare i messaggi ripetuti. |
 | 50 | [ARCH-9](Fable-Notes.md#L3686) |  | Rimuovere codice, modelli e test inutilizzati. |
 | 51 | [ARCH-8](Fable-Notes.md#L3717) |  | Sostituire l'accesso agli attributi privati di altre classi con metodi pubblici. |
-| 52 | [ARCH-12](Fable-Notes.md#L3743) |  | Aggiungere `wilab/wifi/__init__.py`. |
+| 52 | [ARCH-12](Fable-Notes.md#L3743) | ✅ | Aggiungere `wilab/wifi/__init__.py`. |
 | 53 | [ARCH-11](Fable-Notes.md#L3761) |  | Definire la strategia di integrazione prima di applicare patch specifiche del branch. |
 
 ## Test
