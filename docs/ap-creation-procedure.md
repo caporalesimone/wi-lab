@@ -95,11 +95,11 @@ Content-Type: application/json
 
 | Field | Required | Rules |
 |---|---|---|
-| `ssid` | yes | Network name. |
+| `ssid` | yes | Network name: 1–32 bytes in UTF-8 (non-ASCII characters count as more than one byte), no control characters such as line breaks or tabs. |
 | `channel` | yes | Must be valid for `band` and supported and enabled on the antenna. |
 | `band` | yes | `2.4ghz` or `5ghz`. An AP uses one band. |
 | `encryption` | yes | `open`, `wpa`, `wpa2`, `wpa3` or `wpa2-wpa3`. |
-| `password` | unless `open` | 8–63 characters for any WPA mode. |
+| `password` | unless `open` | 8–63 bytes in UTF-8 for any WPA mode, no control characters. |
 | `tx_power_level` | yes | `1` (low) to `4` (maximum). |
 | `hidden` | no | Default `false`. |
 | `internet_enabled` | no | Default from the server configuration. Enables NAT to the upstream network. |

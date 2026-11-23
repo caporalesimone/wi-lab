@@ -415,6 +415,24 @@ class TestNetworkCreateEndpoint:
         )
         assert resp.status_code == 422  # Validation error
 
+    @pytest.mark.parametrize("body", [
+        {'ssid': 'x\ninterface=eth0', 'channel': 6, 'encryption': 'open'},
+        {'ssid': '', 'channel': 6, 'encryption': 'open'},
+        {'ssid': 'x' * 33, 'channel': 6, 'encryption': 'open'},
+        {'ssid': 'TestAP', 'channel': 6, 'encryption': 'wpa2', 'password': 'abc'},
+        {'ssid': 'TestAP', 'channel': 6, 'encryption': 'wpa2'},
+        {'ssid': 'TestAP', 'channel': 99, 'encryption': 'open'},
+    ])
+    def test_start_network_rejects_unsafe_or_invalid_fields(self, client, valid_token, reservation_id, body):
+        """BUG-1: invalid SSID, password or channel must be a 422 before hostapd is touched."""
+        resp = client.post(
+            f'/api/v1/interface/{reservation_id}/network',
+            headers={'Authorization': valid_token},
+            json={**body, 'band': '2.4ghz', 'tx_power_level': 4},
+        )
+        assert resp.status_code == 422
+        assert resp.json()['detail']['code'] == 422
+
     def test_start_network_runtime_failure_returns_500(self, client, valid_token, reservation_id, monkeypatch):
         """Operational failures during startup must map to 500, not 404."""
         from wilab.api.dependencies import _manager

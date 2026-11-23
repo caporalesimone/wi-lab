@@ -4,6 +4,15 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [Unreleased]
+
+### 🐛 Bug Fixes
+
+- Validate the AP creation body before touching the antenna (Fable BUG-1): `ssid` must be 1–32 bytes in UTF-8 and `password` 8–63 bytes for WPA modes, neither may contain control characters, and the channel must match the band. These previously reached hostapd (a short password returned a generic `500`) and a line break in the SSID could add lines to `hostapd.conf`. The SSID is now written as `ssid2` in hex.
+- Accept SSIDs that hostapd reports with escapes, such as non-ASCII characters, quotes or backslashes (Fable HAP-1). AP readiness and the watchdog probe now check state and interface only; previously such an AP never became ready and a healthy adapter could end up quarantined.
+
+---
+
 ## [4.0.0] - 2026-11-20
 
 ### Breaking Changes

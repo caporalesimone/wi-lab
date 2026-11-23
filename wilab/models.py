@@ -1,14 +1,21 @@
+import re
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from .wifi.channels import is_valid_channel_for_band
 
+# ASCII control characters (incl. CR/LF): never allowed in values written to hostapd.conf.
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
 
 class NetworkCreateRequest(BaseModel):
-    ssid: str
+    ssid: str = Field(description="Network name: 1 to 32 bytes in UTF-8, no control characters")
     channel: int
-    password: str | None = None
+    password: str | None = Field(
+        None,
+        description="Required unless encryption is open: 8 to 63 bytes in UTF-8, no control characters",
+    )
     encryption: str = Field(pattern=r"^(open|wpa|wpa2|wpa3|wpa2-wpa3)$")
     band: str = Field(pattern=r"^(2\.4ghz|5ghz)$")
     hidden: bool = False
@@ -40,45 +47,39 @@ class NetworkCreateRequest(BaseModel):
         }
     )
 
-    @field_validator('channel')
+    @field_validator("ssid")
     @classmethod
-    def validate_channel_for_band(cls, v: int, info) -> int:
-        """Validate channel is appropriate for the band."""
-        if 'band' not in info.data:
-            return v
-        band = info.data['band']
-        if not is_valid_channel_for_band(v, band):
-            raise ValueError(f"Channel {v} is not a valid WiFi channel for band {band}")
+    def validate_ssid(cls, v: str) -> str:
+        """SSID: 1 to 32 bytes in UTF-8, no control characters (they would reach hostapd.conf)."""
+        if _CONTROL_CHARS.search(v):
+            raise ValueError("ssid must not contain control characters")
+        if not 1 <= len(v.encode("utf-8")) <= 32:
+            raise ValueError("ssid must be 1 to 32 bytes long in UTF-8")
         return v
 
-    @field_validator('password')
-    @classmethod
-    def validate_password_length(cls, v: str | None, info) -> str | None:
-        """Validate password length for WPA/WPA2/WPA3."""
-        if v is None:
-            return v
-        
-        if 'encryption' not in info.data:
-            return v
-        
-        encryption = info.data['encryption']
-        
-        # WPA/WPA2/WPA3 require minimum 8 characters
-        if encryption in ['wpa', 'wpa2', 'wpa3', 'wpa2-wpa3']:
-            if len(v) < 8:
-                raise ValueError(f"{encryption} requires password of at least 8 characters (got {len(v)})")
-            if len(v) > 63:
-                raise ValueError(f"Password too long (max 63 characters, got {len(v)})")
-        
-        return v
-    
-    @field_validator('encryption')
-    @classmethod
-    def validate_password_required(cls, v: str, info) -> str:
-        """Check that password is provided for encrypted networks."""
-        if v != 'open' and info.data.get('password') is None:
-            raise ValueError(f"Password required for {v} encryption")
-        return v
+    @model_validator(mode="after")
+    def validate_cross_fields(self) -> "NetworkCreateRequest":
+        """Rules that compare fields.
+
+        A field validator only sees the fields declared before it, so checks that
+        involve ``band`` or ``encryption`` (declared after ``channel``/``password``)
+        must run here, once every field has been parsed.
+        """
+        if not is_valid_channel_for_band(self.channel, self.band):
+            raise ValueError(f"Channel {self.channel} is not a valid WiFi channel for band {self.band}")
+        if self.password is not None and _CONTROL_CHARS.search(self.password):
+            raise ValueError("password must not contain control characters")
+        if self.encryption == "open":
+            return self
+        if self.password is None:
+            raise ValueError(f"Password required for {self.encryption} encryption")
+        length = len(self.password.encode("utf-8"))
+        if not 8 <= length <= 63:
+            raise ValueError(
+                f"{self.encryption} requires a password of 8 to 63 bytes (got {length})"
+            )
+        return self
+
 
 class ClientInfo(BaseModel):
     mac: str

@@ -332,6 +332,7 @@ sequenceDiagram
     participant FW as NAT / isolation
 
     C->>R: POST /interface/{id}/network
+    R->>R: validate body: SSID, password, channel/band (422)
     R->>R: require_token (401)
     R->>RM: resolve_reservation (404 if unknown, expired, invalidated)
     R->>R: watchdog restoring this AP? (409)
@@ -346,13 +347,13 @@ sequenceDiagram
     NM->>OS: validate interface exists, is wireless, supports AP
     NM->>OS: nmcli device set unmanaged (best effort)
     NM->>HA: start(ssid, channel, band, encryption, ...)
-    HA->>HA: write hostapd.conf in a private temp dir with ctrl socket
+    HA->>HA: write hostapd.conf (ssid2 in hex) in a private temp dir with ctrl socket
     HA->>OS: ip link down, iw set type managed, ip addr flush
     HA->>OS: spawn hostapd in foreground
     loop until ENABLED, DISABLED or timeout (10 s, 75 s for DFS)
         HA->>OS: process alive? hostapd_cli status on private socket
     end
-    HA-->>NM: AP enabled for this interface and SSID
+    HA-->>NM: AP enabled on this interface
     NM->>OS: ip addr add gateway
     NM->>DH: start: write config, dnsmasq --test, launch, read PID
     opt captive_portal
@@ -387,14 +388,26 @@ daemon. Wi-Lab therefore knows immediately when it exits, and how:
   Each probe waits at most 1 s and the process is checked between probes:
   `hostapd_cli` keeps waiting for a reply from a hostapd that has already exited,
   which previously delayed such failures until the full timeout (about 10.3 s);
-- state `DISABLED`, or not `ENABLED` with the right interface and SSID within
+- state `DISABLED`, or not `ENABLED` on the right interface within
   the timeout → `HostapdRadioFailure` ("AP not ready").
 
 The AP is ready only when `hostapd_cli` on the instance's private control
-socket reports `state=ENABLED`, `bss[0]` equal to the interface and `ssid[0]`
-equal to the requested SSID. The timeout is 10 seconds, or 75 seconds for
+socket reports `state=ENABLED` and `bss[0]` equal to the interface. The SSID is
+not compared: hostapd prints `ssid[0]` with escapes (`\xNN` for non-ASCII bytes,
+`\"`, `\\`), so an SSID such as `Caffè` would never match, and the control
+directory is private to the instance, so state and interface already identify
+the AP. The watchdog probe (`is_enabled`) uses the same rule. The timeout is 10 seconds, or 75 seconds for
 5 GHz DFS channels 52–144 because of the radar check. The configuration enables
 `ieee80211d` on all bands and `ieee80211h` on 5 GHz.
+
+The request body is validated before any antenna is touched: `ssid` must be
+1–32 bytes in UTF-8, `password` 8–63 bytes for WPA modes, neither may contain
+control characters (including CR/LF), and `channel` must be a standard channel
+for `band`. Cross-field rules run in a Pydantic `model_validator`, because a
+field validator only sees fields declared before it. As a second line of
+defence, the hostapd configuration writes the SSID as `ssid2=<hex>` and the
+generator refuses line breaks in SSID, passphrase and country code, so no value
+can add lines to `hostapd.conf`.
 
 Only after the AP is confirmed does Wi-Lab assign the gateway and start DHCP:
 the order is **AP → gateway → DHCP**.

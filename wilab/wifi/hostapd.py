@@ -128,11 +128,17 @@ class HostapdManager:
         Returns:
             hostapd configuration as string
         """
+        # Defence in depth: the API model already rejects control characters, but a
+        # line break here would add arbitrary lines to a file read by a root process.
+        for name, value in (("ssid", ssid), ("password", password or ""), ("country_code", country_code)):
+            if "\n" in value or "\r" in value:
+                raise HostapdError(f"Invalid {name}: line breaks are not allowed")
         config_lines = [
             f"# Wi-Lab hostapd config for {interface}",
             f"interface={interface}",
             "driver=nl80211",
-            f"ssid={ssid}",
+            # ssid2 as a hex string: no SSID byte can be interpreted by the parser.
+            f"ssid2={ssid.encode('utf-8').hex()}",
             f"channel={channel}",
         ]
         
@@ -247,7 +253,7 @@ class HostapdManager:
             process = start_foreground(["hostapd", "-d", config_file], classify_output=_classify_output)
             instance["process"] = process
             timeout = DFS_READY_TIMEOUT if band == "5ghz" and 52 <= channel <= 144 else AP_READY_TIMEOUT
-            self._wait_until_ready(process, interface, ssid, control_dir, timeout)
+            self._wait_until_ready(process, interface, control_dir, timeout)
             logger.info(f"hostapd started for {net_id} on {interface}")
             return instance
 
@@ -267,9 +273,14 @@ class HostapdManager:
             raise HostapdError(f"hostapd exited with code {code} on {interface}")
 
     def _wait_until_ready(
-        self, process: ForegroundProcess, interface: str, ssid: str,
-        control_dir: str, timeout: float,
+        self, process: ForegroundProcess, interface: str, control_dir: str, timeout: float,
     ) -> None:
+        """Wait for state ENABLED on *interface*.
+
+        The SSID is not compared: hostapd escapes it in ``ssid[0]`` (``\\xNN``, ``\\"``),
+        and the control directory is private to this instance, so state and
+        interface identify the AP.
+        """
         started = time.monotonic()
         deadline = started + bounded_timeout(timeout)
         state = "unavailable"
@@ -319,7 +330,6 @@ class HostapdManager:
                     time.monotonic() < deadline
                     and state == "ENABLED"
                     and fields.get("bss[0]") == interface
-                    and fields.get("ssid[0]") == ssid
                 ):
                     return
                 if state == "DISABLED":
@@ -410,11 +420,9 @@ class HostapdManager:
         except CommandError:
             return False
         fields = dict(line.split("=", 1) for line in status.splitlines() if "=" in line)
-        return (
-            fields.get("state") == "ENABLED"
-            and fields.get("bss[0]") == interface
-            and fields.get("ssid[0]") == instance["ssid"]
-        )
+        # The control socket is private to this instance, so state and interface
+        # are enough; hostapd escapes the SSID in this output.
+        return fields.get("state") == "ENABLED" and fields.get("bss[0]") == interface
     
     def status(self) -> dict:
         """Return status of all hostapd instances."""

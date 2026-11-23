@@ -908,8 +908,10 @@ class TestTxPower:
 @pytest.mark.parametrize("state, interface, ssid, ready", [
     ("DFS", "wlan0", "TestAP", False),
     ("ENABLED", "wlan1", "TestAP", False),
-    ("ENABLED", "wlan0", "OtherAP", False),
     ("ENABLED", "wlan0", "TestAP", True),
+    # HAP-1: hostapd escapes the SSID in its status output; readiness must not depend on it.
+    ("ENABLED", "wlan0", "Caff\\xc3\\xa8", True),
+    ("ENABLED", "wlan0", 'my\\"net\\\\', True),
 ])
 def test_hostapd_checks_ap_readiness(monkeypatch, tmp_path, state, interface, ssid, ready):
     mgr = hostapd.HostapdManager()
@@ -930,10 +932,10 @@ def test_hostapd_checks_ap_readiness(monkeypatch, tmp_path, state, interface, ss
     monkeypatch.setattr(hostapd.time, "sleep", sleep)
     monkeypatch.setattr(hostapd, "execute_command", status)
     if ready:
-        mgr._wait_until_ready(process, "wlan0", "TestAP", str(tmp_path), 0.3)
+        mgr._wait_until_ready(process, "wlan0", str(tmp_path), 0.3)
     else:
         with pytest.raises(hostapd.HostapdError, match="AP not ready"):
-            mgr._wait_until_ready(process, "wlan0", "TestAP", str(tmp_path), 0.3)
+            mgr._wait_until_ready(process, "wlan0", str(tmp_path), 0.3)
 
 
 @pytest.mark.parametrize("exit_code", [1, None])
@@ -961,7 +963,7 @@ def test_hostapd_diagnostics_at_probe_timeout(monkeypatch, tmp_path, caplog, exi
     monkeypatch.setattr(hostapd, "execute_command", probe)
     expected_error = hostapd.HostapdError if exit_code else hostapd.HostapdRadioFailure
     with pytest.raises(expected_error) as error:
-        mgr._wait_until_ready(process, "wlan0", "private-network", str(tmp_path), 10)
+        mgr._wait_until_ready(process, "wlan0", str(tmp_path), 10)
     assert type(error.value) is expected_error
     assert "elapsed=10.000s budget=10.000s socket_seen=True" in caplog.text
     assert "last_state=COUNTRY_UPDATE last_probe=timed_out" in caplog.text
@@ -991,7 +993,7 @@ def test_hostapd_exit_during_a_hung_status_probe_is_reported_quickly(monkeypatch
     monkeypatch.setattr(hostapd, "time", SimpleNamespace(monotonic=lambda: now, sleep=lambda s: None))
     monkeypatch.setattr(hostapd, "execute_command", probe)
     with pytest.raises(hostapd.HostapdInitFailure):
-        mgr._wait_until_ready(process, "wlan0", "TestAP", str(tmp_path), 10)
+        mgr._wait_until_ready(process, "wlan0", str(tmp_path), 10)
     assert "elapsed=1.000s" in caplog.text
 
 
@@ -1036,3 +1038,34 @@ class TestHostapdConfigGeneration:
         """802.11h must be enabled on 5 GHz for DFS/TPC regulatory compliance."""
         config = self._generate(band='5ghz', channel=36)
         assert 'ieee80211h=1' in config
+
+    def test_ssid_is_written_as_hex(self):
+        """BUG-1: ssid2 in hex means no SSID byte is parsed by hostapd."""
+        ssid = 'Caffè "x"\\'
+        config = self._generate(ssid=ssid)
+        assert "ssid2=" + ssid.encode("utf-8").hex() in config
+        assert "\nssid=" not in config
+
+    @pytest.mark.parametrize("field", ["ssid", "password", "country_code"])
+    @pytest.mark.parametrize("breaker", ["\n", "\r"])
+    def test_line_breaks_are_rejected(self, field, breaker):
+        """BUG-1: defence in depth, independent of the API model."""
+        with pytest.raises(hostapd.HostapdError, match=f"Invalid {field}"):
+            self._generate(**{field: f"x{breaker}interface=eth0"})
+
+
+@pytest.mark.parametrize("status, enabled", [
+    ("state=ENABLED\nbss[0]=wlan0\nssid[0]=Caff\\xc3\\xa8\n", True),
+    ("state=ENABLED\nbss[0]=wlan1\nssid[0]=TestAP\n", False),
+    ("state=DISABLED\nbss[0]=wlan0\nssid[0]=TestAP\n", False),
+])
+def test_is_enabled_ignores_escaped_ssid(monkeypatch, status, enabled):
+    """HAP-1: the watchdog probe must not depend on hostapd's SSID escaping."""
+    mgr = hostapd.HostapdManager()
+    mgr._instances["wlan0"] = {
+        "interface": "wlan0", "ssid": "Caffè", "control_dir": "/run/x",
+        "process": SimpleNamespace(poll=lambda: None),
+    }
+    monkeypatch.setattr(mgr, "is_running", lambda net_id: True)
+    monkeypatch.setattr(hostapd, "execute_command", lambda cmd, **kw: status)
+    assert mgr.is_enabled("wlan0") is enabled
