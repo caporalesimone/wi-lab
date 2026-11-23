@@ -9,7 +9,7 @@ from wilab.models import NetworkCreateRequest, NetworkStatus
 from wilab.network.commands import CommandError, CommandTimeout
 from wilab.network.dhcp import DhcpServerError
 from wilab.wifi import hostapd
-from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
+from wilab.wifi.manager import NetworkManager, NetworkNotActive, TxPowerMismatchError
 
 
 class TestNetworkManagerInit:
@@ -617,7 +617,7 @@ class TestInternetControl:
         cfg = load_config()
         mgr = NetworkManager(cfg)
         
-        with pytest.raises(ValueError, match="Unknown or inactive"):
+        with pytest.raises(NetworkNotActive, match="is not active"):
             mgr.enable_internet('wls16')
 
 

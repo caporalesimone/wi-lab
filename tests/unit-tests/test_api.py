@@ -1002,8 +1002,9 @@ class TestInternetControlEndpoints:
             f'/api/v1/interface/{reservation_id}/internet/enable',
             headers={'Authorization': valid_token}
         )
-        # Should fail with either 404 or 500 depending on implementation
-        assert resp.status_code in [404, 422, 500]
+        # API-2: a valid reservation without a network is 409 / 1007, never 404.
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["code"] == 1007
     
     def test_disable_internet_inactive(self, client, valid_token, reservation_id, monkeypatch):
         """Test disabling internet on inactive network fails."""
@@ -1015,8 +1016,9 @@ class TestInternetControlEndpoints:
             f'/api/v1/interface/{reservation_id}/internet/disable',
             headers={'Authorization': valid_token}
         )
-        # Should fail with either 404 or 500 depending on implementation
-        assert resp.status_code in [404, 422, 500]
+        # API-2: a valid reservation without a network is 409 / 1007, never 404.
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["code"] == 1007
 
 
 class TestReservationRequiredForOperations:

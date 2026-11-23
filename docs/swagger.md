@@ -86,6 +86,10 @@ reservation request can be retried after `Retry-After`. `503 / 1004` means
 cleanup failed; it is not a recovery retry. `409 / 1005` is ordinary
 reservation contention and can include `detail.next_available_in`.
 
+`409 / 1007` (`network_not_active`) is the answer of the Internet, TX power
+and QoS profile endpoints when the reservation is valid but has no running
+network; `404` there always means the reservation is gone.
+
 `503 / 1006` (`device_busy`, example **1006 - adapter busy, retry**) is
 documented on every reservation endpoint except the create: another operation
 on the same adapter, for example a network start, still held it after 5 s.

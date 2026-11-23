@@ -67,7 +67,6 @@ def test_create_returns_the_network_state(wilab: WiLab) -> None:
     assert body.get("active") is True and body.get("ssid") == "wilab-e2e", body
 
 
-@pending("API-2")
 def test_actions_without_a_network_share_one_status_code(wilab: WiLab) -> None:
     antenna = wilab.reserve()
     rid = antenna.reservation_id
@@ -80,7 +79,7 @@ def test_actions_without_a_network_share_one_status_code(wilab: WiLab) -> None:
         ).status_code,
         "txpower": wilab.http.post(f"/interface/{rid}/txpower", json={"level": 2}).status_code,
     }
-    assert len(set(codes.values())) == 1, codes
+    assert set(codes.values()) == {409}, codes  # 409 / 1007 network_not_active (API-2)
 
 
 # --------------------------------------------------------------------------- network behaviour

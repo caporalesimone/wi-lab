@@ -11,8 +11,8 @@ from ...api.dependencies import (
 )
 from ...models import TxPowerInfo, TxPowerRequest
 from ...reservation import Reservation
-from ...wifi.manager import NetworkManager, TxPowerMismatchError
-from .recovery_responses import DEVICE_BUSY_RESPONSE
+from ...wifi.manager import NetworkManager, NetworkNotActive, TxPowerMismatchError
+from .recovery_responses import DEVICE_BUSY_RESPONSE, NETWORK_NOT_ACTIVE_RESPONSE
 
 router = APIRouter(
     prefix="/interface", tags=["TX Power"],
@@ -38,6 +38,7 @@ def _validation_example(message: str) -> dict:
     response_model=TxPowerInfo,
     responses={
         503: DEVICE_BUSY_RESPONSE,
+        409: NETWORK_NOT_ACTIVE_RESPONSE,
         200: {
             "description": "TX power info retrieved successfully",
             "content": {"application/json": {"example": _TX_POWER_EXAMPLE}},
@@ -60,6 +61,8 @@ def get_tx_power(
     with hold_reservation(reservation_mgr, reservation):
         try:
             return manager.get_tx_power_info(reservation.device_id)
+        except NetworkNotActive:
+            raise  # 409 / 1007 (API-2)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
 
@@ -69,6 +72,7 @@ def get_tx_power(
     response_model=TxPowerInfo,
     responses={
         503: DEVICE_BUSY_RESPONSE,
+        409: NETWORK_NOT_ACTIVE_RESPONSE,
         200: {
             "description": "TX power level set successfully",
             "content": {"application/json": {"example": _TX_POWER_EXAMPLE}},
@@ -115,5 +119,7 @@ def set_tx_power(
             return manager.set_tx_power_level(reservation.device_id, req.level)
         except TxPowerMismatchError as e:
             raise HTTPException(status_code=422, detail=str(e))
+        except NetworkNotActive:
+            raise  # 409 / 1007 (API-2)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))

@@ -69,7 +69,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 28 | [PERF-5](Fable-Notes.md#L2996) |  | Rispettare il timeout richiesto senza imporre un minimo nascosto. |
 | 29 | [PERF-6](Fable-Notes.md#L3029) |  | Sostituire l'attesa fissa per TX power con polling limitato. |
 | 30 | [PERF-4](Fable-Notes.md#L3063) |  | Ridurre letture di discovery e probe hostapd non necessarie. |
-| 31 | [API-2](Fable-Notes.md#L3111) |  | Uniformare i codici di stato per le reti non attive. |
+| 31 | [API-2](Fable-Notes.md#L3111) | ✅ | Uniformare i codici di stato per le reti non attive. |
 | 32 | [API-4](Fable-Notes.md#L3149) | ✅ | Usare codici di errore appropriati per gli esiti causati dal client. |
 | 33 | [API-9](Fable-Notes.md#L3181) | ✅ | Allineare gli esempi OpenAPI ai modelli correnti. |
 | 34 | [API-5](Fable-Notes.md#L3206) |  | Restituire dati strutturati sullo stato della rete insieme al messaggio. |
@@ -165,7 +165,7 @@ in corso deve dare `409/1001`, non `500/1003`, e l'antenna deve tornare da sola 
 | PERF-6 | Durata di `POST .../txpower`. | Sotto i 3 s. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | SEC-1 | `curl --path-as-is http://<host>:8080//etc/passwd` e `/../config.yaml`. | `404`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | SEC-2 | Il client B chiama `/debug` mentre A ha una reservation. | Gli ID di A non sono visibili. Non previsto per ora: `/debug` resta finché non sarà sostituito. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
-| API-2 | Reservation senza rete: `internet/enable`, `qos/profile`, `txpower`. | Stesso status HTTP per "rete non attiva". | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| API-2 | Reservation senza rete: `internet/enable`, `qos/profile`, `txpower`. | Stesso status HTTP per "rete non attiva": `409 / 1007`. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | API-3 | `409` su rete già attiva, durante un ripristino, durante il cooldown; retry di una create dopo un timeout del client. | `detail.code` diverso per ogni caso; il retry con lo stesso body viene riconosciuto. |  |
 | API-4 | Terza create fallita per guasto radio. | Status HTTP come definito dal fix (non `500`). |  |
 | API-5 | Create riuscita. | La risposta contiene lo stato strutturato della rete. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |

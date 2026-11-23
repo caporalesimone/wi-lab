@@ -16,6 +16,7 @@ class ApiErrorCode(IntEnum):
     CLEANUP_FAILED = 1004
     NO_DEVICE_AVAILABLE = 1005
     DEVICE_BUSY = 1006
+    NETWORK_NOT_ACTIVE = 1007
 
 # Seconds a client should wait before repeating a request answered 503 / 1006.
 DEVICE_BUSY_RETRY_AFTER = 2

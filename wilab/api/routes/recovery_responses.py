@@ -69,6 +69,20 @@ DEVICE_BUSY_RESPONSE = {
 }
 
 
+NETWORK_NOT_ACTIVE_EXAMPLE = {"detail": {
+    "code": 1007, "reason": "network_not_active", "message": "Network wlan0 is not active",
+}}
+
+NETWORK_NOT_ACTIVE_RESPONSE = {
+    "description": (
+        "`detail.code: 1007` (`network_not_active`): the reservation is valid but has no "
+        "running network. Create one first. A `404` instead always means the reservation "
+        "itself is unknown, expired or invalidated."
+    ),
+    "content": {"application/json": {"example": NETWORK_NOT_ACTIVE_EXAMPLE}},
+}
+
+
 RETRY_AFTER_HEADER = {
     "Retry-After": {
         "description": "Minimum wait in seconds. Absent for a terminal failure.",

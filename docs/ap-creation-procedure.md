@@ -195,6 +195,11 @@ A success resets the counter. Further rules:
 
 ### 2.6 After the AP is running
 
+- **No network: `409 / 1007`.** Internet, TX power and QoS profile requests
+  on a valid reservation that has no running network return `409` with
+  `detail.code: 1007` (`network_not_active`). Create a network first. A `404`
+  on these endpoints always means the reservation itself is unknown, expired
+  or invalidated.
 - **Adapter busy: `503 / 1006`.** Every request on a reservation other than
   the create (`GET`/`DELETE .../network`, `available-channels`, Internet,
   TX power, QoS profile) waits at most **5 s** for another operation on the

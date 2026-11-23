@@ -22,8 +22,12 @@ from ...models import (
 from ...network.qos import QosManager
 from ...network.qos_profile import QosProfileManager
 from ...reservation import Reservation
-from ...wifi.manager import NetworkManager
-from .recovery_responses import DEVICE_BUSY_RESPONSE
+from ...wifi.manager import NetworkManager, NetworkNotActive
+from .recovery_responses import (
+    DEVICE_BUSY_RESPONSE,
+    NETWORK_NOT_ACTIVE_EXAMPLE,
+    NETWORK_NOT_ACTIVE_RESPONSE,
+)
 
 # ---------------------------------------------------------------------------
 # Catalogue router — global, no auth
@@ -56,15 +60,10 @@ reservation_router = APIRouter(
 
 
 def _require_active_network(device_id: str, manager: NetworkManager) -> str:
-    """Return the physical interface name or raise 409."""
+    """Return the physical interface name, or raise NetworkNotActive (409 / 1007, API-2)."""
     st = manager.get_status(device_id)
-    if st is None:
-        raise HTTPException(status_code=404, detail="Unknown device_id")
-    if not st.active:
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot apply QoS: network is not active for this reservation",
-        )
+    if st is None or not st.active:
+        raise NetworkNotActive(device_id)
     return st.interface
 
 
@@ -104,7 +103,15 @@ def _build_profile_state(interface: str, pm: QosProfileManager) -> QosProfileSta
         200: {"description": "Profile started successfully"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation or profile not found"},
-        409: {"description": "A profile is already active or network not active"},
+        409: {
+            "description": (
+                "A profile is already active (stop it first), or `detail.code: 1007` "
+                "(`network_not_active`): the reservation has no running network."
+            ),
+            "content": {"application/json": {"examples": {
+                "network_not_active": {"value": NETWORK_NOT_ACTIVE_EXAMPLE},
+            }}},
+        },
         422: {"description": "Invalid request body"},
     },
     summary="Start a QoS profile on the reservation",
@@ -164,6 +171,7 @@ def start_profile(
         200: {"description": "Current profile state"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation not found"},
+        409: NETWORK_NOT_ACTIVE_RESPONSE,
     },
     summary="Get active QoS profile state",
     description="Returns the current profile state for the reserved interface, including step progress.",
@@ -177,10 +185,7 @@ def get_profile_state(
 ):
     with hold_reservation(reservation_mgr, reservation):
         device_id = reservation.device_id
-        st = manager.get_status(device_id)
-        if st is None:
-            raise HTTPException(status_code=404, detail="Unknown device_id")
-        return _build_profile_state(st.interface, pm)
+        return _build_profile_state(_require_active_network(device_id, manager), pm)
 
 
 @reservation_router.delete(
@@ -191,6 +196,7 @@ def get_profile_state(
         200: {"description": "Profile stopped and QoS cleared"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation not found / no active profile"},
+        409: NETWORK_NOT_ACTIVE_RESPONSE,
     },
     summary="Stop the active QoS profile",
     description="Stops the active profile and clears all QoS rules from the interface.",
@@ -205,17 +211,15 @@ def stop_profile(
 ):
     with hold_reservation(reservation_mgr, reservation):
         device_id = reservation.device_id
-        st = manager.get_status(device_id)
-        if st is None:
-            raise HTTPException(status_code=404, detail="Unknown device_id")
+        interface = _require_active_network(device_id, manager)
 
-        ap = pm.get_state(st.interface)
+        ap = pm.get_state(interface)
         if ap is None or not ap.active:
             raise HTTPException(status_code=404, detail="No active profile on this interface")
 
         profile_id = ap.profile_id
-        pm.stop_profile(st.interface, qos)
-        ap_after = pm.get_state(st.interface)
+        pm.stop_profile(interface, qos)
+        ap_after = pm.get_state(interface)
         if ap_after is not None and ap_after.active:
             raise HTTPException(status_code=500, detail=f"Failed to deactivate profile '{profile_id}'")
 

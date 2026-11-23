@@ -18,6 +18,7 @@ from ..reservation import DeviceBusyError, ReservationCleanupError
 from ..runtime_cleanup import cleanup_runtime
 from ..version import __version__
 from ..wifi.channels import set_regulatory_domain
+from ..wifi.manager import NetworkNotActive
 from .dependencies import (
     discovery_loop,
     get_config,
@@ -71,6 +72,7 @@ not the message, for control flow. Success responses are unchanged.
 | Reserve `503`, `detail.code: 1002` | Retry the **reservation** POST after `Retry-After` (10 seconds, a polling interval). |
 | Reserve `503`, `detail.code: 1003` | All adapters are quarantined and none is recovering. No automatic retry. |
 | `503`, `detail.code: 1004` | Cleanup failed. Do not apply a recovery-code retry policy; check status and resolve the cleanup failure. |
+| `409`, `detail.code: 1007` | The reservation is valid but has no running network (Internet, TX power, QoS profile). Create a network first. A `404` always means the reservation itself is gone. |
 | `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Every reservation endpoint except the create, which waits instead. |
 
 A transport timeout is not a recovery code. For a lost create response, check
@@ -197,6 +199,13 @@ def create_app() -> FastAPI:
         request: Request, exc: ReservationCleanupError
     ) -> JSONResponse:
         return api_error_response(request, 503, domain_error(ApiErrorCode.CLEANUP_FAILED, str(exc)))
+
+    @app.exception_handler(NetworkNotActive)
+    async def network_not_active_handler(request: Request, exc: NetworkNotActive) -> JSONResponse:
+        # API-2: one answer for "valid reservation, no network", distinct from 404.
+        return api_error_response(
+            request, 409, domain_error(ApiErrorCode.NETWORK_NOT_ACTIVE, str(exc)),
+        )
 
     @app.exception_handler(DeviceBusyError)
     async def device_busy_exception_handler(request: Request, exc: DeviceBusyError) -> JSONResponse:

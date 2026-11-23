@@ -10,8 +10,8 @@ from ...api.dependencies import (
     resolve_reservation,
 )
 from ...reservation import Reservation
-from ...wifi.manager import NetworkManager
-from .recovery_responses import DEVICE_BUSY_RESPONSE
+from ...wifi.manager import NetworkManager, NetworkNotActive
+from .recovery_responses import DEVICE_BUSY_RESPONSE, NETWORK_NOT_ACTIVE_RESPONSE
 
 router = APIRouter(
     prefix="/interface", tags=["Internet"],
@@ -23,6 +23,7 @@ router = APIRouter(
     "/{reservation_id}/internet/enable",
     responses={
         503: DEVICE_BUSY_RESPONSE,
+        409: NETWORK_NOT_ACTIVE_RESPONSE,
         200: {
             "description": "Internet access enabled successfully",
             "content": {
@@ -52,6 +53,8 @@ def internet_enable(
         try:
             manager.enable_internet(device_id)
             return {"detail": f"Network {device_id} internet enabled successfully"}
+        except NetworkNotActive:
+            raise  # 409 / 1007 (API-2)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
         except RuntimeError as e:
@@ -62,6 +65,7 @@ def internet_enable(
     "/{reservation_id}/internet/disable",
     responses={
         503: DEVICE_BUSY_RESPONSE,
+        409: NETWORK_NOT_ACTIVE_RESPONSE,
         200: {
             "description": "Internet access disabled successfully",
             "content": {
@@ -91,6 +95,8 @@ def internet_disable(
         try:
             manager.disable_internet(device_id)
             return {"detail": f"Network {device_id} internet disabled successfully"}
+        except NetworkNotActive:
+            raise  # 409 / 1007 (API-2)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
         except RuntimeError as e:

@@ -62,6 +62,14 @@ MIN_RETRY_ATTEMPT_TIME = 4.0
 CLEANUP_BACKOFF = (5.0, 15.0, 60.0, 300.0)
 
 
+class NetworkNotActive(ValueError):
+    """The reservation is valid but it has no running network (API-2)."""
+
+    def __init__(self, device_id: str) -> None:
+        super().__init__(f"Network {device_id} is not active")
+        self.device_id = device_id
+
+
 class TxPowerMismatchError(Exception):
     """Raised when reported TX power does not match the requested level."""
 
@@ -668,7 +676,7 @@ class NetworkManager:
         
         st = self.get_status(device_id)
         if not st or not st.active:
-            raise ValueError("Unknown or inactive device_id")
+            raise NetworkNotActive(device_id)
         
         # Get interface for NAT rules
         cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
@@ -707,7 +715,7 @@ class NetworkManager:
         
         st = self.get_status(device_id)
         if not st or not st.active:
-            raise ValueError("Unknown or inactive device_id")
+            raise NetworkNotActive(device_id)
         
         # Get interface for NAT rules
         cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
@@ -991,7 +999,7 @@ class NetworkManager:
         """
         st = self.get_status(device_id)
         if not st or not st.active:
-            raise ValueError("Unknown or inactive device_id")
+            raise NetworkNotActive(device_id)
         if level not in [1, 2, 3, 4]:
             raise ValueError("TX power level must be 1-4")
         if st.channel is None:
@@ -1013,7 +1021,7 @@ class NetworkManager:
         """
         st = self.get_status(device_id)
         if not st or not st.active:
-            raise ValueError("Unknown or inactive device_id")
+            raise NetworkNotActive(device_id)
         if st.channel is None:
             raise ValueError("Channel unknown for this network")
         cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
