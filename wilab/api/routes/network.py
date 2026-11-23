@@ -314,6 +314,30 @@ def stop_network(
         200: {
             "description": "Network status, or a watchdog snapshot while restoration is in progress.",
             "content": {"application/json": {"examples": {
+                "active": {
+                    "summary": "Active network with Internet and two clients",
+                    "value": {
+                        "interface": "wlx7419f8176286", "active": True, "ssid": "test-network-ap-01",
+                        "channel": 6, "password": "12345678", "encryption": "wpa2", "band": "2.4ghz",
+                        "hidden": False, "subnet": "192.168.120.0/24", "internet_enabled": True,
+                        "captive_portal": False, "captive_portal_url": None,
+                        "tx_power": {"requested_level": 4, "reported_level": 4, "reported_dbm": 20.0},
+                        "expires_at": "2026-11-19T23:00:00Z", "expires_in": 3471,
+                        "dhcp": {
+                            "interface": "wlx7419f8176286", "subnet": "192.168.120.0/24",
+                            "gateway": "192.168.120.1",
+                            "config_file": "/tmp/wilab-dnsmasq/dnsmasq-wlx7419f8176286.conf",
+                            "pid_file": "/tmp/wilab-dnsmasq/pids/dnsmasq-wlx7419f8176286.pid",
+                            "lease_file": "/tmp/wilab-dnsmasq/leases-wlx7419f8176286.db",
+                            "network_addr": "192.168.120.0", "dhcp_range": "192.168.120.10,192.168.120.250",
+                        },
+                        "clients_connected": 2,
+                        "clients": [
+                            {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.120.10"},
+                            {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.120.11"},
+                        ],
+                    },
+                },
                 "restoring_ap": {"value": {
                     "interface": "wlan0", "active": False, "runtime_state": "restoring_ap",
                     "expires_in": 54,

@@ -6,76 +6,11 @@ from wilab.models import (
     DelayDistribution,
     NetemParams,
     QosQualityAdvanced,
-    QosRequest,
-    QosStatus,
 )
 from wilab.network.qos import _SENTINEL, QosManager
 
 # ---------------------------------------------------------------------------
 # Model validation tests
-# ---------------------------------------------------------------------------
-
-class TestQosRequestModel:
-    """Tests for QosRequest Pydantic model."""
-
-    def test_valid_both_speeds(self):
-        req = QosRequest(download_speed_kbit=8000, upload_speed_kbit=3000)
-        assert req.download_speed_kbit == 8000
-        assert req.upload_speed_kbit == 3000
-
-    def test_valid_download_only(self):
-        req = QosRequest(download_speed_kbit=5000)
-        assert req.download_speed_kbit == 5000
-        assert req.upload_speed_kbit is None
-
-    def test_valid_upload_only(self):
-        req = QosRequest(upload_speed_kbit=2000)
-        assert req.upload_speed_kbit == 2000
-        assert req.download_speed_kbit is None
-
-    def test_null_resets(self):
-        req = QosRequest(download_speed_kbit=None, upload_speed_kbit=None)
-        assert req.download_speed_kbit is None
-        assert req.upload_speed_kbit is None
-
-    def test_min_speed(self):
-        req = QosRequest(download_speed_kbit=1)
-        assert req.download_speed_kbit == 1
-
-    def test_max_speed(self):
-        req = QosRequest(download_speed_kbit=1_000_000)
-        assert req.download_speed_kbit == 1_000_000
-
-    def test_speed_below_min(self):
-        with pytest.raises(Exception):
-            QosRequest(download_speed_kbit=0)
-
-    def test_speed_above_max(self):
-        with pytest.raises(Exception):
-            QosRequest(download_speed_kbit=1_000_001)
-
-    def test_negative_speed(self):
-        with pytest.raises(Exception):
-            QosRequest(download_speed_kbit=-1)
-
-
-class TestQosStatusModel:
-    """Tests for QosStatus response model."""
-
-    def test_inactive(self):
-        st = QosStatus(interface="wlan0", active=False)
-        assert st.interface == "wlan0"
-        assert not st.active
-        assert st.download_speed_kbit is None
-
-    def test_active_with_speed(self):
-        st = QosStatus(interface="wlan0", active=True, download_speed_kbit=8000)
-        assert st.active
-        assert st.download_speed_kbit == 8000
-
-
-# ---------------------------------------------------------------------------
-# QosManager unit tests (mocked tc commands)
 # ---------------------------------------------------------------------------
 
 class TestQosManagerThrottle:
@@ -256,44 +191,10 @@ class TestQosQualityModels:
         with pytest.raises(Exception):
             QosQualityAdvanced(corruption_percent=5.1)
 
-    def test_quality_range_valid(self):
-        req = QosRequest(download_quality=0)
-        assert req.download_quality == 0
-        req = QosRequest(download_quality=100)
-        assert req.download_quality == 100
-
-    def test_quality_range_invalid_above(self):
-        with pytest.raises(Exception):
-            QosRequest(download_quality=101)
-
-    def test_quality_range_invalid_below(self):
-        with pytest.raises(Exception):
-            QosRequest(download_quality=-1)
-
     def test_netem_params_model(self):
         p = NetemParams(packet_loss_percent=2.5, delay_ms=50, jitter_ms=10)
         assert p.packet_loss_percent == 2.5
         assert p.corruption_percent == 0  # default
-
-    def test_request_with_quality_and_speed(self):
-        req = QosRequest(
-            download_speed_kbit=8000,
-            download_quality=80,
-            upload_quality=65,
-        )
-        assert req.download_speed_kbit == 8000
-        assert req.download_quality == 80
-        assert req.upload_quality == 65
-
-    def test_request_with_advanced_override(self):
-        req = QosRequest(
-            download_quality_advanced=QosQualityAdvanced(
-                packet_loss_percent=10.0,
-                delay_ms=200,
-            ),
-        )
-        assert req.download_quality_advanced is not None
-        assert req.download_quality_advanced.packet_loss_percent == 10.0
 
 
 # ---------------------------------------------------------------------------

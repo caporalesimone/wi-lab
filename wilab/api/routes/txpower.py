@@ -21,13 +21,27 @@ router = APIRouter(
 VALID_TX_POWER_LEVELS = (1, 2, 3, 4)
 VALID_TX_POWER_LEVELS_TEXT = ", ".join(str(level) for level in VALID_TX_POWER_LEVELS)
 
+_TX_POWER_EXAMPLE = {
+    "interface": "wlx7419f8176286",
+    "max_dbm": 20.0,
+    "levels_dbm": {"1": 5.0, "2": 10.0, "3": 15.0, "4": 20.0},
+    "tx_power": {"requested_level": 2, "reported_level": 2, "reported_dbm": 10.0},
+}
+
+
+def _validation_example(message: str) -> dict:
+    return {"value": {"detail": {"code": 422, "reason": "validation_error", "message": message}}}
+
 
 @router.get(
     "/{reservation_id}/txpower",
     response_model=TxPowerInfo,
     responses={
         503: DEVICE_BUSY_RESPONSE,
-        200: {"description": "TX power info retrieved successfully"},
+        200: {
+            "description": "TX power info retrieved successfully",
+            "content": {"application/json": {"example": _TX_POWER_EXAMPLE}},
+        },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "Reservation not found or expired"},
     },
@@ -55,11 +69,26 @@ def get_tx_power(
     response_model=TxPowerInfo,
     responses={
         503: DEVICE_BUSY_RESPONSE,
-        200: {"description": "TX power level set successfully"},
+        200: {
+            "description": "TX power level set successfully",
+            "content": {"application/json": {"example": _TX_POWER_EXAMPLE}},
+        },
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "Reservation not found or expired"},
         422: {
-            "description": "Unprocessable Entity (requested power out of range or requested TX power not applied by hardware)"
+            "description": "Unprocessable Entity (requested power out of range or requested TX power not applied by hardware)",
+            "content": {"application/json": {"examples": {
+                "out_of_range": {
+                    "summary": "Requested level is outside 1-4",
+                    **_validation_example(
+                        f"Requested power out of range. Valid values are {VALID_TX_POWER_LEVELS_TEXT}.",
+                    ),
+                },
+                "hardware_mismatch": {
+                    "summary": "Hardware does not apply requested TX power",
+                    **_validation_example("Interface does not support dynamic power change."),
+                },
+            }}},
         },
     },
 )

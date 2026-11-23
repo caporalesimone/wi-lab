@@ -133,12 +133,10 @@ class NetworkStatus(BaseModel):
     clients_connected: int | None = Field(None, description="Number of clients currently connected")
     clients: list[ClientInfo] | None = Field(None, description="List of connected clients")
 
-class InterfaceStatus(BaseModel):
-    interface: str
-    active: bool
-
 class TxPowerRequest(BaseModel):
     level: int = Field(..., description="TX power level 1 (low) to 4 (max)")
+
+    model_config = ConfigDict(json_schema_extra={"examples": [{"level": 2}]})
 
 
 class TxPowerInfo(BaseModel):
@@ -195,87 +193,6 @@ class NetemParams(BaseModel):
     jitter_ms: int = 0
     corruption_percent: float = 0
     delay_distribution: str = "normal"
-
-
-class QosRequest(BaseModel):
-    """Request body for POST /interface/{reservation_id}/qos.
-
-    All fields are optional. Omitting a field preserves its current value.
-    Sending ``null`` resets the setting to unlimited / inactive.
-    """
-
-    download_speed_kbit: int | None = Field(
-        None,
-        description="Download speed limit in kbit/s (1-1000000), or null to reset",
-    )
-    upload_speed_kbit: int | None = Field(
-        None,
-        description="Upload speed limit in kbit/s (1-1000000), or null to reset",
-    )
-    download_quality: int | None = Field(
-        None,
-        description="Download link quality 0-100% (100=perfect), or null to reset",
-    )
-    upload_quality: int | None = Field(
-        None,
-        description="Upload link quality 0-100% (100=perfect), or null to reset",
-    )
-    download_quality_advanced: QosQualityAdvanced | None = Field(
-        None,
-        description="Advanced download netem params (overrides quality score)",
-    )
-    upload_quality_advanced: QosQualityAdvanced | None = Field(
-        None,
-        description="Advanced upload netem params (overrides quality score)",
-    )
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "download_speed_kbit": 8000,
-                    "upload_speed_kbit": 3000,
-                    "download_quality": 80,
-                    "upload_quality": 65,
-                }
-            ]
-        }
-    )
-
-    @field_validator("download_speed_kbit", "upload_speed_kbit", mode="before")
-    @classmethod
-    def _validate_speed_range(cls, v: object) -> object:
-        if v is None:
-            return v
-        if not isinstance(v, int):
-            raise ValueError("must be an integer or null")
-        if v < _QOS_SPEED_MIN or v > _QOS_SPEED_MAX:
-            raise ValueError(f"must be between {_QOS_SPEED_MIN} and {_QOS_SPEED_MAX}")
-        return v
-
-    @field_validator("download_quality", "upload_quality", mode="before")
-    @classmethod
-    def _validate_quality_range(cls, v: object) -> object:
-        if v is None:
-            return v
-        if not isinstance(v, int):
-            raise ValueError("must be an integer or null")
-        if v < _QOS_QUALITY_MIN or v > _QOS_QUALITY_MAX:
-            raise ValueError(f"must be between {_QOS_QUALITY_MIN} and {_QOS_QUALITY_MAX}")
-        return v
-
-
-class QosStatus(BaseModel):
-    """Response model for GET/POST /interface/{reservation_id}/qos."""
-
-    interface: str
-    active: bool = Field(description="True if any QoS rule is active")
-    download_speed_kbit: int | None = Field(None, description="Current download speed limit in kbit/s")
-    upload_speed_kbit: int | None = Field(None, description="Current upload speed limit in kbit/s")
-    download_quality: int | None = Field(None, description="Current download link quality 0-100%")
-    upload_quality: int | None = Field(None, description="Current upload link quality 0-100%")
-    download_netem_params: NetemParams | None = Field(None, description="Resolved download netem parameters")
-    upload_netem_params: NetemParams | None = Field(None, description="Resolved upload netem parameters")
 
 
 # --- QoS Profile Models ---
