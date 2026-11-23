@@ -92,6 +92,10 @@ mat-card-title {
   &.offline {
     background-color: #fbc02d;
   }
+
+  &.captive {
+    background-color: #3f51b5;
+  }
 }
 
 .clients-section {

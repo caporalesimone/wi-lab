@@ -6,6 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -22,6 +23,7 @@ import { NetworkCreateRequest } from '../../models/network.models';
     MatInputModule,
     MatSelectModule,
     MatCheckboxModule,
+    MatSlideToggleModule,
     MatButtonModule,
     MatIconModule,
     MatTooltipModule
@@ -38,7 +40,7 @@ export class NetworkFormDialogComponent {
   constructor(
     private formBuilder: FormBuilder,
     private dialogRef: MatDialogRef<NetworkFormDialogComponent>,
-    @Inject(MAT_DIALOG_DATA) public data: { netId: string }
+    @Inject(MAT_DIALOG_DATA) public data: { netId: string; captivePortal?: boolean }
   ) {
     // Generate dynamic SSID based on AP ID (e.g., "test-network-ap-01")
     const defaultSsid = `test-network-${this.data.netId}`;
@@ -51,7 +53,7 @@ export class NetworkFormDialogComponent {
       password: ['12345678', [Validators.minLength(8), Validators.maxLength(63)]],
       hidden: [false],
       internet_enabled: [true],
-      captive_portal: [false],
+      captive_portal: [this.data.captivePortal ?? false],
       tx_power_level: [4, [Validators.required, Validators.min(1), Validators.max(4)]]
     });
 

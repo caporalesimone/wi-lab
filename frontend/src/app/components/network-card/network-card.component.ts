@@ -7,6 +7,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { interval, Subscription } from 'rxjs';
 import { WilabApiService } from '../../services/wilab-api.service';
@@ -27,7 +28,8 @@ import { InterfaceSlot } from '../../app.component';
     MatProgressSpinnerModule,
     MatProgressBarModule,
     MatTooltipModule,
-    MatDialogModule
+    MatDialogModule,
+    MatSlideToggleModule
   ],
   templateUrl: './network-card.component.html',
   styleUrl: './network-card.component.scss'
@@ -39,6 +41,8 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   status: NetworkStatus | null = null;
   loading = false;
   createMessage: string | null = null;
+  /** Captive portal choice for the next start; preselects the start dialog. */
+  captivePortalChoice = false;
   private creation?: Subscription;
   pollingSubscription?: Subscription;
   countdownSubscription?: Subscription;
@@ -251,7 +255,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     const reservationId = this.reservationId;
     const dialogRef = this.dialog.open(NetworkFormDialogComponent, {
       width: '500px',
-      data: { netId: reservationId }
+      data: { netId: reservationId, captivePortal: this.captivePortalChoice }
     });
 
     dialogRef.afterClosed().subscribe((result: NetworkCreateRequest | undefined) => {

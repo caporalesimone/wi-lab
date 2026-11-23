@@ -23,6 +23,12 @@
       matTooltipPosition="above">
       <mat-icon>{{ status?.internet_enabled ? 'cloud_done' : 'cloud_off' }}</mat-icon>
     </div>
+    <div *ngIf="isMine && status?.active && status?.captive_portal"
+      class="internet-status-badge captive"
+      [matTooltip]="'Captive portal on: clients sign in at ' + (status?.captive_portal_url ?? 'the portal page')"
+      matTooltipPosition="above">
+      <mat-icon>login</mat-icon>
+    </div>
     <!-- Status chip for non-owned cards -->
     <span *ngIf="isAvailable" class="status-chip available-chip">Available</span>
     <span *ngIf="slot.recoveryState" class="status-chip occupied-chip">
@@ -70,9 +76,17 @@
           <span class="label">Band:</span>
           <span class="value">{{ status?.band }}</span>
         </div>
-        <div class="info-row" *ngIf="status?.captive_portal">
+        <div class="info-row">
           <span class="label">Captive portal:</span>
-          <span class="value">{{ status?.captive_portal_url }}</span>
+          <span class="value captive-value">
+            <span class="state-pill" [class.on]="status?.captive_portal">
+              <mat-icon>{{ status?.captive_portal ? 'login' : 'public' }}</mat-icon>
+              {{ status?.captive_portal ? 'On' : 'Off' }}
+            </span>
+            <span *ngIf="status?.captive_portal && status?.captive_portal_url" class="portal-url">
+              {{ status?.captive_portal_url }}
+            </span>
+          </span>
         </div>
         <div class="info-row" *ngIf="status?.tx_power?.requested_level !== undefined && status?.tx_power?.requested_level !== null"
           matTooltip="The reported level comes from the driver and does not guarantee actual transmitted power.">
@@ -115,6 +129,20 @@
       <div *ngIf="!status?.active && !restoring" class="inactive-message">
         <mat-icon>wifi_off</mat-icon>
         <p role="status">{{ createMessage ?? 'Access point not active — start WiFi to begin' }}</p>
+      </div>
+      <div *ngIf="!status?.active && !restoring" class="option-tile" [class.on]="captivePortalChoice">
+        <mat-icon class="option-icon">{{ captivePortalChoice ? 'login' : 'public' }}</mat-icon>
+        <div class="option-text">
+          <span class="option-title">Captive portal</span>
+          <span class="option-description">
+            {{ captivePortalChoice
+              ? 'The next network starts with a portal page; clients sign in before getting access.'
+              : 'The next network starts without a portal page.' }}
+          </span>
+        </div>
+        <mat-slide-toggle color="primary" [checked]="captivePortalChoice" [disabled]="loading"
+          (change)="captivePortalChoice = $event.checked"
+          aria-label="Start the next network with a captive portal"></mat-slide-toggle>
       </div>
     </mat-card-content>
 

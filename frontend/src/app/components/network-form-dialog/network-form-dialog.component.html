@@ -54,8 +54,19 @@
 
     <mat-checkbox formControlName="hidden">Hidden SSID</mat-checkbox>
     <mat-checkbox formControlName="internet_enabled">Internet Enabled</mat-checkbox>
-    <mat-checkbox formControlName="captive_portal"
-      matTooltip="Clients are redirected to a portal page until they press its Sign in button">Captive Portal</mat-checkbox>
+    <div class="option-tile" [class.on]="form.get('captive_portal')?.value">
+      <mat-icon class="option-icon">{{ form.get('captive_portal')?.value ? 'login' : 'public' }}</mat-icon>
+      <div class="option-text">
+        <span class="option-title">Captive portal</span>
+        <span class="option-description">
+          {{ form.get('captive_portal')?.value
+            ? 'Clients see a portal page and get access only after pressing Sign in.'
+            : 'Clients connect directly, without a portal page.' }}
+        </span>
+      </div>
+      <mat-slide-toggle formControlName="captive_portal" color="primary"
+        aria-label="Start the network with a captive portal"></mat-slide-toggle>
+    </div>
   </form>
 </mat-dialog-content>
 
