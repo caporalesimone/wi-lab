@@ -87,6 +87,7 @@ class ReservationManager:
         device_ids: list[str],
         cleanup: Callable[[str], None] | None = None,
         device_lock: Callable[[str], RLock] | None = None,
+        cleanup_due: Callable[[str], bool] | None = None,
     ) -> None:
         self._device_ids = list(device_ids)
         self._reservations: dict[str, Reservation] = {}   # reservation_id -> Reservation
@@ -99,6 +100,9 @@ class ReservationManager:
             device_lock = self._own_locks.__getitem__
         self._device_lock = device_lock
         self._cleanup = cleanup
+        # WD-6: background sweeps skip a device whose failed cleanup is backing off.
+        self._cleanup_due = cleanup_due or (lambda _device: True)
+        self._failing_cleanup: set[str] = set()  # log the traceback once per failure series
 
     # ------------------------------------------------------------------
     # Public API
@@ -257,8 +261,11 @@ class ReservationManager:
             return {r.device_id: r for r in self._reservations.values()}
 
     def expire(self) -> None:
-        """Sweep expired reservations outside the request path."""
-        self._purge_expired(continue_on_error=True)
+        """Sweep expired reservations outside the request path.
+
+        Devices whose cleanup failed are skipped until their backoff ends (WD-6).
+        """
+        self._purge_expired(continue_on_error=True, background=True)
 
     @contextmanager
     def hold(self, reservation_id: str, timeout: float | None = None) -> Iterator[Reservation | None]:
@@ -300,18 +307,26 @@ class ReservationManager:
             self._device_to_rid.pop(r.device_id, None)
 
     def _release(self, reservation: Reservation) -> None:
+        device = reservation.device_id
         if self._cleanup is not None:
             try:
-                self._cleanup(reservation.device_id)
+                self._cleanup(device)
             except Exception as exc:
-                logger.exception("Failed to clean up device %s", reservation.device_id)
+                if device in self._failing_cleanup:
+                    logger.warning("Failed to clean up device %s again: %s", device, exc)
+                else:
+                    self._failing_cleanup.add(device)
+                    logger.exception("Failed to clean up device %s", device)
                 raise ReservationCleanupError(
-                    f"Failed to clean up device {reservation.device_id}"
+                    f"Failed to clean up device {device}"
                 ) from exc
+        self._failing_cleanup.discard(device)
         with self._lock:
             self._remove(reservation.reservation_id)
 
-    def _cleanup_expired(self, reservation: Reservation) -> None:
+    def _cleanup_expired(self, reservation: Reservation, *, background: bool = False) -> None:
+        if background and not self._cleanup_due(reservation.device_id):
+            return
         lock = self._device_lock(reservation.device_id)
         if not lock.acquire(blocking=False):
             return
@@ -325,13 +340,13 @@ class ReservationManager:
             lock.release()
 
     def _purge_expired(
-        self, *, continue_on_error: bool = False
+        self, *, continue_on_error: bool = False, background: bool = False,
     ) -> ReservationCleanupError | None:
         expired = [r for r in self.snapshot().values() if r.is_expired]
         first_error = None
         for reservation in expired:
             try:
-                self._cleanup_expired(reservation)
+                self._cleanup_expired(reservation, background=background)
             except ReservationCleanupError as exc:
                 if not continue_on_error:
                     raise

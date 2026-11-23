@@ -50,7 +50,8 @@ def get_reservation_manager(config: AppConfig = Depends(get_config)) -> Reservat
             device_ids = [n.device_id for n in config.networks]
             manager = get_manager(config)
             _reservation_manager = ReservationManager(
-                device_ids, cleanup=manager.release_device, device_lock=manager.device_lock
+                device_ids, cleanup=manager.release_device, device_lock=manager.device_lock,
+                cleanup_due=manager.cleanup_due,
             )
             manager.expire_reservations = _reservation_manager.expire
             manager.watchdog.start(_reservation_manager)

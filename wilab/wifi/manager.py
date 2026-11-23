@@ -52,6 +52,10 @@ STARTUP_ATTEMPTS = 3
 STARTUP_RETRY_BUDGET = 15.0
 STARTUP_RETRY_DELAY = 1.0
 MIN_RETRY_ATTEMPT_TIME = 0.75
+# Delay before the next background cleanup of a device whose cleanup failed, by
+# number of consecutive failures; the last value repeats (WD-6). A client's
+# explicit DELETE is never delayed.
+CLEANUP_BACKOFF = (5.0, 15.0, 60.0, 300.0)
 
 
 class TxPowerMismatchError(Exception):
@@ -84,6 +88,9 @@ class NetworkManager:
         self._firewall_lock = threading.Lock()
         self._subnet_lock = threading.Lock()
         self._assigned_subnets: dict[str, IPv4Network] = {}
+        # WD-6: consecutive cleanup failures and next background attempt per device
+        self._cleanup_failures: dict[str, int] = {}
+        self._cleanup_retry_at: dict[str, float] = {}
         self.expire_reservations: Callable[[], None] | None = None
         self.recovery = RadioRecovery(self)
         self.watchdog = NetworkWatchdog(self)
@@ -161,9 +168,32 @@ class NetworkManager:
                 or device_id in self.captive_portals
                 or firewall_pending
             ):
-                self.stop_network(device_id)
+                self._tracked_stop(device_id)
             if device_id in self.active:
                 raise RuntimeError(f"Network {device_id} is still active")
+
+    def _tracked_stop(self, device_id: str) -> None:
+        """stop_network, recording failures for the background backoff (WD-6)."""
+        try:
+            self.stop_network(device_id)
+        except RuntimeError:
+            failures = self._cleanup_failures.get(device_id, 0) + 1
+            delay = CLEANUP_BACKOFF[min(failures, len(CLEANUP_BACKOFF)) - 1]
+            self._cleanup_failures[device_id] = failures
+            self._cleanup_retry_at[device_id] = time.monotonic() + delay
+            if failures > 1:
+                logger.warning(
+                    "Cleanup of %s failed %d times in a row; next background attempt in %.0f s",
+                    device_id, failures, delay,
+                )
+            raise
+        if self._cleanup_failures.pop(device_id, None) is not None:
+            logger.warning("Cleanup of %s succeeded after earlier failures", device_id)
+        self._cleanup_retry_at.pop(device_id, None)
+
+    def cleanup_due(self, device_id: str) -> bool:
+        """False while a failed cleanup of this device waits for its next background attempt."""
+        return time.monotonic() >= self._cleanup_retry_at.get(device_id, 0.0)
 
     def start_network(
         self, device_id: str, req: NetworkCreateRequest,
@@ -1015,13 +1045,16 @@ class NetworkManager:
         if not lock.acquire(blocking=False):
             return
         try:
-            if self.active.get(device_id) is not status:
+            if self.active.get(device_id) is not status or not self.cleanup_due(device_id):
                 return
-            logger.info(f"[expiry-loop] Network {device_id} expired, stopping")
+            first = device_id not in self._cleanup_failures
+            if first:
+                logger.info(f"[expiry-loop] Network {device_id} expired, stopping")
             try:
-                self.stop_network(device_id)
+                self._tracked_stop(device_id)
             except RuntimeError as e:
-                logger.error(f"[expiry-loop] Failed stopping {device_id}: {e}")
+                if first:
+                    logger.error(f"[expiry-loop] Failed stopping {device_id}: {e}")
         finally:
             lock.release()
 

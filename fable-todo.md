@@ -22,7 +22,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [WD-7](Fable-Notes.md#L1155) | ✅ parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. Fatti gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. Manca il controllo che la radio trasmetta davvero (`tx_packets`), da verificare prima sull'hardware. |
 | 1 | [STAB-4](Fable-Notes.md#L1294) |  | Pulire all'avvio anche indirizzi, QoS, file e PID obsoleti. |
 | 1 | [RACE-1](Fable-Notes.md#L1422) | ✅ | Limitare l'attesa del lock sul dispositivo e restituire un esito occupato. |
-| 1 | [WD-6](Fable-Notes.md#L1474) |  | Applicare backoff ai tentativi ripetuti di cleanup falliti. |
+| 1 | [WD-6](Fable-Notes.md#L1474) | ✅ | Applicare backoff ai tentativi ripetuti di cleanup falliti. |
 | 1 | [HAP-4](Fable-Notes.md#L1525) |  | Distinguere l'esaurimento del budget da un guasto radio reale. |
 | 1 | [STAB-6](Fable-Notes.md#L1561) |  | Aggiornare l'interfaccia upstream quando cambiano le route. |
 | 1 | [NET-6](Fable-Notes.md#L1706) |  | Ripulire i processi dnsmasq anche dopo un timeout di avvio. |

@@ -314,6 +314,12 @@ stateDiagram-v2
 - **Expiry** is enforced in two places: lazily when the ID is used (the request
   gets `404` after cleanup) and by the expiry loop every 5 seconds.
 - **Release** cleans up first and frees the antenna only if cleanup succeeded.
+- **Failed cleanup backoff (WD-6):** when the cleanup of an antenna fails, the
+  expiry loop and the background reservation sweep retry it after 5, 15, 60
+  and then every 300 s (`CLEANUP_BACKOFF`), instead of every 5 s. A client's
+  explicit release or a reservation request that purges an expired one always
+  tries for real. The full traceback is logged once per failure series, then
+  short warnings; a success logs that the cleanup recovered.
 - **Quarantine** removes the reservation and marks the antenna as blocked in a
   single store operation, so the ID becomes `404` and the antenna cannot be
   allocated.

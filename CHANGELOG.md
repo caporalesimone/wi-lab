@@ -16,6 +16,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- A device cleanup that keeps failing is retried in the background after 5, 15, 60 and then every 300 s instead of every 5 s, with one traceback per failure series; a client's release still tries immediately (Fable WD-6).
 - Requests on a reservation wait at most 5 s for another operation on the same adapter and then return `503 / 1006 device_busy` with `Retry-After: 2`, instead of holding an API thread until a slow start ends (Fable RACE-1).
 - The watchdog checks a running network every 30 s and repairs in place a lost gateway address, `ip_forward`, NAT, Internet-block and isolation rules; a broken captive portal restores the network (Fable WD-7).
 - If a Wi-Lab background loop stalls, `/status` reports it and the service restarts itself through the systemd watchdog, but only when no reservation is active (Fable STAB-1).
