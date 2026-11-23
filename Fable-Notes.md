@@ -51,7 +51,7 @@ recovery, `HAP` avvio di hostapd, `NET` firewall / DHCP / QoS, `BUG` errori logi
 `PERF` prestazioni, `API` disegno delle API, `ARCH` struttura del codice.
 
 Il documento è ordinato per priorità: le due tabelle del capitolo 2 e le schede del capitolo 4 seguono
-lo stesso ordine, da 1 (più urgente) a 86. L'indice completo è in fondo.
+lo stesso ordine, da 1 (più urgente) a 86. L'indice completo è in fondo. ✅ segna i punti corretti e committati, ✅ parz. quelli corretti in parte (il dettaglio è in [fable-todo.md](fable-todo.md)).
 
 ---
 
@@ -89,35 +89,35 @@ protetto è quello che interessa di più: una rete che funzionava e deve continu
 | # | Id | Gravità | In una frase |
 |---|---|---|---|
 | 1 | [SEC-1](#sec-1) | Critica | La route che serve il frontend può restituire qualunque file dell'host senza autenticazione (`GET //etc/shadow`, `config.yaml` con il token). |
-| 2 | [BUG-1](#bug-1) | Alta | Due validatori su tre della richiesta di creazione non girano mai; `ssid` non ha regole e un newline inietta righe in `hostapd.conf`. |
-| 3 | [WD-2](#wd-2) | Alta | Se l'unico riavvio del watchdog fallisce per un motivo "non classificato", la rete resta spenta per sempre, senza `runtime_state` e senza avvisi. |
-| 4 | [WD-1](#wd-1) | Alta | Il watchdog riavvia un AP **una sola volta per vita della rete**; al secondo guasto, anche settimane dopo, mette l'adattatore in quarantena. |
-| 5 | [WD-4](#wd-4) | Alta | La quarantena non ha uscita per adattatori non USB, per cleanup falliti e dopo 10 reset falliti: serve un riavvio del servizio. |
-| 6 | [NET-1](#net-1) | Alta | `iptables` è chiamato senza `-w`: con il backend legacy due chiamate concorrenti ne fanno fallire una, e uno stop fallito diventa quarantena. |
-| 7 | [HAP-1](#hap-1) | Alta | Un SSID con caratteri non ASCII, virgolette o backslash non risulta mai "pronto": un adattatore sano finisce in quarantena con reset USB. |
-| 8 | [STAB-1](#stab-1) | Alta | Un comando bloccato nel kernel fa attendere `subprocess.run` per sempre con il lock del dispositivo preso; il processo resta vivo e systemd non lo riavvia. |
-| 9 | [NET-2](#net-2) | Alta | La creazione risponde `200` anche se NAT o isolamento non sono stati installati, e lo stato dice `internet_enabled: true`. |
-| 10 | [HAP-3](#hap-3) | Alta | Lo stesso guasto di beacon è "radio" solo se avviene in un tentativo di retry; altrove diventa un `500` generico. |
+| 2 | [BUG-1](#bug-1) ✅ | Alta | Due validatori su tre della richiesta di creazione non girano mai; `ssid` non ha regole e un newline inietta righe in `hostapd.conf`. |
+| 3 | [WD-2](#wd-2) ✅ | Alta | Se l'unico riavvio del watchdog fallisce per un motivo "non classificato", la rete resta spenta per sempre, senza `runtime_state` e senza avvisi. |
+| 4 | [WD-1](#wd-1) ✅ | Alta | Il watchdog riavvia un AP **una sola volta per vita della rete**; al secondo guasto, anche settimane dopo, mette l'adattatore in quarantena. |
+| 5 | [WD-4](#wd-4) ✅ | Alta | La quarantena non ha uscita per adattatori non USB, per cleanup falliti e dopo 10 reset falliti: serve un riavvio del servizio. |
+| 6 | [NET-1](#net-1) ✅ | Alta | `iptables` è chiamato senza `-w`: con il backend legacy due chiamate concorrenti ne fanno fallire una, e uno stop fallito diventa quarantena. |
+| 7 | [HAP-1](#hap-1) ✅ | Alta | Un SSID con caratteri non ASCII, virgolette o backslash non risulta mai "pronto": un adattatore sano finisce in quarantena con reset USB. |
+| 8 | [STAB-1](#stab-1) ✅ | Alta | Un comando bloccato nel kernel fa attendere `subprocess.run` per sempre con il lock del dispositivo preso; il processo resta vivo e systemd non lo riavvia. |
+| 9 | [NET-2](#net-2) ✅ | Alta | La creazione risponde `200` anche se NAT o isolamento non sono stati installati, e lo stato dice `internet_enabled: true`. |
+| 10 | [HAP-3](#hap-3) ✅ | Alta | Lo stesso guasto di beacon è "radio" solo se avviene in un tentativo di retry; altrove diventa un `500` generico. |
 
 ### 2.2 Tutti gli altri punti
 
 | # | Id | Gravità | In una frase |
 |---|---|---|---|
-| 11 | [HAP-2](#hap-2) | Alta | Una gara di pochi millisecondi decide se un guasto è `HostapdRadioFailure` o `HostapdInitFailure`, con conseguenze opposte. |
-| 12 | [WD-3](#wd-3) | Alta | Un solo riavvio di dnsmasq per vita della rete, poi `dhcp_failed` per sempre con l'AP acceso. |
-| 13 | [WD-5](#wd-5) | Alta | Se l'interfaccia sparisce, lo stop di hostapd fallisce sempre: il dispositivo non si pulisce e non viene mai rimosso. |
-| 14 | [WD-7](#wd-7) | Media | Il watchdog controlla due processi, non la rete: indirizzo del gateway, regole firewall, `ip_forward` e trasmissione reale non sono verificati. |
+| 11 | [HAP-2](#hap-2) ✅ | Alta | Una gara di pochi millisecondi decide se un guasto è `HostapdRadioFailure` o `HostapdInitFailure`, con conseguenze opposte. |
+| 12 | [WD-3](#wd-3) ✅ | Alta | Un solo riavvio di dnsmasq per vita della rete, poi `dhcp_failed` per sempre con l'AP acceso. |
+| 13 | [WD-5](#wd-5) ✅ parz. | Alta | Se l'interfaccia sparisce, lo stop di hostapd fallisce sempre: il dispositivo non si pulisce e non viene mai rimosso. |
+| 14 | [WD-7](#wd-7) ✅ parz. | Media | Il watchdog controlla due processi, non la rete: indirizzo del gateway, regole firewall, `ip_forward` e trasmissione reale non sono verificati. |
 | 15 | [WD-9](#wd-9) | Media | I thread di background non sono supervisionati: un'eccezione non prevista li termina per sempre; un `config.yaml` malformato uccide la discovery. |
 | 16 | [STAB-4](#stab-4) | Media | All'avvio si puliscono solo le regole firewall: restano `tc`, dispositivi `ifb`, indirizzi, file e PID vecchi. |
 | 17 | [SEC-3](#sec-3) | Media | L'API ascolta su `0.0.0.0`, quindi anche sulle reti Wi-Fi di test. |
 | 18 | [SEC-2](#sec-2) | Media | `/debug` consegna a ogni client gli ID di reservation di tutti gli altri. |
-| 19 | [RACE-1](#race-1) | Media | Le richieste aspettano il lock del dispositivo senza limite e possono esaurire i 40 thread dell'API. |
-| 20 | [WD-6](#wd-6) | Media | Un cleanup bloccato viene ritentato ogni 5 secondi, per sempre, riempiendo il journal. |
+| 19 | [RACE-1](#race-1) ✅ | Media | Le richieste aspettano il lock del dispositivo senza limite e possono esaurire i 40 thread dell'API. |
+| 20 | [WD-6](#wd-6) ✅ | Media | Un cleanup bloccato viene ritentato ogni 5 secondi, per sempre, riempiendo il journal. |
 | 21 | [HAP-4](#hap-4) | Media | Un tentativo di retry tagliato dal budget di 15 s conta come guasto radio. |
 | 22 | [STAB-6](#stab-6) | Media | L'interfaccia upstream è risolta una volta e tenuta in cache per sempre. |
 | 23 | [BUG-2](#bug-2) | Media | I controlli di salute di `/status` danno risposte sbagliate (`"UP" in`, `"MASQUERADE" in`). |
 | 24 | [BUG-4](#bug-4) | Media | La cache dei canali è riempita una volta e mai aggiornata, ed esiste in due copie. |
-| 25 | [NET-6](#net-6) | Media | Un lancio di dnsmasq andato in timeout non può più essere ripulito. |
+| 25 | [NET-6](#net-6) ✅ | Media | Un lancio di dnsmasq andato in timeout non può più essere ripulito. |
 | 26 | [WD-8](#wd-8) | Media | Una rete ripristinata dal watchdog perde il profilo QoS senza dirlo. |
 | 27 | [STAB-5](#stab-5) | Media | Le scadenze usano l'orologio di sistema: un salto di orario fa scadere o allunga tutto. |
 | 28 | [BUG-3](#bug-3) | Media | La validazione offline della configurazione è più severa di quella usata all'avvio. |
@@ -145,7 +145,7 @@ protetto è quello che interessa di più: una rete che funzionava e deve continu
 | 50 | [NET-9](#net-9) | Bassa | Le subnet non sono stabili tra un riavvio e l'altro. |
 | 51 | [NET-7](#net-7) | Bassa | I file dei lease DHCP sopravvivono alla reservation. |
 | 52 | [NET-10](#net-10) | Bassa | Captive portal: porta 80 occupata, `Content-Length` malformato, indice della regola di protezione. |
-| 53 | [NET-4](#net-4) | Bassa | Riga di log falsa: `Isolation disabled for testing`. |
+| 53 | [NET-4](#net-4) ✅ | Bassa | Riga di log falsa: `Isolation disabled for testing`. |
 | 54 | [HAP-7](#hap-7) | Bassa | Ipotesi: `hostapd -d` resta attivo per tutta la vita dell'AP. |
 | 55 | [RACE-2](#race-2) | Bassa | `/status` legge stato condiviso senza i lock dei dispositivi. |
 | 56 | [RACE-3](#race-3) | Bassa | Lo stato di `QosManager` non ha lock. |
@@ -305,7 +305,7 @@ il fallback su `index.html`. Dopo la correzione conviene ruotare `auth_token` e
 ---
 
 <a id="bug-1"></a>
-### 2. BUG-1 - Validazione mancante nella richiesta di creazione (iniezione in `hostapd.conf`)
+### 2. BUG-1 - Validazione mancante nella richiesta di creazione (iniezione in `hostapd.conf`) ✅
 
 **Gravità:** Alta · **Confidenza:** Probabile · **File:** [wilab/models.py:8-81](wilab/models.py#L8-L81), [wilab/wifi/hostapd.py:131-184](wilab/wifi/hostapd.py#L131-L184)
 
@@ -420,7 +420,7 @@ Attenzione: i test esistenti che cercano `ssid=` nella configurazione generata v
 ---
 
 <a id="wd-2"></a>
-### 3. WD-2 - Un riavvio fallito del watchdog lascia la rete spenta in silenzio
+### 3. WD-2 - Un riavvio fallito del watchdog lascia la rete spenta in silenzio ✅
 
 **Gravità:** Alta · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:95-150](wilab/wifi/watchdog.py#L95-L150)
 
@@ -500,7 +500,7 @@ client può rinunciare alla rete senza rilasciare la reservation.
 ---
 
 <a id="wd-1"></a>
-### 4. WD-1 - Un solo riavvio dell'AP per tutta la vita della rete
+### 4. WD-1 - Un solo riavvio dell'AP per tutta la vita della rete ✅
 
 **Gravità:** Alta · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:44-86](wilab/wifi/watchdog.py#L44-L86), [wilab/wifi/watchdog.py:116-120](wilab/wifi/watchdog.py#L116-L120)
 
@@ -555,7 +555,7 @@ rete. Servono `import time` e `from collections import deque`. Valori proposti: 
 ---
 
 <a id="wd-4"></a>
-### 5. WD-4 - La quarantena non ha uscita
+### 5. WD-4 - La quarantena non ha uscita ✅
 
 **Gravità:** Alta · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:174-188](wilab/wifi/manager.py#L174-L188), [wilab/reservation.py:127-140](wilab/reservation.py#L127-L140), [wilab/wifi/recovery.py:85-123](wilab/wifi/recovery.py#L85-L123)
 
@@ -616,7 +616,7 @@ class RadioRecovery:
 ---
 
 <a id="net-1"></a>
-### 6. NET-1 - `iptables` senza `-w`
+### 6. NET-1 - `iptables` senza `-w` ✅
 
 **Gravità:** Alta · **Confidenza:** Probabile (dipende dal backend) · **File:** [wilab/network/commands.py:209-211](wilab/network/commands.py#L209-L211), [wilab/network/nat.py](wilab/network/nat.py), [wilab/network/captive.py:43-46](wilab/network/captive.py#L43-L46), [wilab/network/safety.py](wilab/network/safety.py)
 
@@ -690,7 +690,7 @@ registra tutti i comandi di un ciclo start/stop e verifica che ognuno inizi con 
 ---
 
 <a id="hap-1"></a>
-### 7. HAP-1 - Gli SSID che hostapd restituisce con escape non diventano mai "pronti"
+### 7. HAP-1 - Gli SSID che hostapd restituisce con escape non diventano mai "pronti" ✅
 
 **Gravità:** Alta · **Confidenza:** Probabile · **File:** [wilab/wifi/hostapd.py:318-324](wilab/wifi/hostapd.py#L318-L324), [wilab/wifi/hostapd.py:412-417](wilab/wifi/hostapd.py#L412-L417)
 
@@ -752,7 +752,7 @@ Aggiornare `docs/architecture.md` (sezione 5.2), che descrive il confronto dell'
 ---
 
 <a id="stab-1"></a>
-### 8. STAB-1 - Un comando bloccato nel kernel congela il servizio senza ucciderlo
+### 8. STAB-1 - Un comando bloccato nel kernel congela il servizio senza ucciderlo ✅
 
 **Gravità:** Alta · **Confidenza:** meccanismo Confermato, innesco Ipotesi · **File:** [wilab/network/commands.py:160-206](wilab/network/commands.py#L160-L206), [install/systemd/wi-lab.service.template](install/systemd/wi-lab.service.template)
 
@@ -857,7 +857,7 @@ rende il guasto visibile.
 ---
 
 <a id="net-2"></a>
-### 9. NET-2 - La creazione dichiara successo anche senza NAT o isolamento
+### 9. NET-2 - La creazione dichiara successo anche senza NAT o isolamento ✅
 
 **Gravità:** Alta · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:365-419](wilab/wifi/manager.py#L365-L419)
 
@@ -925,7 +925,7 @@ Il guasto diventa un `500` con messaggio "Failed to enable Internet: ..." e la r
 ---
 
 <a id="hap-3"></a>
-### 10. HAP-3 - `HostapdInitFailure` è un guasto radio solo durante un retry
+### 10. HAP-3 - `HostapdInitFailure` è un guasto radio solo durante un retry ✅
 
 **Gravità:** Alta · **Confidenza:** Confermato · **File:** [wilab/wifi/hostapd.py:74-78](wilab/wifi/hostapd.py#L74-L78), [wilab/wifi/manager.py:326-359](wilab/wifi/manager.py#L326-L359)
 
@@ -1000,7 +1000,7 @@ Aggiornare `docs/architecture.md` (sezioni 5.2 e 6), che oggi definiscono questo
 ---
 
 <a id="hap-2"></a>
-### 11. HAP-2 - Lo stesso guasto è classificato in due modi secondo la tempistica
+### 11. HAP-2 - Lo stesso guasto è classificato in due modi secondo la tempistica ✅
 
 **Gravità:** Alta · **Confidenza:** Confermato · **File:** [wilab/wifi/hostapd.py:258-267](wilab/wifi/hostapd.py#L258-L267), [wilab/wifi/hostapd.py:325-329](wilab/wifi/hostapd.py#L325-L329)
 
@@ -1042,7 +1042,7 @@ classificare dagli eventi:
 ---
 
 <a id="wd-3"></a>
-### 12. WD-3 - Un solo riavvio del DHCP, poi `dhcp_failed` per sempre
+### 12. WD-3 - Un solo riavvio del DHCP, poi `dhcp_failed` per sempre ✅
 
 **Gravità:** Alta · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:75-82](wilab/wifi/watchdog.py#L75-L82), [wilab/wifi/watchdog.py:152-181](wilab/wifi/watchdog.py#L152-L181)
 
@@ -1087,7 +1087,7 @@ visibile solo per i pochi secondi tra un giro e l'altro.
 ---
 
 <a id="wd-5"></a>
-### 13. WD-5 - Un adattatore che sparisce non si può ripulire né rimuovere
+### 13. WD-5 - Un adattatore che sparisce non si può ripulire né rimuovere ✅ parz.
 
 **Gravità:** Alta · **Confidenza:** Confermato · **File:** [wilab/wifi/hostapd.py:378-389](wilab/wifi/hostapd.py#L378-L389), [wilab/wifi/manager.py:449-465](wilab/wifi/manager.py#L449-L465), [wilab/config.py:172-182](wilab/config.py#L172-L182)
 
@@ -1152,7 +1152,7 @@ ricollegarlo. Nei test: far fallire `execute_command` per ogni comando che nomin
 ---
 
 <a id="wd-7"></a>
-### 14. WD-7 - Il watchdog controlla due processi, non la rete
+### 14. WD-7 - Il watchdog controlla due processi, non la rete ✅ parz.
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:64-82](wilab/wifi/watchdog.py#L64-L82)
 
@@ -1419,7 +1419,7 @@ L'ID più lungo non rompe i client che lo trattano come stringa opaca.
 ---
 
 <a id="race-1"></a>
-### 19. RACE-1 - Le richieste aspettano il lock del dispositivo senza limite
+### 19. RACE-1 - Le richieste aspettano il lock del dispositivo senza limite ✅
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/reservation.py:239-250](wilab/reservation.py#L239-L250), [wilab/api/dependencies.py:176-183](wilab/api/dependencies.py#L176-L183)
 
@@ -1471,7 +1471,7 @@ creazione passa un timeout più lungo o nessuno. `available-channels` non ha bis
 ---
 
 <a id="wd-6"></a>
-### 20. WD-6 - Un cleanup bloccato viene ritentato ogni 5 secondi
+### 20. WD-6 - Un cleanup bloccato viene ritentato ogni 5 secondi ✅
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:939-968](wilab/wifi/manager.py#L939-L968), [wilab/reservation.py:268-306](wilab/reservation.py#L268-L306)
 
@@ -1703,7 +1703,7 @@ anche dopo un recovery USB riuscito e dopo un avvio fallito. Una rilettura costa
 ---
 
 <a id="net-6"></a>
-### 25. NET-6 - Un lancio di dnsmasq andato in timeout non si può più ripulire
+### 25. NET-6 - Un lancio di dnsmasq andato in timeout non si può più ripulire ✅
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/network/dhcp.py:203-222](wilab/network/dhcp.py#L203-L222), [wilab/network/dhcp.py:248-260](wilab/network/dhcp.py#L248-L260)
 
@@ -2804,7 +2804,7 @@ calcolare un indice; con policy `DROP` basta che esista, e in coda non può scav
 ---
 
 <a id="net-4"></a>
-### 53. NET-4 - Riga di log falsa
+### 53. NET-4 - Riga di log falsa ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:413-414](wilab/wifi/manager.py#L413-L414)
 
@@ -4301,30 +4301,30 @@ pagine è stata eseguita.
 | # | Id | Titolo |
 |---|---|---|
 | 1 | [SEC-1](#sec-1) | Lettura di file senza autenticazione dalla route del frontend |
-| 2 | [BUG-1](#bug-1) | Validazione mancante nella richiesta di creazione (iniezione in `hostapd.conf`) |
-| 3 | [WD-2](#wd-2) | Un riavvio fallito del watchdog lascia la rete spenta in silenzio |
-| 4 | [WD-1](#wd-1) | Un solo riavvio dell'AP per tutta la vita della rete |
-| 5 | [WD-4](#wd-4) | La quarantena non ha uscita |
-| 6 | [NET-1](#net-1) | `iptables` senza `-w` |
-| 7 | [HAP-1](#hap-1) | Gli SSID che hostapd restituisce con escape non diventano mai "pronti" |
-| 8 | [STAB-1](#stab-1) | Un comando bloccato nel kernel congela il servizio senza ucciderlo |
-| 9 | [NET-2](#net-2) | La creazione dichiara successo anche senza NAT o isolamento |
-| 10 | [HAP-3](#hap-3) | `HostapdInitFailure` è un guasto radio solo durante un retry |
-| 11 | [HAP-2](#hap-2) | Lo stesso guasto è classificato in due modi secondo la tempistica |
-| 12 | [WD-3](#wd-3) | Un solo riavvio del DHCP, poi `dhcp_failed` per sempre |
-| 13 | [WD-5](#wd-5) | Un adattatore che sparisce non si può ripulire né rimuovere |
-| 14 | [WD-7](#wd-7) | Il watchdog controlla due processi, non la rete |
+| 2 | [BUG-1](#bug-1) ✅ | Validazione mancante nella richiesta di creazione (iniezione in `hostapd.conf`) |
+| 3 | [WD-2](#wd-2) ✅ | Un riavvio fallito del watchdog lascia la rete spenta in silenzio |
+| 4 | [WD-1](#wd-1) ✅ | Un solo riavvio dell'AP per tutta la vita della rete |
+| 5 | [WD-4](#wd-4) ✅ | La quarantena non ha uscita |
+| 6 | [NET-1](#net-1) ✅ | `iptables` senza `-w` |
+| 7 | [HAP-1](#hap-1) ✅ | Gli SSID che hostapd restituisce con escape non diventano mai "pronti" |
+| 8 | [STAB-1](#stab-1) ✅ | Un comando bloccato nel kernel congela il servizio senza ucciderlo |
+| 9 | [NET-2](#net-2) ✅ | La creazione dichiara successo anche senza NAT o isolamento |
+| 10 | [HAP-3](#hap-3) ✅ | `HostapdInitFailure` è un guasto radio solo durante un retry |
+| 11 | [HAP-2](#hap-2) ✅ | Lo stesso guasto è classificato in due modi secondo la tempistica |
+| 12 | [WD-3](#wd-3) ✅ | Un solo riavvio del DHCP, poi `dhcp_failed` per sempre |
+| 13 | [WD-5](#wd-5) ✅ parz. | Un adattatore che sparisce non si può ripulire né rimuovere |
+| 14 | [WD-7](#wd-7) ✅ parz. | Il watchdog controlla due processi, non la rete |
 | 15 | [WD-9](#wd-9) | I thread di background non sono supervisionati |
 | 16 | [STAB-4](#stab-4) | L'avvio pulisce solo le regole firewall |
 | 17 | [SEC-3](#sec-3) | L'API ascolta anche sulle reti di test |
 | 18 | [SEC-2](#sec-2) | `/debug` consegna a tutti gli ID di reservation |
-| 19 | [RACE-1](#race-1) | Le richieste aspettano il lock del dispositivo senza limite |
-| 20 | [WD-6](#wd-6) | Un cleanup bloccato viene ritentato ogni 5 secondi |
+| 19 | [RACE-1](#race-1) ✅ | Le richieste aspettano il lock del dispositivo senza limite |
+| 20 | [WD-6](#wd-6) ✅ | Un cleanup bloccato viene ritentato ogni 5 secondi |
 | 21 | [HAP-4](#hap-4) | Un tentativo tagliato dal budget conta come guasto radio |
 | 22 | [STAB-6](#stab-6) | L'interfaccia upstream è risolta una volta sola |
 | 23 | [BUG-2](#bug-2) | I controlli di salute di `/status` danno risposte sbagliate |
 | 24 | [BUG-4](#bug-4) | La cache dei canali non viene mai aggiornata ed esiste in due copie |
-| 25 | [NET-6](#net-6) | Un lancio di dnsmasq andato in timeout non si può più ripulire |
+| 25 | [NET-6](#net-6) ✅ | Un lancio di dnsmasq andato in timeout non si può più ripulire |
 | 26 | [WD-8](#wd-8) | Una rete ripristinata perde il profilo QoS |
 | 27 | [STAB-5](#stab-5) | Le scadenze usano l'orologio di sistema |
 | 28 | [BUG-3](#bug-3) | La validazione offline è più severa di quella all'avvio |
@@ -4352,7 +4352,7 @@ pagine è stata eseguita.
 | 50 | [NET-9](#net-9) | Le subnet non sono stabili tra un riavvio e l'altro |
 | 51 | [NET-7](#net-7) | I file dei lease sopravvivono alla reservation |
 | 52 | [NET-10](#net-10) | Captive portal: tre dettagli |
-| 53 | [NET-4](#net-4) | Riga di log falsa |
+| 53 | [NET-4](#net-4) ✅ | Riga di log falsa |
 | 54 | [HAP-7](#hap-7) | Ipotesi: `hostapd -d` per tutta la vita dell'AP |
 | 55 | [RACE-2](#race-2) | `/status` legge stato condiviso senza lock |
 | 56 | [RACE-3](#race-3) | Lo stato di `QosManager` non ha lock |
