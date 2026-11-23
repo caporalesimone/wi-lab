@@ -3,6 +3,7 @@
 Gli ID rimandano direttamente al capitolo corrispondente in [Fable-Notes.md](Fable-Notes.md).
 La priorità 1 raccoglie i bug concreti che compromettono creazione, avvio, perdita o ripristino delle reti.
 La colonna **Done** segna con ✅ i punti implementati e committati (i test live possono essere ancora in corso).
+➖ segna i punti che non si fanno, con il motivo nella descrizione.
 Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre attività, in ordine Fable e numerate da 2 in poi.
 
 | Prio | ID | Done | Breve descrizione |
@@ -15,7 +16,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [HAP-1](Fable-Notes.md#L694) | ✅ | Riconoscere correttamente gli SSID con escape restituiti da hostapd. |
 | 1 | [STAB-1](Fable-Notes.md#L756) |  | Limitare l'attesa dei processi e recuperare dai comandi bloccati. |
 | 1 | [NET-2](Fable-Notes.md#L861) | ✅ | Non dichiarare riuscita una rete se NAT o isolamento non sono configurati. |
-| 1 | [STAB-3](Fable-Notes.md#L929) |  | Ripristinare reservation e reti dopo il riavvio del servizio. |
+| 1 | [STAB-3](Fable-Notes.md#L929) | ➖ | Ripristinare reservation e reti dopo il riavvio del servizio. **Non si fa:** il riavvio è sempre supervisionato da un manutentore (l'unit non ha `Restart=`, quindi anche dopo un crash il servizio riparte solo per mano sua), e la quarantena non richiede più un riavvio (WD-4). |
 | 1 | [HAP-3](Fable-Notes.md#L994) |  | Classificare in modo coerente i guasti di inizializzazione hostapd. |
 | 1 | [HAP-2](Fable-Notes.md#L1069) |  | Uniformare la classificazione dei guasti hostapd disabilitati. |
 | 1 | [WD-3](Fable-Notes.md#L1111) |  | Ritentare il recupero DHCP e, se serve, ripristinare l'intera rete. |
@@ -154,7 +155,7 @@ in corso deve dare `409/1001`, non `500/1003`, e l'antenna deve tornare da sola 
 | WD-1 | Run lunga con M1: contare i `restoring_ap` per rete. | Una rete può avere più `restoring_ap` nella sua vita; ogni volta torna attiva. Nessuna invalidazione al secondo guasto. | ✅ [test_e2e_watchdog.py](tests/e2e-tests/test_e2e_watchdog.py) |
 | WD-2 | Come WD-1. | Nessuna rete che risulta attiva in `GET .../network` ma è ferma, senza `runtime_state` di errore. | ✅ [test_e2e_watchdog.py](tests/e2e-tests/test_e2e_watchdog.py) |
 | NET-1 | Molte create/delete concorrenti sulle due antenne (parallel, herd). | Nessun `500` e nessuna quarantena dopo un delete. | ✅ [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
-| STAB-3 | Reservation e rete attive, poi chiedere un riavvio del servizio a chi ha accesso alla macchina. | Dopo il riavvio la reservation esiste (`GET` → `200`) e la rete è di nuovo attiva. |  |
+| STAB-3 | Non previsto: il fix non si fa (riavvio supervisionato da un manutentore). | — | — |
 | HAP-3, HAP-2 | Run lunga di create con statistiche per `status` e `detail.code`. | Solo `200`, `409/1001` o `500/1003`; mai `500` generico. |  |
 | HAP-4, WD-10 | Run lunga con M1. | Nessuna quarantena dopo una create con `409/1001` isolato; nessun `restoring_ap` su reti senza guasti. |  |
 | RACE-1 | Create su canale DFS (es. 100) e, nello stesso momento, 45 `GET .../network` più `/status`. | `/status` risponde subito; le altre richieste ottengono una risposta entro un limite, non un timeout. |  |
