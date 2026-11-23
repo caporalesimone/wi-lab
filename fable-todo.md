@@ -92,6 +92,9 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 51 | [ARCH-8](Fable-Notes.md#L3717) |  | Sostituire l'accesso agli attributi privati di altre classi con metodi pubblici. |
 | 52 | [ARCH-12](Fable-Notes.md#L3743) | ✅ | Aggiungere `wilab/wifi/__init__.py`. |
 | 53 | [ARCH-11](Fable-Notes.md#L3761) |  | Definire la strategia di integrazione prima di applicare patch specifiche del branch. |
+| Ultima | RELEASE-API |  | **Da fare solo alla fine, quando si dichiara completata la release.** Revisione con Fable di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a quanto documentato in Swagger (`/docs`) e ReDoc (`/redoc`), oltre che in `docs/ap-creation-procedure.md` e nel capitolo API della 4.0.0 in `CHANGELOG.md`. Correggere ogni differenza prima del rilascio. |
+
+La voce **RELEASE-API** resta l'ultima attività della release: si esegue dopo tutte le altre, sullo stato finale del codice.
 
 ## Test
 
