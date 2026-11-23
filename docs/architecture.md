@@ -385,8 +385,9 @@ daemon. Wi-Lab therefore knows immediately when it exits, and how:
 
 - exit by `SIGSEGV` → `HostapdSegfault` (a classified radio failure);
 - exit after the output reported both a failed beacon setup and a failed
-  interface initialization → `HostapdInitFailure` (unclassified, retried once
-  internally, see [section 6](#6-retry-layers));
+  interface initialization → `HostapdInitFailure`, a subclass of
+  `HostapdRadioFailure` (a classified radio failure on every attempt and request,
+  Fable HAP-3; retried internally, see [section 6](#6-retry-layers));
 - any other exit code → `HostapdError` (unclassified);
 - timeout of `ip link down`, `iw set type managed` or `ip addr flush` →
   `HostapdRadioFailure` ("radio preparation timed out");
@@ -555,7 +556,11 @@ not improve the success rate. Retrying inside the request spares the client a
 `409 / 1001` round trip. A start without failures still takes about 0.5 s; one
 retry adds about 2–3 s, two retries about 5–6 s, and the worst case, with a
 firmware timeout, is about 15 s. Gateway, DHCP, captive portal, NAT,
-isolation and other unclassified failures are not retried. On a DFS channel the radar check can use
+isolation and other unclassified failures are not retried. The classification
+belongs to the exception, not to the attempt (Fable HAP-3): a radio failure is
+radio in the first create, in the next ones (no internal retry) and in a
+watchdog restart, and an unclassified hostapd exit on the internal retry of a
+request that already had a radio failure stays radio. On a DFS channel the radar check can use
 up the whole budget, so a failure there is usually not retried.
 
 An unclassified startup failure with successful rollback returns `500 / 500`

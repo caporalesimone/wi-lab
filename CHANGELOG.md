@@ -16,6 +16,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- A beacon rejected during hostapd setup is a radio failure in every create and watchdog restart, so later creates return `409 / 1001` instead of a generic `500` (Fable HAP-3).
 - A host command stuck in the kernel (hung Wi-Fi driver) no longer freezes its thread, device lock and eventually the API: Wi-Lab stops waiting 2 s after SIGKILL, fails the operation and reports `checks.commands.stuck` and `degraded` in `/status` (Fable STAB-1).
 - A network whose NAT or isolation rules cannot be installed now fails with `500` instead of reporting success, and is rolled back (Fable NET-2); the false "Isolation disabled for testing" log line is gone (Fable NET-4).
 - `iptables` calls wait up to 5 s for the xtables lock instead of failing when another program holds it (Fable NET-1).

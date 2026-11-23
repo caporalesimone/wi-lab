@@ -72,10 +72,11 @@ class HostapdSegfault(HostapdRadioFailure):
     """The hostapd process terminated with SIGSEGV during startup."""
 
 
-class HostapdInitFailure(HostapdError):
+class HostapdInitFailure(HostapdRadioFailure):
     """hostapd exited after the driver rejected the beacon during interface setup.
 
     Observed as a transient failure: an immediate new start on the same radio succeeds.
+    A radio failure on every attempt and request, not only during a retry (HAP-3).
     """
 
 

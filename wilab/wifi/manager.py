@@ -30,7 +30,6 @@ from ..timestamps import format_utc_timestamp
 from .channels import ChannelManager
 from .hostapd import (
     HostapdError,
-    HostapdInitFailure,
     HostapdManager,
     HostapdRadioFailure,
 )
@@ -279,6 +278,9 @@ class NetworkManager:
         # Best-effort: prevent NetworkManager/wpa_supplicant from contending AP interface.
         self._configure_networkmanager_unmanaged(cfg_net.interface)
         
+        # A classified radio failure happened in this request (HAP-3): a later
+        # attempt that fails while starting the AP keeps that classification.
+        radio_seen = False
         for attempt in range(1, STARTUP_ATTEMPTS + 1):
             retrying = attempt > 1
             stage = "start AP"
@@ -347,17 +349,15 @@ class NetworkManager:
                         raise CommandError("Startup retry deadline expired")
             except (HostapdError, CommandError, DhcpServerError, CaptivePortalError) as e:
                 logger.error("Failed to %s for %s: %s", stage, device_id, e)
+                radio_seen = radio_seen or isinstance(e, HostapdRadioFailure)
+                radio = isinstance(e, HostapdRadioFailure) or (radio_seen and stage == "start AP")
                 try:
                     self.release_device(device_id)
                 except RuntimeError:
                     logger.exception("Startup rollback failed for %s", device_id)
                     raise StartupFailure(
                         f"Failed to {stage}: {e}",
-                        radio=(
-                            isinstance(e, HostapdRadioFailure)
-                            or (retrying and stage == "start AP")
-                            or not interface_present(cfg_net.interface)
-                        ),
+                        radio=radio or not interface_present(cfg_net.interface),
                         cleanup_failed=True,
                     ) from e
                 if not interface_present(cfg_net.interface):
@@ -377,7 +377,7 @@ class NetworkManager:
                     attempt < STARTUP_ATTEMPTS
                     and allow_internal_retry
                     and stage == "start AP"
-                    and isinstance(e, (HostapdRadioFailure, HostapdInitFailure))
+                    and isinstance(e, HostapdRadioFailure)
                     and retry_deadline - time.monotonic()
                     >= STARTUP_RETRY_DELAY + MIN_RETRY_ATTEMPT_TIME
                 ):
@@ -391,10 +391,7 @@ class NetworkManager:
                             attempt + 1, STARTUP_ATTEMPTS, type(e).__name__, device_id,
                         )
                         continue
-                raise StartupFailure(
-                    f"Failed to {stage}: {e}",
-                    radio=isinstance(e, HostapdRadioFailure) or (retrying and stage == "start AP"),
-                ) from e
+                raise StartupFailure(f"Failed to {stage}: {e}", radio=radio) from e
             else:
                 if retrying:
                     logger.info("AP startup retry recovered %s", device_id)

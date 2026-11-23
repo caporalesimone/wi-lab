@@ -15,7 +15,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [HAP-1](Fable-Notes.md#L693) | ✅ | Riconoscere correttamente gli SSID con escape restituiti da hostapd. |
 | 1 | [STAB-1](Fable-Notes.md#L755) | ✅ parz. | Limitare l'attesa dei processi e recuperare dai comandi bloccati. Fatti il runner che smette di aspettare 2 s dopo il SIGKILL e il conteggio in `/status` (`checks.commands.stuck`, `degraded`). Non fatto il watchdog di systemd (`WatchdogSec`), che riavvierebbe il servizio da solo: da decidere. |
 | 1 | [NET-2](Fable-Notes.md#L860) | ✅ | Non dichiarare riuscita una rete se NAT o isolamento non sono configurati. |
-| 1 | [HAP-3](Fable-Notes.md#L928) |  | Classificare in modo coerente i guasti di inizializzazione hostapd. |
+| 1 | [HAP-3](Fable-Notes.md#L928) | ✅ | Classificare in modo coerente i guasti di inizializzazione hostapd. |
 | 1 | [HAP-2](Fable-Notes.md#L1003) |  | Uniformare la classificazione dei guasti hostapd disabilitati. |
 | 1 | [WD-3](Fable-Notes.md#L1045) |  | Ritentare il recupero DHCP e, se serve, ripristinare l'intera rete. |
 | 1 | [WD-5](Fable-Notes.md#L1090) | ✅ parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. Fatti i punti 1–2 e la classificazione come guasto radio; il ritiro delle antenne rinominate (punto 3) dipende da ARCH-4. |

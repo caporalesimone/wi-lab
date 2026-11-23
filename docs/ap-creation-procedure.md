@@ -403,9 +403,10 @@ def create_ap(api, reservation_id, body):
 The client sees only the outcome; the following is useful to interpret it.
 Details and diagrams are in [Architecture](architecture.md).
 
-- **Classified radio failures** include a `hostapd` crash (segfault), a timeout
-  while preparing the radio, and an AP that does not reach the `ENABLED` state
-  in time. After successful rollback the first two produce `409 / 1001`; the
+- **Classified radio failures** include a `hostapd` crash (segfault), a beacon
+  rejected during interface setup, a timeout while preparing the radio, and an
+  AP that does not reach the `ENABLED` state in time. They are radio failures in
+  every create of the sequence, not only in the first one. After successful rollback the first two produce `409 / 1001`; the
   third invalidates the reservation (`500 / 1003`).
 - **Unclassified failures** (for example `hostapd` exiting with code 1, a
   gateway, DHCP or captive portal startup error) are rolled back and return a
