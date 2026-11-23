@@ -90,7 +90,7 @@ class StartupFailure(ValueError):
 class NetworkManager:
     """Manages WiFi AP network lifecycle including DHCP, NAT, and isolation."""
     
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, channel_manager: ChannelManager | None = None):
         self.config = config
         self.active: dict[str, NetworkStatus] = {}
         self.dhcp_server = DhcpServer()
@@ -99,7 +99,10 @@ class NetworkManager:
         self.isolation_manager = IsolationManager()
         self.host_guard = HostGuard()  # SEC-3: AP clients cannot reach the host
         self.captive_portals: dict[str, CaptivePortal] = {}
-        self._channel_manager = ChannelManager(allow_dfs_channels=config.allow_dfs_channels)
+        # One channel cache for the whole service (BUG-4): the API passes its own.
+        self._channel_manager = channel_manager or ChannelManager(
+            allow_dfs_channels=config.allow_dfs_channels,
+        )
         self.qos_manager: QosManager | None = None
         self.qos_profile_manager: QosProfileManager | None = None
         self._device_locks = {n.device_id: threading.RLock() for n in config.networks}
@@ -240,6 +243,8 @@ class NetworkManager:
 
     def probe_recovered_radio(self, device: str, band: str, channel: int) -> None:
         """Verify AP and DHCP startup without publishing a user network or enabling NAT."""
+        # A reset adapter announces its channels again: never trust the old list (BUG-4).
+        self._channel_manager.invalidate(device)
         subnet = self._get_subnet(device)
         net = IPv4Network(subnet)
         try:

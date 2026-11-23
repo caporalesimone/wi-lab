@@ -549,3 +549,51 @@ class TestNetworkCreationChannelValidation:
         # Channel 12 has No IR in mock data — treated as disabled
         assert resp.status_code == 422
         assert "disabled" in resp.json()['detail']['message'].lower()
+
+
+class TestChannelCacheRefresh:
+    """BUG-4: a cached refusal is checked against a fresh reading; one cache for the service."""
+
+    NO_IR = """Band 2:
+        * 5180 MHz [36] 
+          Maximum TX power: 20.0 dBm
+          No IR
+"""
+    ALLOWED = """Band 2:
+        * 5180 MHz [36] 
+          Maximum TX power: 20.0 dBm
+"""
+
+    def _fake_iw(self, monkeypatch, outputs):
+        from wilab.wifi import channels as channels_module
+
+        readings = iter(outputs)
+        calls = []
+
+        def iw(args):
+            calls.append(args)
+            if args[-1] == "info":
+                return "Interface wlan0\n\twiphy 0\n"
+            return next(readings)
+
+        monkeypatch.setattr(channels_module, "execute_iw", iw)
+        return calls
+
+    def test_channel_cached_before_the_regulatory_domain_is_accepted_after_a_reread(self, monkeypatch):
+        self._fake_iw(monkeypatch, [self.NO_IR, self.ALLOWED])
+        mgr = ChannelManager()
+        assert next(c for c in mgr.get_channels("wlan0").channels_5ghz if c.channel == 36).disabled
+        mgr.validate_channel("wlan0", 36, "5ghz")  # before BUG-4: 422 until a restart
+
+    def test_a_real_refusal_still_refuses_after_one_reread(self, monkeypatch):
+        calls = self._fake_iw(monkeypatch, [self.NO_IR, self.NO_IR])
+        mgr = ChannelManager()
+        with pytest.raises(ValueError, match="disabled"):
+            mgr.validate_channel("wlan0", 36, "5ghz")
+        assert sum(1 for c in calls if c[-1] == "channels") == 2
+
+    def test_manager_and_api_share_one_cache(self):
+        from wilab.api import dependencies
+
+        manager = dependencies.get_manager(dependencies.get_config())
+        assert manager._channel_manager is dependencies.get_channel_manager()

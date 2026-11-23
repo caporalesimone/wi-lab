@@ -129,7 +129,17 @@ class ChannelManager:
         """Validate *channel* against the hardware capabilities of *interface*.
 
         Raises :class:`ValueError` if the channel is not supported or disabled.
+        A refusal from the cache is checked once more against a fresh `iw`
+        reading (BUG-4): the list may have been read before the regulatory
+        domain was applied, when 5 GHz channels still show "no IR".
         """
+        try:
+            self._validate(interface, channel, band)
+        except ValueError:
+            self.invalidate(interface)
+            self._validate(interface, channel, band)
+
+    def _validate(self, interface: str, channel: int, band: str) -> None:
         info = self.get_channels(interface)
         if band == "2.4ghz":
             pool = info.channels_24ghz

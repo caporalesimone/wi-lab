@@ -38,7 +38,7 @@ def get_manager(config: AppConfig = Depends(get_config)) -> NetworkManager:
     global _manager
     with _singleton_lock:
         if _manager is None:
-            manager = NetworkManager(config)
+            manager = NetworkManager(config, channel_manager=get_channel_manager())
             manager.qos_manager = get_qos_manager()
             manager.qos_profile_manager = get_qos_profile_manager()
             _manager = manager

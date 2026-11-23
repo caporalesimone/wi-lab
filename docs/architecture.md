@@ -90,7 +90,7 @@ flowchart LR
 | `wilab/wifi/hostapd.py` | hostapd configuration, process ownership, readiness check. |
 | `wilab/wifi/watchdog.py` | Post-start supervision and bounded AP/DHCP restoration. |
 | `wilab/wifi/recovery.py` | Automatic USB reset and verification of quarantined antennas. |
-| `wilab/wifi/channels.py` | Regulatory domain and per-interface channel cache. |
+| `wilab/wifi/channels.py` | Regulatory domain and per-interface channel cache, one instance shared by the API and `NetworkManager`. A channel refused from the cache is checked again against a fresh `iw` reading; the cache of an antenna is dropped after a USB recovery or re-probe and after a failed start (Fable BUG-4). |
 | `wilab/network/dhcp.py` | dnsmasq configuration and process tracking. |
 | `wilab/network/nat.py`, `isolation.py` | iptables NAT to the upstream interface and inter-AP isolation. |
 | `wilab/network/captive.py` | Optional captive portal: per-AP redirection chains and portal web server. |

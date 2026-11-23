@@ -25,6 +25,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- A channel refused from the cached channel list is checked once more against a fresh `iw` reading, so 5 GHz channels cached before the regulatory domain was applied are no longer refused until a restart; the API and the TX power code share one channel cache, refreshed after a USB recovery or a failed start (Fable BUG-4).
 - `/status` health checks now look at Wi-Lab's own processes and rules per network: a network without Internet is no longer `degraded` on a host without NAT rules, Docker's MASQUERADE no longer hides a missing Wi-Lab rule, a link that is DOWN is no longer reported up, and hostapd is checked too (new `checks.hostapd`, `missing` lists); `/debug` uses the same checks (Fable BUG-2).
 - Background loops (discovery, watchdog, expiry) survive any unexpected error and log its traceback once, and a `config.yaml` saved with the wrong shape is reported as a clear configuration error instead of silently stopping discovery (Fable WD-9).
 - `/status` no longer flaps to `degraded` while a network is being stopped or started: it uses one snapshot of the active networks and does not judge a network with an operation in progress (Fable RACE-2).

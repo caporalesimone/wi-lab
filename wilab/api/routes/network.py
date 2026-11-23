@@ -224,6 +224,8 @@ def start_network(
             reservation.retry_at = 0
             return {"detail": f"Network {device_id} created successfully"}
         except StartupFailure as e:
+            # The next attempt reads the channel list again (BUG-4).
+            channel_mgr.invalidate(device_id)
             if not (e.radio or e.cleanup_failed):
                 raise HTTPException(status_code=500, detail=str(e)) from e
             reservation.radio_failures += 1

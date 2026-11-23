@@ -45,7 +45,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 4 | [SEC-3](Fable-Notes.md#L1340) | ✅ | Limitare gli indirizzi e le interfacce su cui ascolta l'API. Fatto con una regola `INPUT` per rete (IPv4 e IPv6): i client delle reti Wi-Lab non raggiungono l'host, né API né SSH; restano DHCP, ping e, con il captive portal, DNS e pagina del portale. |
 | 5 | [SEC-2](Fable-Notes.md#L1382) |  | Proteggere o oscurare gli ID reservation nell'output debug. **Decisione:** `/debug` per ora resta; in futuro verrà tolto e sostituito da un sistema diverso. |
 | 6 | [BUG-2](Fable-Notes.md#L1609) | ✅ | Correggere i controlli di salute di `/status` usando output strutturato. |
-| 7 | [BUG-4](Fable-Notes.md#L1658) |  | Aggiornare e unificare la cache dei canali. |
+| 7 | [BUG-4](Fable-Notes.md#L1658) | ✅ | Aggiornare e unificare la cache dei canali. |
 | 8 | [STAB-5](Fable-Notes.md#L1799) |  | Usare scadenze monotone per misurare il tempo trascorso. |
 | 9 | [NET-5](Fable-Notes.md#L1900) |  | Non registrare come errori le verifiche negative attese. |
 | 10 | [STAB-2](Fable-Notes.md#L1994) |  | Spostare i file runtime in una directory privata e gestita. |
