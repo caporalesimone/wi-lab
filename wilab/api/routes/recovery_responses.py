@@ -22,12 +22,9 @@ def _detail(code: RecoveryCode, invalidated: bool) -> dict:
 def recovery_error(
     code: RecoveryCode, *, invalidated: bool = False, retry_after: int | None = None,
 ) -> HTTPException:
-    if code == RecoveryCode.RETRY_LATER:
-        status_code = 409
-    elif code == RecoveryCode.DEVICE_UNAVAILABLE and invalidated:
-        status_code = 500
-    else:
-        status_code = 503
+    # 1003 with reservation_invalidated is a state of the client's reservation, not a
+    # server defect: 503, never 500, which clients and proxies treat as retryable (API-4).
+    status_code = 409 if code == RecoveryCode.RETRY_LATER else 503
     return HTTPException(
         status_code=status_code,
         detail=_detail(code, invalidated),

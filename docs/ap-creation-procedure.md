@@ -139,7 +139,7 @@ antenna, so parallel requests for the same reservation only queue up.
 | `409` without code `1001`, "restoration in progress" | The watchdog is restarting this AP. | Do not create. Poll `GET .../network` until `runtime_state` is gone. |
 | `422` | Invalid body, or channel unsupported/disabled on this antenna. | Fix the request. Do not retry the same body. |
 | `404` | The reservation is unknown, expired or invalidated. | Stop using the ID. Reserve again if needed. |
-| `500 / 1003` | **Terminal failure.** The antenna was quarantined and the reservation **invalidated**. | Discard the ID. Do not retry creation and do not release it. Reserve again if needed. |
+| `503 / 1003` | **Terminal failure.** The antenna was quarantined and the reservation **invalidated**. | Discard the ID. Do not retry creation and do not release it. Reserve again if needed. |
 | `500 / 500` (generic startup error) | An unclassified startup error (e.g. `hostapd` exited with code 1, gateway or DHCP failure, or the NAT rules for `internet_enabled: true`, the isolation rules or the host guard rules could not be installed). The rollback succeeded and the reservation is **still valid**. | Do not retry automatically. Show `detail.message`. Release the ID if abandoning this attempt; release it before asking for a fresh reservation. |
 | `503 / 1004` | A device cleanup failed. | Do not retry automatically. |
 | `401` | Missing or invalid token. | Fix the token. |
@@ -152,7 +152,7 @@ After this generic startup `500`, `DELETE /api/v1/device-reservation/{id}`
 releases the still-held antenna on `200`. The next reservation may get the same
 antenna or a different one. Do not implement release → reserve → create as an
 automatic recovery loop: that bypasses the retry budget. In contrast, after
-`500 / 1003` the ID is already invalidated and must not be released.
+`503 / 1003` the ID is already invalidated and must not be released.
 
 ### 2.5 When and how to retry
 
@@ -164,7 +164,7 @@ response. Wi-Lab counts classified radio failures per reservation and allows
 |---|---|
 | 1 | `409 / 1001`, `Retry-After: 5` |
 | 2 | `409 / 1001`, `Retry-After: 10` |
-| 3 | `500 / 1003`: reservation invalidated, antenna quarantined |
+| 3 | `503 / 1003`: reservation invalidated, antenna quarantined |
 
 A success resets the counter. Further rules:
 
@@ -314,7 +314,7 @@ Find the cause in `networks[]` and `checks`:
 - `reserved: false` does **not** mean the antenna can be reserved: an entry
   with `recovery_state` is excluded from allocation.
 - How a client learns that *its* antenna was quarantined: the create returns
-  `500` with `detail.code: 1003`, `reason: device_unavailable` and
+  `503` with `detail.code: 1003`, `reason: device_unavailable` and
   `reservation_invalidated: true`. From then on the reservation ID returns
   `404`. There is no other notification: discard the ID and reserve again.
 - New reservations skip quarantined antennas silently while another antenna is
@@ -359,7 +359,7 @@ sequenceDiagram
         else 409 / 1001 + Retry-After (5 then 10)
             W-->>C: classified radio failure, reservation kept
             Note over C: Check remaining reservation time,<br/>wait Retry-After, then repeat
-        else 500 / 1003
+        else 503 / 1003
             W-->>C: reservation invalidated, antenna quarantined
             Note over C: Discard the ID. Do not release it.<br/>Reserve again if needed
         else 500 / 500 from AP startup
@@ -415,7 +415,7 @@ def create_ap(api, reservation_id, body):
                 raise ReservationTooShort()
             sleep(wait)
             continue
-        if r.status_code == 500 and code == 1003:
+        if r.status_code == 503 and code == 1003:
             raise ReservationInvalidated()  # Do not release this ID.
         raise CreateFailed(r.status_code, r.json())  # No automatic retry.
     raise CreateFailed("retries exhausted")
@@ -430,7 +430,7 @@ Details and diagrams are in [Architecture](architecture.md).
   rejected during interface setup, a timeout while preparing the radio, and an
   AP that does not reach the `ENABLED` state in time. They are radio failures in
   every create of the sequence, not only in the first one. After successful rollback the first two produce `409 / 1001`; the
-  third invalidates the reservation (`500 / 1003`).
+  third invalidates the reservation (`503 / 1003`).
 - **Unclassified failures** (for example `hostapd` exiting with code 1, a
   gateway, DHCP or captive portal startup error) are rolled back and return a
   generic `500`. They do not count as radio failures and do not invalidate the
@@ -438,7 +438,7 @@ Details and diagrams are in [Architecture](architecture.md).
   internally (up to 3 starts); only if all fail does the request count as a
   radio failure (`409 / 1001`).
 - **Unsafe cleanup**: if Wi-Lab cannot roll back a failed start, it invalidates
-  the reservation and quarantines the antenna immediately (`500 / 1003`), even
+  the reservation and quarantines the antenna immediately (`503 / 1003`), even
   on the first attempt.
 - **Quarantine and USB recovery**: a quarantined USB antenna may be reset
   automatically in the background. Until it is verified, it is reported as

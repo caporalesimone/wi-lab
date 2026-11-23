@@ -35,106 +35,94 @@ router = APIRouter(
 )
 
 
+def _error(code: int, reason: str, message: str) -> dict:
+    """An error `detail` object as the API returns it."""
+    return {"code": code, "reason": reason, "message": message}
+
+
 @router.post(
     "/{reservation_id}/network",
     summary="Create a network on a reserved adapter",
     responses={
         200: {
             "description": "Network created and started successfully",
-            "content": {
-                "application/json": {
-                    "example": {"detail": "Network wls16 created successfully"}
-                }
-            },
+            "content": {"application/json": {
+                "example": {"detail": "Network wlx7419f8176286 created successfully"},
+            }},
         },
         401: {"description": "Unauthorized", "content": {"application/json": {
-            "example": {"detail": "Invalid token"},
+            "example": {"detail": _error(401, "unauthorized", "Invalid token")},
         }}},
         404: {"description": "Reservation not found, expired or invalidated", "content": {
-            "application/json": {"example": {"detail": "Reservation not found or expired"}},
+            "application/json": {"example": {"detail": _error(404, "not_found", "Reservation not found or expired")}},
         }},
         409: {
             "description": "Network already active, watchdog restoration, or radio cooldown (1001). Retry only for 1001.",
             "headers": RETRY_AFTER_HEADER,
             "content": {"application/json": {"examples": {
-                "active_network": {"value": {"detail": "Network is already active"}},
-                "restoration_in_progress": {"value": {"detail": "Network restoration is in progress"}},
+                "active_network": {"value": {"detail": _error(409, "conflict", "Network is already active")}},
+                "restoration_in_progress": {
+                    "value": {"detail": _error(409, "conflict", "Network restoration is in progress")},
+                },
                 "retry_later": recovery_example(RecoveryCode.RETRY_LATER),
             }}},
         },
         422: {
             "description": "Validation failed (body, unsupported channel, or disabled channel)",
-            "content": {
-                "application/json": {
-                    "examples": {
-                        "body_validation": {
-                            "summary": "Invalid request body",
-                            "value": {"detail": "Channel 99 is not a valid WiFi channel for band 5ghz"},
-                        },
-                        "unsupported_channel": {
-                            "summary": "Channel not supported by hardware",
-                            "value": {"detail": "Channel 173 is not supported on wls16 for band 5ghz"},
-                        },
-                        "disabled_channel": {
-                            "summary": "Channel disabled by regulatory domain",
-                            "value": {"detail": "Channel 14 is disabled on wls16 for band 2.4ghz (regulatory domain restriction)"},
-                        },
-                    }
-                }
-            },
+            "content": {"application/json": {"examples": {
+                "body_validation": {
+                    "summary": "Invalid request body",
+                    "value": {"detail": _error(
+                        422, "validation_error", "Channel 99 is not a valid WiFi channel for band 5ghz",
+                    )},
+                },
+                "unsupported_channel": {
+                    "summary": "Channel not supported by hardware",
+                    "value": {"detail": _error(
+                        422, "validation_error", "Channel 173 is not supported on wlan0 for band 5ghz",
+                    )},
+                },
+                "disabled_channel": {
+                    "summary": "Channel disabled by regulatory domain",
+                    "value": {"detail": _error(
+                        422, "validation_error",
+                        "Channel 14 is disabled on wlan0 for band 2.4ghz (regulatory domain restriction)",
+                    )},
+                },
+            }}},
         },
         500: {
             "description": (
                 "**Generic `500 / 500`:** `detail.message` explains the error. Keep the reservation ID; "
-                "release it if no longer needed. Do not retry creation automatically.\n\n"
-                "**`500 / 1003`:** the adapter is quarantined and the reservation is "
-                "invalidated. Discard the ID; do not retry creation or release it. "
-                "Request a new reservation if needed.\n\n"
-                "Neither response includes `Retry-After`."
+                "release it if no longer needed. Do not retry creation automatically. "
+                "No `Retry-After`."
             ),
-            "content": {"application/json": {
-                "schema": {
-                    "type": "object",
-                    "required": ["detail"],
-                    "properties": {"detail": {"oneOf": [
-                        {
-                            "type": "object", "title": "Startup error; reservation retained",
-                            "required": ["code", "reason", "message"],
-                            "properties": {
-                                "code": {"type": "integer", "enum": [500]},
-                                "reason": {"type": "string", "enum": ["internal_server_error"]},
-                                "message": {"type": "string"},
-                            },
-                        },
-                        {
-                            "type": "object",
-                            "title": "Adapter quarantined; reservation invalidated",
-                            "required": ["code", "reason", "reservation_invalidated"],
-                            "properties": {
-                                "code": {"type": "integer", "enum": [RecoveryCode.DEVICE_UNAVAILABLE.value]},
-                                "reason": {"type": "string", "enum": ["device_unavailable"]},
-                                "reservation_invalidated": {"type": "boolean", "enum": [True]},
-                            },
-                        },
-                    ]}},
+            "content": {"application/json": {"examples": {
+                "startup_failure": {
+                    "summary": "500 - Startup failed; reservation still valid",
+                    "value": {"detail": _error(
+                        500, "internal_server_error", "Failed to start AP: hostapd exited with code 1",
+                    )},
                 },
-                "examples": {
-                    "startup_failure": {
-                        "summary": "500 - Startup failed; reservation still valid",
-                        "value": {"detail": "Failed to start AP: hostapd exited with code 1"},
-                    },
-                    "device_unavailable": {
-                        "summary": "500 / 1003 - Adapter quarantined; discard the reservation ID",
-                        **recovery_example(RecoveryCode.DEVICE_UNAVAILABLE, invalidated=True),
-                    },
-                },
-            }},
+            }}},
         },
         503: {
-            "description": "Device cleanup failed while resolving an expired reservation.",
-            "content": {"application/json": {
-                "example": {"detail": "Failed to clean up device wlan0"},
-            }},
+            "description": (
+                "**`503 / 1003`:** the adapter is quarantined and the reservation is invalidated "
+                "(`reservation_invalidated: true`). Discard the ID; do not retry creation or release "
+                "it. Request a new reservation if needed. No `Retry-After`.\n\n"
+                "**`503 / 1004`:** a device cleanup failed while resolving an expired reservation."
+            ),
+            "content": {"application/json": {"examples": {
+                "device_unavailable": {
+                    "summary": "503 / 1003 - Adapter quarantined; discard the reservation ID",
+                    **recovery_example(RecoveryCode.DEVICE_UNAVAILABLE, invalidated=True),
+                },
+                "cleanup_failed": {
+                    "summary": "503 / 1004 - Cleanup failed",
+                    "value": {"detail": _error(1004, "cleanup_failed", "Failed to clean up device wlan0")},
+                },
+            }}},
         },
     },
 )
@@ -195,7 +183,7 @@ def start_network(
     `Retry-After` header (5 and 10 seconds, respectively). Calls during cooldown
     do not consume a startup attempt. Reservation expiry is not extended.
 
-    A third classified failure, or unsafe cleanup during startup, returns **500 / 1003** and
+    A third classified failure, or unsafe cleanup during startup, returns **503 / 1003** and
     invalidates the ID. Do not retry creation or release that ID. A new
     reservation request can return **503 / 1002** while recovery is running.
     No USB reset runs in the creation request.

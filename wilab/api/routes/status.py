@@ -133,7 +133,7 @@ def system_status(
     Clients should poll this endpoint, show `degraded` to the user together
     with the affected adapter, and not send creates for a network in
     `restoring_ap`/`restoring_dhcp`. The former owner of a quarantined adapter
-    is told once, by `500 / 1003` on the create; its reservation ID then
+    is told once, by `503 / 1003` on the create; its reservation ID then
     returns `404`. A status response is not a reservation.
 
     Returns:

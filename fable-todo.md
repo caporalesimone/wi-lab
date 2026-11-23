@@ -70,7 +70,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 29 | [PERF-6](Fable-Notes.md#L3029) |  | Sostituire l'attesa fissa per TX power con polling limitato. |
 | 30 | [PERF-4](Fable-Notes.md#L3063) |  | Ridurre letture di discovery e probe hostapd non necessarie. |
 | 31 | [API-2](Fable-Notes.md#L3111) |  | Uniformare i codici di stato per le reti non attive. |
-| 32 | [API-4](Fable-Notes.md#L3149) |  | Usare codici di errore appropriati per gli esiti causati dal client. |
+| 32 | [API-4](Fable-Notes.md#L3149) | ✅ | Usare codici di errore appropriati per gli esiti causati dal client. |
 | 33 | [API-9](Fable-Notes.md#L3181) | ✅ | Allineare gli esempi OpenAPI ai modelli correnti. |
 | 34 | [API-5](Fable-Notes.md#L3206) |  | Restituire dati strutturati sullo stato della rete insieme al messaggio. |
 | 35 | [API-10](Fable-Notes.md#L3241) |  | Rifiutare i campi sconosciuti nelle richieste. |

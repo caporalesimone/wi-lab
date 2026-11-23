@@ -67,7 +67,7 @@ network is being repaired, lost DHCP or could not be restarted
 health check in `checks` failed while networks are active. Clients must poll
 this endpoint to learn about quarantined adapters: a quarantined adapter can
 show `reserved: false` but is not allocatable, and only its former owner is
-told directly (`500 / 1003` on the create). See
+told directly (`503 / 1003` on the create). See
 [AP creation procedure, 2.8](ap-creation-procedure.md#28-service-health-degraded-and-quarantined-antennas).
 
 ## Network creation failure
@@ -76,9 +76,10 @@ In the **Network** group, open **Create a network on a reserved adapter**.
 Its `409` examples distinguish an existing AP from a recoverable radio failure
 (`detail.code: 1001`). Only the latter permits retrying creation with the same
 ID after `Retry-After`. Under **Responses → 500 → Example Value**, select
-**500 - Startup failed; reservation still valid** for a generic error, or
-**500 / 1003 - Adapter quarantined; discard the reservation ID** for a terminal
-error. Neither `500` includes `Retry-After`. In the **Reservation** group, `503 / 1003` means
+**500 - Startup failed; reservation still valid** for a generic error. Under
+**Responses → 503**, **503 / 1003 - Adapter quarantined; discard the reservation
+ID** is the terminal error (`reservation_invalidated: true`); before API-4 it
+was a `500`. Neither includes `Retry-After`. In the **Reservation** group, `503 / 1003` means
 all adapters are quarantined and there is no automatic retry recommendation.
 In the **Reservation** group, `503 / 1002` instead means that a *new*
 reservation request can be retried after `Retry-After`. `503 / 1004` means
@@ -101,7 +102,7 @@ For a complete interactive example:
    `recovery_state` (quarantine) from `runtime_state` (AP/DHCP restoration).
    During restoration, read status instead of sending another create.
 4. When finished, delete the reservation by ID; Wi-Lab stops the network.
-   Do not send this request for an ID already invalidated by `500 / 1003`.
+   Do not send this request for an ID already invalidated by `503 / 1003`.
 
 See the [AP creation procedure](ap-creation-procedure.md) for the complete
 client flow and retry rules, and [Architecture](architecture.md) for USB recovery.

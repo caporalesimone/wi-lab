@@ -275,8 +275,8 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
             this.createMessage = null;
             this.loading = false;
             const raw = err.originalError;
-            const invalidated = raw?.status === 500 &&
-              raw.error?.detail?.code === RecoveryCode.DeviceUnavailable &&
+            // 503 since API-4 (500 before): rely on the domain code, not the HTTP status.
+            const invalidated = raw?.error?.detail?.code === RecoveryCode.DeviceUnavailable &&
               raw.error.detail.reservation_invalidated === true;
             if (invalidated || raw?.status === 404) {
               this.released.emit(reservationId);

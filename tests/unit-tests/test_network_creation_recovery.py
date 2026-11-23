@@ -54,7 +54,7 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
             now += delay - 1
 
         terminal = client.post(create, headers=headers, json=PAYLOAD)
-        assert terminal.status_code == 500
+        assert terminal.status_code == 503  # API-4: a client state, not a server error
         assert "Retry-After" not in terminal.headers
         assert terminal.json()["detail"]["code"] == 1003
         assert terminal.json()["detail"]["reservation_invalidated"] is True
@@ -68,7 +68,7 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
         assert blocked.headers.get("Retry-After") == ("10" if authorized_port else None)
         messages = [record.getMessage() for record in caplog.records if record.name == "wilab.api.errors"]
         assert messages == [
-            "API failure operation=start_network http_status=500 detail_code=1003",
+            "API failure operation=start_network http_status=503 detail_code=1003",
             f"API failure operation=create_reservation http_status=503 detail_code={1002 if authorized_port else 1003}",
         ]
         overall = client.get("/api/v1/status", headers=headers).json()
@@ -201,14 +201,12 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     reserve = paths[RESERVE]["post"]["responses"]
     assert "Retry-After" in create["409"]["headers"]
     assert "headers" not in create["500"]
-    failure_content = create["500"]["content"]["application/json"]
-    failures = failure_content["examples"]
+    generic = create["500"]["content"]["application/json"]["examples"]
+    assert generic["startup_failure"]["value"]["detail"]["code"] == 500
+    assert "1003" not in create["500"]["description"]  # API-4: quarantine is a 503
+    failures = create["503"]["content"]["application/json"]["examples"]
     assert failures["device_unavailable"]["value"]["detail"]["code"] == 1003
     assert failures["device_unavailable"]["value"]["detail"]["reservation_invalidated"] is True
-    assert failures["startup_failure"]["value"]["detail"]["code"] == 500
-    generic_detail, terminal_detail = failure_content["schema"]["properties"]["detail"]["oneOf"]
-    assert generic_detail["properties"]["code"]["enum"] == [500]
-    assert terminal_detail["properties"]["code"]["enum"] == [1003]
     assert "discard the reservation ID" in failures["device_unavailable"]["summary"]
     assert create["409"]["content"]["application/json"]["examples"]["retry_later"]["value"]["detail"]["code"] == 1001
     assert reserve["503"]["content"]["application/json"]["examples"]["device_recovering"]["value"]["detail"]["code"] == 1002

@@ -310,7 +310,7 @@ def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch):
         for _ in config.networks[1:]:
             assert client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).status_code == 200
         result = client.post(f"/api/v1/interface/{rid}/network", headers=headers, json=PAYLOAD)
-        assert (result.status_code, result.json()["detail"]["code"]) == (500, 1003)
+        assert (result.status_code, result.json()["detail"]["code"]) == (503, 1003)
         schedule.assert_not_called()
         status = client.get("/api/v1/status", headers=headers).json()
         assert status["status"] == "degraded"

@@ -69,7 +69,7 @@ def _quarantine_while_gone(wilab: WiLab, server: Server, interface: str) -> str:
         seen.append((response.status_code, detail_code(response), response.headers.get("Retry-After")))
         if response.status_code == 409:
             time.sleep(_retry_after(response))
-    assert seen == [(409, 1001, "5"), (409, 1001, "10"), (500, 1003, None)]
+    assert seen == [(409, 1001, "5"), (409, 1001, "10"), (503, 1003, None)]
     wilab.reserved.remove(antenna.reservation_id)  # invalidated by the quarantine
     status = wilab.status()
     assert wilab.device(interface)["recovery_state"] == "recovering"

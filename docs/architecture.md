@@ -567,7 +567,7 @@ flowchart TD
     CL --> N{"radio_failures"}
     N -->|1| R5["layer 2: 409 / 1001, Retry-After 5"]
     N -->|2| R10["layer 2: 409 / 1001, Retry-After 10"]
-    N -->|3| Q["layer 3: quarantine antenna, invalidate reservation<br/>500 / 1003"]
+    N -->|3| Q["layer 3: quarantine antenna, invalidate reservation<br/>503 / 1003"]
     Q --> U{"USB antenna, radio fault,<br/>not upstream?"}
     U -->|yes| REC["schedule USB recovery<br/>recovery_state = recovering"]
     U -->|no| UN["recovery_state = unavailable"]

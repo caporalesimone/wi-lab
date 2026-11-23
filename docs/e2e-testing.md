@@ -56,7 +56,7 @@ The sudo password is used with `sudo -k -S` and is never printed. Only `tee` on 
 | `test_e2e_stability.py` (slow) | A network with a non-ASCII SSID stays up 15 minutes with no `runtime_state`, `recovery_state` or `degraded`. | HAP-1 | `iw`, journal |
 | `test_e2e_device_loss.py` (usb) | Antenna gone at create: `409/1001` with `Retry-After: 5`, no quarantine, `200` after it is back. | WD-5 | unplug, journal |
 | `test_e2e_device_loss.py` (usb) | Free antenna unplugged and replugged: no quarantine, next create `200`. | WD-5 | unplug |
-| `test_e2e_device_loss.py` (usb) | Antenna gone across three creates: `409/1001` (5 s), `409/1001` (10 s), `500/1003`; antenna `recovering` and service `degraded`; back to free through USB recovery after the replug. | WD-5 | unplug, journal |
+| `test_e2e_device_loss.py` (usb) | Antenna gone across three creates: `409/1001` (5 s), `409/1001` (10 s), `503/1003`; antenna `recovering` and service `degraded`; back to free through USB recovery after the replug. | WD-5 | unplug, journal |
 | `test_e2e_device_loss.py` (usb, active AP) | Antenna gone for 30 s with a network running: the network is restored, or the reservation is invalidated and the antenna recovers; never permanently `unavailable`. | WD-5 | unplug, journal |
 | `test_e2e_device_loss.py` (usb, slow) | Antenna gone for more than 11 minutes: USB recovery exhausts and the antenna becomes `unavailable`; after the replug the re-probe makes it free again without a restart. | WD-4 | unplug, journal |
 | `test_e2e_watchdog.py` | hostapd killed twice with `kill -9`: each time the watchdog restores the AP (`active`, no `runtime_state`), with no quarantine and the reservation kept. | WD-1 | `kill`, `iw`, journal |
