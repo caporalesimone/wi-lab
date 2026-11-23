@@ -252,7 +252,15 @@ class DhcpServer:
                     if self._owns_process(instance):
                         stop_process(pid)
                 elif not pid_file or not os.path.exists(pid_file):
-                    raise DhcpServerError(f"Missing dnsmasq PID file for {net_id}")
+                    # The launch timed out before dnsmasq wrote its PID file (NET-6):
+                    # find it by its --conf-file, which is unique per network. None
+                    # found means the killed launcher never started a daemon.
+                    found = self._find_process(config_file)
+                    if found is not None:
+                        logger.warning("Stopping dnsmasq for %s found without a PID file (pid %d)", net_id, found)
+                        stop_process(found)
+                    else:
+                        logger.info("No dnsmasq process for %s; the launch never started one", net_id)
                 else:
                     pid = int(Path(pid_file).read_text().strip())
                     if self._owns_process({**instance, "pid": pid}):
@@ -290,6 +298,21 @@ class DhcpServer:
         if instance is None:
             return None
         return {key: value for key, value in instance.items() if key != "pid"}
+
+    @staticmethod
+    def _find_process(config_file: str) -> int | None:
+        """PID of the dnsmasq started with this configuration file, if any (NET-6)."""
+        wanted = os.fsencode(f"--conf-file={config_file}")
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                args = (entry / "cmdline").read_bytes().split(b"\0")
+            except OSError:
+                continue
+            if args and Path(os.fsdecode(args[0])).name == "dnsmasq" and wanted in args[1:]:
+                return int(entry.name)
+        return None
 
     @staticmethod
     def _owns_process(instance: dict) -> bool:

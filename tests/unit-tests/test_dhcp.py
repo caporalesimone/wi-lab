@@ -199,3 +199,63 @@ class TestDhcpIntegration:
             # Verify gateway is second IP in network
             net = IPv4Network(subnet, strict=False)
             assert gateway == str(net[1])
+
+
+class TestLaunchTimeoutCleanup:
+    """NET-6: a dnsmasq launch that timed out before its PID file can still be cleaned up."""
+
+    @pytest.fixture
+    def timed_out(self, monkeypatch, tmp_path):
+        from wilab.network.commands import CommandTimeout
+
+        monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_CONFIG_DIR", str(tmp_path))
+        monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_PID_DIR", str(tmp_path))
+
+        def run(cmd):
+            if any(arg.startswith("--pid-file=") for arg in cmd):
+                raise CommandTimeout("Command timed out: dnsmasq")
+            return ""
+
+        monkeypatch.setattr("wilab.network.dhcp.execute_command", run)
+        server = DhcpServer()
+        with pytest.raises(DhcpServerError):
+            server.start("ap-01", "wlan0", "192.168.10.0/24", "192.0.2.1")
+        return server
+
+    def test_stop_without_pid_file_and_no_process_completes(self, timed_out, monkeypatch):
+        stopped = []
+        monkeypatch.setattr("wilab.network.dhcp.stop_process", stopped.append)
+        monkeypatch.setattr(DhcpServer, "_find_process", staticmethod(lambda config_file: None))
+        timed_out.stop("ap-01")  # previously: "Missing dnsmasq PID file" on every attempt
+        assert stopped == []
+        assert "ap-01" not in timed_out.list_active()
+
+    def test_stop_without_pid_file_kills_the_daemon_found_by_conf_file(self, timed_out, monkeypatch):
+        stopped = []
+        monkeypatch.setattr("wilab.network.dhcp.stop_process", stopped.append)
+        monkeypatch.setattr(DhcpServer, "_find_process", staticmethod(lambda config_file: 4321))
+        timed_out.stop("ap-01")
+        assert stopped == [4321]
+        assert "ap-01" not in timed_out.list_active()
+
+    def test_find_process_matches_name_and_conf_file(self, tmp_path):
+        import subprocess
+        import sys
+
+        fake = tmp_path / "dnsmasq"
+        fake.symlink_to(sys.executable)
+        conf = tmp_path / "dnsmasq-ap-01.conf"
+        child = subprocess.Popen(
+            [str(fake), "-c", "import time; time.sleep(30)", f"--conf-file={conf}"],
+        )
+        try:
+            for _ in range(50):
+                if DhcpServer._find_process(str(conf)) == child.pid:
+                    break
+                import time
+                time.sleep(0.05)
+            assert DhcpServer._find_process(str(conf)) == child.pid
+            assert DhcpServer._find_process(str(tmp_path / "other.conf")) is None
+        finally:
+            child.kill()
+            child.wait()
