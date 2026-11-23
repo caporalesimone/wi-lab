@@ -25,6 +25,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- Background loops (discovery, watchdog, expiry) survive any unexpected error and log its traceback once, and a `config.yaml` saved with the wrong shape is reported as a clear configuration error instead of silently stopping discovery (Fable WD-9).
 - `/status` no longer flaps to `degraded` while a network is being stopped or started: it uses one snapshot of the active networks and does not judge a network with an operation in progress (Fable RACE-2).
 - An AP start runs fewer host commands: no repeated wireless/AP capability checks (established by discovery), no `dnsmasq --version`, and `nmcli` is looked up once instead of on every start (Fable PERF-1).
 - Swagger examples now match the real responses: no `device_id` field that the API never returns, validation errors in the real `detail` object format, and unused QoS models removed; a test checks every `200` example against its model (Fable API-9).

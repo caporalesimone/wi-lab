@@ -1063,6 +1063,7 @@ class NetworkManager:
 
     def _expiry_loop(self) -> None:
         """Background loop to auto-expire networks without requiring API calls."""
+        last_error = ""  # log a repeated failure's traceback once (WD-9)
         while not self.watchdog.stopping.wait(5):
             heartbeat.beat("expiry")
             try:
@@ -1072,8 +1073,12 @@ class NetworkManager:
                     self._expire_network(device_id, st, now)
                 if self.expire_reservations is not None:
                     self.expire_reservations()
-            except Exception as e:
-                logger.debug(f"[expiry-loop] Loop error: {e}")
+            except Exception as exc:  # this loop must survive anything (WD-9)
+                if repr(exc) != last_error:
+                    logger.exception("[expiry-loop] Unexpected error")
+                last_error = repr(exc)
+            else:
+                last_error = ""
 
     def _expire_network(self, device_id: str, status: NetworkStatus, now: float) -> None:
         timestamp = getattr(status, '_expires_at_timestamp', None)

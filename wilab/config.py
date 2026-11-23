@@ -189,8 +189,14 @@ def config_path(path: str | None = None) -> str:
 def _read_raw_config(cfg_path: str, *, quiet: bool = False) -> dict:
     with open(cfg_path, 'r', encoding='utf-8') as f:
         raw = yaml.safe_load(f) or {}
+    # A config saved with the wrong shape must be a clear error, not an
+    # AttributeError/TypeError that kills the discovery thread (WD-9).
+    if not isinstance(raw, dict):
+        raise TypeError("Configuration must be a YAML mapping")
     if raw.get('networks') is None:
         raw['networks'] = []
+    if not isinstance(raw['networks'], list):
+        raise TypeError("networks must be a list")
     for entry in raw['networks']:
         if not isinstance(entry, dict):
             continue
@@ -253,4 +259,6 @@ def load_config(path: str | None = None) -> AppConfig:
         # Provide descriptive errors with field paths
         msgs = [f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()]
         raise SystemExit("Configuration validation failed:\n" + "\n".join(msgs))
+    except (ValueError, TypeError) as e:
+        raise SystemExit(f"Configuration error: {e}") from e
 

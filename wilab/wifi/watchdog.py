@@ -82,6 +82,7 @@ class NetworkWatchdog:
         dhcp_restores: deque[float] = deque()  # same, for DHCP-only restarts (WD-3)
         restart_network = ""  # why the whole network must be restored on the next tick (WD-3, WD-7)
         healthy_ticks = 0  # since the last network check (WD-7)
+        last_error = ""  # log a repeated failure's traceback once (WD-9)
         while not self.stopping.wait(5):
             heartbeat.beat(f"watchdog:{device}")
             lock = self.manager.device_lock(device)
@@ -165,8 +166,12 @@ class NetworkWatchdog:
                     if healthy_ticks >= VERIFY_EVERY:
                         healthy_ticks = 0
                         restart_network = self._verify(device)
-            except (OSError, RuntimeError, ValueError):
-                logger.exception("Could not check or restore network on %s", device)
+            except Exception as exc:  # this loop must survive anything (WD-9)
+                if repr(exc) != last_error:
+                    logger.exception("Could not check or restore network on %s", device)
+                last_error = repr(exc)
+            else:
+                last_error = ""
             finally:
                 lock.release()
 

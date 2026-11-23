@@ -111,9 +111,9 @@ def discovery_loop(config: AppConfig, stop: threading.Event) -> None:
         heartbeat.beat("discovery")
         try:
             scan_devices(config, quiet=not first)
-        except ValueError as exc:
+        except Exception as exc:  # this loop must survive anything (WD-9)
             if str(exc) != last_error:
-                logger.error("Device discovery failed: %s", exc)
+                logger.exception("Device discovery failed")
             last_error = str(exc)
         else:
             last_error = None
