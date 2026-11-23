@@ -132,3 +132,27 @@ def test_no_retry_is_started_without_enough_time(monkeypatch, manager, clock):
         manager.start_network(device, _request(), allow_internal_retry=True)
     assert failure.value.radio
     assert len(budgets) == 1
+
+
+# --------------------------------------------------------------------------- PERF-1
+
+
+def test_start_runs_no_redundant_commands(monkeypatch, manager):
+    """PERF-1: no iw capability checks, no nmcli/dnsmasq --version on each start."""
+    from wilab.wifi import interface as interface_module
+
+    device = manager.config.networks[0].device_id
+    monkeypatch.setattr(manager.hostapd_manager, "start", Mock())
+    seen: list[list[str]] = []
+    real = manager_module.execute_command
+
+    def record(cmd, *args, **kwargs):
+        seen.append(cmd)
+        return real(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(manager_module, "execute_command", record)
+    monkeypatch.setattr(interface_module, "execute_command", record)
+    monkeypatch.setattr(manager_module, "_nmcli_available", lambda: True)
+    manager.start_network(device, _request())
+    assert ["nmcli", "--version"] not in seen
+    assert not any(cmd[:2] == ["iw", "phy"] or cmd[-1:] == ["info"] for cmd in seen if cmd[:1] == ["iw"])

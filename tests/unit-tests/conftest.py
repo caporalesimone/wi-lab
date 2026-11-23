@@ -227,8 +227,6 @@ Band 2:
     from wilab.wifi import recovery
     for module in (manager, hostapd, recovery):
         monkeypatch.setattr(module, "interface_present", lambda iface: True)
-    monkeypatch.setattr(manager, "validate_interface_wireless", lambda iface: None)
-    monkeypatch.setattr(manager, "validate_interface_ap_mode", mock_validate_interface_ap_mode)
     monkeypatch.setattr(manager, "execute_iw", mock_execute_iw)
     monkeypatch.setattr(manager, "execute_ip", mock_execute_ip)
     monkeypatch.setattr(manager, "execute_command", mock_execute_command)

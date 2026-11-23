@@ -64,7 +64,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 23 | [RACE-2](Fable-Notes.md#L2852) |  | Costruire `/status` da uno snapshot coerente dello stato condiviso. |
 | 24 | [RACE-3](Fable-Notes.md#L2873) |  | Sincronizzare le operazioni QoS per interfaccia. |
 | 25 | [PERF-3](Fable-Notes.md#L2898) |  | Memorizzare brevemente i risultati dei controlli di salute. |
-| 26 | [PERF-1](Fable-Notes.md#L2932) |  | Ridurre i comandi ridondanti durante l'avvio di una rete. |
+| 26 | [PERF-1](Fable-Notes.md#L2932) | ✅ parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. Fatti i tagli a basso rischio (validazioni `iw`, `dnsmasq --version`, `nmcli --version`). Non fatto di proposito `iptables-restore` in blocco: cambierebbe come si installano e tolgono tutte le regole, appena consolidato con NET-2, SEC-3 e WD-7. |
 | 27 | [PERF-2](Fable-Notes.md#L2968) |  | Separare i controlli di stato attivo dalle query dettagliate. |
 | 28 | [PERF-5](Fable-Notes.md#L2996) |  | Rispettare il timeout richiesto senza imporre un minimo nascosto. |
 | 29 | [PERF-6](Fable-Notes.md#L3029) |  | Sostituire l'attesa fissa per TX power con polling limitato. |

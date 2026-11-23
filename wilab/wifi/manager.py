@@ -1,7 +1,9 @@
+import functools
 import logging
 import os
 import re
 import secrets
+import shutil
 import threading
 import time
 from _thread import RLock
@@ -38,9 +40,7 @@ from .hostapd import (
 from .interface import (
     InterfaceError,
     interface_present,
-    validate_interface_ap_mode,
     validate_interface_exists,
-    validate_interface_wireless,
 )
 from .recovery import RadioRecovery
 from .watchdog import NetworkWatchdog
@@ -60,6 +60,12 @@ MIN_RETRY_ATTEMPT_TIME = 4.0
 # number of consecutive failures; the last value repeats (WD-6). A client's
 # explicit DELETE is never delayed.
 CLEANUP_BACKOFF = (5.0, 15.0, 60.0, 300.0)
+
+
+@functools.lru_cache(maxsize=1)
+def _nmcli_available() -> bool:
+    """Whether nmcli is installed; looked up once instead of running it on every start (PERF-1)."""
+    return shutil.which("nmcli") is not None
 
 
 class NetworkNotActive(ValueError):
@@ -114,9 +120,7 @@ class NetworkManager:
 
     def _configure_networkmanager_unmanaged(self, interface: str) -> None:
         """Best-effort: ask NetworkManager to stop managing AP interface."""
-        try:
-            execute_command(["nmcli", "--version"])
-        except CommandError:
+        if not _nmcli_available():
             logger.debug("nmcli not available, skipping NetworkManager unmanaged setup")
             return
 
@@ -301,9 +305,9 @@ class NetworkManager:
         # Validate interface
         logger.info(f"Validating interface {cfg_net.interface}")
         try:
+            # Wireless and AP capability were established by discovery and cannot change
+            # for this interface; only its presence can (PERF-1, BUG-6).
             validate_interface_exists(cfg_net.interface)
-            validate_interface_wireless(cfg_net.interface)
-            validate_interface_ap_mode(cfg_net.interface)
         except InterfaceError as e:
             logger.error(f"Interface validation failed: {e}")
             if not interface_present(cfg_net.interface):

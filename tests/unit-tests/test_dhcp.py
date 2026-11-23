@@ -128,7 +128,7 @@ class TestDhcpServerStart:
         monkeypatch.setattr("wilab.network.dhcp.execute_command", run)
         info = DhcpServer().start("ap-01", "wlan0", "192.168.10.0/24", "192.0.2.1")
         assert info["gateway"] == "192.168.10.1"
-        assert commands == ["dnsmasq", "dnsmasq", "dnsmasq"]
+        assert commands == ["dnsmasq", "dnsmasq"]  # --test and launch; no --version (PERF-1)
 
     def test_start_server_not_installed(self, monkeypatch, tmp_path):
         """Test starting server fails gracefully when dnsmasq not installed."""

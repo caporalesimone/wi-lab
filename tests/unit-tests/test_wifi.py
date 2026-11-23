@@ -40,10 +40,12 @@ class TestNetworkManagerInit:
             return ""
 
         monkeypatch.setattr('wilab.wifi.manager.execute_command', mock_execute_command)
+        monkeypatch.setattr('wilab.wifi.manager._nmcli_available', lambda: True)
 
         mgr._configure_networkmanager_unmanaged('wlan0')
 
-        assert any(c[0] == ['nmcli', '--version'] for c in calls)
+        # PERF-1: availability is looked up once, not by running `nmcli --version` each start.
+        assert not any(c[0] == ['nmcli', '--version'] for c in calls)
         assert any(c[0] == ['nmcli', 'device', 'set', 'wlan0', 'managed', 'no'] for c in calls)
         assert any(c[0] == ['nmcli', 'device', 'disconnect', 'wlan0'] for c in calls)
 
@@ -56,8 +58,9 @@ class TestNetworkManagerInit:
             raise CommandError("Command not found: nmcli")
 
         monkeypatch.setattr('wilab.wifi.manager.execute_command', mock_execute_command)
+        monkeypatch.setattr('wilab.wifi.manager._nmcli_available', lambda: False)
 
-        # Should not raise
+        # Should not raise, and runs nothing
         mgr._configure_networkmanager_unmanaged('wlan0')
 
 

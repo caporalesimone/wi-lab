@@ -183,12 +183,8 @@ class DhcpServer:
             
             logger.info(f"Generated dnsmasq config at {config_file}")
             
-            # Ensure dnsmasq is available
-            try:
-                execute_command(["dnsmasq", "--version"])
-            except CommandError:
-                raise DhcpServerError("dnsmasq not installed")
-
+            # No separate `dnsmasq --version` (PERF-1): the config test below fails with
+            # "Command not found: dnsmasq" when it is missing.
             # Pre-flight check config (static, minimal) to fail fast on syntax issues
             try:
                 execute_command([

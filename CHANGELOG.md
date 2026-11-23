@@ -25,6 +25,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- An AP start runs fewer host commands: no repeated wireless/AP capability checks (established by discovery), no `dnsmasq --version`, and `nmcli` is looked up once instead of on every start (Fable PERF-1).
 - Swagger examples now match the real responses: no `device_id` field that the API never returns, validation errors in the real `detail` object format, and unused QoS models removed; a test checks every `200` example against its model (Fable API-9).
 - With `upstream_interface: auto`, Wi-Lab follows the default route when it moves to another interface: new networks use it and the NAT of running networks is moved within 30 s, instead of naming the old interface until a restart (Fable STAB-6).
 - An internal AP start retry begins only with at least 4 s left (budget raised from 15 to 20 s), so a start cut short by the budget no longer counts as an extra radio failure towards quarantine (Fable HAP-4).
