@@ -4,7 +4,7 @@ import yaml
 
 
 def test_ci_runs_checks_and_publishes_offline_docs_without_cleanup_permissions():
-    path = Path(__file__).resolve().parents[1] / ".github/workflows/ci.yml"
+    path = Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml"
     workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
     assert "pull_request" in workflow["on"]
     assert "main" in workflow["on"]["push"]["branches"]

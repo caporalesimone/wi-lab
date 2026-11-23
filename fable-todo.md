@@ -102,8 +102,12 @@ Il tester lavora da una macchina esterna e usa solo le API. Per questo il capito
 - **Test con root o intervento fisico:** staccare la USB, `kill`, `systemctl`, file di root.
   Non li può fare il tester. Li eseguo io se mi viene dato `sudo`, altrimenti chi è vicino alla macchina.
 
-I test automatici (pytest), le ispezioni sulla macchina possibili senza root e le prove API locali
-li eseguo io a ogni fix. Gli esiti sono riportati nel messaggio di commit e non sono elencati qui.
+I test automatici li eseguo io a ogni fix e non sono elencati qui; gli esiti sono nel messaggio di commit.
+
+- `tests/unit-tests/`: hardware simulato, girano a ogni modifica e in CI.
+- `tests/e2e-tests/`: girano sulla macchina contro il servizio attivo e uniscono chiamate API e azioni
+  sul server (journal, `iw`, distacco USB simulato). Coprono già BUG-1, HAP-1, WD-4 e WD-5; per ogni
+  nuovo fix aggiungo qui i test e2e possibili. Vedi [docs/e2e-testing.md](docs/e2e-testing.md).
 
 Per ogni test live raccogliere: ora UTC, `display_name` e `interface` presi da `/status`
 (non dedotti dall'ordine), banda e canale, status HTTP con `detail.code` e header `Retry-After`.
@@ -175,7 +179,6 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 
 | ID | Intervento | Esito atteso |
 |---|---|---|
-| WD-4 | Antenna staccata per più di 11 minuti, poi riattaccata. | `recovering` → `unavailable` → libera da sola entro il backoff, senza riavvio. Journal: `still unavailable after re-probe N; next attempt in S s` e poi `passed the probe and is allocatable again`. Durante la verifica `ens18` non viene toccata. |
 | WD-5 (p. 3) | Antenna che ricompare con un nome diverso. | La voce vecchia viene ritirata; `/status` non resta `degraded`. |
 | WD-1, WD-8 | Rete attiva (con profilo QoS per WD-8): `kill -9` di hostapd 3 volte a distanza di minuti. | Ogni volta `restoring_ap` e poi rete attiva; profilo QoS di nuovo attivo. |
 | WD-2 | `kill -9` di hostapd con il riavvio che fallisce per una causa non radio. | `runtime_state` di errore in `/status`; il watchdog riprova. |

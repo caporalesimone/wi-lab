@@ -135,14 +135,22 @@ make test-local-quick
 make test-local-cov
 ```
 
+End-to-end tests (`tests/e2e-tests/`) run on the Wi-Lab machine against the running service and combine
+API calls with server actions. They are skipped unless enabled; see [docs/e2e-testing.md](docs/e2e-testing.md).
+
+```bash
+make test-e2e        # API + server checks, no USB unplug
+make test-e2e-usb    # also simulated USB unplugs (WD-4/WD-5)
+```
+
 Advanced (targeted tests when needed):
 
 ```bash
- Run specific test file
-.venv/bin/pytest tests/test_api.py -v
+# Run specific test file
+.venv/bin/pytest tests/unit-tests/test_api.py -v
 
 # Run a specific test node
-.venv/bin/pytest tests/test_api.py::TestNetworkCreateEndpoint::test_network_response_structure -v
+.venv/bin/pytest tests/unit-tests/test_api.py::TestNetworkCreateEndpoint::test_network_response_structure -v
 ```
 
 ### Using Project Automation Targets
@@ -224,7 +232,7 @@ make test-local
 make test-local-cov
 
 # Optional targeted run during development
-.venv/bin/pytest tests/test_api.py -v
+.venv/bin/pytest tests/unit-tests/test_api.py -v
 ```
 
 ### 6. Verify Manually
@@ -341,7 +349,7 @@ def my_function():
     return result
 
 # Run with pytest
-.venv/bin/pytest tests/test_file.py -v -s
+.venv/bin/pytest tests/unit-tests/test_file.py -v -s
 ```
 
 ### Check Service Logs
@@ -377,7 +385,7 @@ Keep documentation focused on workflows and behavior rather than internal file p
 - ✅ Type checking passes: `make type-check` (warnings expected during transition)
 - ✅ All tests pass: `make test-local`
 - ✅ Coverage maintained: `make test-local-cov`
-- ✅ Optional targeted validation: `.venv/bin/pytest tests/test_api.py -v`
+- ✅ Optional targeted validation: `.venv/bin/pytest tests/unit-tests/test_api.py -v`
 - ✅ Documentation updated: Add comments/update docs if needed
 
 ### Commit Messages

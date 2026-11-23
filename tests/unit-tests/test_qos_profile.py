@@ -169,7 +169,7 @@ class TestQosProfileCatalogue:
         import shutil
 
         schema_src = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
             "wilab", "data", "qos-profiles", "profile.schema.json",
         )
         shutil.copy(schema_src, tmp_path / "profile.schema.json")
@@ -246,7 +246,7 @@ class TestQosProfileCatalogue:
     def test_load_real_default_catalogue(self):
         """Load the real default.json shipped with the project."""
         catalogue_dir = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
             "wilab", "data", "qos-profiles",
         )
         pm = QosProfileManager(catalogue_dir)
@@ -299,7 +299,7 @@ class TestQosProfileManager:
     def pm(self):
         """Create a QosProfileManager with the real catalogue."""
         catalogue_dir = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
             "wilab", "data", "qos-profiles",
         )
         return QosProfileManager(catalogue_dir)

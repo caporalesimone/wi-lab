@@ -6,6 +6,10 @@ All notable changes to Wi-Lab are documented in this file.
 
 ## [Unreleased]
 
+### Testing
+
+- Tests are split into `tests/unit-tests/` (the existing suite: mocked hardware, run by `make test-local` and CI) and `tests/e2e-tests/` (new). The e2e tests run on the Wi-Lab machine against the running service and combine API calls with server actions: journal checks, the SSID on the air via `iw`, and USB unplugs simulated through sysfs. They cover BUG-1, HAP-1, WD-4 and WD-5, are skipped unless `WILAB_E2E=1`, and have their own flags for USB unplugs and long tests (`make test-e2e`, `make test-e2e-usb`, see `docs/e2e-testing.md`).
+
 ### Documentation
 
 - Document `GET /api/v1/status` health values (`standby`, `ok`, `degraded`), what makes the service `degraded` (quarantined adapter, network being repaired, failed health check) and how clients learn about quarantined adapters, in Swagger (three response examples), the API overview, the AP creation procedure (2.8) and the Swagger guide.

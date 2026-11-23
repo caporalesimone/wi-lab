@@ -26,7 +26,7 @@ class WarningParser(HTMLParser):
 
 
 def test_tx_power_warnings_describe_hardware_and_reported_values():
-    root = Path(__file__).resolve().parents[1] / "frontend/src/app/components"
+    root = Path(__file__).resolve().parents[2] / "frontend/src/app/components"
     parser = WarningParser()
     parser.feed((root / "network-form-dialog/network-form-dialog.component.html").read_text())
     parser.feed((root / "network-card/network-card.component.html").read_text())

@@ -1,0 +1,144 @@
+"""WD-5 and WD-4 on real hardware: an antenna that disappears and comes back.
+
+The unplug is simulated by writing 0 and then 1 to the USB device's
+`authorized` attribute in sysfs. Every test re-authorizes the port at the end
+(see the `server` fixture), but a real driver hang can still detach the
+device from the VM: see docs/e2e-testing.md before enabling these tests.
+"""
+
+import time
+
+import pytest
+from wilab_e2e import Server, WiLab, detail_code, wait_for
+
+pytestmark = pytest.mark.usb
+
+# USB recovery: 10 attempts 60 s apart. Re-probe backoff tops out at 900 s.
+RECOVERY_WINDOW = 11 * 60
+REPROBE_WINDOW = 16 * 60
+
+
+def _retry_after(response) -> int:
+    return int(response.headers["Retry-After"])
+
+
+def test_antenna_gone_at_create_is_a_retryable_radio_failure(
+    wilab: WiLab, server: Server, first_interface: str,
+) -> None:
+    """WD-5 #1-#2: 409/1001 while gone, no quarantine, 200 after it is back."""
+    antenna = wilab.reserve(first_interface)
+    port = server.usb_port(antenna.interface)
+    start = time.time()
+    server.set_usb_authorized(port, 0)
+    assert server.wait_interface(antenna.interface, present=False)
+
+    response = wilab.create(antenna)
+    assert (response.status_code, detail_code(response), _retry_after(response)) == (409, 1001, 5)
+    assert not wilab.device(antenna.interface).get("recovery_state")
+
+    server.set_usb_authorized(port, 1)
+    assert server.wait_interface(antenna.interface)
+    time.sleep(_retry_after(response))
+    response = wilab.create(antenna)
+    assert response.status_code == 200, response.text
+    assert "Startup rollback failed" not in server.journal(start)
+
+
+def test_free_antenna_unplug_and_replug(wilab: WiLab, server: Server, first_interface: str) -> None:
+    """WD-5 #5: no quarantine for an unreserved antenna; it works afterwards."""
+    port = server.usb_port(first_interface)
+    server.set_usb_authorized(port, 0)
+    time.sleep(5)
+    server.set_usb_authorized(port, 1)
+    assert server.wait_interface(first_interface)
+    time.sleep(3)
+    assert not wilab.device(first_interface).get("recovery_state")
+    antenna = wilab.reserve(first_interface)
+    assert wilab.create(antenna).status_code == 200
+
+
+def _quarantine_while_gone(wilab: WiLab, server: Server, interface: str) -> str:
+    """Unplug, then let three creates fail; return the USB port."""
+    antenna = wilab.reserve(interface)
+    port = server.usb_port(interface)
+    server.set_usb_authorized(port, 0)
+    assert server.wait_interface(interface, present=False)
+    seen = []
+    for _ in range(3):
+        response = wilab.create(antenna)
+        seen.append((response.status_code, detail_code(response), response.headers.get("Retry-After")))
+        if response.status_code == 409:
+            time.sleep(_retry_after(response))
+    assert seen == [(409, 1001, "5"), (409, 1001, "10"), (500, 1003, None)]
+    wilab.reserved.remove(antenna.reservation_id)  # invalidated by the quarantine
+    status = wilab.status()
+    assert wilab.device(interface)["recovery_state"] == "recovering"
+    assert status["status"] == "degraded"
+    return port
+
+
+def test_antenna_gone_across_three_creates_recovers_by_usb_recovery(
+    wilab: WiLab, server: Server, first_interface: str,
+) -> None:
+    """WD-5 #3-#4: quarantine as "recovering", never "unavailable"; back after replug."""
+    start = time.time()
+    port = _quarantine_while_gone(wilab, server, first_interface)
+    time.sleep(5)
+    server.set_usb_authorized(port, 1)
+    assert server.wait_interface(first_interface)
+    assert wait_for(lambda: not wilab.device(first_interface).get("recovery_state"), timeout=150)
+    assert "USB recovery verified" in server.journal(start)
+    antenna = wilab.reserve(first_interface)
+    assert wilab.create(antenna).status_code == 200
+
+
+@pytest.mark.usb_active_ap
+def test_antenna_gone_with_active_network(wilab: WiLab, server: Server, first_interface: str) -> None:
+    """WD-5 #6: the watchdog never leaves the antenna permanently unavailable.
+
+    Risky: on mt7921u in a VM this has stalled the VM and detached the USB
+    device (23/11 17:50), which then needs a physical re-plug.
+    """
+    antenna = wilab.reserve(first_interface)
+    assert wilab.create(antenna).status_code == 200
+    port = server.usb_port(first_interface)
+    start = time.time()
+    server.set_usb_authorized(port, 0)
+    time.sleep(30)
+    server.set_usb_authorized(port, 1)
+    assert server.wait_interface(first_interface)
+
+    def settled() -> bool:
+        entry = wilab.device(first_interface)
+        network = wilab.http.get(f"/interface/{antenna.reservation_id}/network").status_code
+        restored = network == 200 and not entry.get("runtime_state") and not entry.get("recovery_state")
+        return restored or (network == 404 and not entry.get("recovery_state"))
+
+    assert wait_for(settled, timeout=RECOVERY_WINDOW + 60, interval=10)
+    assert wilab.device(first_interface).get("recovery_state") != "unavailable"
+    assert "Startup rollback failed" not in server.journal(start)
+
+
+@pytest.mark.slow
+def test_unavailable_antenna_is_reprobed_without_restart(
+    wilab: WiLab, server: Server, first_interface: str,
+) -> None:
+    """WD-4: USB recovery exhausts while unplugged, then the re-probe brings it back."""
+    start = time.time()
+    port = _quarantine_while_gone(wilab, server, first_interface)
+    assert wait_for(
+        lambda: wilab.device(first_interface).get("recovery_state") == "unavailable",
+        timeout=RECOVERY_WINDOW + 60, interval=15,
+    )
+    journal = server.journal(start)
+    assert "USB recovery exhausted" in journal
+    assert "re-probe skipped" in journal or "still unavailable after re-probe" in journal
+
+    server.set_usb_authorized(port, 1)
+    assert server.wait_interface(first_interface)
+    assert wait_for(
+        lambda: not wilab.device(first_interface).get("recovery_state"), timeout=REPROBE_WINDOW, interval=15,
+    )
+    assert "passed the probe and is allocatable again" in server.journal(start)
+    antenna = wilab.reserve(first_interface)
+    assert wilab.create(antenna).status_code == 200

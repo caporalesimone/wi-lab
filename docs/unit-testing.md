@@ -2,6 +2,15 @@
 
 Wi-Lab uses pytest for comprehensive unit and integration testing. This document explains how to run and work with tests.
 
+The tests live in two folders:
+
+| Folder | What it runs | How |
+|---|---|---|
+| `tests/unit-tests/` | Unit and API tests with mocked hardware. Run on every change and in CI. | `make test-local` (the default `pytest` path) |
+| `tests/e2e-tests/` | End-to-end tests against the running service on the Wi-Lab machine: API calls plus server actions (journal, `iw`, simulated USB unplug). | `make test-e2e`, see [e2e-testing.md](e2e-testing.md) |
+
+This guide covers the unit tests.
+
 ---
 
 ## Quick Start
@@ -10,29 +19,29 @@ Wi-Lab uses pytest for comprehensive unit and integration testing. This document
 
 ```bash
 # Run all tests
-pytest tests/ -v
+pytest tests/unit-tests/ -v
 
 # Run with coverage report
-pytest tests/ --cov=wilab --cov-report=html --cov-report=term
+pytest tests/unit-tests/ --cov=wilab --cov-report=html --cov-report=term
 
 # Run quick mode (less verbose)
-pytest tests/ -q
+pytest tests/unit-tests/ -q
 ```
 
 ### Run Specific Tests
 
 ```bash
 # Run single test file
-pytest tests/test_config.py -v
+pytest tests/unit-tests/test_config.py -v
 
 # Run single test class
-pytest tests/test_wifi.py::TestNetworkLifecycle -v
+pytest tests/unit-tests/test_wifi.py::TestNetworkLifecycle -v
 
 # Run single test method
-pytest tests/test_api.py::TestAuthenticationEndpoints::test_valid_token -v
+pytest tests/unit-tests/test_api.py::TestAuthenticationEndpoints::test_valid_token -v
 
 # Run tests matching pattern
-pytest tests/ -k "test_tx_power" -v
+pytest tests/unit-tests/ -k "test_tx_power" -v
 ```
 
 ### Using the Makefile
@@ -57,8 +66,8 @@ open htmlcov/index.html
 
 ### Test Files
 
-The test suite includes:
-- **conftest.py** - Shared fixtures and configuration
+The unit test suite in `tests/unit-tests/` includes:
+- **conftest.py** - Shared fixtures and configuration (mocks every host command)
 - **test_config.py** - Configuration loading/validation tests
 - **test_api.py** - API endpoint tests
 - **test_commands.py** - Shell command wrapper tests
@@ -132,43 +141,43 @@ pip install -r requirements-dev.txt
 
 ```bash
 # Run all tests with verbose output
-pytest tests/ -v
+pytest tests/unit-tests/ -v
 
 # Show print statements (use print() for debugging)
-pytest tests/ -v -s
+pytest tests/unit-tests/ -v -s
 
 # Stop after first failure
-pytest tests/ -x
+pytest tests/unit-tests/ -x
 
 # Fail on first N errors
-pytest tests/ --maxfail=3
+pytest tests/unit-tests/ --maxfail=3
 ```
 
 ### Coverage Reports
 
 ```bash
 # Generate coverage report in terminal
-pytest tests/ --cov=wilab --cov-report=term
+pytest tests/unit-tests/ --cov=wilab --cov-report=term
 
 # Generate HTML coverage report
-pytest tests/ --cov=wilab --cov-report=html
+pytest tests/unit-tests/ --cov=wilab --cov-report=html
 # Open: htmlcov/index.html
 
 # Coverage for specific module
-pytest tests/ --cov=wilab.wifi --cov-report=term
+pytest tests/unit-tests/ --cov=wilab.wifi --cov-report=term
 ```
 
 ### Test Markers
 
 ```bash
 # Run only fast tests
-pytest tests/ -m "not slow" -v
+pytest tests/unit-tests/ -m "not slow" -v
 
 # Run slow tests
-pytest tests/ -m "slow" -v
+pytest tests/unit-tests/ -m "slow" -v
 
 # Skip tests marked as xfail (expected failures)
-pytest tests/ --runxfail
+pytest tests/unit-tests/ --runxfail
 ```
 
 ---
@@ -178,14 +187,14 @@ pytest tests/ --runxfail
 ### Example Verbose Output
 
 ```bash
-$ pytest tests/test_api.py -v
+$ pytest tests/unit-tests/test_api.py -v
 
-tests/test_api.py::TestHealthEndpoint::test_health_check PASSED           [  5%]
-tests/test_api.py::TestHealthEndpoint::test_health_structure PASSED       [ 10%]
-tests/test_api.py::TestAuthenticationEndpoints::test_valid_token PASSED   [ 15%]
-tests/test_api.py::TestAuthenticationEndpoints::test_invalid_token FAILED [ 20%]
+tests/unit-tests/test_api.py::TestHealthEndpoint::test_health_check PASSED           [  5%]
+tests/unit-tests/test_api.py::TestHealthEndpoint::test_health_structure PASSED       [ 10%]
+tests/unit-tests/test_api.py::TestAuthenticationEndpoints::test_valid_token PASSED   [ 15%]
+tests/unit-tests/test_api.py::TestAuthenticationEndpoints::test_invalid_token FAILED [ 20%]
 
-FAILED tests/test_api.py::TestAuthenticationEndpoints::test_invalid_token
+FAILED tests/unit-tests/test_api.py::TestAuthenticationEndpoints::test_invalid_token
 ```
 
 **Format:** `path/to/test.py::TestClass::test_method STATUS [percentage]`
@@ -304,7 +313,7 @@ pip install pytest-watch
 ptw  # Reruns tests on file changes
 
 # Or with pytest natively (requires polling)
-watch -n 2 pytest tests/
+watch -n 2 pytest tests/unit-tests/
 ```
 
 ---
@@ -315,10 +324,10 @@ watch -n 2 pytest tests/
 
 ```bash
 # Show all print() output
-pytest tests/test_api.py -v -s
+pytest tests/unit-tests/test_api.py -v -s
 
 # Print only from failing tests
-pytest tests/test_api.py -v -s --tb=short
+pytest tests/unit-tests/test_api.py -v -s --tb=short
 ```
 
 ### Use pdb (Python Debugger)
@@ -332,20 +341,20 @@ def test_something():
 
 Then run with:
 ```bash
-pytest tests/test_something.py -v -s
+pytest tests/unit-tests/test_something.py -v -s
 ```
 
 ### Verbose Tracebacks
 
 ```bash
 # Long traceback format
-pytest tests/ -v --tb=long
+pytest tests/unit-tests/ -v --tb=long
 
 # No traceback
-pytest tests/ -v --tb=no
+pytest tests/unit-tests/ -v --tb=no
 
 # Line-by-line
-pytest tests/ -v --tb=line
+pytest tests/unit-tests/ -v --tb=line
 ```
 
 ---
@@ -365,7 +374,7 @@ source venv/bin/activate
 pip install -r requirements-dev.txt
 
 # Try again
-pytest tests/
+pytest tests/unit-tests/
 ```
 
 ### Issue: Tests Timeout
@@ -375,10 +384,10 @@ pytest tests/
 **Solution:**
 ```bash
 # Set timeout (adjust 10 to appropriate seconds)
-pytest tests/ --timeout=10
+pytest tests/unit-tests/ --timeout=10
 
 # Disable specific test
-pytest tests/ --deselect tests/test_slow_operation.py::test_takes_forever
+pytest tests/unit-tests/ --deselect tests/unit-tests/test_slow_operation.py::test_takes_forever
 ```
 
 ### Issue: Permission Denied on subprocess Tests
@@ -388,10 +397,10 @@ pytest tests/ --deselect tests/test_slow_operation.py::test_takes_forever
 **Solution:**
 ```bash
 # Run tests with sudo
-sudo pytest tests/ -v
+sudo pytest tests/unit-tests/ -v
 
 # Or skip tests requiring sudo
-pytest tests/ -k "not requires_sudo"
+pytest tests/unit-tests/ -k "not requires_sudo"
 ```
 
 ### Issue: Mock Not Working as Expected
@@ -491,7 +500,7 @@ def test_network_status(self):
 
 ```bash
 # Generate detailed coverage report
-pytest tests/ --cov=wilab --cov-report=html
+pytest tests/unit-tests/ --cov=wilab --cov-report=html
 
 # View report
 open htmlcov/index.html
@@ -509,24 +518,24 @@ open htmlcov/index.html
 ```bash
 # 1. Write test for new feature
 # 2. Run test (should fail)
-pytest tests/test_new_feature.py -v
+pytest tests/unit-tests/test_new_feature.py -v
 
 # 3. Implement feature
 # 4. Run test (should pass)
-pytest tests/test_new_feature.py -v
+pytest tests/unit-tests/test_new_feature.py -v
 
 # 5. Run all tests to verify no regressions
-pytest tests/ -v
+pytest tests/unit-tests/ -v
 
 # 6. Check coverage
-pytest tests/ --cov=wilab --cov-report=term
+pytest tests/unit-tests/ --cov=wilab --cov-report=term
 ```
 
 ### Before Committing
 
 ```bash
 # Run complete test suite
-pytest tests/ -v --cov=wilab
+pytest tests/unit-tests/ -v --cov=wilab
 
 # Run formatter
 black wilab/ tests/
@@ -556,5 +565,5 @@ For more detailed information:
 
 Run tests with confidence:
 ```bash
-pytest tests/ -v
+pytest tests/unit-tests/ -v
 ```

@@ -4,7 +4,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help venv test-local test-local-quick test-local-cov clean-venv lint lint-fix type-check stop start restart build-frontend
+.PHONY: help venv test-local test-local-quick test-local-cov test-e2e test-e2e-usb clean-venv lint lint-fix type-check stop start restart build-frontend
 
 # Default target: show help
 help:
@@ -15,9 +15,14 @@ help:
 	@echo "  make clean-venv        Remove virtual environment"
 	@echo ""
 	@echo "Testing (Local - uses venv):"
-	@echo "  make test-local        Run all tests with verbose output"
-	@echo "  make test-local-quick  Run tests with minimal output"
-	@echo "  make test-local-cov    Run tests with coverage report (HTML)"
+	@echo "  make test-local        Run unit tests with verbose output"
+	@echo "  make test-local-quick  Run unit tests with minimal output"
+	@echo "  make test-local-cov    Run unit tests with coverage report (HTML)"
+	@echo ""
+	@echo "Testing (E2E - on the Wi-Lab machine, against the running service):"
+	@echo "  make test-e2e          API + server checks, no USB unplug"
+	@echo "  make test-e2e-usb      Also simulate USB unplugs (WD-4/WD-5)"
+	@echo "  Add WILAB_E2E_SLOW=1 for long tests; see docs/e2e-testing.md"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint              Run ruff linter"
@@ -45,17 +50,24 @@ $(VENV)/bin/activate: requirements.txt
 # Local test targets (use venv)
 test-local: venv
 	@echo "Running tests locally in venv..."
-	$(PYTEST) tests/ -v --tb=short
+	$(PYTEST) tests/unit-tests -v --tb=short
 
 test-local-quick: venv
 	@echo "Running tests locally in venv (quick mode)..."
-	$(PYTEST) tests/ -q
+	$(PYTEST) tests/unit-tests -q
 
 test-local-cov: venv
 	@echo "Running tests with coverage report..."
-	$(PYTEST) tests/ --cov=wilab --cov-report=html --cov-report=term
+	$(PYTEST) tests/unit-tests --cov=wilab --cov-report=html --cov-report=term
 	@echo ""
 	@echo "✓ Coverage report generated in htmlcov/index.html"
+
+# End-to-end tests: run on the Wi-Lab machine against the running service
+test-e2e: venv
+	WILAB_E2E=1 $(PYTEST) tests/e2e-tests -v --tb=short
+
+test-e2e-usb: venv
+	WILAB_E2E=1 WILAB_E2E_USB=1 $(PYTEST) tests/e2e-tests -v --tb=short
 
 # Code quality targets
 lint: venv
@@ -71,7 +83,8 @@ lint-fix: venv
 
 type-check: venv
 	@echo "Running mypy type checker..."
-	$(VENV)/bin/mypy wilab/ tests/ --color-output
+	$(VENV)/bin/mypy wilab/ tests/unit-tests --color-output
+	$(VENV)/bin/mypy tests/e2e-tests --color-output
 	@echo "✓ Type check completed"
 
 # Cleanup
