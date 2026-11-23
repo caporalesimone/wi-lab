@@ -108,13 +108,13 @@ protetto è quello che interessa di più: una rete che funzionava e deve continu
 | 13 | [WD-5](#wd-5) ✅ parz. | Alta | Se l'interfaccia sparisce, lo stop di hostapd fallisce sempre: il dispositivo non si pulisce e non viene mai rimosso. |
 | 14 | [WD-7](#wd-7) ✅ parz. | Media | Il watchdog controlla due processi, non la rete: indirizzo del gateway, regole firewall, `ip_forward` e trasmissione reale non sono verificati. |
 | 15 | [WD-9](#wd-9) | Media | I thread di background non sono supervisionati: un'eccezione non prevista li termina per sempre; un `config.yaml` malformato uccide la discovery. |
-| 16 | [STAB-4](#stab-4) | Media | All'avvio si puliscono solo le regole firewall: restano `tc`, dispositivi `ifb`, indirizzi, file e PID vecchi. |
-| 17 | [SEC-3](#sec-3) | Media | L'API ascolta su `0.0.0.0`, quindi anche sulle reti Wi-Fi di test. |
+| 16 | [STAB-4](#stab-4) ✅ | Media | All'avvio si puliscono solo le regole firewall: restano `tc`, dispositivi `ifb`, indirizzi, file e PID vecchi. |
+| 17 | [SEC-3](#sec-3) ✅ | Media | L'API ascolta su `0.0.0.0`, quindi anche sulle reti Wi-Fi di test. |
 | 18 | [SEC-2](#sec-2) | Media | `/debug` consegna a ogni client gli ID di reservation di tutti gli altri. |
 | 19 | [RACE-1](#race-1) ✅ | Media | Le richieste aspettano il lock del dispositivo senza limite e possono esaurire i 40 thread dell'API. |
 | 20 | [WD-6](#wd-6) ✅ | Media | Un cleanup bloccato viene ritentato ogni 5 secondi, per sempre, riempiendo il journal. |
-| 21 | [HAP-4](#hap-4) | Media | Un tentativo di retry tagliato dal budget di 15 s conta come guasto radio. |
-| 22 | [STAB-6](#stab-6) | Media | L'interfaccia upstream è risolta una volta e tenuta in cache per sempre. |
+| 21 | [HAP-4](#hap-4) ✅ | Media | Un tentativo di retry tagliato dal budget di 15 s conta come guasto radio. |
+| 22 | [STAB-6](#stab-6) ✅ | Media | L'interfaccia upstream è risolta una volta e tenuta in cache per sempre. |
 | 23 | [BUG-2](#bug-2) | Media | I controlli di salute di `/status` danno risposte sbagliate (`"UP" in`, `"MASQUERADE" in`). |
 | 24 | [BUG-4](#bug-4) | Media | La cache dei canali è riempita una volta e mai aggiornata, ed esiste in due copie. |
 | 25 | [NET-6](#net-6) ✅ | Media | Un lancio di dnsmasq andato in timeout non può più essere ripulito. |
@@ -1291,7 +1291,7 @@ battito descritti in STAB-1.
 ---
 
 <a id="stab-4"></a>
-### 16. STAB-4 - L'avvio pulisce solo le regole firewall
+### 16. STAB-4 - L'avvio pulisce solo le regole firewall ✅
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/api/__init__.py:96-106](wilab/api/__init__.py#L96-L106), [wilab/network/qos.py:122-127](wilab/network/qos.py#L122-L127), [wilab/network/dhcp.py:167-168](wilab/network/dhcp.py#L167-L168)
 
@@ -1337,7 +1337,7 @@ def reset_interface(interface: str) -> None:
 ---
 
 <a id="sec-3"></a>
-### 17. SEC-3 - L'API ascolta anche sulle reti di test
+### 17. SEC-3 - L'API ascolta anche sulle reti di test ✅
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [main.py:38](main.py#L38)
 
@@ -1524,7 +1524,7 @@ al primo fallimento della serie, `logger.warning` per i successivi.
 ---
 
 <a id="hap-4"></a>
-### 21. HAP-4 - Un tentativo tagliato dal budget conta come guasto radio
+### 21. HAP-4 - Un tentativo tagliato dal budget conta come guasto radio ✅
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:48-53](wilab/wifi/manager.py#L48-L53), [wilab/wifi/manager.py:338-355](wilab/wifi/manager.py#L338-L355)
 
@@ -1560,7 +1560,7 @@ documentazione dell'endpoint e in `docs/architecture.md`.
 ---
 
 <a id="stab-6"></a>
-### 22. STAB-6 - L'interfaccia upstream è risolta una volta sola
+### 22. STAB-6 - L'interfaccia upstream è risolta una volta sola ✅
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/network/nat.py:57-100](wilab/network/nat.py#L57-L100)
 
@@ -4317,13 +4317,13 @@ pagine è stata eseguita.
 | 13 | [WD-5](#wd-5) ✅ parz. | Un adattatore che sparisce non si può ripulire né rimuovere |
 | 14 | [WD-7](#wd-7) ✅ parz. | Il watchdog controlla due processi, non la rete |
 | 15 | [WD-9](#wd-9) | I thread di background non sono supervisionati |
-| 16 | [STAB-4](#stab-4) | L'avvio pulisce solo le regole firewall |
-| 17 | [SEC-3](#sec-3) | L'API ascolta anche sulle reti di test |
+| 16 | [STAB-4](#stab-4) ✅ | L'avvio pulisce solo le regole firewall |
+| 17 | [SEC-3](#sec-3) ✅ | L'API ascolta anche sulle reti di test |
 | 18 | [SEC-2](#sec-2) | `/debug` consegna a tutti gli ID di reservation |
 | 19 | [RACE-1](#race-1) ✅ | Le richieste aspettano il lock del dispositivo senza limite |
 | 20 | [WD-6](#wd-6) ✅ | Un cleanup bloccato viene ritentato ogni 5 secondi |
-| 21 | [HAP-4](#hap-4) | Un tentativo tagliato dal budget conta come guasto radio |
-| 22 | [STAB-6](#stab-6) | L'interfaccia upstream è risolta una volta sola |
+| 21 | [HAP-4](#hap-4) ✅ | Un tentativo tagliato dal budget conta come guasto radio |
+| 22 | [STAB-6](#stab-6) ✅ | L'interfaccia upstream è risolta una volta sola |
 | 23 | [BUG-2](#bug-2) | I controlli di salute di `/status` danno risposte sbagliate |
 | 24 | [BUG-4](#bug-4) | La cache dei canali non viene mai aggiornata ed esiste in due copie |
 | 25 | [NET-6](#net-6) ✅ | Un lancio di dnsmasq andato in timeout non si può più ripulire |
