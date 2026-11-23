@@ -24,7 +24,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [RACE-1](Fable-Notes.md#L1424) | ✅ | Limitare l'attesa del lock sul dispositivo e restituire un esito occupato. |
 | 1 | [WD-6](Fable-Notes.md#L1476) | ✅ | Applicare backoff ai tentativi ripetuti di cleanup falliti. |
 | 1 | [HAP-4](Fable-Notes.md#L1527) | ✅ | Distinguere l'esaurimento del budget da un guasto radio reale. |
-| 1 | [STAB-6](Fable-Notes.md#L1563) |  | Aggiornare l'interfaccia upstream quando cambiano le route. |
+| 1 | [STAB-6](Fable-Notes.md#L1563) | ✅ | Aggiornare l'interfaccia upstream quando cambiano le route. |
 | 1 | [NET-6](Fable-Notes.md#L1708) | ✅ | Ripulire i processi dnsmasq anche dopo un timeout di avvio. |
 | 1 | [WD-8](Fable-Notes.md#L1759) |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
 | 1 | [BUG-3](Fable-Notes.md#L1848) |  | Allineare la validazione offline a quella eseguita all'avvio. |

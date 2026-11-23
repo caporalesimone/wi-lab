@@ -883,8 +883,12 @@ connectivity, and every Wi-Fi adapter on it should belong to Wi-Lab. Keep any
 other Wi-Fi adapter out with `disable: true` (see
 [Antenna detection](#antenna-detection)).
 
-The upstream interface is resolved from the default route on first use and
-cached; set `upstream_interface` to force it.
+With `upstream_interface: auto` the upstream interface is resolved from the
+default route on every use (Fable STAB-6), so a route that moves (cable on
+another port, VPN, failover) is followed: a new network uses the new interface,
+and within 30 s the watchdog network check (WD-7) moves the NAT rules of running
+networks, logging "NAT upstream <old> -> <new>". A change of the default route
+is logged once as a warning. Set `upstream_interface` to force an interface.
 
 ## 11. Observability
 

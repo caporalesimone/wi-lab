@@ -20,7 +20,10 @@ class NatManager:
             upstream_interface: Interface to use for Internet (e.g., "eth0") or "auto" for autodiscovery
         """
         self.upstream_interface = upstream_interface
-        self._resolved_upstream: str | None = None
+        # Last interface found on the default route, for logging a change only.
+        self._last_upstream: str | None = None
+        # net_id -> upstream interface named by that network's NAT rules (STAB-6)
+        self._upstream_by_network: dict[str, str] = {}
         self._blocked_rules: dict[str, list[list[str]]] = {}
         self._nat_networks: set[str] = set()
         logger.info(f"NatManager initialized with upstream={upstream_interface}")
@@ -64,9 +67,8 @@ class NatManager:
         Raises:
             RuntimeError: If no default route found
         """
-        if self._resolved_upstream:
-            return self._resolved_upstream
-        
+        # Resolved on every use (STAB-6): the default route can move to another
+        # interface (cable moved, VPN, failover) while the service runs.
         try:
             # Get default route: ip route show default
             output = execute_command(["ip", "route", "show", "default"])
@@ -78,8 +80,10 @@ class NatManager:
                     dev_idx = parts.index('dev')
                     if dev_idx + 1 < len(parts):
                         interface = parts[dev_idx + 1]
-                        self._resolved_upstream = interface
-                        logger.info(f"Discovered upstream interface: {interface}")
+                        if interface != self._last_upstream:
+                            log = logger.info if self._last_upstream is None else logger.warning
+                            log("Upstream interface (default route): %s", interface)
+                            self._last_upstream = interface
                         return interface
             
             raise RuntimeError("No default route found")
@@ -213,6 +217,9 @@ class NatManager:
             if execute_sysctl("net.ipv4.ip_forward").strip() != "1":
                 repaired.append("ip_forward")
             upstream = self.get_upstream_interface()
+            previous = self._upstream_by_network.get(net_id)
+            if previous not in (None, upstream):
+                repaired.append(f"NAT upstream {previous} -> {upstream}")
             missing = [
                 rule[0] for table, rule in self._nat_rules(wifi_interface, net_id, subnet, upstream)
                 if not self._rule_exists(table, rule)
@@ -243,6 +250,12 @@ class NatManager:
             RuntimeError: If iptables commands fail
         """
         upstream = self.get_upstream_interface()
+        previous = self._upstream_by_network.get(net_id)
+        if previous not in (None, upstream):
+            # The default route moved: rules naming the old interface give no Internet.
+            logger.warning("Moving NAT of %s from %s to %s", net_id, previous, upstream)
+            self._remove_nat_rules(wifi_interface, net_id)
+        self._upstream_by_network[net_id] = upstream
         self._nat_networks.add(net_id)
         
         logger.info(f"Enabling NAT for {net_id}: {wifi_interface} -> {upstream}")
@@ -309,6 +322,7 @@ class NatManager:
         if net_id in self._nat_networks:
             self._remove_nat_rules(wifi_interface, net_id)
             self._nat_networks.discard(net_id)
+            self._upstream_by_network.pop(net_id, None)
         self.unblock_internet(net_id)
 
     def _remove_nat_rules(self, wifi_interface: str, net_id: str) -> None:
