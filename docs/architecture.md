@@ -396,7 +396,11 @@ daemon. Wi-Lab therefore knows immediately when it exits, and how:
   `hostapd_cli` keeps waiting for a reply from a hostapd that has already exited,
   which previously delayed such failures until the full timeout (about 10.3 s);
 - state `DISABLED`, or not `ENABLED` on the right interface within
-  the timeout → `HostapdRadioFailure` ("AP not ready").
+  the timeout → `HostapdRadioFailure` ("AP not ready"). After `DISABLED`
+  Wi-Lab waits up to 0.5 s (`DISABLED_SETTLE`) for hostapd to exit, then
+  classifies from the exit and the output: with a failed beacon setup it is
+  `HostapdInitFailure`, whether the probe saw `DISABLED` or the exit first
+  (Fable HAP-2).
 
 The AP is ready only when `hostapd_cli` on the instance's private control
 socket reports `state=ENABLED` and `bss[0]` equal to the interface. The SSID is

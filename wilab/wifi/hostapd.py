@@ -27,6 +27,8 @@ AP_READY_TIMEOUT = 10.0
 # so each status probe is short and the process is checked between probes.
 STATUS_PROBE_TIMEOUT = 1.0
 _TRANSIENT_INIT_EVENTS = frozenset({"beacon_failed", "interface_init_failed"})
+# Seconds to wait for hostapd to exit after it reports DISABLED (HAP-2).
+DISABLED_SETTLE = 0.5
 DFS_READY_TIMEOUT = 75.0
 _STARTUP_STATES = frozenset({
     "UNINITIALIZED", "DISABLED", "COUNTRY_UPDATE", "ACS", "HT_SCAN", "DFS",
@@ -337,7 +339,16 @@ class HostapdManager:
                 if state == "DISABLED":
                     break
                 time.sleep(min(0.2, max(0.0, deadline - time.monotonic())))
+            if state == "DISABLED":
+                # hostapd exits right after reporting DISABLED: give it a moment so
+                # the failure is classified from its exit and output, whichever of
+                # the two the probe happened to see first (HAP-2).
+                settle = time.monotonic() + DISABLED_SETTLE
+                while process.poll() is None and time.monotonic() < settle:
+                    time.sleep(0.05)
             check_process()
+            if state == "DISABLED" and _TRANSIENT_INIT_EVENTS <= set(process.output_events()):
+                raise HostapdInitFailure(f"hostapd disabled the AP on {interface}: beacon setup failed")
             raise HostapdRadioFailure(f"AP not ready on {interface} (hostapd state: {last_state})")
         except (HostapdError, CommandError) as exc:
             elapsed = time.monotonic() - started

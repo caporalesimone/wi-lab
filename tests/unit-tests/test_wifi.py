@@ -1004,6 +1004,61 @@ def test_exit_without_beacon_failure_stays_unclassified():
     assert type(error.value) is hostapd.HostapdError
 
 
+_INIT_EVENTS = (
+    "state_country_update", "beacon_failed", "beacon_failed", "interface_init_failed",
+    "state_disabled", "ap_disabled",
+)
+
+
+@pytest.mark.parametrize("seen_first", ["disabled_then_exit", "exit", "disabled_still_running"])
+def test_beacon_failure_has_one_class_whatever_the_probe_sees_first(monkeypatch, tmp_path, seen_first):
+    """HAP-2: DISABLED-before-exit and exit-before-DISABLED are the same failure."""
+    mgr = hostapd.HostapdManager()
+    (tmp_path / "wlan0").touch()
+    now = 0.0
+    probed = False
+
+    def poll():
+        if seen_first == "exit":
+            return 1
+        if seen_first == "disabled_then_exit" and probed and now >= 0.1:
+            return 1
+        return None
+
+    def probe(cmd, **kwargs):
+        nonlocal probed
+        probed = True
+        return "state=DISABLED\nbss[0]=wlan0\n"
+
+    def sleep(seconds):
+        nonlocal now
+        now += seconds
+
+    process = SimpleNamespace(poll=poll, output_events=lambda **kwargs: _INIT_EVENTS)
+    monkeypatch.setattr(hostapd, "time", SimpleNamespace(monotonic=lambda: now, sleep=sleep))
+    monkeypatch.setattr(hostapd, "execute_command", probe)
+    with pytest.raises(hostapd.HostapdInitFailure):
+        mgr._wait_until_ready(process, "wlan0", str(tmp_path), 10)
+    assert now <= hostapd.DISABLED_SETTLE + 0.1  # the settle wait is short
+
+
+def test_disabled_without_beacon_failure_stays_a_generic_radio_failure(monkeypatch, tmp_path):
+    mgr = hostapd.HostapdManager()
+    (tmp_path / "wlan0").touch()
+    now = 0.0
+
+    def sleep(seconds):
+        nonlocal now
+        now += seconds
+
+    process = SimpleNamespace(poll=lambda: None, output_events=lambda **kwargs: ("state_disabled",))
+    monkeypatch.setattr(hostapd, "time", SimpleNamespace(monotonic=lambda: now, sleep=sleep))
+    monkeypatch.setattr(hostapd, "execute_command", lambda cmd, **kw: "state=DISABLED\nbss[0]=wlan0\n")
+    with pytest.raises(hostapd.HostapdRadioFailure, match="AP not ready") as error:
+        mgr._wait_until_ready(process, "wlan0", str(tmp_path), 10)
+    assert type(error.value) is hostapd.HostapdRadioFailure
+
+
 class TestHostapdConfigGeneration:
     """Tests for hostapd configuration file generation."""
 
