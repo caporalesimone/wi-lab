@@ -21,6 +21,7 @@ from ..network.commands import (
     execute_iw,
 )
 from ..network.dhcp import DhcpServer, DhcpServerError
+from ..network.host_guard import HostGuard
 from ..network.isolation import IsolationManager
 from ..network.nat import NatManager
 from ..network.qos import QosManager
@@ -79,6 +80,7 @@ class NetworkManager:
         self.nat_manager = NatManager(upstream_interface=config.upstream_interface)
         self.hostapd_manager = HostapdManager()
         self.isolation_manager = IsolationManager()
+        self.host_guard = HostGuard()  # SEC-3: AP clients cannot reach the host
         self.captive_portals: dict[str, CaptivePortal] = {}
         self._channel_manager = ChannelManager(allow_dfs_channels=config.allow_dfs_channels)
         self.qos_manager: QosManager | None = None
@@ -160,7 +162,9 @@ class NetworkManager:
         """Stop all tracked resources before a device can be reassigned."""
         with self.device_lock(device_id):
             with self._firewall_lock:
-                firewall_pending = self.nat_manager.has_pending_network(device_id)
+                firewall_pending = (
+                    self.nat_manager.has_pending_network(device_id) or self.host_guard.has(device_id)
+                )
             if (
                 device_id in self.active
                 or device_id in self.hostapd_manager._instances
@@ -372,6 +376,15 @@ class NetworkManager:
                     with self._firewall_lock:
                         self.isolation_manager.add_network(subnet)
                     logger.info("Isolation rules applied for %s (%s)", device_id, subnet)
+                    # The host itself is off limits to AP clients (SEC-3); part of the
+                    # startup like NAT and isolation, so it is never silently missing.
+                    stage = "protect host"
+                    running_portal = self.captive_portals.get(device_id)
+                    with self._firewall_lock:
+                        self.host_guard.add(
+                            cfg_net.interface, device_id,
+                            running_portal.port if running_portal is not None else None,
+                        )
                     if retrying and (
                         time.monotonic() >= retry_deadline
                         or (expires_at_timestamp is not None and time.time() >= expires_at_timestamp)
@@ -524,6 +537,14 @@ class NetworkManager:
                 logger.error("Error stopping captive portal: %s", e)
                 errors.append(f"captive portal: {e}")
         
+        # Remove the host guard (SEC-3)
+        try:
+            with self._firewall_lock:
+                self.host_guard.remove(device_id)
+        except CommandError as e:
+            logger.error("Error removing host guard: %s", e)
+            errors.append(f"host guard: {e}")
+
         # Remove isolation rules
         if subnet:
             try:
@@ -835,8 +856,10 @@ class NetworkManager:
         with self._firewall_lock:
             repaired += self.nat_manager.verify(status.interface, device_id, status.subnet)
             repaired += self.isolation_manager.verify()
+            guard = self.host_guard.problems(device_id)
         portal = self.captive_portals.get(device_id)
-        broken = portal.problems() if portal is not None else []
+        # A missing host guard is re-created with the whole network (SEC-3).
+        broken = guard + (portal.problems() if portal is not None else [])
         return repaired + broken, bool(broken)
 
     def firewall_status(self) -> dict:

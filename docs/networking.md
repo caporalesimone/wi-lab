@@ -56,7 +56,28 @@ sudo iptables -t nat -S | grep wilab-cp
 sudo iptables -S | grep wilab-cp
 ```
 
-### 5. Host Network Manager Exclusion
+### 5. Host Guard Rules (iptables and ip6tables)
+
+**What:** Per-AP chain `wilab-in-<interface>` in the IPv4 and IPv6 `filter`
+tables, jumped to first in `INPUT` for packets arriving on the AP interface
+(comment `wilab-guard-<interface>`)  
+**When:** Every network, as a startup stage (a failure fails the create with
+"Failed to protect host")  
+**Impact:** AP clients cannot reach the Wi-Lab host: not the API, not SSH (also
+over IPv6 link-local), not any other host service. They can still use DHCP
+(UDP 67), ping the gateway and, with the captive portal, DNS (53) and the portal
+page. Forwarded traffic (Internet, isolation) is not affected (Fable SEC-3).  
+**Reversible:** Yes - removed when the network stops; stale chains are removed
+when Wi-Lab starts; the watchdog restores the network if the jump disappears
+
+```bash
+# Inspect the host guard
+sudo iptables -S INPUT | grep wilab-guard
+sudo iptables -S wilab-in-<interface>
+sudo ip6tables -S INPUT | grep wilab-guard
+```
+
+### 6. Host Network Manager Exclusion
 
 **What:** NetworkManager releases each Wi-Lab radio (`nmcli device set ... managed no`); a
 runtime systemd-networkd rule marks the radios unmanaged  
@@ -120,6 +141,9 @@ Each WiFi network operates on an isolated subnet:
 - Third network: `192.168.122.0/24`
 
 Clients on one network **cannot** communicate with clients on other networks by default (via iptables isolation rules).
+Clients on the same network can reach each other, as on any Wi-Fi network.
+Clients of every network cannot reach the Wi-Lab host itself (host guard,
+section 5), so they cannot hop through the host either.
 
 ### Specific Rule Application
 

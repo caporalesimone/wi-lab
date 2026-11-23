@@ -41,6 +41,7 @@ def _test_config_env(monkeypatch):
     # Wi-Lab machine that would hit the real service (STAB-4). Never run it from tests.
     import wilab.api as api_module
     monkeypatch.setattr(api_module, 'cleanup_runtime', lambda: None)
+    monkeypatch.setattr(api_module, 'remove_stale_guards', lambda: None)
     monkeypatch.setattr(dependencies, 'reset_interface', lambda interface: None)
     monkeypatch.setenv('CONFIG_PATH', TEST_CONFIG_PATH)
     monkeypatch.setattr(dependencies, '_config', None)
@@ -240,6 +241,8 @@ Band 2:
     monkeypatch.setattr(hostapd, "start_foreground", reject_real_hostapd)
     monkeypatch.setattr(dhcp, "execute_command", mock_execute_command)
     monkeypatch.setattr(nat, "execute_command", mock_execute_command)
+    from wilab.network import host_guard
+    monkeypatch.setattr(host_guard, "execute_command", mock_execute_command)  # ip6tables
     monkeypatch.setattr(subnet, "execute_command", lambda cmd, **kwargs: "[]")
 
     class _UnboundPortalServer:

@@ -42,7 +42,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [NET-7](Fable-Notes.md#L2737) |  | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
 | 2 | [SEC-1](Fable-Notes.md#L226) |  | Limitare la route frontend ai file contenuti nella directory frontend. |
 | 3 | [WD-9](Fable-Notes.md#L1217) |  | Supervisionare i loop in background e riavviare quelli terminati. |
-| 4 | [SEC-3](Fable-Notes.md#L1340) |  | Limitare gli indirizzi e le interfacce su cui ascolta l'API. |
+| 4 | [SEC-3](Fable-Notes.md#L1340) | ✅ | Limitare gli indirizzi e le interfacce su cui ascolta l'API. Fatto con una regola `INPUT` per rete (IPv4 e IPv6): i client delle reti Wi-Lab non raggiungono l'host, né API né SSH; restano DHCP, ping e, con il captive portal, DNS e pagina del portale. |
 | 5 | [SEC-2](Fable-Notes.md#L1382) |  | Proteggere o oscurare gli ID reservation nell'output debug. **Decisione:** `/debug` per ora resta; in futuro verrà tolto e sostituito da un sistema diverso. |
 | 6 | [BUG-2](Fable-Notes.md#L1609) |  | Correggere i controlli di salute di `/status` usando output strutturato. |
 | 7 | [BUG-4](Fable-Notes.md#L1658) |  | Aggiornare e unificare la cache dei canali. |
@@ -200,4 +200,4 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 | WD-9 | `config.yaml` malformato per 1 minuto, poi ripristinato. | La discovery continua dopo il ripristino. |  |
 | NET-2, WD-6, NET-10 | Far fallire l'inserimento NAT o il cleanup; occupare la porta 80. | NET-2: mai `200` con NAT assente. WD-6: tentativi di cleanup in backoff. NET-10: errore chiaro alla create. | ✅ NET-2 (percorso positivo): [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
 | NET-1, PERF-1…5, BUG-1 | Ispezioni di root: `iptables -V`, `strace`/`perf` sui processi del servizio, `hostapd.conf` nella directory privata. | Come descritto in Fable-Notes. | ✅ NET-1: [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
-| Telefono | Connessione reale: SSID `Caffè ☕` e `my"net\` visibili; rete nascosta non ASCII; password di 8 e 63 caratteri; `wpa2-wpa3` (HAP-10); `nslookup` (NET-8); `/docs` dal gateway rifiutato (SEC-3); isolamento tra reti (NET-3). | Connessione e DHCP funzionanti; per SEC-3 connessione rifiutata. |  |
+| Telefono | Connessione reale: SSID `Caffè ☕` e `my"net\` visibili; rete nascosta non ASCII; password di 8 e 63 caratteri; `wpa2-wpa3` (HAP-10); `nslookup` (NET-8); `/docs` dal gateway rifiutato (SEC-3), anche `ssh` al gateway; isolamento tra reti (NET-3). | Connessione e DHCP funzionanti; per SEC-3 connessione rifiutata. | ✅ SEC-3 (solo regole): [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |

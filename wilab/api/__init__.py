@@ -13,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import heartbeat
 from ..network.captive import remove_stale_captive_rules
+from ..network.host_guard import remove_stale_guards
 from ..reservation import DeviceBusyError, ReservationCleanupError
 from ..runtime_cleanup import cleanup_runtime
 from ..version import __version__
@@ -132,6 +133,7 @@ async def lifespan(app: FastAPI):
     manager = get_manager(cfg)
     manager.nat_manager.remove_stale_rules()
     remove_stale_captive_rules()
+    remove_stale_guards()
     # Processes, runtime files and QoS devices of a previous unclean run (STAB-4).
     cleanup_runtime()
 

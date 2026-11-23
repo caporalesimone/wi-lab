@@ -20,6 +20,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- Clients of a Wi-Lab network can no longer reach the Wi-Lab host (API, SSH, other services, also over IPv6): only DHCP, ping and, with the captive portal, DNS and the portal page are allowed (Fable SEC-3).
 - After an unclean shutdown, startup stops orphan hostapd/dnsmasq, removes stale runtime files (including a dnsmasq PID file that failed every start) and Wi-Lab's QoS devices, and resets each radio (no address, no leftover netem/HTB) when discovery adds it (Fable STAB-4).
 - A dnsmasq launch that timed out before writing its PID file no longer blocks the cleanup forever: Wi-Lab finds the daemon by its configuration file, or sees none was started (Fable NET-6).
 - A device cleanup that keeps failing is retried in the background after 5, 15, 60 and then every 300 s instead of every 5 s, with one traceback per failure series; a client's release still tries immediately (Fable WD-6).

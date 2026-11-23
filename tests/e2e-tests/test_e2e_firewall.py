@@ -93,3 +93,29 @@ def test_success_means_the_firewall_is_in_place(wilab: WiLab, server: Server, in
     assert wilab.delete_network(antenna) == 200
     leftover = server.iptables_rules("nat")
     assert f"wilab-nat-{antenna.interface}" not in leftover
+
+
+# --------------------------------------------------------------------------- SEC-3
+
+def _input_rules(rules: str) -> list[str]:
+    return [line for line in rules.splitlines() if line.startswith("-A INPUT ")]
+
+
+@pytest.mark.parametrize("captive_portal", [False, True])
+def test_host_is_guarded_from_ap_clients(wilab: WiLab, server: Server, captive_portal: bool) -> None:
+    """SEC-3: AP clients reach only DHCP, ICMP and, with a portal, DNS and the portal page."""
+    antenna = wilab.reserve()
+    assert wilab.create(antenna, captive_portal=captive_portal).status_code == 200
+    chain = f"wilab-in-{antenna.interface}"
+    for rules in (server.iptables_rules(), server.ip6tables_rules()):
+        first = _input_rules(rules)[0]
+        assert f"-i {antenna.interface}" in first and first.endswith(f"-j {chain}"), first
+    v4 = [line for line in server.iptables_rules().splitlines() if line.startswith(f"-A {chain} ")]
+    accepted = " ".join(line for line in v4 if line.endswith("-j ACCEPT"))
+    assert "--dport 67" in accepted and "-p icmp" in accepted
+    assert ("--dport 53" in accepted) is captive_portal
+    assert "8080" not in accepted and "--dport 22" not in accepted
+    assert v4[-1] == f"-A {chain} -j REJECT --reject-with icmp-port-unreachable"
+
+    assert wilab.delete_network(antenna) == 200
+    assert chain not in server.iptables_rules() and chain not in server.ip6tables_rules()

@@ -42,6 +42,9 @@ class Server:
     def iptables_rules(self, table: str = "filter") -> str:
         return self.sudo_output(["iptables", "-w", "5", "-t", table, "-S"])
 
+    def ip6tables_rules(self, table: str = "filter") -> str:
+        return self.sudo_output(["ip6tables", "-w", "5", "-t", table, "-S"])
+
     @staticmethod
     def interface_present(interface: str) -> bool:
         return Path("/sys/class/net", interface).exists()
