@@ -26,17 +26,14 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [HAP-4](Fable-Notes.md#L1527) | ✅ | Distinguere l'esaurimento del budget da un guasto radio reale. |
 | 1 | [STAB-6](Fable-Notes.md#L1563) | ✅ | Aggiornare l'interfaccia upstream quando cambiano le route. |
 | 1 | [NET-6](Fable-Notes.md#L1708) | ✅ | Ripulire i processi dnsmasq anche dopo un timeout di avvio. |
-| 1 | [WD-8](Fable-Notes.md#L1759) |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
 | 1 | [BUG-3](Fable-Notes.md#L1848) |  | Allineare la validazione offline a quella eseguita all'avvio. |
 | 1 | [NET-3](Fable-Notes.md#L1949) |  | Applicare l'isolamento anche a subnet diverse da `192.168.*`. |
 | 1 | [BUG-5](Fable-Notes.md#L2243) |  | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
-| 1 | [BUG-9](Fable-Notes.md#L2298) |  | Allineare la validazione dei profili QoS custom al modello runtime. |
 | 1 | [STAB-9](Fable-Notes.md#L2371) |  | Ripristinare le impostazioni unmanaged se NetworkManager si riavvia. |
 | 1 | [STAB-8](Fable-Notes.md#L2405) |  | Limitare il lavoro di arresto entro il timeout di systemd. |
 | 1 | [WD-10](Fable-Notes.md#L2438) |  | Non considerare guasto un access point solo per probe lenti. |
 | 1 | [HAP-9](Fable-Notes.md#L2471) |  | Gestire attese DFS/CAC e timeout di avvio dei canali. |
 | 1 | [HAP-10](Fable-Notes.md#L2498) |  | Correggere chiavi hostapd duplicate e mappatura della cifratura. |
-| 1 | [NET-13](Fable-Notes.md#L2596) |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
 | 1 | [BUG-6](Fable-Notes.md#L2687) |  | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
 | 1 | [NET-9](Fable-Notes.md#L2719) |  | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
 | 1 | [NET-7](Fable-Notes.md#L2737) |  | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
@@ -50,19 +47,16 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 9 | [NET-5](Fable-Notes.md#L1900) |  | Non registrare come errori le verifiche negative attese. |
 | 10 | [STAB-2](Fable-Notes.md#L1994) |  | Spostare i file runtime in una directory privata e gestita. |
 | 11 | [STAB-7](Fable-Notes.md#L2047) |  | Aggiungere un lockfile con versioni esatte delle dipendenze. |
-| 12 | [NET-11](Fable-Notes.md#L2073) |  | Gestire o rifiutare esplicitamente valori QoS upload/download differenti. |
 | 13 | [HAP-8](Fable-Notes.md#L2112) |  | Conservare un estratto sicuro dell'output hostapd per la diagnosi. |
 | 14 | [HAP-5](Fable-Notes.md#L2152) |  | Verificare avvii radio concorrenti e serializzarli se necessario. |
 | 15 | [HAP-6](Fable-Notes.md#L2202) |  | Verificare se ritardare la modifica della potenza TX migliora l'avvio. |
 | 16 | [NET-8](Fable-Notes.md#L2530) |  | Sostituire il DNS predefinito specifico del laboratorio. |
-| 17 | [NET-12](Fable-Notes.md#L2556) |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
 | 18 | [BUG-7](Fable-Notes.md#L2631) |  | Rendere coerente lo stato della potenza TX in caso di mismatch. |
 | 19 | [BUG-8](Fable-Notes.md#L2664) |  | Usare un confronto constant-time per il token. |
 | 20 | [NET-10](Fable-Notes.md#L2771) |  | Gestire conflitti sulla porta 80, richieste malformate e regole firewall. |
 | 21 | [NET-4](Fable-Notes.md#L2809) | ✅ | Rimuovere il messaggio di log fuorviante sull'isolamento. |
 | 22 | [HAP-7](Fable-Notes.md#L2832) |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
 | 23 | [RACE-2](Fable-Notes.md#L2852) | ✅ | Costruire `/status` da uno snapshot coerente dello stato condiviso. |
-| 24 | [RACE-3](Fable-Notes.md#L2873) |  | Sincronizzare le operazioni QoS per interfaccia. |
 | 25 | [PERF-3](Fable-Notes.md#L2898) |  | Memorizzare brevemente i risultati dei controlli di salute. |
 | 26 | [PERF-1](Fable-Notes.md#L2932) | ✅ parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. Fatti i tagli a basso rischio (validazioni `iw`, `dnsmasq --version`, `nmcli --version`). Non fatto di proposito `iptables-restore` in blocco: cambierebbe come si installano e tolgono tutte le regole, appena consolidato con NET-2, SEC-3 e WD-7. |
 | 27 | [PERF-2](Fable-Notes.md#L2968) |  | Separare i controlli di stato attivo dalle query dettagliate. |
@@ -92,7 +86,15 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 51 | [ARCH-8](Fable-Notes.md#L3717) |  | Sostituire l'accesso agli attributi privati di altre classi con metodi pubblici. |
 | 52 | [ARCH-12](Fable-Notes.md#L3743) | ✅ | Aggiungere `wilab/wifi/__init__.py`. |
 | 53 | [ARCH-11](Fable-Notes.md#L3761) |  | Definire la strategia di integrazione prima di applicare patch specifiche del branch. |
+| 54 | [BUG-9](Fable-Notes.md#L2298) |  | Allineare la validazione dei profili QoS custom al modello runtime. |
+| 55 | [NET-13](Fable-Notes.md#L2596) |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
+| 56 | [RACE-3](Fable-Notes.md#L2873) |  | Sincronizzare le operazioni QoS per interfaccia. |
+| 57 | [NET-12](Fable-Notes.md#L2556) |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
+| 58 | [NET-11](Fable-Notes.md#L2073) |  | Gestire o rifiutare esplicitamente valori QoS upload/download differenti. |
+| 59 | [WD-8](Fable-Notes.md#L1759) |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
 | Ultima | RELEASE-API |  | **Da fare solo alla fine, quando si dichiara completata la release.** Revisione con Fable di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a quanto documentato in Swagger (`/docs`) e ReDoc (`/redoc`), oltre che in `docs/ap-creation-procedure.md` e nel capitolo API della 4.0.0 in `CHANGELOG.md`. Correggere ogni differenza prima del rilascio. |
+
+Le voci 54–59 riguardano il **QoS**, ancora sperimentale e non testato: sono in fondo di proposito e si fanno dopo tutte le altre. BUG-9 e NET-13 toccano anche l'avvio del servizio e lo stop della rete, ma solo quando esiste un profilo QoS personalizzato o attivo.
 
 La voce **RELEASE-API** resta l'ultima attività della release: si esegue dopo tutte le altre, sullo stato finale del codice.
 
