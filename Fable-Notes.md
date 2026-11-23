@@ -1390,6 +1390,8 @@ la rete di un altro. L'ID è anche corto: 4 byte, 32 bit.
 **Come si riproduce.** Client A crea una reservation. Client B chiama `GET /api/v1/debug`, legge
 `interfaces.managed[].reservation_id` e chiama `DELETE /api/v1/device-reservation/<id>`: risponde `200`.
 
+> **Decisione (2026-11-23):** `/debug` per ora resta com'è; in futuro verrà tolto e sostituito da un sistema diverso. La correzione qui sotto resta come riferimento.
+
 **Come correggerlo.** Togliere l'ID e aumentare la lunghezza.
 
 ```diff
