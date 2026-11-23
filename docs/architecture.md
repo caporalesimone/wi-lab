@@ -598,11 +598,17 @@ flowchart TD
     DH -->|"no, first time"| RD["restoring_dhcp: restart dnsmasq only"]
     DH -->|"no, already restarted"| DF["runtime_state = dhcp_failed<br/>AP stays up"]
     RA{"3 AP restores on this antenna<br/>in the last hour?"}
-    RA -->|no| RS["restoring_ap: teardown, start again with the<br/>original settings, no internal retry"]
+    RA -->|no| RS["restoring_ap: teardown, start again with the<br/>original settings and the internal retry"]
     RA -->|yes| Q["quarantine, invalidate reservation"]
     RS -->|success| T
     RS -->|"radio failure or unsafe cleanup"| Q
-    RS -->|"other failure"| STOP["AP stopped, reservation kept"]
+    RS -->|"other failure"| RF["runtime_state = restore_failed<br/>reservation kept"]
+    RF --> RT{"retry due?<br/>15, 30, 60, 120 s, then 300 s"}
+    RT -->|"no, or client created / deleted the network"| T
+    RT -->|yes| RS2["teardown, start again"]
+    RS2 -->|success| T
+    RS2 -->|"other failure"| RF
+    RS2 -->|"radio failure or unsafe cleanup"| Q
     RD -->|"cleanup unsafe"| Q2["teardown, quarantine without USB reset"]
 ```
 
@@ -613,6 +619,15 @@ flowchart TD
   deleting and recreating the network does not reset it. A long-lived
   reservation can therefore survive one outage a day indefinitely, while an AP
   that keeps dying is taken out of the pool.
+- **Failed restore (WD-2):** a restart that fails for a non-radio reason is
+  not silent. `runtime_state` becomes `restore_failed` (so `/status` is
+  `degraded`) and the watchdog retries with backoff (`RETRY_BACKOFF`: 15, 30,
+  60, 120 s, then every 300 s) while the reservation is valid. Retries stop
+  when a retry succeeds, the reservation is released, expires or is
+  quarantined, or the client creates a network (`POST`) or gives it up
+  (`DELETE .../network` returns `200` and keeps the reservation). A radio
+  failure or unsafe cleanup during a retry quarantines as usual. Retries do
+  not count against the restore budget.
 - The restart keeps the reservation and its expiry. Clients must reconnect; QoS
   is cleared by the teardown and must be reapplied.
 - Release or expiry cancels a pending restart. If a restart already ran, its

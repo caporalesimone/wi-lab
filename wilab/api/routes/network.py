@@ -221,6 +221,8 @@ def start_network(
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
+        # A new network replaces one the watchdog failed to restore (WD-2).
+        manager.watchdog.forget(device_id)
         try:
             manager.start_network(
                 device_id, req, expires_at_timestamp=reservation.expires_at,
@@ -277,6 +279,9 @@ def stop_network(
     Stop an active WiFi network and clean up all resources.
 
     Requires a valid reservation token.
+    With `runtime_state: restore_failed` (the watchdog could not restart the AP
+    and keeps retrying), this stops the retries and returns 200; the
+    reservation stays valid.
 
     Returns:
         dict: Confirmation with stopped device_id.
@@ -287,6 +292,9 @@ def stop_network(
         if not st:
             raise HTTPException(status_code=404, detail="Unknown device_id")
         if not st.active:
+            if manager.watchdog.forget(device_id):
+                # The client gives up a network the watchdog failed to restore (WD-2).
+                return {"detail": f"Network {device_id} stopped successfully"}
             raise HTTPException(status_code=409, detail=f"Network {device_id} is already inactive")
 
         manager.stop_network(device_id)
@@ -312,6 +320,13 @@ def stop_network(
                     "interface": "wlan0", "active": True, "runtime_state": "dhcp_failed",
                     "expires_in": 51,
                 }},
+                "restore_failed": {
+                    "summary": "AP restart failed; the watchdog retries with backoff",
+                    "value": {
+                        "interface": "wlan0", "active": False, "runtime_state": "restore_failed",
+                        "expires_in": 3300,
+                    },
+                },
                 "captive_portal": {
                     "summary": "Active network with a captive portal",
                     "value": {

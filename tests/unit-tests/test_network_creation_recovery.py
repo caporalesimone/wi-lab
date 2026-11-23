@@ -270,7 +270,7 @@ def test_watchdog_restores_original_network_or_cleans_up_on_cancellation(monkeyp
     def start(target, request, expires_at, *, allow_internal_retry):
         assert target == device
         assert request.ssid == "original" and request.internet_enabled is True
-        assert expires_at == deadline and not allow_internal_retry
+        assert expires_at == deadline and allow_internal_retry  # WD-2: same retries as a create
         if cancel == "release":
             reservation.release_requests += 1
         if cancel == "expiry":

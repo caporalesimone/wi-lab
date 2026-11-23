@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import subprocess
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -65,6 +67,33 @@ class Server:
 
     def kill(self, pid: int) -> None:
         self.sudo(["kill", "-9", str(pid)])
+
+    @contextmanager
+    def hold_dhcp_port(self, interface: str) -> Iterator[None]:
+        """Hold UDP port 67 on `interface` so dnsmasq cannot start there (a non-radio failure)."""
+        script = (
+            "import socket, sys\n"
+            "s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+            "s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, sys.argv[1].encode())\n"
+            "s.bind(('0.0.0.0', 67))\n"
+            "print('ready', flush=True)\n"
+            "sys.stdin.read()\n"
+        )
+        password = self.sudo_file.read_bytes().splitlines()[0]
+        holder = subprocess.Popen(
+            ["sudo", "-k", "-S", "-p", "", "python3", "-c", script, interface],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+        assert holder.stdin is not None and holder.stdout is not None
+        holder.stdin.write(password + b"\n")
+        holder.stdin.flush()
+        try:
+            if holder.stdout.readline().strip() != b"ready":
+                raise RuntimeError(f"Could not hold UDP port 67 on {interface}")
+            yield
+        finally:
+            holder.stdin.close()  # the holder exits at end of input
+            holder.wait(timeout=10)
 
     @staticmethod
     def journal(since: float) -> str:

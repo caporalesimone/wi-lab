@@ -202,13 +202,14 @@ A success resets the counter. Further rules:
   | `restoring_ap` | The AP is being restarted. Clients will need to reconnect. | Wait. Do not send a create. |
   | `restoring_dhcp` | Only DHCP is being restarted. The AP stays up. | Wait. |
   | `dhcp_failed` | DHCP could not restart. The AP is up but new clients cannot get an address. | Release and reserve again if new clients are needed. |
+  | `restore_failed` | The AP restart failed for a non-radio reason. The AP is down (`active: false`); the watchdog retries after 15 s, 30 s, 60 s, 120 s, then every 5 minutes while the reservation is valid. | Wait for `runtime_state` to clear, or `DELETE .../network` to stop the retries (the reservation stays valid), or create a new network. |
 
 - An AP restart clears traffic shaping and QoS profiles: reapply them after a
   `restoring_ap` phase.
-- If the restart fails because of the radio, or the AP fails again later, the
-  reservation is invalidated: `GET .../network` returns `404`. Reserve again.
-  If it fails for another reason, the reservation stays valid but the AP is
-  stopped (`active: false`).
+- If the restart fails because of the radio, or the AP fails more than 3 times
+  in an hour, the reservation is invalidated: `GET .../network` returns `404`.
+  Reserve again. If it fails for another reason, the reservation stays valid
+  and `runtime_state` is `restore_failed` until a retry succeeds.
 - `GET /api/v1/status` reports `recovery_state` (`recovering` or `unavailable`)
   for quarantined antennas. They can show `reserved: false` but are **not**
   allocatable.
@@ -283,6 +284,7 @@ Find the cause in `networks[]` and `checks`:
 | `recovery_state` | `unavailable` | Antenna quarantined; no USB reset is running. Wi-Lab re-probes it periodically (after 30 s, backing off to every 15 min). | Do not count it as available. It may return by itself; report it to the operator if it persists. |
 | `runtime_state` | `restoring_ap` / `restoring_dhcp` | The owner's AP is being repaired (see [2.6](#26-after-the-ap-is-running)). | Owner: wait. Others: nothing to do. |
 | `runtime_state` | `dhcp_failed` | AP up, new clients get no address. | Owner: release and reserve again if needed. |
+| `runtime_state` | `restore_failed` | AP down after a failed restart; the watchdog retries with backoff. | Owner: wait, or `DELETE .../network` to stop the retries. |
 | `checks.*` | `running`/`configured`/`reachable` false | A shared component failed while APs are active. | Report it; Internet access may not work. |
 
 - `reserved: false` does **not** mean the antenna can be reserved: an entry

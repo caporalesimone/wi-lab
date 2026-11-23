@@ -1,12 +1,14 @@
-"""AP watchdog: restore budget (WD-1)."""
+"""AP watchdog: restore budget (WD-1) and retries after a failed restore (WD-2)."""
 
 from unittest.mock import Mock
 
 import pytest
+from fastapi.testclient import TestClient
 
-from wilab.api import dependencies
+from wilab.api import create_app, dependencies
 from wilab.models import NetworkStatus
 from wilab.wifi import watchdog as watchdog_module
+from wilab.wifi.manager import StartupFailure
 
 
 def _setup(monkeypatch, times, recreate_at=None):
@@ -76,3 +78,124 @@ def test_exhausted_budget_quarantines_instead_of_restarting(monkeypatch, exhaust
     manager.watchdog._restore_ap(reservations, reservation, status, exhausted)
     assert start.called is not exhausted
     assert quarantine.called is exhausted
+
+
+# --------------------------------------------------------------------------- WD-2
+
+def _restorable(device):
+    return NetworkStatus(
+        interface=device, active=True, ssid="net", channel=1, band="2.4ghz",
+        encryption="open", tx_power_level=4,
+    )
+
+
+def _failed_restore(monkeypatch, now=1000.0):
+    """A restore that fails for a non-radio reason; returns the pieces of the setup."""
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    reservations = dependencies.get_reservation_manager(config)
+    reservation = reservations.create(0)
+    device = reservation.device_id
+    monkeypatch.setattr(manager, "release_device", Mock())
+    start = Mock(side_effect=StartupFailure("gateway setup failed"))
+    monkeypatch.setattr(manager, "start_network", start)
+    quarantine = Mock()
+    monkeypatch.setattr(manager, "quarantine_radio", quarantine)
+    monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: now)
+    manager.watchdog._restore_ap(reservations, reservation, _restorable(device), False)
+    return config, manager, reservations, reservation, start, quarantine
+
+
+def test_failed_restore_is_reported_and_scheduled(monkeypatch):
+    _, manager, _, reservation, start, quarantine = _failed_restore(monkeypatch)
+    assert start.call_args.kwargs["allow_internal_retry"] is True
+    quarantine.assert_not_called()
+    assert manager.watchdog.state(reservation) == "restore_failed"
+    pending = manager.watchdog._pending[reservation.device_id]
+    assert (pending.failures, pending.next_try) == (1, 1000.0 + watchdog_module.RETRY_BACKOFF[0])
+
+
+def _run_ticks(monkeypatch, manager, reservations, device, times):
+    """One watch-loop tick at each time in `times`; the clock stays put within a tick."""
+    pending_times = list(times)
+    now = [pending_times[0]]
+
+    def wait(_seconds):
+        if not pending_times:
+            return True
+        now[0] = pending_times.pop(0)
+        return False
+
+    monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(manager.watchdog.stopping, "wait", wait)
+    manager.watchdog._watch(reservations, device)
+
+
+def test_watchdog_retries_with_backoff_until_the_ap_is_back(monkeypatch):
+    _, manager, reservations, reservation, start, _ = _failed_restore(monkeypatch)
+    device = reservation.device_id
+    calls = []
+
+    def start_again(target, request, expires_at, *, allow_internal_retry):
+        calls.append(allow_internal_retry)
+        if len(calls) == 1:
+            raise StartupFailure("gateway setup failed again")
+        manager.active[device] = _restorable(device)
+
+    start.side_effect = start_again
+    monkeypatch.setattr(manager.hostapd_manager, "is_running", Mock(return_value=True))
+    monkeypatch.setattr(manager.hostapd_manager, "is_enabled", Mock(return_value=True))
+    monkeypatch.setattr(manager.dhcp_server, "is_running", Mock(return_value=True))
+    # 1010: not due; 1015: retry 1 fails (next at 1015 + 30); 1040: not due;
+    # 1045: retry 2 succeeds; 1050: normal supervision of the restored AP.
+    _run_ticks(monkeypatch, manager, reservations, device, [1010.0, 1015.0, 1040.0, 1045.0, 1050.0])
+    assert calls == [True, True]
+    assert device not in manager.watchdog._pending
+    assert manager.watchdog.state(reservation) is None
+    assert reservations.get(reservation.reservation_id) is reservation
+
+
+def test_radio_failure_on_retry_quarantines(monkeypatch):
+    _, manager, reservations, reservation, start, quarantine = _failed_restore(monkeypatch)
+    start.side_effect = StartupFailure("beacon setup failed", radio=True)
+    _run_ticks(monkeypatch, manager, reservations, reservation.device_id, [1015.0])
+    quarantine.assert_called_once()
+    assert quarantine.call_args.kwargs["radio_fault"] is True
+    assert reservation.device_id not in manager.watchdog._pending
+
+
+def test_release_stops_the_retries(monkeypatch):
+    _, manager, reservations, reservation, start, _ = _failed_restore(monkeypatch)
+    reservation.release_requests += 1
+    _run_ticks(monkeypatch, manager, reservations, reservation.device_id, [1015.0])
+    assert start.call_count == 1  # only the original restore
+    assert reservation.device_id not in manager.watchdog._pending
+    assert manager.watchdog.state(reservation) is None
+
+
+def test_api_reports_restore_failed_and_delete_stops_retries(monkeypatch):
+    config, manager, _, reservation, _, _ = _failed_restore(monkeypatch)
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    path = f"/api/v1/interface/{reservation.reservation_id}/network"
+    with TestClient(create_app()) as client:
+        network = client.get(path, headers=headers).json()
+        assert (network["active"], network["runtime_state"]) == (False, "restore_failed")
+        system = client.get("/api/v1/status", headers=headers).json()
+        assert system["status"] == "degraded"
+        assert system["networks"][0]["runtime_state"] == "restore_failed"
+        assert client.delete(path, headers=headers).status_code == 200
+        assert manager.watchdog.state(reservation) is None
+        assert client.delete(path, headers=headers).status_code == 409
+        assert client.get(f"/api/v1/device-reservation/{reservation.reservation_id}", headers=headers).status_code == 200
+
+
+def test_new_create_replaces_the_pending_restore(monkeypatch):
+    config, manager, _, reservation, start, _ = _failed_restore(monkeypatch)
+    start.side_effect = None
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    path = f"/api/v1/interface/{reservation.reservation_id}/network"
+    body = {"ssid": "new", "channel": 1, "band": "2.4ghz", "encryption": "open", "tx_power_level": 4}
+    with TestClient(create_app()) as client:
+        assert client.post(path, headers=headers, json=body).status_code == 200
+    assert reservation.device_id not in manager.watchdog._pending
+    assert manager.watchdog.state(reservation) is None

@@ -78,6 +78,7 @@ affected adapter: fewer adapters may be allocatable than are listed.
 | `recovery_state` | `unavailable` | Adapter quarantined, no USB reset running. Wi-Lab re-probes it periodically (30 s, backing off to 15 min) and returns it to the pool when it works. Not allocatable meanwhile; report it if it persists. |
 | `runtime_state` | `restoring_ap`, `restoring_dhcp` | The owner's network is being repaired. Wait; do not send a create. |
 | `runtime_state` | `dhcp_failed` | AP up, new clients get no address. Release and reserve again if needed. |
+| `runtime_state` | `restore_failed` | AP down: the restart failed and the watchdog retries (15 s, 30 s, 60 s, 120 s, then every 5 min). Wait, or `DELETE .../network` to stop the retries, or create a new network. |
 
 `GET /api/v1/status` distinguishes quarantined adapters (`recovery_state`)
 from reserved networks being repaired (`runtime_state`). `reserved: false`

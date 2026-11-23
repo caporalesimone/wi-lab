@@ -59,6 +59,8 @@ The sudo password is used with `sudo -k -S` and is never printed. Only `tee` on 
 | `test_e2e_device_loss.py` (usb, active AP) | Antenna gone for 30 s with a network running: the network is restored, or the reservation is invalidated and the antenna recovers; never permanently `unavailable`. | WD-5 | unplug, journal |
 | `test_e2e_device_loss.py` (usb, slow) | Antenna gone for more than 11 minutes: USB recovery exhausts and the antenna becomes `unavailable`; after the replug the re-probe makes it free again without a restart. | WD-4 | unplug, journal |
 | `test_e2e_watchdog.py` | hostapd killed twice with `kill -9`: each time the watchdog restores the AP (`active`, no `runtime_state`), with no quarantine and the reservation kept. | WD-1 | `kill`, `iw`, journal |
+| `test_e2e_watchdog.py` | hostapd killed while UDP port 67 is held on the interface, so the restore fails on dnsmasq: `runtime_state: restore_failed`, `active: false`, service `degraded`, no quarantine; after the port is freed a retry restores the AP. | WD-2 | `kill`, port 67 holder, journal |
+| `test_e2e_watchdog.py` | Same failure, then `DELETE .../network`: `200`, retries stop, the reservation stays valid and a new create works. | WD-2 | `kill`, port 67 holder |
 
 The tests pick the first antenna listed in `/status` and find its USB port from sysfs, so no
 port is hard-coded.

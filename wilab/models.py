@@ -105,7 +105,10 @@ class NetworkStatus(BaseModel):
     interface: str
     active: bool
     runtime_state: str | None = Field(
-        None, description="Watchdog state: restoring_ap, restoring_dhcp, or dhcp_failed.",
+        None, description=(
+            "Watchdog state: restoring_ap, restoring_dhcp, dhcp_failed, or restore_failed "
+            "(AP restart failed; the watchdog retries with backoff while the reservation is valid)."
+        ),
     )
     ssid: str | None = None
     channel: int | None = None

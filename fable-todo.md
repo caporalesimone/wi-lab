@@ -8,7 +8,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | Prio | ID | Done | Breve descrizione |
 |---:|---|:---:|---|
 | 1 | [BUG-1](Fable-Notes.md#L309) | ✅ | Validare gli input della richiesta di creazione e rifiutare SSID non sicuri. |
-| 1 | [WD-2](Fable-Notes.md#L424) |  | Segnalare e ritentare il ripristino quando il watchdog fallisce. |
+| 1 | [WD-2](Fable-Notes.md#L424) | ✅ | Segnalare e ritentare il ripristino quando il watchdog fallisce. |
 | 1 | [WD-1](Fable-Notes.md#L504) | ✅ | Consentire più tentativi di ripristino dell'access point. |
 | 1 | [WD-4](Fable-Notes.md#L559) | ✅ | Rendere la quarantena recuperabile e completare il cleanup. |
 | 1 | [NET-1](Fable-Notes.md#L620) |  | Attendere il lock di iptables durante le operazioni firewall. |
