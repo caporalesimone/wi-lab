@@ -1,12 +1,22 @@
 import { HttpErrorResponse } from '@angular/common/http';
+import { MonoTypeOperatorFunction, throwError, timer } from 'rxjs';
+import { retry } from 'rxjs/operators';
 import { ApiErrorDetail } from '../models/network.models';
 
 export enum RecoveryCode {
   RetryLater = 1001,
   DeviceRecovering = 1002,
   DeviceUnavailable = 1003,
-  NoDeviceAvailable = 1005
+  NoDeviceAvailable = 1005,
+  DeviceBusy = 1006,
+  NetworkNotActive = 1007
 }
+
+/** Readable explanation of domain codes that the raw body does not make obvious. */
+const CODE_HINTS: Partial<Record<number, string>> = {
+  [RecoveryCode.DeviceBusy]: 'The antenna is busy with another operation. Try again in a few seconds.',
+  [RecoveryCode.NetworkNotActive]: 'The network is not running on this antenna. Start WiFi first.',
+};
 
 export interface ApiError extends Error {
   originalError?: HttpErrorResponse;
@@ -17,6 +27,8 @@ export function apiErrorToast(title: string, error: ApiError | HttpErrorResponse
   const response = error instanceof HttpErrorResponse ? error : error.originalError;
   if (!response?.status) return `${title}: ${error.message}`;
 
+  const hint = CODE_HINTS[response.error?.detail?.code];
+  if (hint) return `${title}\n${hint}`;
   const body: unknown = response.error;
   const text = body == null || body === ''
     ? 'No response body'
@@ -30,4 +42,18 @@ export function retryAfterSeconds(error: HttpErrorResponse, status: number, code
   if (header === null || !/^\d+$/.test(header)) return null;
   const seconds = Number(header);
   return seconds > 0 && seconds <= Math.floor(0x7fffffff / 1000) ? seconds : null;
+}
+
+/**
+ * Repeat a request answered 503 / 1006 (adapter busy) after its Retry-After,
+ * at most `count` times. Every endpoint except the create can return it.
+ */
+export function retryWhenBusy<T>(count = 3): MonoTypeOperatorFunction<T> {
+  return retry<T>({
+    count,
+    delay: (error: HttpErrorResponse) => {
+      const seconds = retryAfterSeconds(error, 503, RecoveryCode.DeviceBusy);
+      return seconds === null ? throwError(() => error) : timer(seconds * 1000);
+    },
+  });
 }

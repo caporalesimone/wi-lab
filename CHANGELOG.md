@@ -13,6 +13,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### Features
 
+- Frontend: requests answered `503 / 1006` (antenna busy) are repeated automatically after `Retry-After`, and `1006`/`1007` errors show a readable explanation instead of the raw body.
 - Frontend: a captive portal switch on each reserved antenna card chooses whether the next network starts with a portal page (it presets the start dialog, which has the same switch), and a running network shows the captive portal as On or Off with its URL and a header badge.
 
 ### Testing

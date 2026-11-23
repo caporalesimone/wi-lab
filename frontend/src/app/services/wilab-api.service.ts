@@ -4,7 +4,7 @@ import { Observable, throwError, timer } from 'rxjs';
 import { catchError, retry } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
-import { ApiError, RecoveryCode, retryAfterSeconds } from './recovery-response';
+import { ApiError, RecoveryCode, retryAfterSeconds, retryWhenBusy } from './recovery-response';
 import {
   StatusResponse,
   NetworkStatus,
@@ -83,6 +83,7 @@ export class WilabApiService {
     return this.http.get<NetworkStatus>(`${this.apiUrl}/interface/${reservationId}/network`, {
       headers: this.getHeaders()
     }).pipe(
+      retryWhenBusy(),
       catchError(this.handleError)
     );
   }
@@ -113,6 +114,7 @@ export class WilabApiService {
       `${this.apiUrl}/interface/${reservationId}/network`,
       { headers: this.getHeaders() }
     ).pipe(
+      retryWhenBusy(),
       catchError(this.handleError)
     );
   }
@@ -125,6 +127,7 @@ export class WilabApiService {
       {},
       { headers: this.getHeaders() }
     ).pipe(
+      retryWhenBusy(),
       catchError(this.handleError)
     );
   }
@@ -135,6 +138,7 @@ export class WilabApiService {
       {},
       { headers: this.getHeaders() }
     ).pipe(
+      retryWhenBusy(),
       catchError(this.handleError)
     );
   }
