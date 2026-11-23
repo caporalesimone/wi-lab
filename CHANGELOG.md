@@ -16,6 +16,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- The watchdog checks a running network every 30 s and repairs in place a lost gateway address, `ip_forward`, NAT, Internet-block and isolation rules; a broken captive portal restores the network (Fable WD-7).
 - If a Wi-Lab background loop stalls, `/status` reports it and the service restarts itself through the systemd watchdog, but only when no reservation is active (Fable STAB-1).
 - A dead dnsmasq is restarted up to 3 times per hour, and when that is not enough the watchdog restarts the whole network, instead of leaving it in `dhcp_failed` for good (Fable WD-3).
 - A beacon failure gets the same classification and message whether the readiness probe sees hostapd `DISABLED` or its exit first (Fable HAP-2).

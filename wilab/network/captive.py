@@ -133,6 +133,20 @@ class CaptivePortal:
         self._thread.start()
         logger.info("Captive portal for %s serving %s", self.net_id, self.url)
 
+    def problems(self) -> list[str]:
+        """What is missing for the portal to work (WD-7); empty when healthy."""
+        found: list[str] = []
+        if self._thread is None or not self._thread.is_alive():
+            found.append("captive portal server")
+        chain = _chain(self.net_id)
+        jump = ["-i", self.interface, "-m", "comment", "--comment", f"{JUMP_COMMENT_PREFIX}{self.net_id}"]
+        for prefix, parent in ((["-t", "nat"], "PREROUTING"), ([], "FORWARD")):
+            try:
+                execute_iptables([*prefix, "-C", parent, *jump, "-j", chain])
+            except CommandError:
+                found.append(f"captive portal {parent} rule")
+        return found
+
     def _open_server(self) -> ThreadingHTTPServer:
         return _PortalHTTPServer((self.gateway, self.port), self)
 

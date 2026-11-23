@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from .. import heartbeat
 from ..models import NetworkCreateRequest, NetworkStatus
+from ..network.commands import CommandError
 from ..network.dhcp import DhcpServerError
 from ..reservation import Reservation, ReservationManager
 
@@ -23,6 +24,9 @@ RESTORE_WINDOW = 3600.0
 # DHCP restart budget per adapter, same window (WD-3). When it is used up, or a
 # DHCP restart fails, the watchdog restarts the whole network instead.
 DHCP_RESTORE_LIMIT = 3
+# Ticks (5 s each) between checks of what a running network needs beyond its
+# processes: gateway address, firewall rules, captive portal (WD-7).
+VERIFY_EVERY = 6
 # Delay before each new attempt after a restore that failed for a non-radio
 # reason; the last value repeats while the reservation is valid.
 RETRY_BACKOFF = (15.0, 30.0, 60.0, 120.0, 300.0)
@@ -76,7 +80,8 @@ class NetworkWatchdog:
         # so it is not reset when the client recreates the network.
         restores: deque[float] = deque()
         dhcp_restores: deque[float] = deque()  # same, for DHCP-only restarts (WD-3)
-        restart_network = False  # DHCP could not be repaired alone: restore the whole AP
+        restart_network = ""  # why the whole network must be restored on the next tick (WD-3, WD-7)
+        healthy_ticks = 0  # since the last network check (WD-7)
         while not self.stopping.wait(5):
             heartbeat.beat(f"watchdog:{device}")
             lock = self.manager.device_lock(device)
@@ -102,15 +107,15 @@ class NetworkWatchdog:
                 if status is not current:
                     self.states.pop(device, None)
                     current, misses = status, 0
-                    restart_network = False
+                    restart_network = ""
                 if status is None or reservation is None or self._cancelled(reservation):
                     continue
                 alive = self.manager.hostapd_manager.is_running(device)
                 misses = 0 if alive and self.manager.hostapd_manager.is_enabled(device) else misses + 1
                 if not alive or misses >= 3 or restart_network:
                     if restart_network:
-                        logger.warning("DHCP on %s cannot be repaired alone; restarting the network", device)
-                    restart_network = False
+                        logger.warning("%s; restarting the network", restart_network)
+                    restart_network = ""
                     self.states[device] = (reservation, "restoring_ap")
                     now = time.monotonic()
                     while restores and now - restores[0] > RESTORE_WINDOW:
@@ -151,13 +156,35 @@ class NetworkWatchdog:
                         failed = True
                     # On the next tick, restore the whole network through the AP
                     # budget (WD-1); dhcp_failed stays visible until then.
-                    restart_network = failed and reservations.snapshot().get(device) is reservation
-                elif misses == 0 and self.state(reservation) == "dhcp_failed":
-                    self.states.pop(device, None)
+                    if failed and reservations.snapshot().get(device) is reservation:
+                        restart_network = f"DHCP on {device} cannot be repaired alone"
+                elif misses == 0:
+                    if self.state(reservation) == "dhcp_failed":
+                        self.states.pop(device, None)
+                    healthy_ticks += 1
+                    if healthy_ticks >= VERIFY_EVERY:
+                        healthy_ticks = 0
+                        restart_network = self._verify(device)
             except (OSError, RuntimeError, ValueError):
                 logger.exception("Could not check or restore network on %s", device)
             finally:
                 lock.release()
+
+    def _verify(self, device: str) -> str:
+        """Check and repair the network on `device` in place.
+
+        Returns why the whole network must be restored, or "" when it need not.
+        """
+        try:
+            repaired, restore = self.manager.verify_network(device)
+        except (CommandError, DhcpServerError) as exc:
+            logger.warning("Could not verify the network on %s: %s", device, exc)
+            return ""
+        if restore:
+            return f"Network on {device} lost {', '.join(repaired)}"
+        if repaired:
+            logger.warning("Network on %s lost %s; repaired in place", device, ", ".join(repaired))
+        return ""
 
     def state(self, reservation: Reservation) -> str | None:
         entry = self.states.get(reservation.device_id)

@@ -633,6 +633,16 @@ flowchart TD
   deleting and recreating the network does not reset it. A long-lived
   reservation can therefore survive one outage a day indefinitely, while an AP
   that keeps dying is taken out of the pool.
+- **Network check (WD-7):** every 6th tick (30 s) of a healthy network, the
+  watchdog checks what the network needs beyond its processes and repairs it
+  in place, logging a `WARNING` with what was lost: the gateway address on
+  the interface (then dnsmasq is restarted), `net.ipv4.ip_forward`, the NAT
+  rules (`internet_enabled: true`) or the Internet block rules
+  (`internet_enabled: false`, reinstalled in order), and the isolation rules
+  between AP subnets. A host firewall reload (firewalld, ufw, Docker) or an
+  administrator can remove them. If the captive portal server or its rules
+  are gone, the whole network is restored instead, through the AP restore
+  budget. Whether the radio really transmits (beacons) is not checked yet.
 - **DHCP repair (WD-3):** a dead dnsmasq is restarted alone, keeping the AP
   up, up to 3 times in any hour per antenna (`DHCP_RESTORE_LIMIT`, same
   window). If a DHCP restart fails, or dnsmasq dies a fourth time within the

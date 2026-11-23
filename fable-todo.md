@@ -19,7 +19,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [HAP-2](Fable-Notes.md#L1003) | ✅ | Uniformare la classificazione dei guasti hostapd disabilitati. |
 | 1 | [WD-3](Fable-Notes.md#L1045) | ✅ | Ritentare il recupero DHCP e, se serve, ripristinare l'intera rete. |
 | 1 | [WD-5](Fable-Notes.md#L1090) | ✅ parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. Fatti i punti 1–2 e la classificazione come guasto radio; il ritiro delle antenne rinominate (punto 3) dipende da ARCH-4. |
-| 1 | [WD-7](Fable-Notes.md#L1155) |  | Verificare e riparare lo stato effettivo della rete nel watchdog. |
+| 1 | [WD-7](Fable-Notes.md#L1155) | ✅ parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. Fatti gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. Manca il controllo che la radio trasmetta davvero (`tx_packets`), da verificare prima sull'hardware. |
 | 1 | [STAB-4](Fable-Notes.md#L1294) |  | Pulire all'avvio anche indirizzi, QoS, file e PID obsoleti. |
 | 1 | [RACE-1](Fable-Notes.md#L1422) |  | Limitare l'attesa del lock sul dispositivo e restituire un esito occupato. |
 | 1 | [WD-6](Fable-Notes.md#L1474) |  | Applicare backoff ai tentativi ripetuti di cleanup falliti. |
@@ -190,7 +190,7 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 | WD-1, WD-8 | Rete attiva (con profilo QoS per WD-8): `kill -9` di hostapd 3 volte a distanza di minuti. | Ogni volta `restoring_ap` e poi rete attiva; profilo QoS di nuovo attivo. | ✅ WD-1: [test_e2e_watchdog.py](tests/e2e-tests/test_e2e_watchdog.py) |
 | WD-2 | `kill -9` di hostapd con il riavvio che fallisce per una causa non radio. | `runtime_state` di errore in `/status`; il watchdog riprova. | ✅ [test_e2e_watchdog.py](tests/e2e-tests/test_e2e_watchdog.py) |
 | WD-3 | `kill -9` di dnsmasq due volte. | Ogni volta `restoring_dhcp` e poi DHCP attivo. | ✅ [test_e2e_watchdog.py](tests/e2e-tests/test_e2e_watchdog.py) |
-| WD-7 | Togliere a mano l'indirizzo del gateway o una regola NAT. | Il watchdog ripara entro pochi cicli. |  |
+| WD-7 | Togliere a mano l'indirizzo del gateway o una regola NAT. | Il watchdog ripara entro pochi cicli. | ✅ [test_e2e_network_check.py](tests/e2e-tests/test_e2e_network_check.py) |
 | STAB-4, NET-9 | `kill -9` del servizio con una rete attiva (QoS per STAB-4), poi riavvio. | Nessun `netem`/`ifb` o indirizzo residuo; nuova rete sulla stessa antenna `200`. |  |
 | STAB-8 | Due reti attive; `time systemctl stop wi-lab`. | Arresto in meno di 30 s. |  |
 | STAB-9 | Rete attiva; `systemctl restart NetworkManager`. | La radio resta unmanaged e l'AP resta attivo. |  |

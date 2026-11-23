@@ -132,6 +132,26 @@ class IsolationManager:
             # Don't fail if rule doesn't exist (might have been cleaned up already)
             logger.warning(f"Could not remove block rule {source} -> {destination}: {e}")
     
+    def verify(self) -> list[str]:
+        """Re-add isolation rules that disappeared from FORWARD (WD-7); returns the repairs."""
+        repaired: list[str] = []
+        for source in sorted(self._active_subnets):
+            for destination in sorted(self._active_subnets):
+                if source == destination or not (
+                    source.startswith("192.168.") and destination.startswith("192.168.")
+                ):
+                    continue
+                rule = [
+                    "FORWARD", "-s", source, "-d", destination, "-j", "DROP",
+                    "-m", "comment", "--comment", "wilab-isolation",
+                ]
+                try:
+                    execute_iptables(["-C", *rule])
+                except CommandError:
+                    execute_iptables(["-A", *rule])
+                    repaired.append(f"isolation {source} -> {destination}")
+        return repaired
+
     def get_active_subnets(self) -> list[str]:
         """Get list of subnets with active isolation rules."""
         return sorted(list(self._active_subnets))

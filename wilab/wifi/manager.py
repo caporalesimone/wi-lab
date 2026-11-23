@@ -778,6 +778,37 @@ class NetworkManager:
             "expires": format_utc_timestamp(expires) or "no expiry",
         }
 
+    def verify_network(self, device_id: str) -> tuple[list[str], bool]:
+        """Check what a running network needs beyond its processes (WD-7).
+
+        Repairs in place what can be repaired without touching the AP: the
+        gateway address (then DHCP is restarted), `ip_forward`, the NAT or
+        Internet-block rules and the isolation rules. Returns the repairs and
+        whether the whole network must be restored instead (captive portal
+        server or rules gone). The caller holds the device lock.
+        """
+        status = self.active.get(device_id)
+        if status is None or status.subnet is None:
+            return [], False
+        repaired: list[str] = []
+        net = IPv4Network(status.subnet)
+        gateway = f"{net[1]}/{net.prefixlen}"
+        addresses = execute_ip(["-4", "-o", "addr", "show", "dev", status.interface]).split()
+        if gateway not in addresses:
+            execute_ip(["addr", "add", gateway, "dev", status.interface])
+            repaired.append("gateway address")
+            self.dhcp_server.stop(device_id)
+            self.dhcp_server.start(
+                device_id, status.interface, status.subnet, self.config.dns_server,
+                **({"captive_dns": True} if status.captive_portal else {}),
+            )
+        with self._firewall_lock:
+            repaired += self.nat_manager.verify(status.interface, device_id, status.subnet)
+            repaired += self.isolation_manager.verify()
+        portal = self.captive_portals.get(device_id)
+        broken = portal.problems() if portal is not None else []
+        return repaired + broken, bool(broken)
+
     def firewall_status(self) -> dict:
         """Read the firewall state without colliding with a rule change (NET-1)."""
         with self._firewall_lock:

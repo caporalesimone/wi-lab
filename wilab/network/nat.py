@@ -182,6 +182,55 @@ class NatManager:
             removed.append(rules.pop())
         self._blocked_rules.pop(net_id, None)
     
+    @staticmethod
+    def _nat_rules(
+        wifi_interface: str, net_id: str, subnet: str, upstream: str,
+    ) -> list[tuple[str | None, list[str]]]:
+        """The (table, rule) pairs that give one AP subnet Internet access."""
+        return [
+            ("nat", [
+                "POSTROUTING", "-s", subnet, "-o", upstream, "-j", "MASQUERADE",
+                "-m", "comment", "--comment", f"wilab-nat-{net_id}",
+            ]),
+            (None, [
+                "FORWARD", "-i", wifi_interface, "-o", upstream, "-j", "ACCEPT",
+                "-m", "comment", "--comment", f"wilab-forward-{net_id}",
+            ]),
+            (None, [
+                "FORWARD", "-i", upstream, "-o", wifi_interface, "-m", "state",
+                "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT",
+                "-m", "comment", "--comment", f"wilab-forward-{net_id}",
+            ]),
+        ]
+
+    def verify(self, wifi_interface: str, net_id: str, subnet: str) -> list[str]:
+        """Restore what a running network lost from its NAT or Internet block (WD-7).
+
+        Returns a description of each repair; an empty list when all was in place.
+        """
+        repaired: list[str] = []
+        if net_id in self._nat_networks:
+            if execute_sysctl("net.ipv4.ip_forward").strip() != "1":
+                repaired.append("ip_forward")
+            upstream = self.get_upstream_interface()
+            missing = [
+                rule[0] for table, rule in self._nat_rules(wifi_interface, net_id, subnet, upstream)
+                if not self._rule_exists(table, rule)
+            ]
+            repaired += [f"NAT {chain} rule" for chain in missing]
+            if repaired:
+                self.enable_nat(wifi_interface, net_id, subnet)
+        installed = self._blocked_rules.get(net_id, [])
+        present = [rule for rule in installed if self._rule_exists(None, rule)]
+        if len(present) != len(installed):
+            # Reinstall the whole block in its order: TCP reset before the generic reject.
+            for rule in present:
+                execute_iptables(["-D", *rule])
+            for rule in installed:  # stored in insertion order, each inserted at the top
+                execute_iptables(["-I", rule[0], "1", *rule[1:]])
+            repaired.append("Internet block rules")
+        return repaired
+
     def enable_nat(self, wifi_interface: str, net_id: str, subnet: str) -> None:
         """
         Enable NAT for a WiFi interface to allow Internet access.
@@ -232,77 +281,12 @@ class NatManager:
             # Enable IP forwarding first
             self.enable_ip_forwarding()
             
-            # Add MASQUERADE rule (check if exists first to avoid duplicates)
-            masquerade_rule = [
-                "POSTROUTING",
-                "-s", subnet,
-                "-o", upstream,
-                "-j", "MASQUERADE",
-                "-m", "comment",
-                "--comment", f"wilab-nat-{net_id}"
-            ]
-            if not self._rule_exists("nat", masquerade_rule):
-                execute_iptables([
-                    "-t", "nat",
-                    "-A", "POSTROUTING",
-                    "-s", subnet,
-                    "-o", upstream,
-                    "-j", "MASQUERADE",
-                    "-m", "comment",
-                    "--comment", f"wilab-nat-{net_id}"
-                ])
-                logger.debug(f"Added MASQUERADE rule for {net_id}")
-            else:
-                logger.debug(f"MASQUERADE rule already exists for {net_id}")
-            
-            # Allow forwarding from WiFi to upstream (check if exists first)
-            forward_in_rule = [
-                "FORWARD",
-                "-i", wifi_interface,
-                "-o", upstream,
-                "-j", "ACCEPT",
-                "-m", "comment",
-                "--comment", f"wilab-forward-{net_id}"
-            ]
-            if not self._rule_exists(None, forward_in_rule):
-                execute_iptables([
-                    "-A", "FORWARD",
-                    "-i", wifi_interface,
-                    "-o", upstream,
-                    "-j", "ACCEPT",
-                    "-m", "comment",
-                    "--comment", f"wilab-forward-{net_id}"
-                ])
-                logger.debug(f"Added FORWARD ingress rule for {net_id}")
-            else:
-                logger.debug(f"FORWARD ingress rule already exists for {net_id}")
-            
-            # Allow established/related connections back (check if exists first)
-            forward_out_rule = [
-                "FORWARD",
-                "-i", upstream,
-                "-o", wifi_interface,
-                "-m", "state",
-                "--state", "RELATED,ESTABLISHED",
-                "-j", "ACCEPT",
-                "-m", "comment",
-                "--comment", f"wilab-forward-{net_id}"
-            ]
-            if not self._rule_exists(None, forward_out_rule):
-                execute_iptables([
-                    "-A", "FORWARD",
-                    "-i", upstream,
-                    "-o", wifi_interface,
-                    "-m", "state",
-                    "--state", "RELATED,ESTABLISHED",
-                    "-j", "ACCEPT",
-                    "-m", "comment",
-                    "--comment", f"wilab-forward-{net_id}"
-                ])
-                logger.debug(f"Added FORWARD egress rule for {net_id}")
-            else:
-                logger.debug(f"FORWARD egress rule already exists for {net_id}")
-            
+            # Add each rule only if it is missing, so this also repairs a partial set (WD-7).
+            for table, rule in self._nat_rules(wifi_interface, net_id, subnet, upstream):
+                if not self._rule_exists(table, rule):
+                    execute_iptables([*(["-t", table] if table else []), "-A", *rule])
+                    logger.debug("Added %s rule for %s", rule[0], net_id)
+
             self.unblock_internet(net_id)
             logger.info(f"NAT enabled for {net_id} ({wifi_interface})")
         
