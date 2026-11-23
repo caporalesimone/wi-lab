@@ -12,6 +12,13 @@ from ...reservation import ReservationManager
 from ...version import __version__
 from ...wifi.manager import NetworkManager
 
+_POLICY_EXAMPLE = {"min_seconds": 60, "max_seconds": 86400, "allow_unlimited": False}
+_CHECKS_OK_EXAMPLE = {
+    "dnsmasq": {"running": False, "instances": 0},
+    "iptables_nat": {"configured": True, "errors": []},
+    "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
+}
+
 router = APIRouter(
     tags=["System"],
     responses={503: {"description": "An expired device could not be cleaned up"}},
@@ -23,20 +30,55 @@ router = APIRouter(
     summary="Read system and adapter status",
     responses={
         200: {
-            "description": "Health and allocation snapshot; a reserved or quarantined adapter is not freely allocatable.",
-            "content": {"application/json": {"example": {
-                "version": "3.1.0", "status": "degraded", "active_networks": 0,
-                "networks": [
-                    {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
-                     "reservation_remaining_seconds": None, "recovery_state": "recovering"},
-                    {"display_name": "Antenna B", "interface": "wlan1", "reserved": True,
-                     "reservation_remaining_seconds": 54, "runtime_state": "restoring_ap"},
-                ],
-                "reservation_policy": {"min_seconds": 60, "max_seconds": 86400, "allow_unlimited": False},
-                "checks": {
-                    "dnsmasq": {"running": False, "instances": 0},
-                    "iptables_nat": {"configured": True, "errors": []},
-                    "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
+            "description": (
+                "Health and allocation snapshot. `status` is `standby`, `ok` or `degraded`; "
+                "`degraded` means at least one adapter is quarantined (`recovery_state`), a "
+                "reserved network is being repaired or has lost DHCP (`runtime_state`), or a "
+                "health check failed while networks are active. A reserved or quarantined "
+                "adapter is not allocatable."
+            ),
+            "content": {"application/json": {"examples": {
+                "standby": {
+                    "summary": "standby - no network active, every adapter healthy",
+                    "value": {
+                        "version": "4.0.0", "status": "standby", "active_networks": 0,
+                        "networks": [
+                            {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
+                             "reservation_remaining_seconds": None},
+                            {"display_name": "Antenna B", "interface": "wlan1", "reserved": False,
+                             "reservation_remaining_seconds": None},
+                        ],
+                        "reservation_policy": _POLICY_EXAMPLE,
+                        "checks": _CHECKS_OK_EXAMPLE,
+                    },
+                },
+                "ok": {
+                    "summary": "ok - networks active and healthy",
+                    "value": {
+                        "version": "4.0.0", "status": "ok", "active_networks": 1,
+                        "networks": [
+                            {"display_name": "Antenna A", "interface": "wlan0", "reserved": True,
+                             "reservation_remaining_seconds": 540},
+                            {"display_name": "Antenna B", "interface": "wlan1", "reserved": False,
+                             "reservation_remaining_seconds": None},
+                        ],
+                        "reservation_policy": _POLICY_EXAMPLE,
+                        "checks": {**_CHECKS_OK_EXAMPLE, "dnsmasq": {"running": True, "instances": 1}},
+                    },
+                },
+                "degraded_quarantine": {
+                    "summary": "degraded - one adapter quarantined, another being repaired",
+                    "value": {
+                        "version": "4.0.0", "status": "degraded", "active_networks": 1,
+                        "networks": [
+                            {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
+                             "reservation_remaining_seconds": None, "recovery_state": "unavailable"},
+                            {"display_name": "Antenna B", "interface": "wlan1", "reserved": True,
+                             "reservation_remaining_seconds": 54, "runtime_state": "restoring_ap"},
+                        ],
+                        "reservation_policy": _POLICY_EXAMPLE,
+                        "checks": {**_CHECKS_OK_EXAMPLE, "dnsmasq": {"running": False, "instances": 0}},
+                    },
                 },
             }}},
         },
@@ -52,10 +94,31 @@ def system_status(
     """
     Comprehensive system status including interfaces and health check.
 
-    `recovery_state` (`recovering` or `unavailable`) excludes an adapter
-    from allocation even if `reserved` is false. `runtime_state` instead
-    describes an active reservation's AP or DHCP restoration. Either makes
-    overall status `degraded`. A status response is not a reservation.
+    Overall `status`:
+
+    | Value | Meaning |
+    |---|---|
+    | `standby` | No network is active and no adapter is quarantined. |
+    | `ok` | Networks are active and every health check passes. |
+    | `degraded` | At least one of the conditions below. |
+
+    `degraded` is set when:
+
+    - an adapter has `recovery_state` (quarantine): `recovering` means a USB
+      reset and probe are in progress and it may return by itself;
+      `unavailable` means no recovery is running and it stays excluded;
+    - a reserved network has `runtime_state`: `restoring_ap`, `restoring_dhcp`
+      (the watchdog is repairing it) or `dhcp_failed` (AP up, new clients get
+      no address);
+    - networks are active and a check in `checks` fails (`dnsmasq.running`,
+      `iptables_nat.configured` or `upstream_interface.reachable` is false).
+
+    A quarantined adapter is never allocatable, even with `reserved: false`.
+    Clients should poll this endpoint, show `degraded` to the user together
+    with the affected adapter, and not send creates for a network in
+    `restoring_ap`/`restoring_dhcp`. The former owner of a quarantined adapter
+    is told once, by `500 / 1003` on the create; its reservation ID then
+    returns `404`. A status response is not a reservation.
 
     Returns:
         dict: Contains:

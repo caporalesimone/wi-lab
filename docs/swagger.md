@@ -53,6 +53,19 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
 
 ⚠️ **Note:** debug operations are expensive (150-600ms). Use them only for manual troubleshooting, not for frontend polling.
 
+## Service health (`degraded`)
+
+Open **System → Read system and adapter status**. Under **Responses → 200 →
+Examples** select `standby`, `ok` or `degraded_quarantine`. `status:
+"degraded"` means at least one adapter is quarantined
+(`networks[].recovery_state`: `recovering` or `unavailable`), a reserved
+network is being repaired or lost DHCP (`networks[].runtime_state`), or a
+health check in `checks` failed while networks are active. Clients must poll
+this endpoint to learn about quarantined adapters: a quarantined adapter can
+show `reserved: false` but is not allocatable, and only its former owner is
+told directly (`500 / 1003` on the create). See
+[AP creation procedure, 2.8](ap-creation-procedure.md#28-service-health-degraded-and-quarantined-antennas).
+
 ## Network creation failure
 
 In the **Network** group, open **Create a network on a reserved adapter**.

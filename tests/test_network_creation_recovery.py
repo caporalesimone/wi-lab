@@ -71,7 +71,10 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
             "API failure operation=start_network http_status=500 detail_code=1003",
             f"API failure operation=create_reservation http_status=503 detail_code={1002 if authorized_port else 1003}",
         ]
-        state = client.get("/api/v1/status", headers=headers).json()["networks"][0]
+        overall = client.get("/api/v1/status", headers=headers).json()
+        # A quarantined adapter makes the service degraded even with no active network.
+        assert (overall["status"], overall["active_networks"]) == ("degraded", 0)
+        state = overall["networks"][0]
         assert state["recovery_state"] == ("recovering" if authorized_port else "unavailable")
 
         if authorized_port is None:
@@ -209,8 +212,12 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert "discard the reservation ID" in failures["device_unavailable"]["summary"]
     assert create["409"]["content"]["application/json"]["examples"]["retry_later"]["value"]["detail"]["code"] == 1001
     assert reserve["503"]["content"]["application/json"]["examples"]["device_recovering"]["value"]["detail"]["code"] == 1002
-    status = paths["/api/v1/status"]["get"]["responses"]["200"]["content"]["application/json"]["example"]
-    assert status["networks"][0]["recovery_state"] == "recovering"
+    status_examples = paths["/api/v1/status"]["get"]["responses"]["200"]["content"]["application/json"]["examples"]
+    assert {name: e["value"]["status"] for name, e in status_examples.items()} == {
+        "standby": "standby", "ok": "ok", "degraded_quarantine": "degraded",
+    }
+    status = status_examples["degraded_quarantine"]["value"]
+    assert status["networks"][0]["recovery_state"] == "unavailable"
     assert not status["networks"][0]["reserved"]
     assert status["networks"][1]["runtime_state"] == "restoring_ap"
     content = paths["/api/v1/interface/{reservation_id}/network"]["get"]["responses"]["200"]["content"]["application/json"]

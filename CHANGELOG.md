@@ -6,6 +6,10 @@ All notable changes to Wi-Lab are documented in this file.
 
 ## [Unreleased]
 
+### Documentation
+
+- Document `GET /api/v1/status` health values (`standby`, `ok`, `degraded`), what makes the service `degraded` (quarantined adapter, network being repaired, failed health check) and how clients learn about quarantined adapters, in Swagger (three response examples), the API overview, the AP creation procedure (2.8) and the Swagger guide.
+
 ### 🐛 Bug Fixes
 
 - Validate the AP creation body before touching the antenna (Fable BUG-1): `ssid` must be 1–32 bytes in UTF-8 and `password` 8–63 bytes for WPA modes, neither may contain control characters, and the channel must match the band. These previously reached hostapd (a short password returned a generic `500`) and a line break in the SSID could add lines to `hostapd.conf`. The SSID is now written as `ssid2` in hex.

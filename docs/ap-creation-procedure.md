@@ -251,6 +251,50 @@ Notes:
 - The portal listens on port 80 and dnsmasq answers DNS on port 53, both on
   the AP gateway address only.
 
+### 2.8 Service health: `degraded` and quarantined antennas
+
+The client must check `GET /api/v1/status` to know whether every antenna is
+usable. Poll it (for example every 10–30 s) and show the result to the user.
+
+| `status` | Meaning |
+|---|---|
+| `standby` | No AP is active and no antenna is quarantined. |
+| `ok` | APs are active and every health check passes. |
+| `degraded` | At least one antenna is quarantined, a reserved AP is being repaired or has lost DHCP, or a health check failed while APs are active. |
+
+Find the cause in `networks[]` and `checks`:
+
+```json
+{
+  "status": "degraded",
+  "networks": [
+    {"display_name": "antenna-1", "interface": "wlx7419f8176286", "reserved": false,
+     "reservation_remaining_seconds": null, "recovery_state": "unavailable"},
+    {"display_name": "antenna-2", "interface": "wlx7419f817651c", "reserved": false,
+     "reservation_remaining_seconds": null}
+  ]
+}
+```
+
+| Field | Value | Meaning | Client action |
+|---|---|---|---|
+| `recovery_state` | `recovering` | Antenna quarantined; Wi-Lab is resetting and probing it. | Do not count it as available. It may return by itself. |
+| `recovery_state` | `unavailable` | Antenna quarantined; no recovery is running. | Do not count it as available. Report it to the operator. |
+| `runtime_state` | `restoring_ap` / `restoring_dhcp` | The owner's AP is being repaired (see [2.6](#26-after-the-ap-is-running)). | Owner: wait. Others: nothing to do. |
+| `runtime_state` | `dhcp_failed` | AP up, new clients get no address. | Owner: release and reserve again if needed. |
+| `checks.*` | `running`/`configured`/`reachable` false | A shared component failed while APs are active. | Report it; Internet access may not work. |
+
+- `reserved: false` does **not** mean the antenna can be reserved: an entry
+  with `recovery_state` is excluded from allocation.
+- How a client learns that *its* antenna was quarantined: the create returns
+  `500` with `detail.code: 1003`, `reason: device_unavailable` and
+  `reservation_invalidated: true`. From then on the reservation ID returns
+  `404`. There is no other notification: discard the ID and reserve again.
+- New reservations skip quarantined antennas silently while another antenna is
+  free. When none is allocatable because of quarantine, reserve returns `503`
+  with `1002` (recovery in progress, retry after `Retry-After`) or `1003`
+  (nothing is recovering).
+
 ## 3. Sequence diagram
 
 ```mermaid

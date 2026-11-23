@@ -62,6 +62,23 @@ A transport timeout is not a recovery code. For a lost create response, check
 create. A lost reservation response may already have allocated an adapter:
 do not blindly repeat it. A `404` for a reservation ID means stop using it.
 
+### Service health and quarantined adapters
+
+Poll `GET /api/v1/status` to know whether the service is fully usable.
+Its `status` is `standby` (nothing active, all adapters healthy), `ok`
+(networks active and healthy) or `degraded`. `degraded` means an adapter is
+quarantined (`networks[].recovery_state`), a reserved network is being
+repaired or lost DHCP (`networks[].runtime_state`), or a health check in
+`checks` failed while networks are active. Show it to the user with the
+affected adapter: fewer adapters may be allocatable than are listed.
+
+| `networks[]` field | Value | Client action |
+|---|---|---|
+| `recovery_state` | `recovering` | Adapter quarantined, USB recovery in progress. It may return by itself; do not count it as allocatable. |
+| `recovery_state` | `unavailable` | Adapter quarantined, no recovery running. Not allocatable; operator attention needed. |
+| `runtime_state` | `restoring_ap`, `restoring_dhcp` | The owner's network is being repaired. Wait; do not send a create. |
+| `runtime_state` | `dhcp_failed` | AP up, new clients get no address. Release and reserve again if needed. |
+
 `GET /api/v1/status` distinguishes quarantined adapters (`recovery_state`)
 from reserved networks being repaired (`runtime_state`). `reserved: false`
 does not make a quarantined adapter allocatable. During
