@@ -144,3 +144,41 @@ def test_status_never_flaps_to_degraded_during_create_delete(wilab: WiLab) -> No
         stop.set()
         poller.join(timeout=5)
     assert "degraded" not in seen, f"{seen.count('degraded')} of {len(seen)} reads were degraded"
+
+
+# --------------------------------------------------------------------------- RACE-1
+
+def test_polling_during_a_create_gets_an_answer_within_the_busy_limit(wilab: WiLab) -> None:
+    """RACE-1: GETs sent during a create answer 200, or 503/1006 with Retry-After, within ~5 s."""
+    antenna = wilab.reserve()
+    rid = antenna.reservation_id
+    results: list[tuple[int, float, str | None, int | None]] = []
+    stop = threading.Event()
+
+    def poll() -> None:
+        while not stop.is_set():
+            start = time.monotonic()
+            response = wilab.http.get(f"/interface/{rid}/network")
+            results.append((
+                response.status_code, time.monotonic() - start,
+                response.headers.get("Retry-After"), detail_code(response),
+            ))
+
+    pollers = [threading.Thread(target=poll, daemon=True) for _ in range(8)]
+    for poller in pollers:
+        poller.start()
+    try:
+        for _ in range(3):
+            assert wilab.create(antenna).status_code == 200
+            status_start = time.monotonic()
+            wilab.status()
+            assert time.monotonic() - status_start < 3
+            assert wilab.delete_network(antenna) == 200
+    finally:
+        stop.set()
+        for poller in pollers:
+            poller.join(timeout=10)
+    assert results
+    for code, elapsed, retry_after, detail in results:
+        assert elapsed < 7, (code, elapsed)
+        assert code == 200 or (code == 503 and detail == 1006 and retry_after == "2"), (code, detail)

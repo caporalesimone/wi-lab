@@ -21,7 +21,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [WD-5](Fable-Notes.md#L1090) | ✅ parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. Fatti i punti 1–2 e la classificazione come guasto radio; il ritiro delle antenne rinominate (punto 3) dipende da ARCH-4. |
 | 1 | [WD-7](Fable-Notes.md#L1155) | ✅ parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. Fatti gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. Manca il controllo che la radio trasmetta davvero (`tx_packets`), da verificare prima sull'hardware. |
 | 1 | [STAB-4](Fable-Notes.md#L1294) |  | Pulire all'avvio anche indirizzi, QoS, file e PID obsoleti. |
-| 1 | [RACE-1](Fable-Notes.md#L1422) |  | Limitare l'attesa del lock sul dispositivo e restituire un esito occupato. |
+| 1 | [RACE-1](Fable-Notes.md#L1422) | ✅ | Limitare l'attesa del lock sul dispositivo e restituire un esito occupato. |
 | 1 | [WD-6](Fable-Notes.md#L1474) |  | Applicare backoff ai tentativi ripetuti di cleanup falliti. |
 | 1 | [HAP-4](Fable-Notes.md#L1525) |  | Distinguere l'esaurimento del budget da un guasto radio reale. |
 | 1 | [STAB-6](Fable-Notes.md#L1561) |  | Aggiornare l'interfaccia upstream quando cambiano le route. |
@@ -155,7 +155,7 @@ in corso deve dare `409/1001`, non `500/1003`, e l'antenna deve tornare da sola 
 | NET-1 | Molte create/delete concorrenti sulle due antenne (parallel, herd). | Nessun `500` e nessuna quarantena dopo un delete. | ✅ [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
 | HAP-3, HAP-2 | Run lunga di create con statistiche per `status` e `detail.code`. | Solo `200`, `409/1001` o `500/1003`; mai `500` generico. |  |
 | HAP-4, WD-10 | Run lunga con M1. | Nessuna quarantena dopo una create con `409/1001` isolato; nessun `restoring_ap` su reti senza guasti. |  |
-| RACE-1 | Create su canale DFS (es. 100) e, nello stesso momento, 45 `GET .../network` più `/status`. | `/status` risponde subito; le altre richieste ottengono una risposta entro un limite, non un timeout. |  |
+| RACE-1 | Create su canale DFS (es. 100) e, nello stesso momento, 45 `GET .../network` più `/status`. | `/status` risponde subito; le altre richieste ottengono `200` o `503 / 1006` con `Retry-After: 2` entro circa 5 s, non un timeout. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) (senza DFS) |
 | RACE-2 | `/status` in ciclo stretto durante create/delete ripetuti. | Nessun `degraded` spurio. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | HAP-9 | Con DFS abilitato, create sul canale 124. | Risposta coerente (attesa gestita o rifiuto esplicito), non un timeout del client a 75 s. |  |
 | HAP-10 | Create con `wpa2-wpa3` e con `wpa`. | `200` per entrambe. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |

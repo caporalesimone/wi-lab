@@ -71,6 +71,14 @@ class Reservation:
         return time.time() >= self.expires_at
 
 
+class DeviceBusyError(Exception):
+    """Another operation on this device is still running (RACE-1)."""
+
+    def __init__(self, device_id: str) -> None:
+        super().__init__(f"Another operation on {device_id} is still running")
+        self.device_id = device_id
+
+
 class ReservationManager:
     """In-memory reservation store with thread-safe operations."""
 
@@ -253,17 +261,27 @@ class ReservationManager:
         self._purge_expired(continue_on_error=True)
 
     @contextmanager
-    def hold(self, reservation_id: str) -> Iterator[Reservation | None]:
-        """Keep a reservation valid against concurrent release while in use."""
+    def hold(self, reservation_id: str, timeout: float | None = None) -> Iterator[Reservation | None]:
+        """Keep a reservation valid against concurrent release while in use.
+
+        With `timeout`, wait at most that long for the device lock and raise
+        `DeviceBusyError` instead of parking the caller behind a slow operation
+        (RACE-1). Without it, wait until the lock is free.
+        """
         with self._lock:
             reservation = self._reservations.get(reservation_id)
         if reservation is None:
             yield None
             return
-        with self._device_lock(reservation.device_id):
+        lock = self._device_lock(reservation.device_id)
+        if not lock.acquire(timeout=-1 if timeout is None else timeout):
+            raise DeviceBusyError(reservation.device_id)
+        try:
             with self._lock:
                 current = self._reservations.get(reservation_id)
             yield reservation if current is reservation and not reservation.is_expired else None
+        finally:
+            lock.release()
 
     # ------------------------------------------------------------------
     # Store mutations use self._lock; cleanup runs only under the device lock.

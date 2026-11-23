@@ -12,6 +12,7 @@ from ...api.dependencies import (
 from ...models import TxPowerInfo, TxPowerRequest
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager, TxPowerMismatchError
+from .recovery_responses import DEVICE_BUSY_RESPONSE
 
 router = APIRouter(
     prefix="/interface", tags=["TX Power"],
@@ -25,6 +26,7 @@ VALID_TX_POWER_LEVELS_TEXT = ", ".join(str(level) for level in VALID_TX_POWER_LE
     "/{reservation_id}/txpower",
     response_model=TxPowerInfo,
     responses={
+        503: DEVICE_BUSY_RESPONSE,
         200: {"description": "TX power info retrieved successfully"},
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "Reservation not found or expired"},
@@ -52,6 +54,7 @@ def get_tx_power(
     "/{reservation_id}/txpower",
     response_model=TxPowerInfo,
     responses={
+        503: DEVICE_BUSY_RESPONSE,
         200: {"description": "TX power level set successfully"},
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "Reservation not found or expired"},

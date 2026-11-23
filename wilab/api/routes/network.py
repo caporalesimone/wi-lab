@@ -20,6 +20,7 @@ from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager
 from ...wifi.manager import NetworkManager, StartupFailure
 from .recovery_responses import (
+    DEVICE_BUSY_RESPONSE,
     RETRY_AFTER_HEADER,
     RecoveryCode,
     recovery_error,
@@ -211,7 +212,9 @@ def start_network(
     """
     if manager.watchdog.state(reservation) in ("restoring_ap", "restoring_dhcp"):
         raise HTTPException(status_code=409, detail="Network restoration is in progress")
-    with hold_reservation(reservation_mgr, reservation):
+    # A create waits for the adapter instead of answering 1006: one create at a
+    # time per reservation is the client contract, and the wait is bounded.
+    with hold_reservation(reservation_mgr, reservation, wait=True):
         device_id = reservation.device_id
         remaining = ceil(reservation.retry_at - monotonic())
         if remaining > 0:
@@ -256,6 +259,7 @@ def start_network(
 @router.delete(
     "/{reservation_id}/network",
     responses={
+        503: DEVICE_BUSY_RESPONSE,
         200: {
             "description": "Network stopped successfully",
             "content": {
@@ -305,6 +309,7 @@ def stop_network(
     "/{reservation_id}/network",
     response_model=NetworkStatus,
     responses={
+        503: DEVICE_BUSY_RESPONSE,
         200: {
             "description": "Network status, or a watchdog snapshot while restoration is in progress.",
             "content": {"application/json": {"examples": {
@@ -403,6 +408,7 @@ class AvailableChannelsResponse(BaseModel):
     "/{reservation_id}/network/available-channels",
     response_model=AvailableChannelsResponse,
     responses={
+        503: DEVICE_BUSY_RESPONSE,
         200: {"description": "Available WiFi channels for the reserved device"},
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "Reservation not found or expired"},

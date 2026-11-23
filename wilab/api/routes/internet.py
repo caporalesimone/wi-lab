@@ -11,6 +11,7 @@ from ...api.dependencies import (
 )
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager
+from .recovery_responses import DEVICE_BUSY_RESPONSE
 
 router = APIRouter(
     prefix="/interface", tags=["Internet"],
@@ -21,6 +22,7 @@ router = APIRouter(
 @router.post(
     "/{reservation_id}/internet/enable",
     responses={
+        503: DEVICE_BUSY_RESPONSE,
         200: {
             "description": "Internet access enabled successfully",
             "content": {
@@ -59,6 +61,7 @@ def internet_enable(
 @router.post(
     "/{reservation_id}/internet/disable",
     responses={
+        503: DEVICE_BUSY_RESPONSE,
         200: {
             "description": "Internet access disabled successfully",
             "content": {

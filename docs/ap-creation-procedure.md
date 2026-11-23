@@ -143,6 +143,10 @@ antenna, so parallel requests for the same reservation only queue up.
 | `503 / 1004` | A device cleanup failed. | Do not retry automatically. |
 | `401` | Missing or invalid token. | Fix the token. |
 
+The create waits for the adapter if another request on it is running, so it
+never returns `503 / 1006`; the other reservation endpoints do (see
+[2.6](#26-after-the-ap-is-running)).
+
 After this generic startup `500`, `DELETE /api/v1/device-reservation/{id}`
 releases the still-held antenna on `200`. The next reservation may get the same
 antenna or a different one. Do not implement release → reserve → create as an
@@ -189,6 +193,23 @@ A success resets the counter. Further rules:
   create again; `404` → the ID is gone.
 
 ### 2.6 After the AP is running
+
+- **Adapter busy: `503 / 1006`.** Every request on a reservation other than
+  the create (`GET`/`DELETE .../network`, `available-channels`, Internet,
+  TX power, QoS profile) waits at most **5 s** for another operation on the
+  same adapter, such as a network start (up to 15 s, 75 s on a DFS channel).
+  After that it returns `503` with `detail.code: 1006`,
+  `reason: device_busy` and `Retry-After: 2`. Nothing was changed: repeat the
+  same request after `Retry-After`. A create never returns `1006`: it waits
+  for the adapter.
+
+  ```json
+  HTTP/1.1 503 Service Unavailable
+  Retry-After: 2
+
+  {"detail": {"code": 1006, "reason": "device_busy",
+              "message": "Another operation on this adapter is still running; retry after Retry-After"}}
+  ```
 
 - `GET /api/v1/interface/{reservation_id}/network` returns SSID, channel,
   subnet, DHCP details, connected clients and remaining time.

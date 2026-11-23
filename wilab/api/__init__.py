@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import heartbeat
 from ..network.captive import remove_stale_captive_rules
-from ..reservation import ReservationCleanupError
+from ..reservation import DeviceBusyError, ReservationCleanupError
 from ..version import __version__
 from ..wifi.channels import set_regulatory_domain
 from .dependencies import (
@@ -22,8 +22,15 @@ from .dependencies import (
     get_manager,
     get_reservation_manager,
 )
-from .errors import ApiErrorCode, api_error_response, document_errors, domain_error
+from .errors import (
+    DEVICE_BUSY_RETRY_AFTER,
+    ApiErrorCode,
+    api_error_response,
+    document_errors,
+    domain_error,
+)
 from .routes import router as api_router
+from .routes.recovery_responses import device_busy_detail
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +69,7 @@ not the message, for control flow. Success responses are unchanged.
 | Reserve `503`, `detail.code: 1002` | Retry the **reservation** POST after `Retry-After` (10 seconds, a polling interval). |
 | Reserve `503`, `detail.code: 1003` | All adapters are quarantined and none is recovering. No automatic retry. |
 | `503`, `detail.code: 1004` | Cleanup failed. Do not apply a recovery-code retry policy; check status and resolve the cleanup failure. |
+| `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Every reservation endpoint except the create, which waits instead. |
 
 A transport timeout is not a recovery code. For a lost create response, check
 `GET /api/v1/interface/{reservation_id}/network` before attempting another
@@ -184,6 +192,14 @@ def create_app() -> FastAPI:
         request: Request, exc: ReservationCleanupError
     ) -> JSONResponse:
         return api_error_response(request, 503, domain_error(ApiErrorCode.CLEANUP_FAILED, str(exc)))
+
+    @app.exception_handler(DeviceBusyError)
+    async def device_busy_exception_handler(request: Request, exc: DeviceBusyError) -> JSONResponse:
+        # RACE-1: never park a request thread behind a slow operation on the same adapter.
+        return api_error_response(
+            request, 503, device_busy_detail(),
+            headers={"Retry-After": str(DEVICE_BUSY_RETRY_AFTER)},
+        )
 
     # Configure CORS if origins are specified in config
     config = get_config()

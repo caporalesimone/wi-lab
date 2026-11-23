@@ -176,11 +176,22 @@ def resolve_reservation(
     return r
 
 
+# Longest wait for another operation on the same device before answering
+# 503 / 1006 device_busy (RACE-1). A start holds the device up to 15 s, 75 s on DFS.
+DEVICE_BUSY_TIMEOUT = 5.0
+
+
 @contextmanager
 def hold_reservation(
-    mgr: ReservationManager, reservation: Reservation
+    mgr: ReservationManager, reservation: Reservation, *, wait: bool = False,
 ) -> Iterator[None]:
-    with mgr.hold(reservation.reservation_id) as current:
+    """Hold the reservation's device.
+
+    Raises `DeviceBusyError` after `DEVICE_BUSY_TIMEOUT` seconds, or waits until
+    the device is free with `wait=True`.
+    """
+    timeout = None if wait else DEVICE_BUSY_TIMEOUT
+    with mgr.hold(reservation.reservation_id, timeout=timeout) as current:
         if current is not reservation:
             raise HTTPException(status_code=404, detail="Reservation not found or expired")
         yield

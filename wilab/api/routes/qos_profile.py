@@ -23,10 +23,12 @@ from ...network.qos import QosManager
 from ...network.qos_profile import QosProfileManager
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager
+from .recovery_responses import DEVICE_BUSY_RESPONSE
 
 # ---------------------------------------------------------------------------
 # Catalogue router — global, no auth
 # ---------------------------------------------------------------------------
+
 
 catalogue_router = APIRouter(prefix="/qos", tags=["QoS Profiles"])
 
@@ -98,6 +100,7 @@ def _build_profile_state(interface: str, pm: QosProfileManager) -> QosProfileSta
     "/{reservation_id}/qos/profile",
     response_model=QosProfileState,
     responses={
+        503: DEVICE_BUSY_RESPONSE,
         200: {"description": "Profile started successfully"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation or profile not found"},
@@ -157,6 +160,7 @@ def start_profile(
     "/{reservation_id}/qos/profile",
     response_model=QosProfileState,
     responses={
+        503: DEVICE_BUSY_RESPONSE,
         200: {"description": "Current profile state"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation not found"},
@@ -183,6 +187,7 @@ def get_profile_state(
     "/{reservation_id}/qos/profile",
     status_code=200,
     responses={
+        503: DEVICE_BUSY_RESPONSE,
         200: {"description": "Profile stopped and QoS cleared"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation not found / no active profile"},

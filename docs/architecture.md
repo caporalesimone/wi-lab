@@ -268,7 +268,12 @@ Rules:
   device lock while holding the store lock.
 - `hold_reservation()` takes the device lock and re-checks that the
   reservation is still current, so a concurrent release cannot free the
-  antenna in the middle of an operation.
+  antenna in the middle of an operation. API requests wait at most
+  `DEVICE_BUSY_TIMEOUT` (5 s) and then return `503 / 1006 device_busy` with
+  `Retry-After: 2` (Fable RACE-1), so polling clients cannot park the 40
+  request threads behind a slow start. The create waits without limit
+  (`wait=True`): one create at a time per reservation is the client contract,
+  and the start that holds the lock is itself bounded.
 - Background loops (expiry, watchdog) use non-blocking acquisition: a busy
   antenna is skipped until the next tick instead of blocking the loop.
 - `GET /api/v1/status` reads snapshots and never waits for a device lock or

@@ -85,6 +85,12 @@ reservation request can be retried after `Retry-After`. `503 / 1004` means
 cleanup failed; it is not a recovery retry. `409 / 1005` is ordinary
 reservation contention and can include `detail.next_available_in`.
 
+`503 / 1006` (`device_busy`, example **1006 - adapter busy, retry**) is
+documented on every reservation endpoint except the create: another operation
+on the same adapter, for example a network start, still held it after 5 s.
+Nothing was changed; repeat the request after `Retry-After` (2 s). The create
+waits for the adapter instead.
+
 For a complete interactive example:
 
 1. In **Reservation**, execute the timed example for `POST /api/v1/device-reservation`.
