@@ -64,6 +64,12 @@ The sudo password is used with `sudo -k -S` and is never printed. Only `tee` on 
 | `test_e2e_firewall.py` | Parallel create/delete on every antenna while `/status` is polled every 0.2 s: all `200`, no quarantine, no "xtables lock" error in the journal. | NET-1 | journal |
 | `test_e2e_firewall.py` | Legacy backend only: another process holds the xtables lock for 2 s; a create waits and returns `200`. Skipped on nf_tables. | NET-1 | `flock /run/xtables.lock` |
 | `test_e2e_firewall.py` | A `200` create has the firewall it reports: with `internet_enabled: true` the MASQUERADE and FORWARD rules exist in iptables, with `false` there is no MASQUERADE rule; the journal shows "Isolation rules applied" and never "Isolation disabled for testing"; delete removes the rules. The failure path has no safe live trigger and is covered by unit tests. | NET-2, NET-4 | `iptables -S` (root), journal |
+| `test_e2e_api.py` | API-only checks from the tester's plan: path traversal on static files (SEC-1), reservation IDs in `/debug` (SEC-2), unknown create field (API-10), create response body (API-5), status code of actions without a network (API-2), `wpa2-wpa3` and `wpa` (HAP-10), `/status` with an Internet-less network (BUG-2), TX power reported vs `iw` (BUG-7), TX power change time (PERF-6), `/status` read in a tight loop during create/delete (RACE-2). | SEC-1, SEC-2, API-2, API-5, API-10, HAP-10, BUG-2, BUG-7, PERF-6, RACE-2 | `iw` (BUG-7 only) |
+
+Tests in `test_e2e_api.py` use only the public API (except the `iw` comparison for BUG-7), so
+they give the same result from an external machine. Tests for IDs that are not fixed yet are
+marked `xfail` (not strict): pytest reports them as `XFAIL` until the fix lands and as `XPASS`
+afterwards, when the mark is removed.
 
 The tests pick the first antenna listed in `/status` and find its USB port from sysfs, so no
 port is hard-coded.

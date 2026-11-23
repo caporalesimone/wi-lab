@@ -135,6 +135,17 @@ class Server:
         ).stdout
 
     @staticmethod
+    def iw_txpower_dbm(interface: str) -> float | None:
+        out = subprocess.run(
+            ["iw", "dev", interface, "info"], check=False, capture_output=True, text=True,
+        ).stdout
+        for line in out.splitlines():
+            parts = line.split()
+            if parts[:1] == ["txpower"] and len(parts) >= 2:
+                return float(parts[1])
+        return None
+
+    @staticmethod
     def iw_info(interface: str) -> dict[str, str]:
         out = subprocess.run(["iw", "dev", interface, "info"], check=False, capture_output=True, text=True).stdout
         info: dict[str, str] = {}

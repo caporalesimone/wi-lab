@@ -106,8 +106,16 @@ I test automatici li eseguo io a ogni fix e non sono elencati qui; gli esiti son
 
 - `tests/unit-tests/`: hardware simulato, girano a ogni modifica e in CI.
 - `tests/e2e-tests/`: girano sulla macchina contro il servizio attivo e uniscono chiamate API e azioni
-  sul server (journal, `iw`, distacco USB simulato). Coprono già BUG-1, HAP-1, WD-4 e WD-5; per ogni
-  nuovo fix aggiungo qui i test e2e possibili. Vedi [docs/e2e-testing.md](docs/e2e-testing.md).
+  sul server (journal, `iw`, `kill`, distacco USB simulato). Li lancio solo su un sistema libero e dopo
+  conferma. Vedi [docs/e2e-testing.md](docs/e2e-testing.md).
+
+La colonna **E2E** delle tabelle indica i test già automatizzati in `tests/e2e-tests/`:
+
+- ✅ coperto da un test e2e e fix fatto: il tester può saltarlo (resta utile nella run lunga);
+- 🧪 test e2e già scritto ma ID non ancora fixato: il test è `xfail` e diventa verde con il fix.
+
+Coperti fuori dalle tabelle: BUG-1 e HAP-1 in [test_e2e_create_validation.py](tests/e2e-tests/test_e2e_create_validation.py) e
+[test_e2e_stability.py](tests/e2e-tests/test_e2e_stability.py); WD-4 e WD-5 in [test_e2e_device_loss.py](tests/e2e-tests/test_e2e_device_loss.py).
 
 Per ogni test live raccogliere: ora UTC, `display_name` e `interface` presi da `/status`
 (non dedotti dall'ordine), banda e canale, status HTTP con `detail.code` e header `Retry-After`.
@@ -115,15 +123,16 @@ Per ogni test live raccogliere: ora UTC, `display_name` e `interface` presi da `
 ### Test per il tester (solo API)
 
 Prerequisito: il servizio deve girare con l'ultimo commit (`/status` → `version`, e il journal
-all'avvio). I fix WD-4 e WD-5 sono attivi solo dopo un riavvio successivo al commit `7d99d90`.
+all'avvio). Ogni fix è attivo solo dopo un riavvio del servizio successivo al suo commit
+(WD-1, WD-2, NET-1, NET-2 e NET-4: dal commit `2da9e77`).
 
 #### Monitoraggio continuo, da tenere attivo in ogni run
 
-| # | Passi | Esito atteso |
-|---|---|---|
-| M1 | Interrogare `GET /api/v1/status` ogni 10–30 s per tutta la run e registrare ogni voce di `networks` con `recovery_state` o `runtime_state`, più il campo `status`. | Con un'antenna in quarantena: `status: degraded` anche con `active_networks: 0`. |
-| M2 | Per ogni `500/1003` ricevuto, annotare l'antenna e seguirla in `/status`. | Dopo il fix WD-4/WD-5 l'antenna torna senza `recovery_state` da sola: entro circa 11 minuti se `recovering`, entro il backoff (al massimo 15 minuti) se `unavailable`. Un'antenna `unavailable` per più di 30 minuti va segnalata. |
-| M3 | Per ogni `409/1001`, ripetere la stessa POST dopo `Retry-After`. | `Retry-After` vale 5 e poi 10; al terzo fallimento `500/1003`. Non devono comparire `500` senza `detail.code`. |
+| # | Passi | Esito atteso | E2E |
+|---|---|---|---|
+| M1 | Interrogare `GET /api/v1/status` ogni 10–30 s per tutta la run e registrare ogni voce di `networks` con `recovery_state` o `runtime_state`, più il campo `status`. | Con un'antenna in quarantena: `status: degraded` anche con `active_networks: 0`. | ✅ [test_e2e_device_loss.py](tests/e2e-tests/test_e2e_device_loss.py) |
+| M2 | Per ogni `500/1003` ricevuto, annotare l'antenna e seguirla in `/status`. | Dopo il fix WD-4/WD-5 l'antenna torna senza `recovery_state` da sola: entro circa 11 minuti se `recovering`, entro il backoff (al massimo 15 minuti) se `unavailable`. Un'antenna `unavailable` per più di 30 minuti va segnalata. | ✅ [test_e2e_device_loss.py](tests/e2e-tests/test_e2e_device_loss.py) |
+| M3 | Per ogni `409/1001`, ripetere la stessa POST dopo `Retry-After`. | `Retry-After` vale 5 e poi 10; al terzo fallimento `500/1003`. Non devono comparire `500` senza `detail.code`. | ✅ [test_e2e_device_loss.py](tests/e2e-tests/test_e2e_device_loss.py) |
 
 #### Regressione dopo BUG-1, HAP-1, WD-4 e WD-5 (SOAK)
 
@@ -140,33 +149,33 @@ in corso deve dare `409/1001`, non `500/1003`, e l'antenna deve tornare da sola 
 
 #### Test previsti per gli altri ID
 
-| ID | Test via API | Esito atteso dopo il fix |
-|---|---|---|
-| WD-1 | Run lunga con M1: contare i `restoring_ap` per rete. | Una rete può avere più `restoring_ap` nella sua vita; ogni volta torna attiva. Nessuna invalidazione al secondo guasto. |
-| WD-2 | Come WD-1. | Nessuna rete che risulta attiva in `GET .../network` ma è ferma, senza `runtime_state` di errore. |
-| NET-1 | Molte create/delete concorrenti sulle due antenne (parallel, herd). | Nessun `500` e nessuna quarantena dopo un delete. |
-| STAB-3 | Reservation e rete attive, poi chiedere un riavvio del servizio a chi ha accesso alla macchina. | Dopo il riavvio la reservation esiste (`GET` → `200`) e la rete è di nuovo attiva. |
-| HAP-3, HAP-2 | Run lunga di create con statistiche per `status` e `detail.code`. | Solo `200`, `409/1001` o `500/1003`; mai `500` generico. |
-| HAP-4, WD-10 | Run lunga con M1. | Nessuna quarantena dopo una create con `409/1001` isolato; nessun `restoring_ap` su reti senza guasti. |
-| RACE-1 | Create su canale DFS (es. 100) e, nello stesso momento, 45 `GET .../network` più `/status`. | `/status` risponde subito; le altre richieste ottengono una risposta entro un limite, non un timeout. |
-| RACE-2 | `/status` in ciclo stretto durante create/delete ripetuti. | Nessun `degraded` spurio. |
-| HAP-9 | Con DFS abilitato, create sul canale 124. | Risposta coerente (attesa gestita o rifiuto esplicito), non un timeout del client a 75 s. |
-| HAP-10 | Create con `wpa2-wpa3` e con `wpa`. | `200` per entrambe. |
-| NET-11 | QoS con `download_quality: 40`, `upload_quality: 90`. | Rifiuto esplicito, oppure applicazione accettata con valori diversi nelle due direzioni (`GET .../qos`). |
-| BUG-2 | Una sola rete con `internet_enabled: false`. | `/status` non è `degraded`. |
-| BUG-7 | `POST .../txpower` con ogni livello, poi `GET .../txpower`. | Il `GET` riporta il valore reale, non quello richiesto. |
-| PERF-6 | Durata di `POST .../txpower`. | Sotto i 3 s. |
-| SEC-1 | `curl --path-as-is http://<host>:8080//etc/passwd` e `/../config.yaml`. | `404`. |
-| SEC-2 | Il client B chiama `/debug` mentre A ha una reservation. | Gli ID di A non sono visibili. |
-| API-2 | Reservation senza rete: `internet/enable`, `qos/profile`, `txpower`. | Stesso status HTTP per "rete non attiva". |
-| API-3 | `409` su rete già attiva, durante un ripristino, durante il cooldown; retry di una create dopo un timeout del client. | `detail.code` diverso per ogni caso; il retry con lo stesso body viene riconosciuto. |
-| API-4 | Terza create fallita per guasto radio. | Status HTTP come definito dal fix (non `500`). |
-| API-5 | Create riuscita. | La risposta contiene lo stato strutturato della rete. |
-| API-10 | Create con un campo sconosciuto (`"captive-portal": true`). | `422`. |
-| API-11 | Client che segue solo il contratto documentato in `/docs`. | Nessun retry ridondante; stessi risultati della run normale. |
-| API-1, API-6, API-7, API-8 | Confronto di risposte e percorsi con `/docs`. | Nomi uniformi; nessun dettaglio interno (`pid_file`); vecchi nomi deprecati ma funzionanti, se previsto. |
-| HAP-5, HAP-6, HAP-7 | Run SOAK identiche con la configurazione cambiata sulla macchina tra una run e l'altra. | Confronto del tasso di `409/1001` e `500/1003` tra le run. |
-| ARCH-1 … ARCH-12 | Run SOAK di regressione. | Nessuna differenza rispetto alla run precedente. |
+| ID | Test via API | Esito atteso dopo il fix | E2E |
+|---|---|---|---|
+| WD-1 | Run lunga con M1: contare i `restoring_ap` per rete. | Una rete può avere più `restoring_ap` nella sua vita; ogni volta torna attiva. Nessuna invalidazione al secondo guasto. | ✅ [test_e2e_watchdog.py](tests/e2e-tests/test_e2e_watchdog.py) |
+| WD-2 | Come WD-1. | Nessuna rete che risulta attiva in `GET .../network` ma è ferma, senza `runtime_state` di errore. | ✅ [test_e2e_watchdog.py](tests/e2e-tests/test_e2e_watchdog.py) |
+| NET-1 | Molte create/delete concorrenti sulle due antenne (parallel, herd). | Nessun `500` e nessuna quarantena dopo un delete. | ✅ [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
+| STAB-3 | Reservation e rete attive, poi chiedere un riavvio del servizio a chi ha accesso alla macchina. | Dopo il riavvio la reservation esiste (`GET` → `200`) e la rete è di nuovo attiva. |  |
+| HAP-3, HAP-2 | Run lunga di create con statistiche per `status` e `detail.code`. | Solo `200`, `409/1001` o `500/1003`; mai `500` generico. |  |
+| HAP-4, WD-10 | Run lunga con M1. | Nessuna quarantena dopo una create con `409/1001` isolato; nessun `restoring_ap` su reti senza guasti. |  |
+| RACE-1 | Create su canale DFS (es. 100) e, nello stesso momento, 45 `GET .../network` più `/status`. | `/status` risponde subito; le altre richieste ottengono una risposta entro un limite, non un timeout. |  |
+| RACE-2 | `/status` in ciclo stretto durante create/delete ripetuti. | Nessun `degraded` spurio. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| HAP-9 | Con DFS abilitato, create sul canale 124. | Risposta coerente (attesa gestita o rifiuto esplicito), non un timeout del client a 75 s. |  |
+| HAP-10 | Create con `wpa2-wpa3` e con `wpa`. | `200` per entrambe. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| NET-11 | QoS con `download_quality: 40`, `upload_quality: 90`. | Rifiuto esplicito, oppure applicazione accettata con valori diversi nelle due direzioni (`GET .../qos`). |  |
+| BUG-2 | Una sola rete con `internet_enabled: false`. | `/status` non è `degraded`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| BUG-7 | `POST .../txpower` con ogni livello, poi `GET .../txpower`. | Il `GET` riporta il valore reale, non quello richiesto. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| PERF-6 | Durata di `POST .../txpower`. | Sotto i 3 s. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| SEC-1 | `curl --path-as-is http://<host>:8080//etc/passwd` e `/../config.yaml`. | `404`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| SEC-2 | Il client B chiama `/debug` mentre A ha una reservation. | Gli ID di A non sono visibili. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| API-2 | Reservation senza rete: `internet/enable`, `qos/profile`, `txpower`. | Stesso status HTTP per "rete non attiva". | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| API-3 | `409` su rete già attiva, durante un ripristino, durante il cooldown; retry di una create dopo un timeout del client. | `detail.code` diverso per ogni caso; il retry con lo stesso body viene riconosciuto. |  |
+| API-4 | Terza create fallita per guasto radio. | Status HTTP come definito dal fix (non `500`). |  |
+| API-5 | Create riuscita. | La risposta contiene lo stato strutturato della rete. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| API-10 | Create con un campo sconosciuto (`"captive-portal": true`). | `422`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| API-11 | Client che segue solo il contratto documentato in `/docs`. | Nessun retry ridondante; stessi risultati della run normale. |  |
+| API-1, API-6, API-7, API-8 | Confronto di risposte e percorsi con `/docs`. | Nomi uniformi; nessun dettaglio interno (`pid_file`); vecchi nomi deprecati ma funzionanti, se previsto. |  |
+| HAP-5, HAP-6, HAP-7 | Run SOAK identiche con la configurazione cambiata sulla macchina tra una run e l'altra. | Confronto del tasso di `409/1001` e `500/1003` tra le run. |  |
+| ARCH-1 … ARCH-12 | Run SOAK di regressione. | Nessuna differenza rispetto alla run precedente. |  |
 
 ### Test con root o intervento fisico
 
@@ -177,20 +186,20 @@ ha perso richiedono una persona vicino alla macchina.
 Attenzione: il distacco simulato con un AP attivo può bloccare la VM per circa 60 s e far staccare
 la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricollegamento fisico.
 
-| ID | Intervento | Esito atteso |
-|---|---|---|
-| WD-5 (p. 3) | Antenna che ricompare con un nome diverso. | La voce vecchia viene ritirata; `/status` non resta `degraded`. |
-| WD-1, WD-8 | Rete attiva (con profilo QoS per WD-8): `kill -9` di hostapd 3 volte a distanza di minuti. | Ogni volta `restoring_ap` e poi rete attiva; profilo QoS di nuovo attivo. |
-| WD-2 | `kill -9` di hostapd con il riavvio che fallisce per una causa non radio. | `runtime_state` di errore in `/status`; il watchdog riprova. |
-| WD-3 | `kill -9` di dnsmasq due volte. | Ogni volta `restoring_dhcp` e poi DHCP attivo. |
-| WD-7 | Togliere a mano l'indirizzo del gateway o una regola NAT. | Il watchdog ripara entro pochi cicli. |
-| STAB-4, NET-9 | `kill -9` del servizio con una rete attiva (QoS per STAB-4), poi riavvio. | Nessun `netem`/`ifb` o indirizzo residuo; nuova rete sulla stessa antenna `200`. |
-| STAB-8 | Due reti attive; `time systemctl stop wi-lab`. | Arresto in meno di 30 s. |
-| STAB-9 | Rete attiva; `systemctl restart NetworkManager`. | La radio resta unmanaged e l'AP resta attivo. |
-| STAB-5 | Spostare l'orologio della VM di +2 h con una reservation attiva. | La reservation non scade in anticipo. |
-| STAB-6 | Cambiare la route di default verso un'altra interfaccia, poi creare una rete. | La nuova regola NAT usa la nuova interfaccia. |
-| BUG-5 | Collegare un'antenna nuova a servizio avviato. | Compare in `/status` entro 30 s, oppure il motivo dello scarto è nel journal. |
-| WD-9 | `config.yaml` malformato per 1 minuto, poi ripristinato. | La discovery continua dopo il ripristino. |
-| NET-2, WD-6, NET-10 | Far fallire l'inserimento NAT o il cleanup; occupare la porta 80. | NET-2: mai `200` con NAT assente. WD-6: tentativi di cleanup in backoff. NET-10: errore chiaro alla create. |
-| NET-1, PERF-1…5, BUG-1 | Ispezioni di root: `iptables -V`, `strace`/`perf` sui processi del servizio, `hostapd.conf` nella directory privata. | Come descritto in Fable-Notes. |
-| Telefono | Connessione reale: SSID `Caffè ☕` e `my"net\` visibili; rete nascosta non ASCII; password di 8 e 63 caratteri; `wpa2-wpa3` (HAP-10); `nslookup` (NET-8); `/docs` dal gateway rifiutato (SEC-3); isolamento tra reti (NET-3). | Connessione e DHCP funzionanti; per SEC-3 connessione rifiutata. |
+| ID | Intervento | Esito atteso | E2E |
+|---|---|---|---|
+| WD-5 (p. 3) | Antenna che ricompare con un nome diverso. | La voce vecchia viene ritirata; `/status` non resta `degraded`. |  |
+| WD-1, WD-8 | Rete attiva (con profilo QoS per WD-8): `kill -9` di hostapd 3 volte a distanza di minuti. | Ogni volta `restoring_ap` e poi rete attiva; profilo QoS di nuovo attivo. | ✅ WD-1: [test_e2e_watchdog.py](tests/e2e-tests/test_e2e_watchdog.py) |
+| WD-2 | `kill -9` di hostapd con il riavvio che fallisce per una causa non radio. | `runtime_state` di errore in `/status`; il watchdog riprova. | ✅ [test_e2e_watchdog.py](tests/e2e-tests/test_e2e_watchdog.py) |
+| WD-3 | `kill -9` di dnsmasq due volte. | Ogni volta `restoring_dhcp` e poi DHCP attivo. |  |
+| WD-7 | Togliere a mano l'indirizzo del gateway o una regola NAT. | Il watchdog ripara entro pochi cicli. |  |
+| STAB-4, NET-9 | `kill -9` del servizio con una rete attiva (QoS per STAB-4), poi riavvio. | Nessun `netem`/`ifb` o indirizzo residuo; nuova rete sulla stessa antenna `200`. |  |
+| STAB-8 | Due reti attive; `time systemctl stop wi-lab`. | Arresto in meno di 30 s. |  |
+| STAB-9 | Rete attiva; `systemctl restart NetworkManager`. | La radio resta unmanaged e l'AP resta attivo. |  |
+| STAB-5 | Spostare l'orologio della VM di +2 h con una reservation attiva. | La reservation non scade in anticipo. |  |
+| STAB-6 | Cambiare la route di default verso un'altra interfaccia, poi creare una rete. | La nuova regola NAT usa la nuova interfaccia. |  |
+| BUG-5 | Collegare un'antenna nuova a servizio avviato. | Compare in `/status` entro 30 s, oppure il motivo dello scarto è nel journal. |  |
+| WD-9 | `config.yaml` malformato per 1 minuto, poi ripristinato. | La discovery continua dopo il ripristino. |  |
+| NET-2, WD-6, NET-10 | Far fallire l'inserimento NAT o il cleanup; occupare la porta 80. | NET-2: mai `200` con NAT assente. WD-6: tentativi di cleanup in backoff. NET-10: errore chiaro alla create. | ✅ NET-2 (percorso positivo): [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
+| NET-1, PERF-1…5, BUG-1 | Ispezioni di root: `iptables -V`, `strace`/`perf` sui processi del servizio, `hostapd.conf` nella directory privata. | Come descritto in Fable-Notes. | ✅ NET-1: [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
+| Telefono | Connessione reale: SSID `Caffè ☕` e `my"net\` visibili; rete nascosta non ASCII; password di 8 e 63 caratteri; `wpa2-wpa3` (HAP-10); `nslookup` (NET-8); `/docs` dal gateway rifiutato (SEC-3); isolamento tra reti (NET-3). | Connessione e DHCP funzionanti; per SEC-3 connessione rifiutata. |  |
