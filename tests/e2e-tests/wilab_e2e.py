@@ -78,6 +78,33 @@ class Server:
     def kill(self, pid: int) -> None:
         self.sudo(["kill", "-9", str(pid)])
 
+    @staticmethod
+    def dnsmasq_pids(interface: str) -> list[int]:
+        """PIDs of the dnsmasq Wi-Lab runs for the network on `interface`."""
+        out = subprocess.run(
+            ["pgrep", "-f", f"dnsmasq .*--conf-file=.*dnsmasq-{interface}\\.conf"],
+            capture_output=True, text=True, check=False,
+        ).stdout
+        return [int(pid) for pid in out.split()]
+
+    @staticmethod
+    def service_started_at() -> float:
+        stamp = subprocess.run(
+            ["systemctl", "show", SERVICE, "-p", "ActiveEnterTimestamp", "--value"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        return float(subprocess.run(
+            ["date", "-d", stamp, "+%s"], capture_output=True, text=True, check=True,
+        ).stdout)
+
+    def budget_used(self, interface: str, kind: str) -> int:
+        """Watchdog AP restores (`kind="AP"`) or DHCP restarts (`"DHCP"`) on `interface`
+        in the last hour of this service run. Both budgets are 3 per hour per antenna
+        and live in the service, so earlier tests (or runs) consume them."""
+        marker = {"AP": f"Restoring AP on {interface} (", "DHCP": f"Restarting DHCP on {interface} ("}[kind]
+        since = max(time.time() - 3600, self.service_started_at())
+        return self.journal(since).count(marker)
+
     @contextmanager
     def hold_dhcp_port(self, interface: str) -> Iterator[None]:
         """Hold UDP port 67 on `interface` so dnsmasq cannot start there (a non-radio failure)."""

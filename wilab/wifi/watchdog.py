@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 # seconds. The next failure inside the window quarantines the adapter.
 RESTORE_LIMIT = 3
 RESTORE_WINDOW = 3600.0
+# DHCP restart budget per adapter, same window (WD-3). When it is used up, or a
+# DHCP restart fails, the watchdog restarts the whole network instead.
+DHCP_RESTORE_LIMIT = 3
 # Delay before each new attempt after a restore that failed for a non-radio
 # reason; the last value repeats while the reservation is valid.
 RETRY_BACKOFF = (15.0, 30.0, 60.0, 120.0, 300.0)
@@ -71,7 +74,8 @@ class NetworkWatchdog:
         # Monotonic times of recent AP restores. The budget belongs to the adapter,
         # so it is not reset when the client recreates the network.
         restores: deque[float] = deque()
-        attempted_dhcp = False
+        dhcp_restores: deque[float] = deque()  # same, for DHCP-only restarts (WD-3)
+        restart_network = False  # DHCP could not be repaired alone: restore the whole AP
         while not self.stopping.wait(5):
             lock = self.manager.device_lock(device)
             if not lock.acquire(blocking=False):
@@ -96,12 +100,15 @@ class NetworkWatchdog:
                 if status is not current:
                     self.states.pop(device, None)
                     current, misses = status, 0
-                    attempted_dhcp = False
+                    restart_network = False
                 if status is None or reservation is None or self._cancelled(reservation):
                     continue
                 alive = self.manager.hostapd_manager.is_running(device)
                 misses = 0 if alive and self.manager.hostapd_manager.is_enabled(device) else misses + 1
-                if not alive or misses >= 3:
+                if not alive or misses >= 3 or restart_network:
+                    if restart_network:
+                        logger.warning("DHCP on %s cannot be repaired alone; restarting the network", device)
+                    restart_network = False
                     self.states[device] = (reservation, "restoring_ap")
                     now = time.monotonic()
                     while restores and now - restores[0] > RESTORE_WINDOW:
@@ -112,6 +119,11 @@ class NetworkWatchdog:
                             "AP on %s failed again after %d restores in %.0f s; quarantining",
                             device, len(restores), RESTORE_WINDOW,
                         )
+                    else:
+                        logger.warning(
+                            "Restoring AP on %s (restore %d of %d in the last hour)",
+                            device, len(restores) + 1, RESTORE_LIMIT,
+                        )
                     try:
                         self._restore_ap(reservations, reservation, status, exhausted)
                         current = self.manager.active.get(device)
@@ -121,11 +133,23 @@ class NetworkWatchdog:
                         if self.states.get(device, (None, ""))[1] == "restoring_ap":
                             self.states.pop(device, None)
                 elif misses == 0 and not self.manager.dhcp_server.is_running(device):
-                    if not attempted_dhcp:
-                        attempted_dhcp = True
+                    now = time.monotonic()
+                    while dhcp_restores and now - dhcp_restores[0] > RESTORE_WINDOW:
+                        dhcp_restores.popleft()
+                    if len(dhcp_restores) < DHCP_RESTORE_LIMIT:
+                        dhcp_restores.append(now)
+                        logger.warning(
+                            "Restarting DHCP on %s (restart %d of %d in the last hour)",
+                            device, len(dhcp_restores), DHCP_RESTORE_LIMIT,
+                        )
                         self._restore_dhcp(reservations, reservation, status)
+                        failed = self.state(reservation) == "dhcp_failed"
                     else:
                         self.states[device] = (reservation, "dhcp_failed")
+                        failed = True
+                    # On the next tick, restore the whole network through the AP
+                    # budget (WD-1); dhcp_failed stays visible until then.
+                    restart_network = failed and reservations.snapshot().get(device) is reservation
                 elif misses == 0 and self.state(reservation) == "dhcp_failed":
                     self.states.pop(device, None)
             except (OSError, RuntimeError, ValueError):

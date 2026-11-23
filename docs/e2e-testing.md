@@ -61,6 +61,8 @@ The sudo password is used with `sudo -k -S` and is never printed. Only `tee` on 
 | `test_e2e_watchdog.py` | hostapd killed twice with `kill -9`: each time the watchdog restores the AP (`active`, no `runtime_state`), with no quarantine and the reservation kept. | WD-1 | `kill`, `iw`, journal |
 | `test_e2e_watchdog.py` | hostapd killed while UDP port 67 is held on the interface, so the restore fails on dnsmasq: `runtime_state: restore_failed`, `active: false`, service `degraded`, no quarantine; after the port is freed a retry restores the AP. | WD-2 | `kill`, port 67 holder, journal |
 | `test_e2e_watchdog.py` | Same failure, then `DELETE .../network`: `200`, retries stop, the reservation stays valid and a new create works. | WD-2 | `kill`, port 67 holder |
+| `test_e2e_watchdog.py` | dnsmasq killed twice: each time the watchdog restarts DHCP alone, the AP stays up, no network restore and no quarantine. | WD-3 | `kill`, journal |
+| `test_e2e_watchdog.py` | dnsmasq killed while UDP port 67 is held: the DHCP restart fails, the watchdog restores the whole network, which fails on DHCP too (`restore_failed`); after the port is freed the network comes back. | WD-3, WD-2 | `kill`, port 67 holder, journal |
 | `test_e2e_firewall.py` | Parallel create/delete on every antenna while `/status` is polled every 0.2 s: all `200`, no quarantine, no "xtables lock" error in the journal. | NET-1 | journal |
 | `test_e2e_firewall.py` | Legacy backend only: another process holds the xtables lock for 2 s; a create waits and returns `200`. Skipped on nf_tables. | NET-1 | `flock /run/xtables.lock` |
 | `test_e2e_firewall.py` | A `200` create has the firewall it reports: with `internet_enabled: true` the MASQUERADE and FORWARD rules exist in iptables, with `false` there is no MASQUERADE rule; the journal shows "Isolation rules applied" and never "Isolation disabled for testing"; delete removes the rules. The failure path has no safe live trigger and is covered by unit tests. | NET-2, NET-4 | `iptables -S` (root), journal |
@@ -70,6 +72,12 @@ Tests in `test_e2e_api.py` use only the public API (except the `iw` comparison f
 they give the same result from an external machine. Tests for IDs that are not fixed yet are
 marked `xfail` (not strict): pytest reports them as `XFAIL` until the fix lands and as `XPASS`
 afterwards, when the mark is removed.
+
+The watchdog budgets (3 AP restores and 3 DHCP restarts per hour per antenna) live in the running
+service, so tests that kill hostapd or dnsmasq use them up. Each of those tests counts the
+"Restoring AP on" and "Restarting DHCP on" lines in the journal for the last hour of the current
+service run, reserves an antenna that still has the budget it needs, and skips itself when none
+has: wait an hour or restart the service.
 
 The tests pick the first antenna listed in `/status` and find its USB port from sysfs, so no
 port is hard-coded.

@@ -1,4 +1,4 @@
-"""AP watchdog: restore budget (WD-1) and retries after a failed restore (WD-2)."""
+"""AP watchdog: restore budget (WD-1), retries after a failed restore (WD-2) and DHCP repair (WD-3)."""
 
 from unittest.mock import Mock
 
@@ -199,3 +199,80 @@ def test_new_create_replaces_the_pending_restore(monkeypatch):
         assert client.post(path, headers=headers, json=body).status_code == 200
     assert reservation.device_id not in manager.watchdog._pending
     assert manager.watchdog.state(reservation) is None
+
+
+# --------------------------------------------------------------------------- WD-3
+
+def _dhcp_setup(monkeypatch, ticks, dhcp_restart_works=True):
+    """Run the watch loop once per (time, dnsmasq running) tick with hostapd healthy.
+
+    Returns the events: "dhcp" for a DHCP-only restart, "ap" for a network restore.
+    """
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    reservations = dependencies.get_reservation_manager(config)
+    reservation = reservations.create(0)
+    device = reservation.device_id
+    monkeypatch.setitem(
+        manager.active, device, NetworkStatus(interface=device, active=True, subnet="192.0.2.0/24"),
+    )
+    monkeypatch.setattr(manager.hostapd_manager, "is_running", Mock(return_value=True))
+    monkeypatch.setattr(manager.hostapd_manager, "is_enabled", Mock(return_value=True))
+    clock = {"now": 0.0, "dhcp": True}
+    tick_iter = iter(ticks)
+
+    def wait(_timeout):
+        try:
+            clock["now"], clock["dhcp"] = next(tick_iter)
+        except StopIteration:
+            return True
+        return False
+
+    monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(manager.dhcp_server, "is_running", lambda _device: clock["dhcp"])
+    monkeypatch.setattr(manager.watchdog.stopping, "wait", wait)
+    events: list[str] = []
+    states: list[str | None] = []
+
+    def restore_dhcp(_reservations, res, _status):
+        events.append("dhcp")
+        if dhcp_restart_works:
+            manager.watchdog.states.pop(device, None)
+        else:
+            manager.watchdog.states[device] = (res, "dhcp_failed")
+        states.append(manager.watchdog.state(res))
+
+    def restore_ap(_reservations, _res, _status, exhausted):
+        events.append("ap-exhausted" if exhausted else "ap")
+
+    monkeypatch.setattr(manager.watchdog, "_restore_dhcp", restore_dhcp)
+    monkeypatch.setattr(manager.watchdog, "_restore_ap", restore_ap)
+    manager.watchdog._watch(reservations, device)
+    return events
+
+
+def test_dnsmasq_death_is_repaired_more_than_once(monkeypatch):
+    # Before WD-3 the second death left the network in dhcp_failed for good.
+    ticks = [(0.0, False), (5.0, True), (600.0, False), (605.0, True), (1200.0, False)]
+    assert _dhcp_setup(monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp"]
+
+
+def test_fourth_dhcp_failure_in_an_hour_restarts_the_network(monkeypatch):
+    ticks = [
+        (0.0, False), (5.0, True), (10.0, False), (15.0, True), (20.0, False), (25.0, True),
+        (30.0, False), (35.0, False),
+    ]
+    assert _dhcp_setup(monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp", "ap"]
+
+
+def test_failed_dhcp_restart_restarts_the_network_on_the_next_tick(monkeypatch):
+    ticks = [(0.0, False), (5.0, False)]
+    assert _dhcp_setup(monkeypatch, ticks, dhcp_restart_works=False) == ["dhcp", "ap"]
+
+
+def test_dhcp_budget_renews_after_the_window(monkeypatch):
+    ticks = [
+        (0.0, False), (5.0, True), (10.0, False), (15.0, True), (20.0, False), (25.0, True),
+        (3700.0, False),
+    ]
+    assert _dhcp_setup(monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp", "dhcp"]

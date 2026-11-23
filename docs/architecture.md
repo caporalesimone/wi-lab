@@ -606,8 +606,11 @@ flowchart TD
     M3 -->|yes| RA
     E -->|yes| DH{"dnsmasq running?"}
     DH -->|yes| T
-    DH -->|"no, first time"| RD["restoring_dhcp: restart dnsmasq only"]
-    DH -->|"no, already restarted"| DF["runtime_state = dhcp_failed<br/>AP stays up"]
+    DH -->|"no, fewer than 3 DHCP restarts<br/>in the last hour"| RD["restoring_dhcp: restart dnsmasq only"]
+    DH -->|"no, 3 DHCP restarts in the last hour"| DF["runtime_state = dhcp_failed<br/>until the next tick"]
+    RD -->|success| T
+    RD -->|"restart failed"| DF
+    DF -->|"next tick"| RA
     RA{"3 AP restores on this antenna<br/>in the last hour?"}
     RA -->|no| RS["restoring_ap: teardown, start again with the<br/>original settings and the internal retry"]
     RA -->|yes| Q["quarantine, invalidate reservation"]
@@ -630,6 +633,12 @@ flowchart TD
   deleting and recreating the network does not reset it. A long-lived
   reservation can therefore survive one outage a day indefinitely, while an AP
   that keeps dying is taken out of the pool.
+- **DHCP repair (WD-3):** a dead dnsmasq is restarted alone, keeping the AP
+  up, up to 3 times in any hour per antenna (`DHCP_RESTORE_LIMIT`, same
+  window). If a DHCP restart fails, or dnsmasq dies a fourth time within the
+  hour, the next tick restores the whole network, which goes through the AP
+  restore budget above. `dhcp_failed` is visible only in the 5 s between the
+  two ticks.
 - **Failed restore (WD-2):** a restart that fails for a non-radio reason is
   not silent. `runtime_state` becomes `restore_failed` (so `/status` is
   `degraded`) and the watchdog retries with backoff (`RETRY_BACKOFF`: 15, 30,

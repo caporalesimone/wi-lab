@@ -111,9 +111,10 @@ def system_status(
       and Wi-Lab re-probes it periodically (30 s, then backing off to every
       15 min). Either may return to the pool by itself;
     - a reserved network has `runtime_state`: `restoring_ap`, `restoring_dhcp`
-      (the watchdog is repairing it), `dhcp_failed` (AP up, new clients get
-      no address) or `restore_failed` (AP down after a failed restart; the
-      watchdog retries with backoff);
+      (the watchdog is repairing it), `dhcp_failed` (DHCP could not be
+      repaired alone; the whole network is restarted on the next tick) or
+      `restore_failed` (AP down after a failed restart; the watchdog retries
+      with backoff);
     - a host command (`ip`, `iw`, `tc`, ...) did not exit even after SIGKILL
       (`checks.commands.stuck` > 0). It is stuck in the kernel, usually a hung
       Wi-Fi driver; Wi-Lab no longer waits for it, but the adapter may need a

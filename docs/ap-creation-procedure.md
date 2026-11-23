@@ -201,7 +201,7 @@ A success resets the counter. Further rules:
   |---|---|---|
   | `restoring_ap` | The AP is being restarted. Clients will need to reconnect. | Wait. Do not send a create. |
   | `restoring_dhcp` | Only DHCP is being restarted. The AP stays up. | Wait. |
-  | `dhcp_failed` | DHCP could not restart. The AP is up but new clients cannot get an address. | Release and reserve again if new clients are needed. |
+  | `dhcp_failed` | DHCP could not be repaired alone (a restart failed, or dnsmasq died more than 3 times in an hour). Within 5 s the watchdog restarts the whole network (`restoring_ap`). | Wait. |
   | `restore_failed` | The AP restart failed for a non-radio reason. The AP is down (`active: false`); the watchdog retries after 15 s, 30 s, 60 s, 120 s, then every 5 minutes while the reservation is valid. | Wait for `runtime_state` to clear, or `DELETE .../network` to stop the retries (the reservation stays valid), or create a new network. |
 
 - An AP restart clears traffic shaping and QoS profiles: reapply them after a
@@ -283,7 +283,7 @@ Find the cause in `networks[]` and `checks`:
 | `recovery_state` | `recovering` | Antenna quarantined; Wi-Lab is resetting and probing it. | Do not count it as available. It may return by itself. |
 | `recovery_state` | `unavailable` | Antenna quarantined; no USB reset is running. Wi-Lab re-probes it periodically (after 30 s, backing off to every 15 min). | Do not count it as available. It may return by itself; report it to the operator if it persists. |
 | `runtime_state` | `restoring_ap` / `restoring_dhcp` | The owner's AP is being repaired (see [2.6](#26-after-the-ap-is-running)). | Owner: wait. Others: nothing to do. |
-| `runtime_state` | `dhcp_failed` | AP up, new clients get no address. | Owner: release and reserve again if needed. |
+| `runtime_state` | `dhcp_failed` | DHCP could not be repaired alone; the whole network is restarted within 5 s. | Owner: wait. |
 | `runtime_state` | `restore_failed` | AP down after a failed restart; the watchdog retries with backoff. | Owner: wait, or `DELETE .../network` to stop the retries. |
 | `checks.commands.stuck` | greater than 0 | A host command (`ip`, `iw`, `usbreset`, ...) did not exit even after SIGKILL: usually a hung Wi-Fi driver. Operations on the affected adapter fail instead of hanging. Set in standby too. | Report it to the operator: the adapter may need a reset or the host a reboot. |
 | `checks.*` | `running`/`configured`/`reachable` false | A shared component failed while APs are active. | Report it; Internet access may not work. |
