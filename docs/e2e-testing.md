@@ -63,6 +63,7 @@ The sudo password is used with `sudo -k -S` and is never printed. Only `tee` on 
 | `test_e2e_watchdog.py` | Same failure, then `DELETE .../network`: `200`, retries stop, the reservation stays valid and a new create works. | WD-2 | `kill`, port 67 holder |
 | `test_e2e_firewall.py` | Parallel create/delete on every antenna while `/status` is polled every 0.2 s: all `200`, no quarantine, no "xtables lock" error in the journal. | NET-1 | journal |
 | `test_e2e_firewall.py` | Legacy backend only: another process holds the xtables lock for 2 s; a create waits and returns `200`. Skipped on nf_tables. | NET-1 | `flock /run/xtables.lock` |
+| `test_e2e_firewall.py` | A `200` create has the firewall it reports: with `internet_enabled: true` the MASQUERADE and FORWARD rules exist in iptables, with `false` there is no MASQUERADE rule; the journal shows "Isolation rules applied" and never "Isolation disabled for testing"; delete removes the rules. The failure path has no safe live trigger and is covered by unit tests. | NET-2, NET-4 | `iptables -S` (root), journal |
 
 The tests pick the first antenna listed in `/status` and find its USB port from sysfs, so no
 port is hard-coded.

@@ -1,4 +1,4 @@
-"""Firewall robustness on the real service (NET-1)."""
+"""Firewall on the real service: lock handling (NET-1) and rules behind a 200 (NET-2, NET-4)."""
 
 import threading
 import time
@@ -61,3 +61,35 @@ def test_create_waits_for_a_held_xtables_lock(wilab: WiLab, server: Server) -> N
         response = wilab.create(antenna)
     assert response.status_code == 200, response.text
     assert "xtables lock" not in server.journal(start)
+
+
+@pytest.mark.parametrize("internet", [True, False])
+def test_success_means_the_firewall_is_in_place(wilab: WiLab, server: Server, internet: bool) -> None:
+    """NET-2: a 200 create has the NAT rules it reports, and none when Internet is off.
+
+    The failure path (NAT or isolation cannot be applied -> 500 and rollback)
+    has no safe live trigger on a shared host; it is covered by
+    tests/unit-tests/test_startup_firewall.py.
+    """
+    antenna = wilab.reserve()
+    start = time.time()
+    response = wilab.create(antenna, internet_enabled=internet)
+    assert response.status_code == 200, response.text
+    network = wilab.http.get(f"/interface/{antenna.reservation_id}/network").json()
+    assert network["internet_enabled"] is internet
+    nat = server.iptables_rules("nat")
+    forward = server.iptables_rules("filter")
+    masquerade = [line for line in nat.splitlines() if f"wilab-nat-{antenna.interface}" in line]
+    accept = [line for line in forward.splitlines() if f"wilab-forward-{antenna.interface}" in line]
+    if internet:
+        assert any(network["subnet"] in line and "MASQUERADE" in line for line in masquerade), nat
+        assert len(accept) >= 2, forward
+    else:
+        assert not masquerade
+    assert wilab.status()["checks"]["iptables_nat"]["configured"] is True
+    journal = server.journal(start)
+    assert "Isolation rules applied" in journal
+    assert "Isolation disabled for testing" not in journal  # NET-4
+    assert wilab.delete_network(antenna) == 200
+    leftover = server.iptables_rules("nat")
+    assert f"wilab-nat-{antenna.interface}" not in leftover

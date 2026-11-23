@@ -139,7 +139,7 @@ antenna, so parallel requests for the same reservation only queue up.
 | `422` | Invalid body, or channel unsupported/disabled on this antenna. | Fix the request. Do not retry the same body. |
 | `404` | The reservation is unknown, expired or invalidated. | Stop using the ID. Reserve again if needed. |
 | `500 / 1003` | **Terminal failure.** The antenna was quarantined and the reservation **invalidated**. | Discard the ID. Do not retry creation and do not release it. Reserve again if needed. |
-| `500 / 500` (generic startup error) | An unclassified startup error (e.g. `hostapd` exited with code 1, gateway or DHCP failure). The rollback succeeded and the reservation is **still valid**. | Do not retry automatically. Show `detail.message`. Release the ID if abandoning this attempt; release it before asking for a fresh reservation. |
+| `500 / 500` (generic startup error) | An unclassified startup error (e.g. `hostapd` exited with code 1, gateway or DHCP failure, or the NAT rules for `internet_enabled: true` or the isolation rules could not be installed). The rollback succeeded and the reservation is **still valid**. | Do not retry automatically. Show `detail.message`. Release the ID if abandoning this attempt; release it before asking for a fresh reservation. |
 | `503 / 1004` | A device cleanup failed. | Do not retry automatically. |
 | `401` | Missing or invalid token. | Fix the token. |
 

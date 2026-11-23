@@ -32,6 +32,16 @@ class Server:
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=30,
         )
 
+    def sudo_output(self, args: list[str]) -> str:
+        password = self.sudo_file.read_bytes().splitlines()[0]
+        return subprocess.run(
+            ["sudo", "-k", "-S", "-p", "", *args], input=password + b"\n",
+            capture_output=True, check=True, timeout=30,
+        ).stdout.decode()
+
+    def iptables_rules(self, table: str = "filter") -> str:
+        return self.sudo_output(["iptables", "-w", "5", "-t", table, "-S"])
+
     @staticmethod
     def interface_present(interface: str) -> bool:
         return Path("/sys/class/net", interface).exists()

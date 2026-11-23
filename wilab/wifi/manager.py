@@ -325,6 +325,20 @@ class NetworkManager:
                         # Tracked before start so a rollback removes partial rules.
                         self.captive_portals[device_id] = portal
                         portal.start()
+                    # NAT and isolation are part of the startup (NET-2): a network
+                    # never reports success without the firewall it claims.
+                    if internet_enabled:
+                        stage = "enable Internet"
+                        try:
+                            with self._firewall_lock:
+                                self.nat_manager.enable_nat(cfg_net.interface, device_id, subnet)
+                        except RuntimeError as exc:
+                            raise CommandError(str(exc)) from exc
+                        logger.info("NAT enabled for %s", device_id)
+                    stage = "isolate network"
+                    with self._firewall_lock:
+                        self.isolation_manager.add_network(subnet)
+                    logger.info("Isolation rules applied for %s (%s)", device_id, subnet)
                     if retrying and (
                         time.monotonic() >= retry_deadline
                         or (expires_at_timestamp is not None and time.time() >= expires_at_timestamp)
@@ -417,26 +431,6 @@ class NetworkManager:
         # Store internal timestamp for expiration checking
         object.__setattr__(status, '_expires_at_timestamp', expires_at_timestamp)  # type: ignore[attr-defined]
         
-        # Enable NAT if internet access is enabled
-        if internet_enabled:
-            try:
-                with self._firewall_lock:
-                    self.nat_manager.enable_nat(cfg_net.interface, device_id, subnet)
-                logger.info(f"NAT enabled for {device_id}")
-            except Exception as e:
-                logger.error(f"Failed to enable NAT for {device_id}: {e}")
-                # Don't fail network creation if NAT fails, just log
-        
-        # Apply isolation rules to prevent inter-network traffic
-        try:
-            with self._firewall_lock:
-                self.isolation_manager.add_network(subnet)
-            logger.info(f"Isolation rules applied for {device_id} ({subnet})")
-        except Exception as e:
-            logger.error(f"Failed to apply isolation rules for {device_id}: {e}")
-        #     # Don't fail network creation if isolation fails
-        logger.info(f"Isolation disabled for testing (network {device_id})")
-        
         self.active[device_id] = status
         logger.info(f"Network {device_id} started successfully (expires at {expires_at_str})")
         
@@ -458,7 +452,12 @@ class NetworkManager:
         
         # Get interface and subnet before removing from active dict
         cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
-        subnet = self.active[device_id].subnet if device_id in self.active else None
+        # A startup rollback runs before the network is active: use the assigned
+        # subnet so its isolation rules are removed too (NET-2).
+        assigned = self._assigned_subnets.get(device_id)
+        subnet = self.active[device_id].subnet if device_id in self.active else (
+            str(assigned) if assigned is not None else None
+        )
         
         # Clear QoS rules before tearing down the network
         if cfg_net and self.qos_manager is not None:

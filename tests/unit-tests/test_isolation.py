@@ -2,6 +2,8 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from wilab.network.commands import CommandError
 from wilab.network.isolation import IsolationManager
 
@@ -75,16 +77,27 @@ class TestAddNetwork:
     
     @patch('wilab.network.isolation.execute_iptables')
     def test_add_network_iptables_error(self, mock_iptables):
-        """Test that iptables errors don't crash the manager."""
-        mock_iptables.side_effect = CommandError("iptables failed", 1)
-        
+        """NET-2: an iptables error fails the add and leaves no partial rules."""
         manager = IsolationManager()
         manager.add_network('192.168.10.0/24')
         manager.add_network('192.168.11.0/24')
-        
-        # Should handle error gracefully and still track networks
-        assert '192.168.10.0/24' in manager._active_subnets
-        assert '192.168.11.0/24' in manager._active_subnets
+        calls = []
+
+        def iptables(args):
+            calls.append(args)
+            # Fail on the third rule: two rules were added for 192.168.12.0/24.
+            if args[0] == "-A" and len([c for c in calls if c[0] == "-A"]) == 3:
+                raise CommandError("iptables failed", 1)
+            return ""
+
+        mock_iptables.side_effect = iptables
+        with pytest.raises(CommandError):
+            manager.add_network('192.168.12.0/24')
+
+        assert '192.168.12.0/24' not in manager._active_subnets
+        added = [c[1:] for c in calls if c[0] == "-A"][:2]
+        removed = [c[1:] for c in calls if c[0] == "-D"]
+        assert sorted(removed) == sorted(added)
 
 
 class TestRemoveNetwork:

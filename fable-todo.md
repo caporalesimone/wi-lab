@@ -14,7 +14,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [NET-1](Fable-Notes.md#L620) | ✅ | Attendere il lock di iptables durante le operazioni firewall. |
 | 1 | [HAP-1](Fable-Notes.md#L694) | ✅ | Riconoscere correttamente gli SSID con escape restituiti da hostapd. |
 | 1 | [STAB-1](Fable-Notes.md#L756) |  | Limitare l'attesa dei processi e recuperare dai comandi bloccati. |
-| 1 | [NET-2](Fable-Notes.md#L861) |  | Non dichiarare riuscita una rete se NAT o isolamento non sono configurati. |
+| 1 | [NET-2](Fable-Notes.md#L861) | ✅ | Non dichiarare riuscita una rete se NAT o isolamento non sono configurati. |
 | 1 | [STAB-3](Fable-Notes.md#L929) |  | Ripristinare reservation e reti dopo il riavvio del servizio. |
 | 1 | [HAP-3](Fable-Notes.md#L994) |  | Classificare in modo coerente i guasti di inizializzazione hostapd. |
 | 1 | [HAP-2](Fable-Notes.md#L1069) |  | Uniformare la classificazione dei guasti hostapd disabilitati. |
@@ -60,7 +60,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 18 | [BUG-7](Fable-Notes.md#L2695) |  | Rendere coerente lo stato della potenza TX in caso di mismatch. |
 | 19 | [BUG-8](Fable-Notes.md#L2728) |  | Usare un confronto constant-time per il token. |
 | 20 | [NET-10](Fable-Notes.md#L2836) |  | Gestire conflitti sulla porta 80, richieste malformate e regole firewall. |
-| 21 | [NET-4](Fable-Notes.md#L2874) |  | Rimuovere il messaggio di log fuorviante sull'isolamento. |
+| 21 | [NET-4](Fable-Notes.md#L2874) | ✅ | Rimuovere il messaggio di log fuorviante sull'isolamento. |
 | 22 | [HAP-7](Fable-Notes.md#L2897) |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
 | 23 | [RACE-2](Fable-Notes.md#L2917) |  | Costruire `/status` da uno snapshot coerente dello stato condiviso. |
 | 24 | [RACE-3](Fable-Notes.md#L2938) |  | Sincronizzare le operazioni QoS per interfaccia. |

@@ -363,13 +363,15 @@ sequenceDiagram
     opt captive_portal
         NM->>FW: install portal chains, then start the portal web server
     end
+    opt internet_enabled
+        NM->>FW: enable NAT (firewall lock)
+    end
+    NM->>FW: add isolation rules, all or nothing (firewall lock)
     alt any step failed
         NM->>NM: release_device rollback
         NM->>NM: internal retry (up to 3 starts), or raise StartupFailure
     end
     NM->>OS: set TX power level (best effort)
-    NM->>FW: enable NAT if internet_enabled (best effort, firewall lock)
-    NM->>FW: add isolation rules (best effort, firewall lock)
     NM->>NM: active[antenna] = NetworkStatus
     NM-->>R: status
     R->>R: reset radio_failures and retry_at
@@ -528,7 +530,7 @@ flowchart TD
     OUT2 -->|"AP start failed again, starts or budget left"| IR
     OUT2 -->|"AP start failed again, no starts or budget left"| CL
     OUT2 -->|"gateway or DHCP failed"| G
-    OUT -->|"unclassified: exit code, gateway, DHCP,<br/>interface validation"| G["500 generic<br/>reservation kept, no counter change"]
+    OUT -->|"unclassified: exit code, gateway, DHCP,<br/>NAT, isolation, interface validation"| G["500 generic<br/>reservation kept, no counter change"]
     OUT -->|"interface vanished (any stage)"| CL
     OUT -->|classified radio failure| CL["radio_failures += 1"]
     OUT -->|rollback failed| Q
@@ -552,8 +554,8 @@ every one succeeded on an immediate new start, and waiting the 5 s cooldown did
 not improve the success rate. Retrying inside the request spares the client a
 `409 / 1001` round trip. A start without failures still takes about 0.5 s; one
 retry adds about 2–3 s, two retries about 5–6 s, and the worst case, with a
-firmware timeout, is about 15 s. Gateway, DHCP, captive portal and other
-unclassified failures are not retried. On a DFS channel the radar check can use
+firmware timeout, is about 15 s. Gateway, DHCP, captive portal, NAT,
+isolation and other unclassified failures are not retried. On a DFS channel the radar check can use
 up the whole budget, so a failure there is usually not retried.
 
 An unclassified startup failure with successful rollback returns `500 / 500`

@@ -29,10 +29,19 @@ class IsolationManager:
         
         logger.info(f"Adding isolation rules for subnet {subnet}")
         
-        # Add rules to block traffic between this subnet and all existing subnets
-        for existing_subnet in self._active_subnets:
-            self._block_traffic(subnet, existing_subnet)
-            self._block_traffic(existing_subnet, subnet)
+        # Add rules to block traffic between this subnet and all existing subnets.
+        # All or nothing (NET-2): on failure the rules already added are removed
+        # and CommandError is raised, so the network startup fails and rolls back.
+        added: list[tuple[str, str]] = []
+        try:
+            for existing_subnet in self._active_subnets:
+                for pair in ((subnet, existing_subnet), (existing_subnet, subnet)):
+                    if self._block_traffic(*pair):
+                        added.append(pair)
+        except CommandError:
+            for pair in reversed(added):
+                self._unblock_traffic(*pair)
+            raise
         
         self._active_subnets.add(subnet)
         logger.info(f"Isolation rules added for {subnet}")
@@ -45,7 +54,8 @@ class IsolationManager:
             subnet: CIDR subnet (e.g., "192.168.10.0/24")
         """
         if subnet not in self._active_subnets:
-            logger.warning(f"Subnet {subnet} has no isolation rules to remove")
+            # Normal after a startup that failed before isolation was applied.
+            logger.debug(f"Subnet {subnet} has no isolation rules to remove")
             return
         
         logger.info(f"Removing isolation rules for subnet {subnet}")
@@ -59,13 +69,19 @@ class IsolationManager:
         self._active_subnets.discard(subnet)
         logger.info(f"Isolation rules removed for {subnet}")
     
-    def _block_traffic(self, source: str, destination: str) -> None:
+    def _block_traffic(self, source: str, destination: str) -> bool:
         """
         Block traffic from source subnet to destination subnet.
         
         Args:
             source: Source CIDR subnet
             destination: Destination CIDR subnet
+
+        Returns:
+            True if a rule was added, False if the pair is skipped.
+
+        Raises:
+            CommandError: If iptables fails.
         """
         try:
             # SAFETY: Only block traffic BETWEEN WiFi subnets (192.168.x.0/24)
@@ -73,7 +89,7 @@ class IsolationManager:
             # Skip if either subnet is not a WiFi subnet (not 192.168.x.0/24)
             if not (source.startswith("192.168.") and destination.startswith("192.168.")):
                 logger.warning(f"Skipping isolation rule for non-WiFi subnets: {source} -> {destination}")
-                return
+                return False
             
             # Append rule to FORWARD chain to block inter-subnet traffic
             # Use -A (append) instead of -I (insert) to avoid interfering with existing rules
@@ -87,8 +103,10 @@ class IsolationManager:
                 "--comment", "wilab-isolation"
             ])
             logger.debug(f"Blocked traffic: {source} -> {destination}")
+            return True
         except CommandError as e:
             logger.error(f"Failed to block traffic {source} -> {destination}: {e}")
+            raise
     
     def _unblock_traffic(self, source: str, destination: str) -> None:
         """
