@@ -53,6 +53,7 @@ def get_reservation_manager(config: AppConfig = Depends(get_config)) -> Reservat
             )
             manager.expire_reservations = _reservation_manager.expire
             manager.watchdog.start(_reservation_manager)
+            manager.recovery.start_reprobe(_reservation_manager)
         return _reservation_manager
 
 

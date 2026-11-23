@@ -10,7 +10,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [BUG-1](Fable-Notes.md#L309) | ✅ | Validare gli input della richiesta di creazione e rifiutare SSID non sicuri. |
 | 1 | [WD-2](Fable-Notes.md#L424) |  | Segnalare e ritentare il ripristino quando il watchdog fallisce. |
 | 1 | [WD-1](Fable-Notes.md#L504) |  | Consentire più tentativi di ripristino dell'access point. |
-| 1 | [WD-4](Fable-Notes.md#L559) |  | Rendere la quarantena recuperabile e completare il cleanup. |
+| 1 | [WD-4](Fable-Notes.md#L559) | ✅ | Rendere la quarantena recuperabile e completare il cleanup. |
 | 1 | [NET-1](Fable-Notes.md#L620) |  | Attendere il lock di iptables durante le operazioni firewall. |
 | 1 | [HAP-1](Fable-Notes.md#L694) | ✅ | Riconoscere correttamente gli SSID con escape restituiti da hostapd. |
 | 1 | [STAB-1](Fable-Notes.md#L756) |  | Limitare l'attesa dei processi e recuperare dai comandi bloccati. |
@@ -19,7 +19,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [HAP-3](Fable-Notes.md#L994) |  | Classificare in modo coerente i guasti di inizializzazione hostapd. |
 | 1 | [HAP-2](Fable-Notes.md#L1069) |  | Uniformare la classificazione dei guasti hostapd disabilitati. |
 | 1 | [WD-3](Fable-Notes.md#L1111) |  | Ritentare il recupero DHCP e, se serve, ripristinare l'intera rete. |
-| 1 | [WD-5](Fable-Notes.md#L1156) |  | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. |
+| 1 | [WD-5](Fable-Notes.md#L1156) | ✅ parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. Fatti i punti 1–2 e la classificazione come guasto radio; il ritiro delle antenne rinominate (punto 3) dipende da ARCH-4. |
 | 1 | [WD-7](Fable-Notes.md#L1221) |  | Verificare e riparare lo stato effettivo della rete nel watchdog. |
 | 1 | [STAB-4](Fable-Notes.md#L1360) |  | Pulire all'avvio anche indirizzi, QoS, file e PID obsoleti. |
 | 1 | [RACE-1](Fable-Notes.md#L1488) |  | Limitare l'attesa del lock sul dispositivo e restituire un esito occupato. |

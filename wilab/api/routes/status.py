@@ -105,8 +105,9 @@ def system_status(
     `degraded` is set when:
 
     - an adapter has `recovery_state` (quarantine): `recovering` means a USB
-      reset and probe are in progress and it may return by itself;
-      `unavailable` means no recovery is running and it stays excluded;
+      reset and probe are in progress; `unavailable` means no reset is running
+      and Wi-Lab re-probes it periodically (30 s, then backing off to every
+      15 min). Either may return to the pool by itself;
     - a reserved network has `runtime_state`: `restoring_ap`, `restoring_dhcp`
       (the watchdog is repairing it) or `dhcp_failed` (AP up, new clients get
       no address);

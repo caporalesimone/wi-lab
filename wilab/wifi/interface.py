@@ -1,8 +1,22 @@
 import logging
+import os
 
 from ..network.commands import CommandError, execute_command, execute_iw
 
 logger = logging.getLogger(__name__)
+
+SYS_CLASS_NET = "/sys/class/net"
+
+
+def interface_present(interface: str) -> bool:
+    """True while the kernel has a network device with this name.
+
+    A USB adapter that disconnects (unplug, firmware crash, USB reset) loses
+    its netdev until it re-enumerates; commands on it fail with
+    "Cannot find device". Callers use this to skip resets that have nothing to
+    reset and to classify the failure as a radio fault.
+    """
+    return os.path.exists(os.path.join(SYS_CLASS_NET, interface))
 
 
 class InterfaceError(Exception):

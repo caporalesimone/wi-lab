@@ -12,6 +12,9 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- Quarantined adapters with no USB recovery running (`recovery_state: unavailable`) are re-probed periodically and return to the pool when an AP + DHCP probe passes, without a service restart (Fable WD-4). First attempt after 30 s, then 60 s, 120 s, 300 s, 600 s and every 15 min. Covers failed cleanups, non-radio faults, non-USB adapters and exhausted USB recovery.
+- Stopping a network on an adapter that disconnected no longer fails on `Cannot find device`: the interface reset is skipped when the interface is gone, so cleanup completes (Fable WD-5, points 1–2). Previously the startup rollback failed and the adapter stayed quarantined until a restart, even after it came back seconds later.
+- An interface that disappears during AP startup (USB disconnect, driver reset) is a radio failure: the client gets `409 / 1001` with `Retry-After` and keeps its reservation, instead of `500 / 1003`. A third consecutive failure quarantines the adapter with a radio fault, so USB recovery can run.
 - Validate the AP creation body before touching the antenna (Fable BUG-1): `ssid` must be 1–32 bytes in UTF-8 and `password` 8–63 bytes for WPA modes, neither may contain control characters, and the channel must match the band. These previously reached hostapd (a short password returned a generic `500`) and a line break in the SSID could add lines to `hostapd.conf`. The SSID is now written as `ssid2` in hex.
 - Accept SSIDs that hostapd reports with escapes, such as non-ASCII characters, quotes or backslashes (Fable HAP-1). AP readiness and the watchdog probe now check state and interface only; previously such an AP never became ready and a healthy adapter could end up quarantined.
 

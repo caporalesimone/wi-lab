@@ -17,6 +17,7 @@ from ..network.commands import (
     execute_iw,
     start_foreground,
 )
+from .interface import interface_present
 
 logger = logging.getLogger(__name__)
 
@@ -385,11 +386,16 @@ class HostapdManager:
                 except FileNotFoundError:
                     pass
 
-            # Leave the interface down until the next network starts.
-            execute_command(["ip", "link", "set", interface, "down"])
-            execute_command(["iw", "dev", interface, "set", "type", "managed"])
-            execute_command(["ip", "addr", "flush", "dev", interface])
-            logger.info(f"Reset interface {interface} to managed mode, down")
+            if interface_present(interface):
+                # Leave the interface down until the next network starts.
+                execute_command(["ip", "link", "set", interface, "down"])
+                execute_command(["iw", "dev", interface, "set", "type", "managed"])
+                execute_command(["ip", "addr", "flush", "dev", interface])
+                logger.info(f"Reset interface {interface} to managed mode, down")
+            else:
+                # The adapter disconnected: there is nothing to reset, and a
+                # re-enumerated netdev starts down and managed with no address.
+                logger.warning("Interface %s is gone; skipping interface reset", interface)
 
             del self._instances[net_id]
             logger.info(f"hostapd stopped for {net_id}")

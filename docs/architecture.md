@@ -238,6 +238,7 @@ flowchart TB
         EX["expiry loop (5 s)<br/>stop expired APs, sweep reservations"]
         WDT["ap-watchdog-ANTENNA (5 s)<br/>one per antenna"]
         UR["usb-recovery-ANTENNA<br/>one per quarantined USB antenna"]
+        RP["unavailable-reprobe (5 s tick)<br/>probe unavailable antennas with backoff"]
         DS["device-discovery<br/>every 5 s while no antenna, then every 30 s"]
         CC["channel-cache-scan<br/>one-shot per added antenna"]
     end
@@ -294,7 +295,7 @@ stateDiagram-v2
     Reserved --> Unavailable: terminal failure, no USB reset allowed
     Recovering --> Free: reset and AP/DHCP probe verified
     Recovering --> Unavailable: 10 rounds failed
-    Unavailable --> [*]: until service restart
+    Unavailable --> Free: periodic re-probe passed (30 s, then backoff to 15 min)
 ```
 
 - A reservation holds `reservation_id` (8 hex chars), `device_id`,
@@ -311,6 +312,9 @@ stateDiagram-v2
 - **Quarantine** removes the reservation and marks the antenna as blocked in a
   single store operation, so the ID becomes `404` and the antenna cannot be
   allocated.
+- An **unavailable** antenna is re-probed periodically (see
+  [section 8.1](#81-re-probe-of-unavailable-antennas)), so it returns to the pool
+  without a service restart once it works again.
 - Everything is in memory. A restart loses reservations and quarantine; it does
   not repair a failing radio.
 
@@ -430,7 +434,7 @@ and recovery:
 ```mermaid
 flowchart LR
     A["clear QoS profile and tc rules"] --> B["stop hostapd: terminate, then kill<br/>remove config and ctrl socket"]
-    B --> C["interface down, managed mode, flush addresses"]
+    B --> C["interface down, managed mode, flush addresses<br/>(skipped if the interface is gone)"]
     C --> D["disable NAT (firewall lock)"]
     D --> CPS["stop captive portal: web server,<br/>then chains and sign-ins"]
     CPS --> E["remove isolation rules"]
@@ -442,6 +446,15 @@ flowchart LR
 
 Every step runs even if an earlier one fails, and errors are reported together.
 The radio is always left `managed` and `DOWN` between networks.
+
+If the interface no longer exists (`/sys/class/net/<if>` missing: USB
+disconnect, firmware crash with a driver-initiated USB reset, driver unloaded),
+the interface reset is skipped with a warning instead of failing on
+`Cannot find device`. A re-enumerated netdev already starts `DOWN`, managed and
+without addresses, and the firewall, QoS and DHCP steps do not need the
+interface to exist. Before this, a vanished adapter made every teardown fail,
+the startup rollback raised `cleanup_failed` and the antenna stayed quarantined
+until a restart (incident of 2026-11-23 12:23).
 
 ### 5.4 Captive portal
 
@@ -516,6 +529,7 @@ flowchart TD
     OUT2 -->|"AP start failed again, no starts or budget left"| CL
     OUT2 -->|"gateway or DHCP failed"| G
     OUT -->|"unclassified: exit code, gateway, DHCP,<br/>interface validation"| G["500 generic<br/>reservation kept, no counter change"]
+    OUT -->|"interface vanished (any stage)"| CL
     OUT -->|classified radio failure| CL["radio_failures += 1"]
     OUT -->|rollback failed| Q
     CL --> N{"radio_failures"}
@@ -531,7 +545,7 @@ flowchart TD
 |---|---|---|---|
 | 1. Internal retry | Inside one request (`NetworkManager`) | Radio failure while starting the AP, on either band: hostapd segfault, beacon setup and interface initialization failure (`HostapdInitFailure`), radio preparation or readiness timeout. First request of the sequence only. | Up to 3 starts, 1 s apart, within 15 s from the request start, capped by expiry. If the last start fails, the request counts as **one** radio failure. |
 | 2. Client retry with cooldown | Across requests (route + `Reservation`) | Classified radio failure | 3 attempts per sequence, cooldowns 5 s and 10 s. Success resets the counter. |
-| 3. Quarantine and USB recovery | Background worker | 3rd classified failure, unsafe rollback, or a failed watchdog restart | 10 rounds at least 60 s apart, USB antennas only. |
+| 3. Quarantine and USB recovery | Background worker | 3rd classified failure, unsafe rollback, or a failed watchdog restart | 10 rounds at least 60 s apart, USB antennas only. Then, and for every other quarantine, a periodic re-probe ([8.1](#81-re-probe-of-unavailable-antennas)). |
 
 Layer 1 exists because these failures are short-lived: in test runs nearly
 every one succeeded on an immediate new start, and waiting the 5 s cooldown did
@@ -549,6 +563,14 @@ network; it does not delete the reservation. The client can release the ID
 explicitly when it no longer needs it. Success after releasing and reserving
 the same antenna again shows reuse worked, not that retrying with the original
 ID would have worked.
+
+An interface that is missing after a failed start, or at interface
+validation, is a **radio failure** whatever hostapd reported: the adapter
+disconnected under it. Such a failure is not retried inside the request
+(nothing can start until the adapter re-enumerates); the client gets
+`409 / 1001` with `Retry-After` and keeps its reservation. If it is still
+missing at the third attempt, the antenna is quarantined with a radio fault,
+which allows USB recovery.
 
 Do not classify an isolated hostapd exit code `1` as a radio failure based on
 the exit code alone: that would also make persistent non-radio failures eligible
@@ -623,7 +645,7 @@ sequenceDiagram
         Note over WK: success leaves the loop
     end
     WK->>RM: finish_recovery(recovered)
-    Note over RM: recovered: antenna allocatable again<br/>otherwise: unavailable until restart
+    Note over RM: recovered: antenna allocatable again<br/>otherwise: unavailable, re-probed periodically (8.1)
 ```
 
 - A failed precheck skips the reset for that round.
@@ -635,15 +657,46 @@ sequenceDiagram
   can associate and get a lease.
 - Other antennas stay fully available during recovery.
 - For hardware that does not recover, use the
-  [manual recovery procedure](#81-manual-recovery).
+  [manual recovery procedure](#82-manual-recovery).
 
-### 8.1 Manual recovery
+### 8.1 Re-probe of unavailable antennas
+
+An antenna becomes `unavailable` when it is quarantined without USB recovery
+(non-USB adapter, non-radio fault, failed cleanup, upstream interface) or when
+USB recovery used its 10 rounds. The `unavailable-reprobe` thread checks every
+5 s and probes each such antenna with backoff: first attempt 30 s after it
+became unavailable, then 60 s, 120 s, 300 s, 600 s and every 900 s.
+
+```mermaid
+flowchart TD
+    T["every 5 s: recovery_snapshot()"] --> U{"unavailable and due?"}
+    U -->|no| T
+    U -->|yes| P{"interface present?"}
+    P -->|no| F["count failure, back off"]
+    P -->|yes| L["device lock: release_device,<br/>release from host managers, DOWN, idle check"]
+    L --> PR["probe: hidden WPA2 AP on the last band/channel<br/>(2.4 GHz channel 6 if unknown), gateway, DHCP"]
+    PR -->|ok| OK["teardown, idle check,<br/>finish_recovery(recovered) → allocatable"]
+    PR -->|fails| F
+    F --> T
+```
+
+- No USB reset is performed: the re-probe only verifies. A radio that needs a
+  reset and has exhausted USB recovery stays unavailable.
+- The upstream interface is never probed (`_quiesce` refuses it).
+- Antennas being recovered (`recovering`) are left to the USB worker.
+- Logs: `Adapter X passed the probe and is allocatable again` (warning) or
+  `Adapter X still unavailable after re-probe N; next attempt in S s` (info).
+
+### 8.2 Manual recovery
 
 Use it when automatic recovery was not possible (non-USB adapter, refused
 target, upstream interface) or exhausted its attempts (`recovery_state:
-unavailable`). It resets **one USB device**, never a hub or the controller. A
-successful reset does not establish or fix the underlying cause. Quarantine is
-in memory: a service restart clears it but does not repair the adapter.
+unavailable`) and the periodic re-probe keeps failing. It resets **one USB
+device**, never a hub or the controller. A successful reset does not establish
+or fix the underlying cause. Quarantine is in memory: a service restart clears
+it but does not repair the adapter. If the adapter is no longer on the USB bus
+at all (`lsusb` does not list it), it must be re-attached (replug, or re-attach
+the USB passthrough to the VM) before any recovery can work.
 
 Observed case: a MediaTek `mt7921u` adapter in a KVM guest whose interface
 could not be brought up (`RTNETLINK answers: Connection timed out`) was restored
@@ -777,6 +830,9 @@ cached; set `upstream_interface` to force it.
   systemd kills the process. Other antennas keep working. Recovering the adapter
   then requires unplugging it or restarting the VM or host.
 - Antennas are added at runtime but never removed: an antenna unplugged while in
-  the pool stays listed until the service restarts.
+  the pool stays listed (as `unavailable` once it fails) until the service
+  restarts. A returning adapter keeps its `wlx<MAC>` name and is re-probed; one
+  that comes back under a different name is added as a new antenna and the old
+  entry stays listed (Fable WD-5, point 3, depends on ARCH-4).
 - All coordination state is in memory and assumes a single Wi-Lab process per
   host.

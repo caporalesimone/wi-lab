@@ -36,6 +36,7 @@ from .hostapd import (
 )
 from .interface import (
     InterfaceError,
+    interface_present,
     validate_interface_ap_mode,
     validate_interface_exists,
     validate_interface_wireless,
@@ -176,6 +177,7 @@ class NetworkManager:
         band: str, channel: int,
     ) -> None:
         device = reservation.device_id
+        self.recovery.remember_radio(device, band, channel)
         port = next(n.usb_recovery_port for n in self.config.networks if n.device_id == device)
         if not radio_fault or self.config.upstream_interface == device:
             port = None
@@ -259,6 +261,12 @@ class NetworkManager:
             validate_interface_ap_mode(cfg_net.interface)
         except InterfaceError as e:
             logger.error(f"Interface validation failed: {e}")
+            if not interface_present(cfg_net.interface):
+                # The adapter disconnected (USB drop or driver reset): a radio
+                # fault, so the client may retry and the adapter can be recovered.
+                raise StartupFailure(
+                    f"Interface {cfg_net.interface} is not present", radio=True,
+                ) from e
             raise ValueError(str(e)) from e
 
         # Determine internet enabled status
@@ -331,8 +339,24 @@ class NetworkManager:
                     logger.exception("Startup rollback failed for %s", device_id)
                     raise StartupFailure(
                         f"Failed to {stage}: {e}",
-                        radio=isinstance(e, HostapdRadioFailure) or (retrying and stage == "start AP"),
+                        radio=(
+                            isinstance(e, HostapdRadioFailure)
+                            or (retrying and stage == "start AP")
+                            or not interface_present(cfg_net.interface)
+                        ),
                         cleanup_failed=True,
+                    ) from e
+                if not interface_present(cfg_net.interface):
+                    # Whatever hostapd reported, the netdev vanished under it: a
+                    # radio fault. An immediate internal retry cannot succeed
+                    # until the adapter re-enumerates, so leave it to the client.
+                    logger.warning(
+                        "Interface %s disappeared during startup; treating it as a radio failure",
+                        cfg_net.interface,
+                    )
+                    raise StartupFailure(
+                        f"Failed to {stage}: interface {cfg_net.interface} disappeared ({e})",
+                        radio=True,
                     ) from e
 
                 if (

@@ -3,10 +3,12 @@
 import json
 import logging
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..network.commands import CommandError, execute_command, execute_iw
+from .interface import interface_present
 
 if TYPE_CHECKING:
     from ..reservation import ReservationManager
@@ -15,6 +17,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 RESET_ATTEMPTS = 10
 RESET_INTERVAL = 60
+# Re-probe of quarantined adapters with no recovery running ("unavailable"):
+# delay before each attempt, the last value repeats forever.
+REPROBE_DELAYS = (30.0, 60.0, 120.0, 300.0, 600.0, 900.0)
+REPROBE_TICK = 5.0
+DEFAULT_PROBE_RADIO = ("2.4ghz", 6)
 
 
 def _usb_target(interface: str, port: str) -> tuple[str, str]:
@@ -70,9 +77,88 @@ class RadioRecovery:
     def __init__(self, manager: "NetworkManager") -> None:
         self._manager = manager
         self._stopping = threading.Event()
+        # device -> (failed re-probes, monotonic time of the next attempt)
+        self._reprobe: dict[str, tuple[int, float]] = {}
+        # device -> (band, channel) of the last network, used for the probe AP
+        self._last_radio: dict[str, tuple[str, int]] = {}
+        self._reprobe_started = False
 
     def stop(self) -> None:
         self._stopping.set()
+
+    def remember_radio(self, device: str, band: str, channel: int) -> None:
+        if band in ("2.4ghz", "5ghz") and channel > 0:
+            self._last_radio[device] = (band, channel)
+
+    def start_reprobe(self, reservations: "ReservationManager") -> None:
+        """Start the background loop that gives unavailable adapters another chance."""
+        if self._reprobe_started:
+            return
+        self._reprobe_started = True
+
+        def loop() -> None:
+            while not self._stopping.wait(REPROBE_TICK):
+                try:
+                    self.reprobe_unavailable(reservations)
+                except Exception:
+                    # Never let one unexpected error end the loop for good.
+                    logger.exception("Re-probe of unavailable adapters failed")
+
+        threading.Thread(target=loop, name="unavailable-reprobe", daemon=True).start()
+
+    def reprobe_unavailable(self, reservations: "ReservationManager", now: float | None = None) -> None:
+        """Probe each adapter that is quarantined with no recovery running, with backoff.
+
+        Covers every way to become "unavailable": a failed cleanup, a non-USB
+        or non-radio fault, an upstream-free adapter whose USB recovery was
+        exhausted, or an adapter that disconnected and came back. A successful
+        AP + DHCP probe makes the adapter allocatable again without a service
+        restart.
+        """
+        now = time.monotonic() if now is None else now
+        snapshot = reservations.recovery_snapshot()
+        for device in list(self._reprobe):
+            if snapshot.get(device) is not False:
+                # Recovered, or a USB recovery is running again: restart the backoff later.
+                del self._reprobe[device]
+        for device, recovering in snapshot.items():
+            if recovering or self._stopping.is_set():
+                continue
+            failures, due = self._reprobe.setdefault(device, (0, now + REPROBE_DELAYS[0]))
+            if now < due:
+                continue
+            if self._probe_unavailable(device):
+                self._reprobe.pop(device, None)
+                reservations.finish_recovery(device, recovered=True)
+                logger.warning("Adapter %s passed the probe and is allocatable again", device)
+                continue
+            failures += 1
+            delay = REPROBE_DELAYS[min(failures, len(REPROBE_DELAYS) - 1)]
+            self._reprobe[device] = (failures, now + delay)
+            logger.info(
+                "Adapter %s still unavailable after re-probe %d; next attempt in %.0f s",
+                device, failures, delay,
+            )
+
+    def _probe_unavailable(self, device: str) -> bool:
+        if not interface_present(device):
+            logger.info("Adapter %s is not present; re-probe skipped", device)
+            return False
+        band, channel = self._last_radio.get(device, DEFAULT_PROBE_RADIO)
+        with self._manager.device_lock(device):
+            if self._stopping.is_set():
+                return False
+            try:
+                self._manager.release_device(device)  # finish any pending cleanup
+                _quiesce(device)
+                _require_idle(device)
+                self._manager.probe_recovered_radio(device, band, channel)
+                _quiesce(device)
+                _require_idle(device)
+            except (CommandError, OSError, ValueError, RuntimeError, KeyError) as exc:
+                logger.info("Re-probe of %s failed: %s", device, exc)
+                return False
+        return not self._stopping.is_set()
 
     def schedule(
         self, reservations: "ReservationManager", interface: str, port: str, band: str, channel: int,

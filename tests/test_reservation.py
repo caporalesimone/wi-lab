@@ -328,6 +328,7 @@ class TestReservationLifecycleConcurrency:
         network = SimpleNamespace(
             device_lock=lambda _: threading.RLock(), release_device=lambda _: None,
             watchdog=SimpleNamespace(start=lambda _: None),
+            recovery=SimpleNamespace(start_reprobe=lambda _: None),
         )
         monkeypatch.setattr(dependencies, "get_manager", lambda _: network)
 

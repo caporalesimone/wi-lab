@@ -59,7 +59,7 @@ Symptoms:
 
 Script:
 - [diagnostics/troubleshooting/issue_network_creation_fails.sh](../diagnostics/troubleshooting/issue_network_creation_fails.sh)
-- [USB adapter recovery procedure](architecture.md#81-manual-recovery) for a blocked interface
+- [USB adapter recovery procedure](architecture.md#82-manual-recovery) for a blocked interface
 
 ### Issue 3: Clients Cannot Connect
 
@@ -85,6 +85,33 @@ Scripts:
 
 Script:
 - [diagnostics/troubleshooting/issue_txpower_diagnosis.sh](../diagnostics/troubleshooting/issue_txpower_diagnosis.sh)
+
+### Issue 6: Antenna Stays `unavailable` (status `degraded`)
+
+Symptoms:
+- `GET /api/v1/status` returns `status: degraded` and an entry with
+  `recovery_state: unavailable` (or `recovering` for a long time)
+- a create returned `500 / 1003`; fewer antennas can be reserved
+
+Check, in this order:
+1. Kernel log around the failure: `journalctl -k --since "<time>"`. Look for
+   `USB disconnect`, `mt7921u ... Message ... timeout`, `USB transport access
+   failed, queueing device reset`, and whether the adapter came back
+   (`renamed from wlan0`).
+2. Is the adapter still there? `ip -br link`, `lsusb`. If `lsusb` no longer
+   lists it, no software recovery can work: replug it, or re-attach the USB
+   passthrough to the VM.
+3. Wi-Lab log: `journalctl -u wi-lab | grep -E "re-probe|allocatable again|USB recovery|disappeared"`.
+   An `unavailable` antenna is re-probed after 30 s, then with backoff up to
+   every 15 min; `passed the probe and is allocatable again` means it is back.
+4. If it is present but keeps failing the probe, follow the
+   [manual recovery procedure](architecture.md#82-manual-recovery).
+
+Observed on 2026-11-23: the USB adapter dropped during a create (firmware
+timeout, driver-initiated USB reset) and came back 6 s later, but before the
+WD-4/WD-5 fixes it stayed `unavailable` until a service restart. A later VM
+stall (`rcu_preempt ... starved`) detached it from the guest entirely; that
+case needs the adapter to be re-attached.
 
 ---
 

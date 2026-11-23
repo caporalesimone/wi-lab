@@ -75,7 +75,7 @@ affected adapter: fewer adapters may be allocatable than are listed.
 | `networks[]` field | Value | Client action |
 |---|---|---|
 | `recovery_state` | `recovering` | Adapter quarantined, USB recovery in progress. It may return by itself; do not count it as allocatable. |
-| `recovery_state` | `unavailable` | Adapter quarantined, no recovery running. Not allocatable; operator attention needed. |
+| `recovery_state` | `unavailable` | Adapter quarantined, no USB reset running. Wi-Lab re-probes it periodically (30 s, backing off to 15 min) and returns it to the pool when it works. Not allocatable meanwhile; report it if it persists. |
 | `runtime_state` | `restoring_ap`, `restoring_dhcp` | The owner's network is being repaired. Wait; do not send a create. |
 | `runtime_state` | `dhcp_failed` | AP up, new clients get no address. Release and reserve again if needed. |
 

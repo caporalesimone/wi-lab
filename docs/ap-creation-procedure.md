@@ -279,7 +279,7 @@ Find the cause in `networks[]` and `checks`:
 | Field | Value | Meaning | Client action |
 |---|---|---|---|
 | `recovery_state` | `recovering` | Antenna quarantined; Wi-Lab is resetting and probing it. | Do not count it as available. It may return by itself. |
-| `recovery_state` | `unavailable` | Antenna quarantined; no recovery is running. | Do not count it as available. Report it to the operator. |
+| `recovery_state` | `unavailable` | Antenna quarantined; no USB reset is running. Wi-Lab re-probes it periodically (after 30 s, backing off to every 15 min). | Do not count it as available. It may return by itself; report it to the operator if it persists. |
 | `runtime_state` | `restoring_ap` / `restoring_dhcp` | The owner's AP is being repaired (see [2.6](#26-after-the-ap-is-running)). | Owner: wait. Others: nothing to do. |
 | `runtime_state` | `dhcp_failed` | AP up, new clients get no address. | Owner: release and reserve again if needed. |
 | `checks.*` | `running`/`configured`/`reachable` false | A shared component failed while APs are active. | Report it; Internet access may not work. |
@@ -416,4 +416,4 @@ Details and diagrams are in [Architecture](architecture.md).
   automatically in the background. Until it is verified, it is reported as
   `recovering` and cannot be reserved; other antennas stay available. See
   [Architecture](architecture.md#8-quarantine-and-automatic-usb-recovery) and the
-  [manual recovery procedure](architecture.md#81-manual-recovery).
+  [manual recovery procedure](architecture.md#82-manual-recovery).
