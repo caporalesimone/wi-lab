@@ -1,5 +1,6 @@
 """System status endpoint."""
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -17,8 +18,9 @@ _POLICY_EXAMPLE = {"min_seconds": 60, "max_seconds": 86400, "allow_unlimited": F
 _CHECKS_OK_EXAMPLE = {
     "commands": {"stuck": 0},
     "loops": {"stale": []},
-    "dnsmasq": {"running": False, "instances": 0},
-    "iptables_nat": {"configured": True, "errors": []},
+    "hostapd": {"running": True, "instances": 0, "missing": []},
+    "dnsmasq": {"running": True, "instances": 0, "missing": []},
+    "iptables_nat": {"configured": True, "missing": [], "errors": []},
     "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
 }
 
@@ -68,7 +70,9 @@ router = APIRouter(
                              "reservation_remaining_seconds": None},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
-                        "checks": {**_CHECKS_OK_EXAMPLE, "dnsmasq": {"running": True, "instances": 1}},
+                        "checks": {**_CHECKS_OK_EXAMPLE,
+                                   "hostapd": {"running": True, "instances": 1, "missing": []},
+                                   "dnsmasq": {"running": True, "instances": 1, "missing": []}},
                     },
                 },
                 "degraded_quarantine": {
@@ -82,7 +86,7 @@ router = APIRouter(
                              "reservation_remaining_seconds": 54, "runtime_state": "restoring_ap"},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
-                        "checks": {**_CHECKS_OK_EXAMPLE, "dnsmasq": {"running": False, "instances": 0}},
+                        "checks": _CHECKS_OK_EXAMPLE,
                     },
                 },
             }}},
@@ -128,8 +132,15 @@ def system_status(
       active and no USB recovery is running; until then it keeps serving;
     - networks are active and a check in `checks` fails. A network with a
       start, stop or restore in progress is not judged, so a create/delete
-      never makes the status flap to `degraded` (`dnsmasq.running`,
-      `iptables_nat.configured` or `upstream_interface.reachable` is false).
+      never makes the status flap to `degraded`. The checks look at
+      Wi-Lab's own processes and rules, per network:
+      `hostapd.running` / `dnsmasq.running` (every network has its process
+      alive; `missing` lists the others), `iptables_nat.configured` (every
+      network with Internet has its `wilab-nat-<interface>` rule; other
+      software's MASQUERADE rules do not count; `missing` lists the others)
+      and `upstream_interface.reachable` (state UP, or UNKNOWN with
+      LOWER_UP, and an IPv4 address; it counts only when a network has
+      Internet enabled).
 
     A quarantined adapter is never allocatable, even with `reserved: false`.
     Clients should poll this endpoint, show `degraded` to the user together
@@ -159,6 +170,49 @@ def _not_busy(manager: NetworkManager, device: str) -> bool:
     return True
 
 
+def _process_check(settled: list[str], is_running: Any) -> dict[str, Any]:
+    """Every settled network has its process alive (not just a PID file, BUG-2)."""
+    missing = [device for device in settled if not is_running(device)]
+    return {"running": not missing, "instances": len(settled) - len(missing), "missing": missing}
+
+
+def _nat_check(
+    manager: NetworkManager, snapshot: dict[str, Any], settled: list[str],
+) -> dict[str, Any]:
+    """Wi-Lab's own NAT rule exists for every settled network with Internet (BUG-2).
+
+    Docker's or libvirt's MASQUERADE rules do not count, and a network without
+    Internet needs none.
+    """
+    expected = [device for device in settled if snapshot[device].internet_enabled]
+    try:
+        rules = manager.firewall_status()
+    except Exception as exc:  # noqa: BLE001 - reported in the check, never fails /status
+        return {"configured": not expected, "missing": expected, "errors": [str(exc)]}
+    nat = rules.get("nat") or ""
+    missing = [device for device in expected if f"wilab-nat-{device}" not in nat]
+    return {"configured": not missing, "missing": missing, "errors": rules.get("errors", [])}
+
+
+def _upstream_check(manager: NetworkManager, config: AppConfig) -> dict[str, Any]:
+    """Operational state and IPv4 address of the upstream, from `ip -j` (BUG-2).
+
+    The old text match found "UP" in `LOWER_UP` or in the UP flag of a link
+    whose state is DOWN. A link with state UNKNOWN (VPN, some virtual NICs) is
+    up when the kernel reports LOWER_UP.
+    """
+    try:
+        name = manager.nat_manager.get_upstream_interface()
+        links = json.loads(execute_command(["ip", "-j", "addr", "show", "dev", name]) or "[]")
+    except (CommandError, RuntimeError, ValueError) as exc:
+        return {"name": config.upstream_interface, "reachable": False, "error": str(exc)}
+    link = links[0] if links else {}
+    state = link.get("operstate")
+    up = state == "UP" or (state == "UNKNOWN" and "LOWER_UP" in link.get("flags", []))
+    has_ip = any(a.get("family") == "inet" for a in link.get("addr_info", []))
+    return {"name": name, "up": up, "has_ip": has_ip, "reachable": up and has_ip}
+
+
 def _system_status(
     manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager
 ) -> dict[str, Any]:
@@ -174,50 +228,6 @@ def _system_status(
     stale_loops = heartbeat.stale_loops()
     health_data["checks"]["loops"] = {"stale": stale_loops}
 
-    # Check dnsmasq instances
-    dhcp_status = manager.dhcp_server.status()
-    health_data["checks"]["dnsmasq"] = {
-        "running": dhcp_status.get("running", False),
-        "instances": len(dhcp_status.get("instances", [])),
-    }
-
-    # Check iptables NAT configuration
-    try:
-        nat_status = manager.firewall_status()
-        has_nat_rules = bool(
-            nat_status.get("nat") and "MASQUERADE" in nat_status.get("nat", "")
-        )
-        health_data["checks"]["iptables_nat"] = {
-            "configured": has_nat_rules,
-            "errors": nat_status.get("errors", []),
-        }
-    except Exception as e:
-        health_data["checks"]["iptables_nat"] = {"configured": False, "error": str(e)}
-
-    # Check upstream interface reachability
-    try:
-        upstream = manager.nat_manager.get_upstream_interface()
-        ip_output = execute_command(["ip", "addr", "show", upstream])
-        has_ip = "inet " in ip_output
-        is_up = "state UP" in ip_output or "UP" in ip_output
-        health_data["checks"]["upstream_interface"] = {
-            "name": upstream,
-            "up": is_up,
-            "has_ip": has_ip,
-            "reachable": is_up and has_ip,
-        }
-    except CommandError as e:
-        health_data["checks"]["upstream_interface"] = {
-            "name": config.upstream_interface,
-            "reachable": False,
-            "error": str(e),
-        }
-    except Exception as e:
-        health_data["checks"]["upstream_interface"] = {
-            "reachable": False,
-            "error": str(e),
-        }
-
     # RACE-2: one snapshot of the active networks for the whole answer, and health is
     # judged only on networks with no operation in progress. A start publishes its
     # network only when it is complete, but a stop removes DHCP and NAT before it
@@ -225,6 +235,13 @@ def _system_status(
     snapshot = manager.active.copy()
     settled = [device for device in snapshot if _not_busy(manager, device)]
     active_count = len(snapshot)
+    checks = health_data["checks"]
+    # BUG-2: each check looks at Wi-Lab's own processes and rules, per network.
+    checks["hostapd"] = _process_check(settled, manager.hostapd_manager.is_running)
+    checks["dnsmasq"] = _process_check(settled, manager.dhcp_server.is_running)
+    checks["iptables_nat"] = _nat_check(manager, snapshot, settled)
+    checks["upstream_interface"] = _upstream_check(manager, config)
+    internet_needed = any(snapshot[d].internet_enabled for d in settled)
 
     if not active_count:
         # Standby - service is healthy but no networks are active
@@ -232,12 +249,11 @@ def _system_status(
         status_data["active_networks"] = 0
     else:
         # Normal operation - check component health
-        all_ok = all(
-            [
-                health_data["checks"]["dnsmasq"].get("running") is not False,
-                health_data["checks"]["iptables_nat"].get("configured") is not False,
-                health_data["checks"]["upstream_interface"].get("reachable") is not False,
-            ]
+        all_ok = (
+            checks["hostapd"]["running"]
+            and checks["dnsmasq"]["running"]
+            and checks["iptables_nat"]["configured"]
+            and (checks["upstream_interface"].get("reachable") is True or not internet_needed)
         )
         status_data["status"] = "ok" if all_ok or not settled else "degraded"
         status_data["active_networks"] = active_count
@@ -302,49 +318,25 @@ def _debug_info(
     manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager
 ) -> dict[str, Any]:
     # === DETERMINE OVERALL STATUS ===
-    active_count = len(manager.active)
-    
-    # Check dnsmasq
+    # Same checks and status as /status (BUG-2): no second, diverging copy.
+    summary = _system_status(manager, config, reservation_mgr)
+    checks = summary["checks"]
+    status = summary["status"]
+    active_count = summary["active_networks"]
     dhcp_status = manager.dhcp_server.status()
-    dhcp_running = dhcp_status.get("running", False)
-    
-    # Check iptables NAT
+    dhcp_running = checks["dnsmasq"]["running"]
+    nat_configured = checks["iptables_nat"]["configured"]
+    nat_errors = checks["iptables_nat"].get("errors", [])
+    upstream = checks["upstream_interface"]
+    upstream_name = upstream.get("name")
+    upstream_up = upstream.get("up", False)
+    upstream_has_ip = upstream.get("has_ip", False)
+    upstream_reachable = upstream.get("reachable", False)
     try:
         nat_status = manager.firewall_status()
-        nat_configured = bool(
-            nat_status.get("nat") and "MASQUERADE" in nat_status.get("nat", "")
-        )
-        nat_errors = nat_status.get("errors", [])
-    except Exception as e:
-        nat_configured = False
-        nat_errors = [str(e)]
-    
-    # Check upstream interface
-    try:
-        upstream = manager.nat_manager.get_upstream_interface()
-        ip_output = execute_command(["ip", "addr", "show", upstream])
-        upstream_up = "state UP" in ip_output or "UP" in ip_output
-        upstream_has_ip = "inet " in ip_output
-        upstream_reachable = upstream_up and upstream_has_ip
-        upstream_name = upstream
-    except CommandError:
-        upstream_reachable = False
-        upstream_name = config.upstream_interface
-        upstream_up = False
-        upstream_has_ip = False
-    except Exception:
-        upstream_reachable = False
-        upstream_name = None
-        upstream_up = False
-        upstream_has_ip = False
-    
-    # Determine overall status
-    if not active_count:
-        status = "standby"
-    else:
-        all_ok = dhcp_running and nat_configured and upstream_reachable
-        status = "ok" if all_ok else "degraded"
-    
+    except Exception as exc:  # noqa: BLE001 - debug output must not fail on a firewall read
+        nat_status = {"errors": [str(exc)]}
+
     # === GET DETAILED SERVICES INFO ===
     services = manager.services_status()
     reservations = reservation_mgr.snapshot()
@@ -395,8 +387,8 @@ def _debug_info(
         },
         
         "raw_diagnostics": {
-            "iptables_nat_rules": nat_status.get("nat", "") if 'nat_status' in locals() else "",
-            "iptables_forward_rules": nat_status.get("forward", "") if 'nat_status' in locals() else "",
+            "iptables_nat_rules": nat_status.get("nat", ""),
+            "iptables_forward_rules": nat_status.get("forward", ""),
         },
     }
 

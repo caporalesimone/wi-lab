@@ -314,7 +314,9 @@ Find the cause in `networks[]` and `checks`:
 | `runtime_state` | `restore_failed` | AP down after a failed restart; the watchdog retries with backoff. | Owner: wait, or `DELETE .../network` to stop the retries. |
 | `checks.commands.stuck` | greater than 0 | A host command (`ip`, `iw`, `usbreset`, ...) did not exit even after SIGKILL: usually a hung Wi-Fi driver. Operations on the affected adapter fail instead of hanging. Set in standby too. | Report it to the operator: the adapter may need a reset or the host a reboot. |
 | `checks.loops.stale` | not empty | A Wi-Lab background loop has not run for 3 minutes. Wi-Lab restarts itself as soon as no reservation is active. | Report it; release reservations you no longer need. |
-| `checks.*` | `running`/`configured`/`reachable` false | A shared component failed while APs are active. | Report it; Internet access may not work. |
+| `checks.hostapd`, `checks.dnsmasq` | `running: false` | The hostapd or dnsmasq process of the networks in `missing` is not alive. | Report it; the watchdog normally repairs it within seconds. |
+| `checks.iptables_nat` | `configured: false` | A network with Internet lost its NAT rule (`missing`). | Report it; Internet access does not work on that network until the watchdog repairs it. |
+| `checks.upstream_interface` | `reachable: false` | The host uplink is down or has no IPv4 address. Counts only while a network has Internet enabled. | Report it; Internet access does not work. |
 
 - `reserved: false` does **not** mean the antenna can be reserved: an entry
   with `recovery_state` is excluded from allocation.

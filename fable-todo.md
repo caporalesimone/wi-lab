@@ -44,7 +44,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 3 | [WD-9](Fable-Notes.md#L1217) | ✅ | Supervisionare i loop in background e riavviare quelli terminati. |
 | 4 | [SEC-3](Fable-Notes.md#L1340) | ✅ | Limitare gli indirizzi e le interfacce su cui ascolta l'API. Fatto con una regola `INPUT` per rete (IPv4 e IPv6): i client delle reti Wi-Lab non raggiungono l'host, né API né SSH; restano DHCP, ping e, con il captive portal, DNS e pagina del portale. |
 | 5 | [SEC-2](Fable-Notes.md#L1382) |  | Proteggere o oscurare gli ID reservation nell'output debug. **Decisione:** `/debug` per ora resta; in futuro verrà tolto e sostituito da un sistema diverso. |
-| 6 | [BUG-2](Fable-Notes.md#L1609) |  | Correggere i controlli di salute di `/status` usando output strutturato. |
+| 6 | [BUG-2](Fable-Notes.md#L1609) | ✅ | Correggere i controlli di salute di `/status` usando output strutturato. |
 | 7 | [BUG-4](Fable-Notes.md#L1658) |  | Aggiornare e unificare la cache dei canali. |
 | 8 | [STAB-5](Fable-Notes.md#L1799) |  | Usare scadenze monotone per misurare il tempo trascorso. |
 | 9 | [NET-5](Fable-Notes.md#L1900) |  | Non registrare come errori le verifiche negative attese. |
@@ -160,7 +160,7 @@ in corso deve dare `409/1001`, non `500/1003`, e l'antenna deve tornare da sola 
 | HAP-9 | Con DFS abilitato, create sul canale 124. | Risposta coerente (attesa gestita o rifiuto esplicito), non un timeout del client a 75 s. |  |
 | HAP-10 | Create con `wpa2-wpa3` e con `wpa`. | `200` per entrambe. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | NET-11 | QoS con `download_quality: 40`, `upload_quality: 90`. | Rifiuto esplicito, oppure applicazione accettata con valori diversi nelle due direzioni (`GET .../qos`). |  |
-| BUG-2 | Una sola rete con `internet_enabled: false`. | `/status` non è `degraded`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| BUG-2 | Una sola rete con `internet_enabled: false`. | `/status` non è `degraded`. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | BUG-7 | `POST .../txpower` con ogni livello, poi `GET .../txpower`. | Il `GET` riporta il valore reale, non quello richiesto. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | PERF-6 | Durata di `POST .../txpower`. | Sotto i 3 s. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | SEC-1 | `curl --path-as-is http://<host>:8080//etc/passwd` e `/../config.yaml`. | `404`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |

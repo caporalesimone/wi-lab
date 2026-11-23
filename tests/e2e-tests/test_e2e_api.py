@@ -92,7 +92,6 @@ def test_mixed_and_legacy_wpa_modes_start(wilab: WiLab, encryption: str) -> None
     assert response.status_code == 200, response.text
 
 
-@pending("BUG-2")
 def test_network_without_internet_is_not_degraded(wilab: WiLab) -> None:
     antenna = wilab.reserve()
     assert wilab.create(antenna, internet_enabled=False).status_code == 200

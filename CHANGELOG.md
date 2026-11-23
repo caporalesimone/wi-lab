@@ -25,6 +25,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- `/status` health checks now look at Wi-Lab's own processes and rules per network: a network without Internet is no longer `degraded` on a host without NAT rules, Docker's MASQUERADE no longer hides a missing Wi-Lab rule, a link that is DOWN is no longer reported up, and hostapd is checked too (new `checks.hostapd`, `missing` lists); `/debug` uses the same checks (Fable BUG-2).
 - Background loops (discovery, watchdog, expiry) survive any unexpected error and log its traceback once, and a `config.yaml` saved with the wrong shape is reported as a clear configuration error instead of silently stopping discovery (Fable WD-9).
 - `/status` no longer flaps to `degraded` while a network is being stopped or started: it uses one snapshot of the active networks and does not judge a network with an operation in progress (Fable RACE-2).
 - An AP start runs fewer host commands: no repeated wireless/AP capability checks (established by discovery), no `dnsmasq --version`, and `nmcli` is looked up once instead of on every start (Fable PERF-1).

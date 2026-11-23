@@ -343,9 +343,11 @@ class DhcpServer:
                 "interface": data.get("interface"),
                 "pid_file": pid_file,
                 "pid_file_exists": bool(pid_file and os.path.exists(pid_file)),
+                # The process, not the PID file (BUG-2).
+                "running": self.is_running(net_id),
             })
         return {
-            "running": any(item["pid_file_exists"] for item in instances),
+            "running": any(item["running"] for item in instances),
             "instances": instances,
         }
     
