@@ -50,9 +50,12 @@ logger = logging.getLogger(__name__)
 # Transient radio failures usually clear on an immediate new start, so the
 # server retries inside the request instead of handing the retry to the client.
 STARTUP_ATTEMPTS = 3
-STARTUP_RETRY_BUDGET = 15.0
+# A retry starts only with at least MIN_RETRY_ATTEMPT_TIME left, so it is a real
+# attempt: a start cut short by the budget would count as one more radio
+# failure towards quarantine without giving the radio a chance (HAP-4).
+STARTUP_RETRY_BUDGET = 20.0
 STARTUP_RETRY_DELAY = 1.0
-MIN_RETRY_ATTEMPT_TIME = 0.75
+MIN_RETRY_ATTEMPT_TIME = 4.0
 # Delay before the next background cleanup of a device whose cleanup failed, by
 # number of consecutive failures; the last value repeats (WD-6). A client's
 # explicit DELETE is never delayed.

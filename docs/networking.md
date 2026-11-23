@@ -115,8 +115,8 @@ If starting the AP fails because of the radio (hostapd `SIGSEGV`, a beacon
 rejected during interface setup, or a radio or readiness timeout), Wi-Lab
 starts it again on the same adapter within the original request, on either
 band, up to 3 starts in total. It waits 1 s after each successful rollback and
-retries only while the reservation is valid and enough of the 15-second
-startup budget remains. This budget limits the retries, not rollback. A failed
+retries only while the reservation is valid and at least 4 s of the 20-second
+startup budget remain. This budget limits the retries, not rollback. A failed
 retry is reported using the creation recovery contract. Once an AP has
 started, a separate watchdog handles confirmed AP outages or DHCP failure.
 See [Architecture](architecture.md) for

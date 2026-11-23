@@ -554,7 +554,7 @@ flowchart TD
     CD -->|no| ST["start AP"]
     ST --> OUT{"outcome"}
     OUT -->|success| OK["200, counter reset"]
-    OUT -->|"radio failure while starting the AP (segfault, beacon/init failure,<br/>radio or readiness timeout); first request of the sequence,<br/>fewer than 3 starts, at least 1.75 s of the 15 s budget left"| IR["layer 1: rollback, wait 1 s,<br/>start again inside the same request"]
+    OUT -->|"radio failure while starting the AP (segfault, beacon/init failure,<br/>radio or readiness timeout); first request of the sequence,<br/>fewer than 3 starts, at least 5 s of the 20 s budget left"| IR["layer 1: rollback, wait 1 s,<br/>start again inside the same request"]
     IR --> OUT2{"retry outcome"}
     OUT2 -->|success| OK
     OUT2 -->|"AP start failed again, starts or budget left"| IR
@@ -575,7 +575,7 @@ flowchart TD
 
 | Layer | Where | Trigger | Limit |
 |---|---|---|---|
-| 1. Internal retry | Inside one request (`NetworkManager`) | Radio failure while starting the AP, on either band: hostapd segfault, beacon setup and interface initialization failure (`HostapdInitFailure`), radio preparation or readiness timeout. First request of the sequence only. | Up to 3 starts, 1 s apart, within 15 s from the request start, capped by expiry. If the last start fails, the request counts as **one** radio failure. |
+| 1. Internal retry | Inside one request (`NetworkManager`) | Radio failure while starting the AP, on either band: hostapd segfault, beacon setup and interface initialization failure (`HostapdInitFailure`), radio preparation or readiness timeout. First request of the sequence only. | Up to 3 starts, 1 s apart, within 20 s from the request start, capped by expiry. A start begins only with at least 4 s left (`MIN_RETRY_ATTEMPT_TIME`, Fable HAP-4), so a start cut short by the budget never counts as a radio failure. If the last start fails, the request counts as **one** radio failure. |
 | 2. Client retry with cooldown | Across requests (route + `Reservation`) | Classified radio failure | 3 attempts per sequence, cooldowns 5 s and 10 s. Success resets the counter. |
 | 3. Quarantine and USB recovery | Background worker | 3rd classified failure, unsafe rollback, or a failed watchdog restart | 10 rounds at least 60 s apart, USB antennas only. Then, and for every other quarantine, a periodic re-probe ([8.1](#81-re-probe-of-unavailable-antennas)). |
 
@@ -584,7 +584,7 @@ every one succeeded on an immediate new start, and waiting the 5 s cooldown did
 not improve the success rate. Retrying inside the request spares the client a
 `409 / 1001` round trip. A start without failures still takes about 0.5 s; one
 retry adds about 2–3 s, two retries about 5–6 s, and the worst case, with a
-firmware timeout, is about 15 s. Gateway, DHCP, captive portal, NAT,
+firmware timeout, is about 20 s. Gateway, DHCP, captive portal, NAT,
 isolation and other unclassified failures are not retried. The classification
 belongs to the exception, not to the attempt (Fable HAP-3): a radio failure is
 radio in the first create, in the next ones (no internal retry) and in a

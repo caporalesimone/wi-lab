@@ -185,8 +185,9 @@ def start_network(
     If starting the AP fails because of the radio (hostapd crash, beacon setup
     failure, radio or readiness timeout), the server starts it again in the same
     request after successful cleanup, on either band: up to 3 starts, 1 s apart,
-    within 15 s. A normal start takes about 0.5 s; with retries the response can
-    take up to about 15 s outside DFS channels. Clients do not need to resubmit
+    within 20 s, each retry with at least 4 s left. A normal start takes about
+    0.5 s; with retries the response can take up to about 20 s outside DFS
+    channels. Clients do not need to resubmit
     the request to trigger these retries.
 
     After the first and second requests whose internal starts all failed, **409 / 1001**

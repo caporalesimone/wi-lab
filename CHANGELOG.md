@@ -20,6 +20,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- An internal AP start retry begins only with at least 4 s left (budget raised from 15 to 20 s), so a start cut short by the budget no longer counts as an extra radio failure towards quarantine (Fable HAP-4).
 - Clients of a Wi-Lab network can no longer reach the Wi-Lab host (API, SSH, other services, also over IPv6): only DHCP, ping and, with the captive portal, DNS and the portal page are allowed (Fable SEC-3).
 - After an unclean shutdown, startup stops orphan hostapd/dnsmasq, removes stale runtime files (including a dnsmasq PID file that failed every start) and Wi-Lab's QoS devices, and resets each radio (no address, no leftover netem/HTB) when discovery adds it (Fable STAB-4).
 - A dnsmasq launch that timed out before writing its PID file no longer blocks the cleanup forever: Wi-Lab finds the daemon by its configuration file, or sees none was started (Fable NET-6).

@@ -114,8 +114,9 @@ Creating an AP is synchronous: the response arrives only when the AP is
 broadcasting and DHCP is running, or when startup has failed and been rolled
 back. A start normally takes about 0.5 s. If the radio fails transiently,
 Wi-Lab starts it again inside the same request (up to 3 starts): about 3 s
-with one retry, 5–6 s with two, up to about 15 s in the worst case outside DFS
-channels. Configure the HTTP client with a long
+with one retry, 5–6 s with two, up to about 20 s in the worst case outside DFS
+channels. A retry starts only if at least 4 s of the 20 s budget are left, so
+every internal attempt is a real one. Configure the HTTP client with a long
 read timeout so that a slow start is not mistaken for a failure:
 
 | Channel | Suggested read timeout |
@@ -176,7 +177,7 @@ A success resets the counter. Further rules:
   extend the reservation; if it would expire first, release it and start over.
 - **Do not count your own retries on top of the server's.** On the first
   attempt Wi-Lab already starts the AP up to 3 times internally after a
-  transient radio failure, on either band, within about 15 seconds. A
+  transient radio failure, on either band, within about 20 seconds. A
   `409 / 1001` therefore means that those internal attempts also failed. The
   client sees only the final result.
 - **Transport errors are ambiguous.** If the connection drops or the client
@@ -197,7 +198,7 @@ A success resets the counter. Further rules:
 - **Adapter busy: `503 / 1006`.** Every request on a reservation other than
   the create (`GET`/`DELETE .../network`, `available-channels`, Internet,
   TX power, QoS profile) waits at most **5 s** for another operation on the
-  same adapter, such as a network start (up to 15 s, 75 s on a DFS channel).
+  same adapter, such as a network start (up to 20 s, 75 s on a DFS channel).
   After that it returns `503` with `detail.code: 1006`,
   `reason: device_busy` and `Retry-After: 2`. Nothing was changed: repeat the
   same request after `Retry-After`. A create never returns `1006`: it waits

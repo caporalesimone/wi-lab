@@ -183,7 +183,7 @@ def resolve_reservation(
 
 
 # Longest wait for another operation on the same device before answering
-# 503 / 1006 device_busy (RACE-1). A start holds the device up to 15 s, 75 s on DFS.
+# 503 / 1006 device_busy (RACE-1). A start holds the device up to 20 s, 75 s on DFS.
 DEVICE_BUSY_TIMEOUT = 5.0
 
 
