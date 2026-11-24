@@ -6,6 +6,18 @@ All notable changes to Wi-Lab are documented in this file.
 
 ## [4.0.0] - 2026-11-20
 
+### Statistics
+
+| Item | Count |
+|---|---:|
+| 🐛 Bug fixes | 45 |
+| Breaking changes | 7 |
+| 🔧 Maintenance changes | 9 |
+| New features | 13 |
+| Commits since 3.0.0 | 86 |
+
+Counts are the entries of the sections below and `git rev-list --count 3.0.0..HEAD`, as of 2026-11-24.
+
 ### Breaking Changes
 
 - Reservation contention returns null availability estimates when no release is scheduled.
