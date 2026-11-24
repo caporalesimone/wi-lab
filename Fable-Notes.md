@@ -2524,6 +2524,62 @@ In `_generate_config`: `config_lines.extend(_SECURITY[encryption])` più, se la 
 `wpa_passphrase=...`. Per i 5 GHz valutare `ieee80211ac=1` dopo una prova sugli adattatori in uso:
 è un cambiamento del comportamento radio e va misurato, non dato per buono.
 
+#### Decisioni e supporto a WPA1 (2026-11-24)
+
+**`wpa` diventa un errore.** Oggi `encryption: "wpa"` produce WPA2 senza dirlo: chi vuole testare un
+client WPA1 crede di averlo fatto e invece il test gira su WPA2. Si accetta la **modifica breaking**:
+`wpa` risponde `422` con un messaggio che indica di usare `wpa2`, oppure `wpa1` per il vero WPA legacy.
+
+**Le altre cifrature.** `open` e `wpa2` sono corrette. `wpa3` e `wpa2-wpa3` funzionano solo perché
+hostapd tiene l'ultima chiave duplicata; con la tabella `_SECURITY` vanno anche completate:
+
+| `encryption` | Righe hostapd |
+|---|---|
+| `open` | nessuna |
+| `wpa1` (nuovo) | `wpa=1`, `wpa_key_mgmt=WPA-PSK`, `wpa_pairwise=TKIP`, `ieee80211n=0` |
+| `wpa2` | `wpa=2`, `wpa_key_mgmt=WPA-PSK`, `rsn_pairwise=CCMP` |
+| `wpa3` | `wpa=2`, `wpa_key_mgmt=SAE`, `rsn_pairwise=CCMP`, `ieee80211w=2`, `sae_pwe=2` |
+| `wpa2-wpa3` | `wpa=2`, `wpa_key_mgmt=WPA-PSK SAE`, `rsn_pairwise=CCMP`, `ieee80211w=1`, `sae_require_mfp=1`, `sae_pwe=2` |
+
+- `sae_pwe=2`: accetta sia il metodo SAE classico (*hunting-and-pecking*) sia H2E, che alcuni client
+  recenti preferiscono.
+- `sae_require_mfp=1`: nella modalità mista i client SAE devono usare PMF (come prevede WPA3), i client
+  WPA2 no.
+- `ieee80211n=0` con `wpa1`: lo standard vieta TKIP con le velocità 802.11n; lo si dichiara invece di
+  lasciare che hostapd disattivi HT da solo. La rete va al massimo a 54 Mbps.
+
+**WPA1 solo dove funziona: prima la discovery.** TKIP è deprecato e molti driver o build di hostapd non
+lo supportano più in modalità AP. `wpa1` va quindi offerto solo sulle antenne in cui è verificato:
+
+1. **Controllo statico alla discovery:** il driver dichiara il cifrario TKIP (`iw phy <phy> info`,
+   riga `TKIP (00-0f-ac:2)`) e l'hostapd installato è compilato con TKIP. Sulla macchina di laboratorio
+   (2026-11-24) entrambi gli mt7921u dichiarano TKIP e hostapd 2.11 di Ubuntu contiene il supporto TKIP:
+   il controllo statico è positivo.
+2. **Prova reale:** un e2e avvia un AP `wpa1` su un'antenna libera e verifica con
+   `hostapd_cli get_config` che usi `WPA-PSK` e TKIP. Solo se questa prova passa `wpa1` entra tra i
+   valori ammessi.
+3. **Esposizione:** ogni antenna ricorda le cifrature che supporta. Una create con `wpa1` su
+   un'antenna che non lo supporta risponde `422` ("wpa1 is not supported on this antenna"). Per far
+   sapere al client cosa è disponibile, `GET /status` può elencare le cifrature per antenna in
+   `networks[].encryptions` (campo aggiunto, non breaking).
+
+**Documentazione richiesta dall'implementazione.**
+
+- Swagger: la descrizione di `encryption` spiega ogni valore in una riga. `wpa1` è solo per testare
+  client legacy: insicuro, senza 802.11n, alcuni client recenti avvisano o non si collegano, ed è
+  disponibile solo sulle antenne che lo supportano. `wpa` non è più accettato: usare `wpa2`.
+- CHANGELOG 4.0.0: una voce in Breaking Changes (`wpa` → `422`, migrazione a `wpa2`), una in Features
+  (`wpa1`), e le stesse due righe nel capitolo API per la migrazione dei client.
+- Frontend: nel menu della cifratura `wpa` è sostituito da `wpa1`, mostrato solo per le antenne che lo
+  supportano.
+
+**Test.** Unit: nessuna chiave duplicata per nessuna cifratura, righe attese per ogni valore, `wpa` →
+`422`. E2E: create con ogni cifratura → `200` e `hostapd_cli get_config` coerente, `wpa` → `422`.
+Tester: gli stessi codici via API. Telefono: collegamento a `wpa2-wpa3` (client WPA3 e WPA2) e a `wpa1`
+(annotando avvisi o rifiuti dei client recenti).
+
+**Separato da HAP-10:** `ieee80211ac=1` sui 5 GHz resta una prova hardware a parte.
+
 ---
 
 <a id="net-8"></a>

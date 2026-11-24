@@ -26,6 +26,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [HAP-4](Fable-Notes.md#L1527) | ✅ | Distinguere l'esaurimento del budget da un guasto radio reale. |
 | 1 | [STAB-6](Fable-Notes.md#L1563) | ✅ | Aggiornare l'interfaccia upstream quando cambiano le route. |
 | 1 | [NET-6](Fable-Notes.md#L1708) | ✅ | Ripulire i processi dnsmasq anche dopo un timeout di avvio. |
+| 1 | [HAP-10](Fable-Notes.md#L2498) |  | Correggere chiavi hostapd duplicate e mappatura della cifratura; `wpa` diventa `422` (breaking, documentato); aggiungere `wpa1` (WPA/TKIP) solo sulle antenne in cui la discovery lo conferma utilizzabile. Dettagli nel capitolo 43. |
 | 1 | [BUG-3](Fable-Notes.md#L1848) |  | Allineare la validazione offline a quella eseguita all'avvio. |
 | 1 | [NET-3](Fable-Notes.md#L1949) |  | Applicare l'isolamento anche a subnet diverse da `192.168.*`. |
 | 1 | [BUG-5](Fable-Notes.md#L2243) |  | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
@@ -33,10 +34,9 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [STAB-8](Fable-Notes.md#L2405) |  | Limitare il lavoro di arresto entro il timeout di systemd. |
 | 1 | [WD-10](Fable-Notes.md#L2438) |  | Non considerare guasto un access point solo per probe lenti. |
 | 1 | [HAP-9](Fable-Notes.md#L2471) |  | Gestire attese DFS/CAC e timeout di avvio dei canali. |
-| 1 | [HAP-10](Fable-Notes.md#L2498) |  | Correggere chiavi hostapd duplicate e mappatura della cifratura. |
-| 1 | [BUG-6](Fable-Notes.md#L2687) |  | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
-| 1 | [NET-9](Fable-Notes.md#L2719) |  | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
-| 1 | [NET-7](Fable-Notes.md#L2737) |  | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
+| 1 | [BUG-6](Fable-Notes.md#L2743) |  | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
+| 1 | [NET-9](Fable-Notes.md#L2775) |  | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
+| 1 | [NET-7](Fable-Notes.md#L2793) |  | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
 | 2 | [SEC-1](Fable-Notes.md#L226) |  | Limitare la route frontend ai file contenuti nella directory frontend. |
 | 3 | [WD-9](Fable-Notes.md#L1217) | ✅ | Supervisionare i loop in background e riavviare quelli terminati. |
 | 4 | [SEC-3](Fable-Notes.md#L1340) | ✅ | Limitare gli indirizzi e le interfacce su cui ascolta l'API. Fatto con una regola `INPUT` per rete (IPv4 e IPv6): i client delle reti Wi-Lab non raggiungono l'host, né API né SSH; restano DHCP, ping e, con il captive portal, DNS e pagina del portale. |
@@ -50,46 +50,46 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 13 | [HAP-8](Fable-Notes.md#L2112) |  | Conservare un estratto sicuro dell'output hostapd per la diagnosi. |
 | 14 | [HAP-5](Fable-Notes.md#L2152) |  | Verificare avvii radio concorrenti e serializzarli se necessario. |
 | 15 | [HAP-6](Fable-Notes.md#L2202) |  | Verificare se ritardare la modifica della potenza TX migliora l'avvio. |
-| 16 | [NET-8](Fable-Notes.md#L2530) |  | Sostituire il DNS predefinito specifico del laboratorio. |
-| 18 | [BUG-7](Fable-Notes.md#L2631) |  | Rendere coerente lo stato della potenza TX in caso di mismatch. |
-| 19 | [BUG-8](Fable-Notes.md#L2664) |  | Usare un confronto constant-time per il token. |
-| 20 | [NET-10](Fable-Notes.md#L2771) |  | Gestire conflitti sulla porta 80, richieste malformate e regole firewall. |
-| 21 | [NET-4](Fable-Notes.md#L2809) | ✅ | Rimuovere il messaggio di log fuorviante sull'isolamento. |
-| 22 | [HAP-7](Fable-Notes.md#L2832) |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
-| 23 | [RACE-2](Fable-Notes.md#L2852) | ✅ | Costruire `/status` da uno snapshot coerente dello stato condiviso. |
-| 25 | [PERF-3](Fable-Notes.md#L2898) |  | Memorizzare brevemente i risultati dei controlli di salute. |
-| 26 | [PERF-1](Fable-Notes.md#L2932) | ✅ parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. Fatti i tagli a basso rischio (validazioni `iw`, `dnsmasq --version`, `nmcli --version`). Non fatto di proposito `iptables-restore` in blocco: cambierebbe come si installano e tolgono tutte le regole, appena consolidato con NET-2, SEC-3 e WD-7. |
-| 27 | [PERF-2](Fable-Notes.md#L2968) |  | Separare i controlli di stato attivo dalle query dettagliate. |
-| 28 | [PERF-5](Fable-Notes.md#L2996) |  | Rispettare il timeout richiesto senza imporre un minimo nascosto. |
-| 29 | [PERF-6](Fable-Notes.md#L3029) |  | Sostituire l'attesa fissa per TX power con polling limitato. |
-| 30 | [PERF-4](Fable-Notes.md#L3063) |  | Ridurre letture di discovery e probe hostapd non necessarie. |
-| 31 | [API-2](Fable-Notes.md#L3111) | ✅ | Uniformare i codici di stato per le reti non attive. |
-| 32 | [API-4](Fable-Notes.md#L3149) | ✅ | Usare codici di errore appropriati per gli esiti causati dal client. |
-| 33 | [API-9](Fable-Notes.md#L3181) | ✅ | Allineare gli esempi OpenAPI ai modelli correnti. |
-| 34 | [API-5](Fable-Notes.md#L3206) |  | Restituire dati strutturati sullo stato della rete insieme al messaggio. |
-| 35 | [API-10](Fable-Notes.md#L3241) |  | Rifiutare i campi sconosciuti nelle richieste. |
-| 36 | [API-3](Fable-Notes.md#L3262) |  | Chiarire e uniformare i significati dei conflitti HTTP 409. |
-| 37 | [API-11](Fable-Notes.md#L3293) |  | Semplificare e documentare i retry tra server e client. |
-| 38 | [API-1](Fable-Notes.md#L3319) |  | Consolidare dati API duplicati e uniformare i nomi. |
-| 39 | [API-8](Fable-Notes.md#L3338) |  | Rimuovere dettagli implementativi dai modelli di risposta pubblici. |
-| 40 | [API-6](Fable-Notes.md#L3367) |  | Uniformare i nomi di endpoint e campi. |
-| 41 | [API-7](Fable-Notes.md#L3390) |  | Valutare un modello API a risorse per le azioni enable/disable. |
-| 42 | [ARCH-2](Fable-Notes.md#L3417) |  | Centralizzare la classificazione dei guasti. |
-| 43 | [ARCH-1](Fable-Notes.md#L3454) |  | Separare le responsabilità di `NetworkManager`. |
-| 44 | [ARCH-4](Fable-Notes.md#L3492) |  | Consolidare lo stato dei dispositivi in un registro unico. |
-| 45 | [ARCH-3](Fable-Notes.md#L3537) |  | Separare il modello interno della rete dai modelli API. |
-| 46 | [ARCH-5](Fable-Notes.md#L3571) |  | Costruire e avviare i manager esplicitamente tramite un contesto applicativo. |
-| 47 | [ARCH-6](Fable-Notes.md#L3607) |  | Gestire dnsmasq come processo figlio in foreground. |
-| 48 | [ARCH-7](Fable-Notes.md#L3635) |  | Consolidare in un helper il rilascio delle interfacce da NetworkManager. |
-| 49 | [ARCH-10](Fable-Notes.md#L3663) |  | Definire regole di logging e limitare i messaggi ripetuti. |
-| 50 | [ARCH-9](Fable-Notes.md#L3686) |  | Rimuovere codice, modelli e test inutilizzati. |
-| 51 | [ARCH-8](Fable-Notes.md#L3717) |  | Sostituire l'accesso agli attributi privati di altre classi con metodi pubblici. |
-| 52 | [ARCH-12](Fable-Notes.md#L3743) | ✅ | Aggiungere `wilab/wifi/__init__.py`. |
-| 53 | [ARCH-11](Fable-Notes.md#L3761) |  | Definire la strategia di integrazione prima di applicare patch specifiche del branch. |
+| 16 | [NET-8](Fable-Notes.md#L2586) |  | Sostituire il DNS predefinito specifico del laboratorio. |
+| 18 | [BUG-7](Fable-Notes.md#L2687) |  | Rendere coerente lo stato della potenza TX in caso di mismatch. |
+| 19 | [BUG-8](Fable-Notes.md#L2720) |  | Usare un confronto constant-time per il token. |
+| 20 | [NET-10](Fable-Notes.md#L2827) |  | Gestire conflitti sulla porta 80, richieste malformate e regole firewall. |
+| 21 | [NET-4](Fable-Notes.md#L2865) | ✅ | Rimuovere il messaggio di log fuorviante sull'isolamento. |
+| 22 | [HAP-7](Fable-Notes.md#L2888) |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
+| 23 | [RACE-2](Fable-Notes.md#L2908) | ✅ | Costruire `/status` da uno snapshot coerente dello stato condiviso. |
+| 25 | [PERF-3](Fable-Notes.md#L2954) |  | Memorizzare brevemente i risultati dei controlli di salute. |
+| 26 | [PERF-1](Fable-Notes.md#L2988) | ✅ parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. Fatti i tagli a basso rischio (validazioni `iw`, `dnsmasq --version`, `nmcli --version`). Non fatto di proposito `iptables-restore` in blocco: cambierebbe come si installano e tolgono tutte le regole, appena consolidato con NET-2, SEC-3 e WD-7. |
+| 27 | [PERF-2](Fable-Notes.md#L3024) |  | Separare i controlli di stato attivo dalle query dettagliate. |
+| 28 | [PERF-5](Fable-Notes.md#L3052) |  | Rispettare il timeout richiesto senza imporre un minimo nascosto. |
+| 29 | [PERF-6](Fable-Notes.md#L3085) |  | Sostituire l'attesa fissa per TX power con polling limitato. |
+| 30 | [PERF-4](Fable-Notes.md#L3119) |  | Ridurre letture di discovery e probe hostapd non necessarie. |
+| 31 | [API-2](Fable-Notes.md#L3167) | ✅ | Uniformare i codici di stato per le reti non attive. |
+| 32 | [API-4](Fable-Notes.md#L3205) | ✅ | Usare codici di errore appropriati per gli esiti causati dal client. |
+| 33 | [API-9](Fable-Notes.md#L3237) | ✅ | Allineare gli esempi OpenAPI ai modelli correnti. |
+| 34 | [API-5](Fable-Notes.md#L3262) |  | Restituire dati strutturati sullo stato della rete insieme al messaggio. |
+| 35 | [API-10](Fable-Notes.md#L3297) |  | Rifiutare i campi sconosciuti nelle richieste. |
+| 36 | [API-3](Fable-Notes.md#L3318) |  | Chiarire e uniformare i significati dei conflitti HTTP 409. |
+| 37 | [API-11](Fable-Notes.md#L3349) |  | Semplificare e documentare i retry tra server e client. |
+| 38 | [API-1](Fable-Notes.md#L3375) |  | Consolidare dati API duplicati e uniformare i nomi. |
+| 39 | [API-8](Fable-Notes.md#L3394) |  | Rimuovere dettagli implementativi dai modelli di risposta pubblici. |
+| 40 | [API-6](Fable-Notes.md#L3423) |  | Uniformare i nomi di endpoint e campi. |
+| 41 | [API-7](Fable-Notes.md#L3446) |  | Valutare un modello API a risorse per le azioni enable/disable. |
+| 42 | [ARCH-2](Fable-Notes.md#L3473) |  | Centralizzare la classificazione dei guasti. |
+| 43 | [ARCH-1](Fable-Notes.md#L3510) |  | Separare le responsabilità di `NetworkManager`. |
+| 44 | [ARCH-4](Fable-Notes.md#L3548) |  | Consolidare lo stato dei dispositivi in un registro unico. |
+| 45 | [ARCH-3](Fable-Notes.md#L3593) |  | Separare il modello interno della rete dai modelli API. |
+| 46 | [ARCH-5](Fable-Notes.md#L3627) |  | Costruire e avviare i manager esplicitamente tramite un contesto applicativo. |
+| 47 | [ARCH-6](Fable-Notes.md#L3663) |  | Gestire dnsmasq come processo figlio in foreground. |
+| 48 | [ARCH-7](Fable-Notes.md#L3691) |  | Consolidare in un helper il rilascio delle interfacce da NetworkManager. |
+| 49 | [ARCH-10](Fable-Notes.md#L3719) |  | Definire regole di logging e limitare i messaggi ripetuti. |
+| 50 | [ARCH-9](Fable-Notes.md#L3742) |  | Rimuovere codice, modelli e test inutilizzati. |
+| 51 | [ARCH-8](Fable-Notes.md#L3773) |  | Sostituire l'accesso agli attributi privati di altre classi con metodi pubblici. |
+| 52 | [ARCH-12](Fable-Notes.md#L3799) | ✅ | Aggiungere `wilab/wifi/__init__.py`. |
+| 53 | [ARCH-11](Fable-Notes.md#L3817) |  | Definire la strategia di integrazione prima di applicare patch specifiche del branch. |
 | 54 | [BUG-9](Fable-Notes.md#L2298) |  | Allineare la validazione dei profili QoS custom al modello runtime. |
-| 55 | [NET-13](Fable-Notes.md#L2596) |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
-| 56 | [RACE-3](Fable-Notes.md#L2873) |  | Sincronizzare le operazioni QoS per interfaccia. |
-| 57 | [NET-12](Fable-Notes.md#L2556) |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
+| 55 | [NET-13](Fable-Notes.md#L2652) |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
+| 56 | [RACE-3](Fable-Notes.md#L2929) |  | Sincronizzare le operazioni QoS per interfaccia. |
+| 57 | [NET-12](Fable-Notes.md#L2612) |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
 | 58 | [NET-11](Fable-Notes.md#L2073) |  | Gestire o rifiutare esplicitamente valori QoS upload/download differenti. |
 | 59 | [WD-8](Fable-Notes.md#L1759) |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
 | Ultima | RELEASE-API |  | **Da fare solo alla fine, quando si dichiara completata la release.** Revisione con Fable di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a quanto documentato in Swagger (`/docs`) e ReDoc (`/redoc`), oltre che in `docs/ap-creation-procedure.md` e nel capitolo API della 4.0.0 in `CHANGELOG.md`. Correggere ogni differenza prima del rilascio. |
@@ -163,7 +163,7 @@ in corso deve dare `409/1001`, non `500/1003`, e l'antenna deve tornare da sola 
 | RACE-1 | Create su canale DFS (es. 100) e, nello stesso momento, 45 `GET .../network` più `/status`. | `/status` risponde subito; le altre richieste ottengono `200` o `503 / 1006` con `Retry-After: 2` entro circa 5 s, non un timeout. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) (senza DFS) |
 | RACE-2 | `/status` in ciclo stretto durante create/delete ripetuti. | Nessun `degraded` spurio. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | HAP-9 | Con DFS abilitato, create sul canale 124. | Risposta coerente (attesa gestita o rifiuto esplicito), non un timeout del client a 75 s. |  |
-| HAP-10 | Create con `wpa2-wpa3` e con `wpa`. | `200` per entrambe. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| HAP-10 | Create con `wpa2`, `wpa3`, `wpa2-wpa3`, `wpa1` e `wpa`. | `200` per le prime quattro (`wpa1` solo se l'antenna lo supporta, altrimenti `422`); `422` per `wpa`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | NET-11 | QoS con `download_quality: 40`, `upload_quality: 90`. | Rifiuto esplicito, oppure applicazione accettata con valori diversi nelle due direzioni (`GET .../qos`). |  |
 | BUG-2 | Una sola rete con `internet_enabled: false`. | `/status` non è `degraded`. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | BUG-7 | `POST .../txpower` con ogni livello, poi `GET .../txpower`. | Il `GET` riporta il valore reale, non quello richiesto. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
