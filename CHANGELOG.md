@@ -6,19 +6,19 @@ All notable changes to Wi-Lab are documented in this file.
 
 ## [4.0.0] - 2026-11-20
 
-### Statistics
+### 📊 Statistics
 
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 45 |
-| Breaking changes | 7 |
+| ⚠️ Breaking changes | 7 |
 | 🔧 Maintenance changes | 9 |
-| New features | 13 |
-| Commits since 3.0.0 | 86 |
+| ✨ New features | 13 |
+| 📦 Commits since 3.0.0 | 86 |
 
 Counts are the entries of the sections below and `git rev-list --count 3.0.0..HEAD`, as of 2026-11-24.
 
-### Breaking Changes
+### ⚠️ Breaking Changes
 
 - Reservation contention returns null availability estimates when no release is scheduled.
 - AP creation requires a single 2.4 GHz or 5 GHz band; `dual` returns 422.
@@ -28,7 +28,7 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - Internet, TX power and QoS profile requests on a valid reservation without a running network return `409` with `detail.code: 1007` (`network_not_active`); Internet and TX power returned `404`, which clients could not tell apart from an expired reservation (Fable API-2).
 - A create that quarantines the adapter and invalidates the reservation (`detail.code: 1003`, `reservation_invalidated: true`) now returns `503` instead of `500`, so clients and proxies no longer treat it as a retryable server error; the code and body are unchanged (Fable API-4).
 
-### Features
+### ✨ Features
 
 - Add an optional captive portal to AP creation (`captive_portal`). Its sign-in button releases only the client that pressed it.
 - Block DFS channels in the channel listing and reject AP creation on them by default; opt in with `allow_dfs_channels: true`.
