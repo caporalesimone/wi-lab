@@ -51,7 +51,7 @@ recovery, `HAP` avvio di hostapd, `NET` firewall / DHCP / QoS, `BUG` errori logi
 `PERF` prestazioni, `API` disegno delle API, `ARCH` struttura del codice.
 
 Il documento è ordinato per priorità: le due tabelle del capitolo 2 e le schede del capitolo 4 seguono
-lo stesso ordine, da 1 (più urgente) a 86. L'indice completo è in fondo. ✅ segna i punti corretti e committati, ✅ parz. quelli corretti in parte (il dettaglio è in [fable-todo.md](fable-todo.md)).
+lo stesso ordine, da 1 (più urgente) a 87. L'indice completo è in fondo. ✅ segna i punti corretti e committati, ✅ parz. quelli corretti in parte (il dettaglio è in [fable-todo.md](fable-todo.md)).
 
 ---
 
@@ -136,49 +136,50 @@ protetto è quello che interessa di più: una rete che funzionava e deve continu
 | 41 | [WD-10](#wd-10) | Bassa | Tre probe lenti consecutivi riavviano un AP forse sano. |
 | 42 | [HAP-9](#hap-9) | Bassa | Canali DFS con controllo radar di 10 minuti: il timeout di 75 s non basta mai. |
 | 43 | [HAP-10](#hap-10) | Bassa | La configurazione generata ha chiavi duplicate; `encryption: "wpa"` è in realtà WPA2. |
-| 44 | [NET-8](#net-8) | Bassa | `dns_server` ha come default `192.168.10.21`, un indirizzo di laboratorio. |
-| 45 | [NET-12](#net-12) | Bassa | QoS: gara alla fine di un profilo `once`. |
-| 46 | [NET-13](#net-13) | Bassa | QoS: lo stop del profilo può far fallire lo stop della rete. |
-| 47 | [BUG-7](#bug-7) | Bassa | TX power: dopo un mismatch lo stato riportato non corrisponde all'hardware. |
-| 48 | [BUG-8](#bug-8) | Bassa | Il token Bearer è confrontato con `!=` invece che a tempo costante. |
-| 49 | [BUG-6](#bug-6) | Bassa | `validate_interface_ap_mode` non dimostra nulla (`"AP" in` su tutto il testo). |
-| 50 | [NET-9](#net-9) | Bassa | Le subnet non sono stabili tra un riavvio e l'altro. |
-| 51 | [NET-7](#net-7) | Bassa | I file dei lease DHCP sopravvivono alla reservation. |
-| 52 | [NET-10](#net-10) | Bassa | Captive portal: porta 80 occupata, `Content-Length` malformato, indice della regola di protezione. |
-| 53 | [NET-4](#net-4) ✅ | Bassa | Riga di log falsa: `Isolation disabled for testing`. |
-| 54 | [HAP-7](#hap-7) | Bassa | Ipotesi: `hostapd -d` resta attivo per tutta la vita dell'AP. |
-| 55 | [RACE-2](#race-2) ✅ | Bassa | `/status` legge stato condiviso senza i lock dei dispositivi. |
-| 56 | [RACE-3](#race-3) | Bassa | Lo stato di `QosManager` non ha lock. |
-| 57 | [PERF-3](#perf-3) | Bassa | `/status` costa tre comandi a chiamata, due sono `iptables -S`. |
-| 58 | [PERF-1](#perf-1) ✅ parz. | Bassa | L'avvio di una rete esegue circa 20 comandi oltre a hostapd. |
-| 59 | [PERF-2](#perf-2) | Bassa | `GET .../network` costa due o tre comandi a chiamata, sotto lock. |
-| 60 | [PERF-5](#perf-5) | Bassa | `execute_command` impone un timeout minimo di 5 s all'insaputa del chiamante. |
-| 61 | [PERF-6](#perf-6) | Bassa | Il cambio di TX power blocca la richiesta per 3 s sotto lock. |
-| 62 | [PERF-4](#perf-4) | Bassa | Costo fisso di background: milioni di processi creati all'anno per fare polling. |
-| 63 | [PERF-7](#perf-7) | Bassa | Memoria e descrittori: nessuna crescita trovata (punto informativo). |
-| 64 | [API-2](#api-2) ✅ | Media | "Rete non attiva" ha due codici diversi: `409` per QoS, `404` per Internet e TX power. |
-| 65 | [API-4](#api-4) ✅ | Media | `500` usato per esiti che riguardano il client. |
-| 66 | [API-9](#api-9) ✅ | Media | Gli esempi OpenAPI sono corretti a mano e non corrispondono più ai modelli. |
-| 67 | [API-5](#api-5) | Bassa | Le risposte di successo contengono solo una frase. |
-| 68 | [API-10](#api-10) | Bassa | I campi sconosciuti nelle richieste vengono ignorati. |
-| 69 | [API-3](#api-3) | Bassa | `409` significa sette cose diverse. |
-| 70 | [API-11](#api-11) | Bassa | Il contratto di retry ha tre livelli; quello lato client è ormai ridondante. |
-| 71 | [API-1](#api-1) | Bassa | Lo stesso dato è esposto in più punti con nomi diversi. |
-| 72 | [API-8](#api-8) | Bassa | La risposta espone dettagli interni (`pid_file`, `process_stopped`). |
-| 73 | [API-6](#api-6) | Bassa | Nomi incoerenti (`/interface/{reservation_id}`, `tx_power_level` contro `level`). |
-| 74 | [API-7](#api-7) | Bassa | Azioni modellate come percorsi (`/internet/enable`, `/internet/disable`). |
-| 75 | [ARCH-2](#arch-2) | Media | La classificazione dei guasti è sparsa in quattro posti. |
-| 76 | [ARCH-1](#arch-1) | Media | `NetworkManager` fa troppe cose (970 righe). |
-| 77 | [ARCH-4](#arch-4) | Media | Il registro dei dispositivi esiste in quattro copie. |
-| 78 | [ARCH-3](#arch-3) | Bassa | Il modello dell'API è anche lo stato interno. |
-| 79 | [ARCH-5](#arch-5) | Bassa | I singleton sono collegati per effetto collaterale. |
-| 80 | [ARCH-6](#arch-6) | Bassa | Tre modi diversi di gestire un processo figlio. |
-| 81 | [ARCH-7](#arch-7) | Bassa | Tre implementazioni di "rilascia da NetworkManager". |
-| 82 | [ARCH-10](#arch-10) | Bassa | Il logging non ha una regola: errori falsi, guasti veri a `DEBUG`. |
-| 83 | [ARCH-9](#arch-9) | Bassa | Codice morto, compresa una funzione pericolosa. |
-| 84 | [ARCH-8](#arch-8) | Bassa | Attributi privati usati tra classi diverse. |
-| 85 | [ARCH-12](#arch-12) ✅ | Bassa | `wilab/wifi/` e `wilab/data/` non hanno `__init__.py`. |
-| 86 | [ARCH-11](#arch-11) | Bassa | Il layout di questo branch diverge dalle regole dell'altro branch. |
+| 44 | [HAP-11](#hap-11) | Media | Ogni rete usa 20 MHz e 802.11n su entrambe le bande, anche se gli adattatori supportano 40/80 MHz, 802.11ac e 802.11ax. Serve una conferma umana su come procedere. |
+| 45 | [NET-8](#net-8) | Bassa | `dns_server` ha come default `192.168.10.21`, un indirizzo di laboratorio. |
+| 46 | [NET-12](#net-12) | Bassa | QoS: gara alla fine di un profilo `once`. |
+| 47 | [NET-13](#net-13) | Bassa | QoS: lo stop del profilo può far fallire lo stop della rete. |
+| 48 | [BUG-7](#bug-7) | Bassa | TX power: dopo un mismatch lo stato riportato non corrisponde all'hardware. |
+| 49 | [BUG-8](#bug-8) | Bassa | Il token Bearer è confrontato con `!=` invece che a tempo costante. |
+| 50 | [BUG-6](#bug-6) | Bassa | `validate_interface_ap_mode` non dimostra nulla (`"AP" in` su tutto il testo). |
+| 51 | [NET-9](#net-9) | Bassa | Le subnet non sono stabili tra un riavvio e l'altro. |
+| 52 | [NET-7](#net-7) | Bassa | I file dei lease DHCP sopravvivono alla reservation. |
+| 53 | [NET-10](#net-10) | Bassa | Captive portal: porta 80 occupata, `Content-Length` malformato, indice della regola di protezione. |
+| 54 | [NET-4](#net-4) ✅ | Bassa | Riga di log falsa: `Isolation disabled for testing`. |
+| 55 | [HAP-7](#hap-7) | Bassa | Ipotesi: `hostapd -d` resta attivo per tutta la vita dell'AP. |
+| 56 | [RACE-2](#race-2) ✅ | Bassa | `/status` legge stato condiviso senza i lock dei dispositivi. |
+| 57 | [RACE-3](#race-3) | Bassa | Lo stato di `QosManager` non ha lock. |
+| 58 | [PERF-3](#perf-3) | Bassa | `/status` costa tre comandi a chiamata, due sono `iptables -S`. |
+| 59 | [PERF-1](#perf-1) ✅ parz. | Bassa | L'avvio di una rete esegue circa 20 comandi oltre a hostapd. |
+| 60 | [PERF-2](#perf-2) | Bassa | `GET .../network` costa due o tre comandi a chiamata, sotto lock. |
+| 61 | [PERF-5](#perf-5) | Bassa | `execute_command` impone un timeout minimo di 5 s all'insaputa del chiamante. |
+| 62 | [PERF-6](#perf-6) | Bassa | Il cambio di TX power blocca la richiesta per 3 s sotto lock. |
+| 63 | [PERF-4](#perf-4) | Bassa | Costo fisso di background: milioni di processi creati all'anno per fare polling. |
+| 64 | [PERF-7](#perf-7) | Bassa | Memoria e descrittori: nessuna crescita trovata (punto informativo). |
+| 65 | [API-2](#api-2) ✅ | Media | "Rete non attiva" ha due codici diversi: `409` per QoS, `404` per Internet e TX power. |
+| 66 | [API-4](#api-4) ✅ | Media | `500` usato per esiti che riguardano il client. |
+| 67 | [API-9](#api-9) ✅ | Media | Gli esempi OpenAPI sono corretti a mano e non corrispondono più ai modelli. |
+| 68 | [API-5](#api-5) | Bassa | Le risposte di successo contengono solo una frase. |
+| 69 | [API-10](#api-10) | Bassa | I campi sconosciuti nelle richieste vengono ignorati. |
+| 70 | [API-3](#api-3) | Bassa | `409` significa sette cose diverse. |
+| 71 | [API-11](#api-11) | Bassa | Il contratto di retry ha tre livelli; quello lato client è ormai ridondante. |
+| 72 | [API-1](#api-1) | Bassa | Lo stesso dato è esposto in più punti con nomi diversi. |
+| 73 | [API-8](#api-8) | Bassa | La risposta espone dettagli interni (`pid_file`, `process_stopped`). |
+| 74 | [API-6](#api-6) | Bassa | Nomi incoerenti (`/interface/{reservation_id}`, `tx_power_level` contro `level`). |
+| 75 | [API-7](#api-7) | Bassa | Azioni modellate come percorsi (`/internet/enable`, `/internet/disable`). |
+| 76 | [ARCH-2](#arch-2) | Media | La classificazione dei guasti è sparsa in quattro posti. |
+| 77 | [ARCH-1](#arch-1) | Media | `NetworkManager` fa troppe cose (970 righe). |
+| 78 | [ARCH-4](#arch-4) | Media | Il registro dei dispositivi esiste in quattro copie. |
+| 79 | [ARCH-3](#arch-3) | Bassa | Il modello dell'API è anche lo stato interno. |
+| 80 | [ARCH-5](#arch-5) | Bassa | I singleton sono collegati per effetto collaterale. |
+| 81 | [ARCH-6](#arch-6) | Bassa | Tre modi diversi di gestire un processo figlio. |
+| 82 | [ARCH-7](#arch-7) | Bassa | Tre implementazioni di "rilascia da NetworkManager". |
+| 83 | [ARCH-10](#arch-10) | Bassa | Il logging non ha una regola: errori falsi, guasti veri a `DEBUG`. |
+| 84 | [ARCH-9](#arch-9) | Bassa | Codice morto, compresa una funzione pericolosa. |
+| 85 | [ARCH-8](#arch-8) | Bassa | Attributi privati usati tra classi diverse. |
+| 86 | [ARCH-12](#arch-12) ✅ | Bassa | `wilab/wifi/` e `wilab/data/` non hanno `__init__.py`. |
+| 87 | [ARCH-11](#arch-11) | Bassa | Il layout di questo branch diverge dalle regole dell'altro branch. |
 
 ---
 
@@ -2578,12 +2579,102 @@ lo supportano più in modalità AP. `wpa1` va quindi offerto solo sulle antenne 
 Tester: gli stessi codici via API. Telefono: collegamento a `wpa2-wpa3` (client WPA3 e WPA2) e a `wpa1`
 (annotando avvisi o rifiuti dei client recenti).
 
-**Separato da HAP-10:** `ieee80211ac=1` sui 5 GHz resta una prova hardware a parte.
+**Separato da HAP-10:** larghezza di canale e generazione Wi-Fi (`ieee80211ac`, `ieee80211ax`, 40/80 MHz) sono il punto [HAP-11](#hap-11), da fare subito dopo e solo con una conferma umana.
+
+---
+
+<a id="hap-11"></a>
+### 44. HAP-11 - Larghezza di canale e generazione Wi-Fi fissate a 20 MHz e 802.11n
+
+**Gravità:** Media · **Confidenza:** Confermato (capacità lette da `iw phy` sulla macchina di laboratorio, 2026-11-24) · **File:** [wilab/wifi/hostapd.py](wilab/wifi/hostapd.py), [wilab/models.py](wilab/models.py), [wilab/wifi/channels.py](wilab/wifi/channels.py)
+
+> **Serve una conferma umana prima di implementare.** Le scelte elencate in "Decisioni da confermare"
+> cambiano il comportamento radio e l'API: vanno decise da una persona prima di scrivere codice.
+> Il punto va fatto **dopo HAP-10**, che sistema la sezione di sicurezza dello stesso file di
+> configurazione.
+
+**Problema.** `hostapd.conf` contiene solo `ieee80211n=1`, senza `ht_capab`, senza `ieee80211ac` e
+senza `ieee80211ax`. Ogni rete usa quindi un canale da 20 MHz con 802.11n, su entrambe le bande, anche
+se gli adattatori in uso (mt7921u) supportano molto di più in modalità AP:
+
+| Banda | Capacità dell'adattatore (AP) | Usato oggi |
+|---|---|---|
+| 2,4 GHz | HT20/HT40, HE (Wi-Fi 6) fino a 40 MHz | 20 MHz, 802.11n |
+| 5 GHz | HT20/HT40, VHT (802.11ac) fino a 80 MHz, HE fino a 80 MHz | 20 MHz, 802.11n |
+
+Conseguenze:
+
+- sui 5 GHz la banda disponibile è circa un quarto di quella possibile;
+- non si possono testare client nelle condizioni reali di Wi-Fi 5 (802.11ac) e Wi-Fi 6 (802.11ax);
+- sui 2,4 GHz manca 802.11ax, che anche a 20 MHz porta OFDMA e 1024-QAM.
+
+Non è un errore di correttezza: le reti funzionano. È un limite di prestazioni e di copertura dei
+test.
+
+**Come si riproduce.** Creare una rete a 5 GHz e leggere `iw dev <if> info`: `width: 20 MHz`. Il file
+`hostapd.conf` dell'istanza non contiene `ht_capab`, `ieee80211ac` né `ieee80211ax`. Sullo stesso
+adattatore `iw phy <phy> info` riporta `HT20/HT40`, `VHT Capabilities` e `HE Iftypes: AP` con
+`HE40/HE80/5GHz`.
+
+**Perché non basta accendere le opzioni.**
+
+- **Gruppi di canali.** A 40 e 80 MHz i canali vanno a blocchi (5 GHz: 36–48, 52–64, 100–112, …).
+  Serve la frequenza centrale (`vht_oper_centr_freq_seg0_idx`, `he_oper_centr_freq_seg0_idx`) e il
+  verso del canale secondario (`[HT40+]` / `[HT40-]`). Alcune combinazioni sono impossibili (il 165
+  non va a 80 MHz).
+- **DFS.** Un canale da 80 MHz può includere canali DFS anche se il canale primario non lo è: va
+  coordinato con HAP-9 e con `allow_dfs_channels`.
+- **2,4 GHz a 40 MHz.** La banda ha solo 3 canali da 20 MHz che non si sovrappongono; un canale da
+  40 MHz ne occupa due terzi e disturba le altre antenne. Lo standard obbliga hostapd a tornare a
+  20 MHz se rileva reti vicine (coesistenza 20/40, OBSS): con più AP accesi accade quasi sempre.
+- **802.11ac non esiste sui 2,4 GHz.**
+- **Stabilità.** Gli mt7921u in VM mostrano già guasti transitori all'avvio (HAP-1…HAP-4). Canali
+  più larghi e HE vanno provati sull'hardware prima di diventare comportamento normale.
+- **Cifratura.** `wpa1` (HAP-10) usa TKIP, incompatibile con HT/VHT/HE: con `wpa1` larghezza e
+  generazione restano 20 MHz e 802.11a/g.
+
+**Come correggerlo (proposta).** Due campi opzionali nella richiesta di creazione, con default uguali
+al comportamento di oggi, quindi nessuna modifica breaking:
+
+```python
+# wilab/models.py
+class NetworkCreateRequest(BaseModel):
+    ...
+    channel_width: Literal[20, 40, 80] = 20           # MHz
+    wifi_generation: Literal[4, 5, 6] = 4             # 4 = 802.11n, 5 = 802.11ac (5 GHz), 6 = 802.11ax
+```
+
+- Validazione (`422`): `wifi_generation: 5` solo sui 5 GHz; `channel_width: 80` solo sui 5 GHz;
+  combinazioni canale/larghezza impossibili; larghezze che includono canali DFS quando non sono
+  ammessi; `wpa1` con larghezza o generazione superiori al minimo.
+- Una funzione pura `_width_lines(band, channel, width, generation)` restituisce le righe hostapd
+  (`ht_capab`, `ieee80211ac`, `vht_oper_chwidth`, `vht_oper_centr_freq_seg0_idx`, `ieee80211ax`,
+  `he_oper_chwidth`, `he_oper_centr_freq_seg0_idx`), testabile senza hardware.
+- La discovery registra per ogni antenna le capacità lette da `iw phy` (HT40, VHT80, HE): una
+  richiesta oltre le capacità dell'antenna risponde `422`, e `GET /status` può elencarle per antenna.
+- `GET .../network` riporta larghezza e generazione effettive lette da `iw dev <if> info`, perché
+  hostapd può ridurle (coesistenza 20/40, DFS).
+
+**Decisioni da confermare (conferma umana obbligatoria).**
+
+1. Forma dell'API: i due campi `channel_width` e `wifi_generation`, oppure una scelta automatica del
+   massimo supportato dall'antenna, oppure un solo campo combinato.
+2. 2,4 GHz a 40 MHz: rifiutarlo (`422`, comportamento prevedibile) oppure permetterlo con
+   l'avvertenza che hostapd può tornare a 20 MHz.
+3. 802.11ax: attivabile da subito o solo dopo la prova su hardware.
+4. Default: restare a 20 MHz / 802.11n (nessun cambiamento per i client esistenti) oppure alzarlo
+   dopo le prove.
+
+**Test.** Unit: righe generate per ogni combinazione banda/canale/larghezza/generazione e `422` per
+quelle impossibili. E2E (con conferma, a sistema libero): create a 20/40/80 MHz e con ogni
+generazione, `iw dev <if> info` mostra la larghezza attesa, nessun aumento di guasti all'avvio su una
+serie di create. Telefono: collegamento e misura della velocità a 20, 40 e 80 MHz sui 5 GHz, con un
+client Wi-Fi 5 e uno Wi-Fi 6.
 
 ---
 
 <a id="net-8"></a>
-### 44. NET-8 - `dns_server` ha come default un indirizzo di laboratorio
+### 45. NET-8 - `dns_server` ha come default un indirizzo di laboratorio
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/config.py:37](wilab/config.py#L37)
 
@@ -2609,7 +2700,7 @@ modifiche breaking, e `config.example.yaml` deve già contenerla.
 ---
 
 <a id="net-12"></a>
-### 45. NET-12 - QoS: gara alla fine di un profilo `once`
+### 46. NET-12 - QoS: gara alla fine di un profilo `once`
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:264-274](wilab/network/qos_profile.py#L264-L274)
 
@@ -2649,7 +2740,7 @@ può vedersi togliere le regole dal vecchio thread: lo stato dice "profilo attiv
 ---
 
 <a id="net-13"></a>
-### 46. NET-13 - QoS: lo stop del profilo può far fallire lo stop della rete
+### 47. NET-13 - QoS: lo stop del profilo può far fallire lo stop della rete
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:182-197](wilab/network/qos_profile.py#L182-L197), [wilab/wifi/manager.py:439-447](wilab/wifi/manager.py#L439-L447)
 
@@ -2684,7 +2775,7 @@ dopo la pulizia.
 ---
 
 <a id="bug-7"></a>
-### 47. BUG-7 - TX power: stato incoerente dopo un mismatch
+### 48. BUG-7 - TX power: stato incoerente dopo un mismatch
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:824-894](wilab/wifi/manager.py#L824-L894)
 
@@ -2717,7 +2808,7 @@ uscendo appena il valore riportato corrisponde.
 ---
 
 <a id="bug-8"></a>
-### 48. BUG-8 - Confronto del token non a tempo costante
+### 49. BUG-8 - Confronto del token non a tempo costante
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/auth.py:11-19](wilab/api/auth.py#L11-L19)
 
@@ -2740,7 +2831,7 @@ ricavare il token misurando i tempi.
 ---
 
 <a id="bug-6"></a>
-### 49. BUG-6 - `validate_interface_ap_mode` non dimostra nulla
+### 50. BUG-6 - `validate_interface_ap_mode` non dimostra nulla
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/interface.py:52-90](wilab/wifi/interface.py#L52-L90), [wilab/wifi/manager.py:254-262](wilab/wifi/manager.py#L254-L262)
 
@@ -2772,7 +2863,7 @@ Rimuovere `validate_interface_wireless`, `validate_interface_ap_mode` e `validat
 ---
 
 <a id="net-9"></a>
-### 50. NET-9 - Le subnet non sono stabili tra un riavvio e l'altro
+### 51. NET-9 - Le subnet non sono stabili tra un riavvio e l'altro
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:111-141](wilab/wifi/manager.py#L111-L141)
 
@@ -2790,7 +2881,7 @@ che toglie l'indirizzo prima di qualunque allocazione.
 ---
 
 <a id="net-7"></a>
-### 51. NET-7 - I file dei lease sopravvivono alla reservation
+### 52. NET-7 - I file dei lease sopravvivono alla reservation
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/dhcp.py:232-277](wilab/network/dhcp.py#L232-L277)
 
@@ -2824,7 +2915,7 @@ uso. Aggiungere a `stop` un parametro `keep_leases: bool = False` e passarlo `Tr
 ---
 
 <a id="net-10"></a>
-### 52. NET-10 - Captive portal: tre dettagli
+### 53. NET-10 - Captive portal: tre dettagli
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/captive.py:136-137](wilab/network/captive.py#L136-L137), [wilab/network/captive.py:245-248](wilab/network/captive.py#L245-L248), [wilab/network/nat.py:219-228](wilab/network/nat.py#L219-L228)
 
@@ -2862,7 +2953,7 @@ calcolare un indice; con policy `DROP` basta che esista, e in coda non può scav
 ---
 
 <a id="net-4"></a>
-### 53. NET-4 - Riga di log falsa ✅
+### 54. NET-4 - Riga di log falsa ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:413-414](wilab/wifi/manager.py#L413-L414)
 
@@ -2885,7 +2976,7 @@ calcolare un indice; con policy `DROP` basta che esista, e in coda non può scav
 ---
 
 <a id="hap-7"></a>
-### 54. HAP-7 - Ipotesi: `hostapd -d` per tutta la vita dell'AP
+### 55. HAP-7 - Ipotesi: `hostapd -d` per tutta la vita dell'AP
 
 **Gravità:** Bassa · **Confidenza:** Ipotesi · **File:** [wilab/wifi/hostapd.py:247](wilab/wifi/hostapd.py#L247)
 
@@ -2905,7 +2996,7 @@ utile, soprattutto con HAP-8.
 ---
 
 <a id="race-2"></a>
-### 55. RACE-2 - `/status` legge stato condiviso senza lock ✅
+### 56. RACE-2 - `/status` legge stato condiviso senza lock ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/status.py:72-170](wilab/api/routes/status.py#L72-L170)
 
@@ -2926,7 +3017,7 @@ dispositivo il cui lock è occupato (`lock.acquire(blocking=False)` fallito: ope
 ---
 
 <a id="race-3"></a>
-### 56. RACE-3 - Lo stato di `QosManager` non ha lock
+### 57. RACE-3 - Lo stato di `QosManager` non ha lock
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos.py:50-136](wilab/network/qos.py#L50-L136)
 
@@ -2951,7 +3042,7 @@ non si intrecciano mai.
 ---
 
 <a id="perf-3"></a>
-### 57. PERF-3 - `/status` costa tre comandi a chiamata
+### 58. PERF-3 - `/status` costa tre comandi a chiamata
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/status.py:84-125](wilab/api/routes/status.py#L84-L125), [wilab/network/nat.py:359-376](wilab/network/nat.py#L359-L376)
 
@@ -2985,7 +3076,7 @@ chiamata: viene dalla memoria e non costa nulla.
 ---
 
 <a id="perf-1"></a>
-### 58. PERF-1 - L'avvio di una rete esegue circa 20 comandi ✅ parz.
+### 59. PERF-1 - L'avvio di una rete esegue circa 20 comandi ✅ parz.
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:94-109](wilab/wifi/manager.py#L94-L109), [wilab/wifi/manager.py:254-272](wilab/wifi/manager.py#L254-L272), [wilab/network/dhcp.py:186-200](wilab/network/dhcp.py#L186-L200), [wilab/network/nat.py:187-313](wilab/network/nat.py#L187-L313)
 
@@ -3021,7 +3112,7 @@ def execute_iptables_restore(rules: str) -> None:
 ---
 
 <a id="perf-2"></a>
-### 59. PERF-2 - `GET .../network` costa due o tre comandi a chiamata
+### 60. PERF-2 - `GET .../network` costa due o tre comandi a chiamata
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:505-565](wilab/wifi/manager.py#L505-L565), [wilab/wifi/manager.py:660-713](wilab/wifi/manager.py#L660-L713)
 
@@ -3049,7 +3140,7 @@ conservare l'elenco dei client per 1-2 secondi in `_get_status` (timestamp monot
 ---
 
 <a id="perf-5"></a>
-### 60. PERF-5 - Timeout minimo di 5 s imposto in silenzio
+### 61. PERF-5 - Timeout minimo di 5 s imposto in silenzio
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/commands.py:160-183](wilab/network/commands.py#L160-L183), [wilab/network/subnet.py:12](wilab/network/subnet.py#L12)
 
@@ -3082,7 +3173,7 @@ passano un timeout inferiore a 5 s per decidere il valore voluto: `subnet.py` (2
 ---
 
 <a id="perf-6"></a>
-### 61. PERF-6 - Il cambio di TX power blocca per 3 secondi
+### 62. PERF-6 - Il cambio di TX power blocca per 3 secondi
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:849-860](wilab/wifi/manager.py#L849-L860)
 
@@ -3116,7 +3207,7 @@ Verificare su hardware che 1 s basti per gli adattatori che supportano il cambio
 ---
 
 <a id="perf-4"></a>
-### 62. PERF-4 - Costo fisso del polling in background
+### 63. PERF-4 - Costo fisso del polling in background
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:49](wilab/wifi/watchdog.py#L49), [wilab/api/dependencies.py:92-123](wilab/api/dependencies.py#L92-L123), [wilab/config.py:207-235](wilab/config.py#L207-L235)
 
@@ -3139,7 +3230,7 @@ trascurabile; è un punto di eleganza e di rumore, non di necessità.
 ---
 
 <a id="perf-7"></a>
-### 63. PERF-7 - Memoria e descrittori: nessuna crescita trovata
+### 64. PERF-7 - Memoria e descrittori: nessuna crescita trovata
 
 **Gravità:** Bassa (informativo) · **Confidenza:** Confermato
 
@@ -3164,7 +3255,7 @@ def _allocate_ifb(self) -> str:
 ---
 
 <a id="api-2"></a>
-### 64. API-2 - "Rete non attiva" ha due codici diversi ✅
+### 65. API-2 - "Rete non attiva" ha due codici diversi ✅
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/api/routes/internet.py:50-56](wilab/api/routes/internet.py#L50-L56), [wilab/api/routes/txpower.py:45-48](wilab/api/routes/txpower.py#L45-L48), [wilab/api/routes/qos_profile.py:56-66](wilab/api/routes/qos_profile.py#L56-L66)
 
@@ -3202,7 +3293,7 @@ traducono in `404`.
 ---
 
 <a id="api-4"></a>
-### 65. API-4 - `500` usato per esiti che riguardano il client ✅
+### 66. API-4 - `500` usato per esiti che riguardano il client ✅
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/api/routes/recovery_responses.py:22-35](wilab/api/routes/recovery_responses.py#L22-L35), [wilab/api/routes/network.py:232-251](wilab/api/routes/network.py#L232-L251)
 
@@ -3234,7 +3325,7 @@ BUG-1.
 ---
 
 <a id="api-9"></a>
-### 66. API-9 - Esempi OpenAPI corretti a mano e non più allineati ✅
+### 67. API-9 - Esempi OpenAPI corretti a mano e non più allineati ✅
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/api/__init__.py:221-363](wilab/api/__init__.py#L221-L363), [wilab/models.py:132-274](wilab/models.py#L132-L274)
 
@@ -3259,7 +3350,7 @@ risposta reale: `device_id` non c'è.
 ---
 
 <a id="api-5"></a>
-### 67. API-5 - Le risposte di successo contengono solo una frase
+### 68. API-5 - Le risposte di successo contengono solo una frase
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/network.py:229-231](wilab/api/routes/network.py#L229-L231), [wilab/api/routes/internet.py:52](wilab/api/routes/internet.py#L52)
 
@@ -3294,7 +3385,7 @@ nuovo campo nell'esempio `200`.
 ---
 
 <a id="api-10"></a>
-### 68. API-10 - I campi sconosciuti vengono ignorati
+### 69. API-10 - I campi sconosciuti vengono ignorati
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/models.py](wilab/models.py), [wilab/api/routes/reservation.py:32-45](wilab/api/routes/reservation.py#L32-L45)
 
@@ -3315,7 +3406,7 @@ su `NetworkCreateRequest`, `ReservationCreateRequest`, `TxPowerRequest`, `QosPro
 ---
 
 <a id="api-3"></a>
-### 69. API-3 - `409` significa sette cose diverse
+### 70. API-3 - `409` significa sette cose diverse
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/errors.py:15-17](wilab/api/errors.py#L15-L17), route varie
 
@@ -3346,7 +3437,7 @@ Sostituire nelle route `HTTPException(status_code=409, detail="...")` con
 ---
 
 <a id="api-11"></a>
-### 70. API-11 - Tre livelli di retry
+### 71. API-11 - Tre livelli di retry
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/network.py:212-243](wilab/api/routes/network.py#L212-L243), [wilab/reservation.py:56-58](wilab/reservation.py#L56-L58)
 
@@ -3372,7 +3463,7 @@ Il client si riduce a: `200` fatto, `503` riprova o interroga lo stato, `404` re
 ---
 
 <a id="api-1"></a>
-### 71. API-1 - Lo stesso dato esposto in più punti
+### 72. API-1 - Lo stesso dato esposto in più punti
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/models.py:103-130](wilab/models.py#L103-L130), [wilab/api/routes/status.py:72-303](wilab/api/routes/status.py#L72-L303)
 
@@ -3391,7 +3482,7 @@ residuo (`expires_in`) anche in `/status`, e rimozione di `clients_connected`.
 ---
 
 <a id="api-8"></a>
-### 72. API-8 - Dettagli interni nella risposta
+### 73. API-8 - Dettagli interni nella risposta
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/dhcp.py:279-292](wilab/network/dhcp.py#L279-L292), [wilab/models.py:128](wilab/models.py#L128)
 
@@ -3420,7 +3511,7 @@ metodo `public_info(net_id)` costruisce il modello (serve salvare `dns_server` n
 ---
 
 <a id="api-6"></a>
-### 73. API-6 - Nomi incoerenti
+### 74. API-6 - Nomi incoerenti
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/](wilab/api/routes/)
 
@@ -3443,7 +3534,7 @@ compatibilità") suggerisce invece di farlo in una sola versione maggiore.
 ---
 
 <a id="api-7"></a>
-### 74. API-7 - Azioni modellate come percorsi
+### 75. API-7 - Azioni modellate come percorsi
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/internet.py](wilab/api/routes/internet.py), [wilab/api/routes/txpower.py:51-87](wilab/api/routes/txpower.py#L51-L87)
 
@@ -3470,7 +3561,7 @@ Analogamente `PUT .../txpower` con lo stesso corpo della `POST` attuale.
 ---
 
 <a id="arch-2"></a>
-### 75. ARCH-2 - Classificazione dei guasti sparsa in quattro posti
+### 76. ARCH-2 - Classificazione dei guasti sparsa in quattro posti
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/hostapd.py:62-78](wilab/wifi/hostapd.py#L62-L78), [wilab/wifi/manager.py:60-64](wilab/wifi/manager.py#L60-L64), [wilab/api/routes/network.py:232-251](wilab/api/routes/network.py#L232-L251), [wilab/wifi/watchdog.py:133-142](wilab/wifi/watchdog.py#L133-L142)
 
@@ -3507,7 +3598,7 @@ ricalcolarlo; la route ha una tabella `kind → (status HTTP, codice)`; il watch
 ---
 
 <a id="arch-1"></a>
-### 76. ARCH-1 - `NetworkManager` fa troppe cose
+### 77. ARCH-1 - `NetworkManager` fa troppe cose
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py)
 
@@ -3545,7 +3636,7 @@ class RetryPolicy:
 ---
 
 <a id="arch-4"></a>
-### 77. ARCH-4 - Il registro dei dispositivi esiste in quattro copie
+### 78. ARCH-4 - Il registro dei dispositivi esiste in quattro copie
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/config.py:26-39](wilab/config.py#L26-L39), [wilab/reservation.py:83-87](wilab/reservation.py#L83-L87), [wilab/wifi/watchdog.py:23](wilab/wifi/watchdog.py#L23), [wilab/wifi/manager.py:81](wilab/wifi/manager.py#L81), [wilab/api/dependencies.py:66-89](wilab/api/dependencies.py#L66-L89)
 
@@ -3590,7 +3681,7 @@ WD-5 punto 3 e dopo aver messo in sicurezza i punti 1-14.
 ---
 
 <a id="arch-3"></a>
-### 78. ARCH-3 - Il modello dell'API è anche lo stato interno
+### 79. ARCH-3 - Il modello dell'API è anche lo stato interno
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:374-394](wilab/wifi/manager.py#L374-L394), [wilab/wifi/manager.py:516-565](wilab/wifi/manager.py#L516-L565)
 
@@ -3624,7 +3715,7 @@ campo (`_restore_ap` oggi lo fa a mano e rifiuta di ripartire se un campo manca)
 ---
 
 <a id="arch-5"></a>
-### 79. ARCH-5 - Singleton collegati per effetto collaterale
+### 80. ARCH-5 - Singleton collegati per effetto collaterale
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/dependencies.py:20-56](wilab/api/dependencies.py#L20-L56), [wilab/wifi/manager.py:86-91](wilab/wifi/manager.py#L86-L91)
 
@@ -3660,7 +3751,7 @@ I costruttori non avviano thread. I test costruiscono un contesto invece di azze
 ---
 
 <a id="arch-6"></a>
-### 80. ARCH-6 - Tre modi di gestire un processo figlio
+### 81. ARCH-6 - Tre modi di gestire un processo figlio
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/commands.py:49-157](wilab/network/commands.py#L49-L157), [wilab/network/dhcp.py](wilab/network/dhcp.py)
 
@@ -3688,7 +3779,7 @@ conoscere il motivo di un'uscita, passare un `classify_output` e usare `output_t
 ---
 
 <a id="arch-7"></a>
-### 81. ARCH-7 - Tre implementazioni di "rilascia da NetworkManager"
+### 82. ARCH-7 - Tre implementazioni di "rilascia da NetworkManager"
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:94-109](wilab/wifi/manager.py#L94-L109), [wilab/wifi/recovery.py:45-56](wilab/wifi/recovery.py#L45-L56), [wilab/network/unmanaged.py:61-81](wilab/network/unmanaged.py#L61-L81)
 
@@ -3716,7 +3807,7 @@ La pausa di 0,2 s va tolta o giustificata con una misura.
 ---
 
 <a id="arch-10"></a>
-### 82. ARCH-10 - Il logging non ha una regola
+### 83. ARCH-10 - Il logging non ha una regola
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** tutto `wilab/`
 
@@ -3739,7 +3830,7 @@ Test T-13: un ciclo completo crea/cancella su hardware simulato non deve produrr
 ---
 
 <a id="arch-9"></a>
-### 83. ARCH-9 - Codice morto
+### 84. ARCH-9 - Codice morto
 
 **Gravità:** Bassa · **Confidenza:** Confermato (ogni nome è stato cercato in `wilab/`) · **File:** vari
 
@@ -3770,7 +3861,7 @@ con il testo aggiornato.
 ---
 
 <a id="arch-8"></a>
-### 84. ARCH-8 - Attributi privati usati tra classi
+### 85. ARCH-8 - Attributi privati usati tra classi
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:158](wilab/wifi/manager.py#L158), [wilab/wifi/manager.py:525](wilab/wifi/manager.py#L525)
 
@@ -3796,7 +3887,7 @@ e in `manager.py`: `self.hostapd_manager.is_tracked(device_id)`. Lo stesso per `
 ---
 
 <a id="arch-12"></a>
-### 85. ARCH-12 - Cartelle senza `__init__.py` ✅
+### 86. ARCH-12 - Cartelle senza `__init__.py` ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** `wilab/wifi/`, `wilab/data/`
 
@@ -3814,7 +3905,7 @@ restare senza.
 ---
 
 <a id="arch-11"></a>
-### 86. ARCH-11 - Il layout di questo branch diverge dall'altro
+### 87. ARCH-11 - Il layout di questo branch diverge dall'altro
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** radice del repository
 
@@ -3836,7 +3927,7 @@ scritto in italiano su richiesta esplicita, in deroga alla regola "tutto in ingl
 <a id="cap-5"></a>
 ## 5. Correlazioni tra i punti
 
-Letti uno accanto all'altro, gli 86 punti non sono 86 difetti indipendenti. La maggior parte è
+Letti uno accanto all'altro, gli 87 punti non sono 87 difetti indipendenti. La maggior parte è
 un'istanza di sette schemi. Correggere lo schema elimina le istanze e previene la prossima.
 
 ### Schema 1 - "Una volta, poi mai più"
@@ -4309,7 +4400,7 @@ risolto il problema nel tempo, e il refactoring in `tick` serve comunque al pass
 | WD-5 | "Non si può mai ripulire". | Vero solo finché l'interfaccia manca. | Aggiunto il caso del ritorno con lo stesso nome. |
 | NET-1 | Presentato come frequente. | Una collisione richiede una sovrapposizione di millisecondi. | "Rara per evento, certa nel tempo". |
 | STAB-1 | Confidenza "Probabile". | Il `wait()` bloccante è certo, l'innesco no. | Confidenza divisa in due. |
-| Conteggio | "Sessanta difetti". | I punti erano 85; con BUG-9 e ARCH-12 sono 87; tolto un punto non più pertinente, sono 86. | Corretto. |
+| Conteggio | "Sessanta difetti". | I punti erano 85; con BUG-9 e ARCH-12 sono 87; tolto un punto non più pertinente, sono 86; con HAP-11 sono 87. | Corretto. |
 
 ---
 
@@ -4401,55 +4492,56 @@ pagine è stata eseguita.
 | 41 | [WD-10](#wd-10) | Tre probe lenti riavviano un AP forse sano |
 | 42 | [HAP-9](#hap-9) | Canali DFS con controllo radar di 10 minuti |
 | 43 | [HAP-10](#hap-10) | Chiavi duplicate e opzione `wpa` ingannevole |
-| 44 | [NET-8](#net-8) | `dns_server` ha come default un indirizzo di laboratorio |
-| 45 | [NET-12](#net-12) | QoS: gara alla fine di un profilo `once` |
-| 46 | [NET-13](#net-13) | QoS: lo stop del profilo può far fallire lo stop della rete |
-| 47 | [BUG-7](#bug-7) | TX power: stato incoerente dopo un mismatch |
-| 48 | [BUG-8](#bug-8) | Confronto del token non a tempo costante |
-| 49 | [BUG-6](#bug-6) | `validate_interface_ap_mode` non dimostra nulla |
-| 50 | [NET-9](#net-9) | Le subnet non sono stabili tra un riavvio e l'altro |
-| 51 | [NET-7](#net-7) | I file dei lease sopravvivono alla reservation |
-| 52 | [NET-10](#net-10) | Captive portal: tre dettagli |
-| 53 | [NET-4](#net-4) ✅ | Riga di log falsa |
-| 54 | [HAP-7](#hap-7) | Ipotesi: `hostapd -d` per tutta la vita dell'AP |
-| 55 | [RACE-2](#race-2) ✅ | `/status` legge stato condiviso senza lock |
-| 56 | [RACE-3](#race-3) | Lo stato di `QosManager` non ha lock |
-| 57 | [PERF-3](#perf-3) | `/status` costa tre comandi a chiamata |
-| 58 | [PERF-1](#perf-1) ✅ parz. | L'avvio di una rete esegue circa 20 comandi |
-| 59 | [PERF-2](#perf-2) | `GET .../network` costa due o tre comandi a chiamata |
-| 60 | [PERF-5](#perf-5) | Timeout minimo di 5 s imposto in silenzio |
-| 61 | [PERF-6](#perf-6) | Il cambio di TX power blocca per 3 secondi |
-| 62 | [PERF-4](#perf-4) | Costo fisso del polling in background |
-| 63 | [PERF-7](#perf-7) | Memoria e descrittori: nessuna crescita trovata |
-| 64 | [API-2](#api-2) ✅ | "Rete non attiva" ha due codici diversi |
-| 65 | [API-4](#api-4) ✅ | `500` usato per esiti che riguardano il client |
-| 66 | [API-9](#api-9) ✅ | Esempi OpenAPI corretti a mano e non più allineati |
-| 67 | [API-5](#api-5) | Le risposte di successo contengono solo una frase |
-| 68 | [API-10](#api-10) | I campi sconosciuti vengono ignorati |
-| 69 | [API-3](#api-3) | `409` significa sette cose diverse |
-| 70 | [API-11](#api-11) | Tre livelli di retry |
-| 71 | [API-1](#api-1) | Lo stesso dato esposto in più punti |
-| 72 | [API-8](#api-8) | Dettagli interni nella risposta |
-| 73 | [API-6](#api-6) | Nomi incoerenti |
-| 74 | [API-7](#api-7) | Azioni modellate come percorsi |
-| 75 | [ARCH-2](#arch-2) | Classificazione dei guasti sparsa in quattro posti |
-| 76 | [ARCH-1](#arch-1) | `NetworkManager` fa troppe cose |
-| 77 | [ARCH-4](#arch-4) | Il registro dei dispositivi esiste in quattro copie |
-| 78 | [ARCH-3](#arch-3) | Il modello dell'API è anche lo stato interno |
-| 79 | [ARCH-5](#arch-5) | Singleton collegati per effetto collaterale |
-| 80 | [ARCH-6](#arch-6) | Tre modi di gestire un processo figlio |
-| 81 | [ARCH-7](#arch-7) | Tre implementazioni di "rilascia da NetworkManager" |
-| 82 | [ARCH-10](#arch-10) | Il logging non ha una regola |
-| 83 | [ARCH-9](#arch-9) | Codice morto |
-| 84 | [ARCH-8](#arch-8) | Attributi privati usati tra classi |
-| 85 | [ARCH-12](#arch-12) ✅ | Cartelle senza `__init__.py` |
-| 86 | [ARCH-11](#arch-11) | Il layout di questo branch diverge dall'altro |
+| 44 | [HAP-11](#hap-11) | Larghezza di canale e generazione Wi-Fi fissate a 20 MHz e 802.11n |
+| 45 | [NET-8](#net-8) | `dns_server` ha come default un indirizzo di laboratorio |
+| 46 | [NET-12](#net-12) | QoS: gara alla fine di un profilo `once` |
+| 47 | [NET-13](#net-13) | QoS: lo stop del profilo può far fallire lo stop della rete |
+| 48 | [BUG-7](#bug-7) | TX power: stato incoerente dopo un mismatch |
+| 49 | [BUG-8](#bug-8) | Confronto del token non a tempo costante |
+| 50 | [BUG-6](#bug-6) | `validate_interface_ap_mode` non dimostra nulla |
+| 51 | [NET-9](#net-9) | Le subnet non sono stabili tra un riavvio e l'altro |
+| 52 | [NET-7](#net-7) | I file dei lease sopravvivono alla reservation |
+| 53 | [NET-10](#net-10) | Captive portal: tre dettagli |
+| 54 | [NET-4](#net-4) ✅ | Riga di log falsa |
+| 55 | [HAP-7](#hap-7) | Ipotesi: `hostapd -d` per tutta la vita dell'AP |
+| 56 | [RACE-2](#race-2) ✅ | `/status` legge stato condiviso senza lock |
+| 57 | [RACE-3](#race-3) | Lo stato di `QosManager` non ha lock |
+| 58 | [PERF-3](#perf-3) | `/status` costa tre comandi a chiamata |
+| 59 | [PERF-1](#perf-1) ✅ parz. | L'avvio di una rete esegue circa 20 comandi |
+| 60 | [PERF-2](#perf-2) | `GET .../network` costa due o tre comandi a chiamata |
+| 61 | [PERF-5](#perf-5) | Timeout minimo di 5 s imposto in silenzio |
+| 62 | [PERF-6](#perf-6) | Il cambio di TX power blocca per 3 secondi |
+| 63 | [PERF-4](#perf-4) | Costo fisso del polling in background |
+| 64 | [PERF-7](#perf-7) | Memoria e descrittori: nessuna crescita trovata |
+| 65 | [API-2](#api-2) ✅ | "Rete non attiva" ha due codici diversi |
+| 66 | [API-4](#api-4) ✅ | `500` usato per esiti che riguardano il client |
+| 67 | [API-9](#api-9) ✅ | Esempi OpenAPI corretti a mano e non più allineati |
+| 68 | [API-5](#api-5) | Le risposte di successo contengono solo una frase |
+| 69 | [API-10](#api-10) | I campi sconosciuti vengono ignorati |
+| 70 | [API-3](#api-3) | `409` significa sette cose diverse |
+| 71 | [API-11](#api-11) | Tre livelli di retry |
+| 72 | [API-1](#api-1) | Lo stesso dato esposto in più punti |
+| 73 | [API-8](#api-8) | Dettagli interni nella risposta |
+| 74 | [API-6](#api-6) | Nomi incoerenti |
+| 75 | [API-7](#api-7) | Azioni modellate come percorsi |
+| 76 | [ARCH-2](#arch-2) | Classificazione dei guasti sparsa in quattro posti |
+| 77 | [ARCH-1](#arch-1) | `NetworkManager` fa troppe cose |
+| 78 | [ARCH-4](#arch-4) | Il registro dei dispositivi esiste in quattro copie |
+| 79 | [ARCH-3](#arch-3) | Il modello dell'API è anche lo stato interno |
+| 80 | [ARCH-5](#arch-5) | Singleton collegati per effetto collaterale |
+| 81 | [ARCH-6](#arch-6) | Tre modi di gestire un processo figlio |
+| 82 | [ARCH-7](#arch-7) | Tre implementazioni di "rilascia da NetworkManager" |
+| 83 | [ARCH-10](#arch-10) | Il logging non ha una regola |
+| 84 | [ARCH-9](#arch-9) | Codice morto |
+| 85 | [ARCH-8](#arch-8) | Attributi privati usati tra classi |
+| 86 | [ARCH-12](#arch-12) ✅ | Cartelle senza `__init__.py` |
+| 87 | [ARCH-11](#arch-11) | Il layout di questo branch diverge dall'altro |
 
 ### Schede per area
 
 - **Sicurezza:** [SEC-1](#sec-1), [SEC-2](#sec-2), [SEC-3](#sec-3)
 - **Watchdog e recovery:** [WD-1](#wd-1), [WD-2](#wd-2), [WD-3](#wd-3), [WD-4](#wd-4), [WD-5](#wd-5), [WD-6](#wd-6), [WD-7](#wd-7), [WD-8](#wd-8), [WD-9](#wd-9), [WD-10](#wd-10)
-- **Avvio di hostapd:** [HAP-1](#hap-1), [HAP-2](#hap-2), [HAP-3](#hap-3), [HAP-4](#hap-4), [HAP-5](#hap-5), [HAP-6](#hap-6), [HAP-7](#hap-7), [HAP-8](#hap-8), [HAP-9](#hap-9), [HAP-10](#hap-10)
+- **Avvio di hostapd:** [HAP-1](#hap-1), [HAP-2](#hap-2), [HAP-3](#hap-3), [HAP-4](#hap-4), [HAP-5](#hap-5), [HAP-6](#hap-6), [HAP-7](#hap-7), [HAP-8](#hap-8), [HAP-9](#hap-9), [HAP-10](#hap-10), [HAP-11](#hap-11)
 - **Stabilità a lungo termine:** [STAB-1](#stab-1), [STAB-2](#stab-2), [STAB-4](#stab-4), [STAB-5](#stab-5), [STAB-6](#stab-6), [STAB-7](#stab-7), [STAB-8](#stab-8), [STAB-9](#stab-9)
 - **Firewall, DHCP, captive portal, QoS:** [NET-1](#net-1), [NET-2](#net-2), [NET-3](#net-3), [NET-4](#net-4), [NET-5](#net-5), [NET-6](#net-6), [NET-7](#net-7), [NET-8](#net-8), [NET-9](#net-9), [NET-10](#net-10), [NET-11](#net-11), [NET-12](#net-12), [NET-13](#net-13)
 - **Errori logici:** [BUG-1](#bug-1), [BUG-2](#bug-2), [BUG-3](#bug-3), [BUG-4](#bug-4), [BUG-5](#bug-5), [BUG-6](#bug-6), [BUG-7](#bug-7), [BUG-8](#bug-8), [BUG-9](#bug-9)
