@@ -84,7 +84,7 @@ class TestSubnetResolution:
     def test_get_subnet_fallback_calculation(self):
         """Test sequential allocation increments third octet."""
         cfg = load_config()
-        cfg.networks.append(NetworkEntry(interface='wlan1', display_name='extra'))
+        cfg.antennas.append(NetworkEntry(interface='wlan1', display_name='extra'))
         mgr = NetworkManager(cfg)
         first = mgr._get_subnet('wls16')
         second = mgr._get_subnet('wlan1')
@@ -96,7 +96,7 @@ class TestSubnetResolution:
 
         cfg = load_config()
         cfg.dhcp_base_network = "192.168.9.0/24"
-        cfg.networks.append(NetworkEntry(interface="wlan1", display_name="extra"))
+        cfg.antennas.append(NetworkEntry(interface="wlan1", display_name="extra"))
         host_routes = {IPv4Network("192.168.10.0/24")}
         monkeypatch.setattr("wilab.wifi.manager.host_ipv4_networks", lambda: host_routes)
         mgr = NetworkManager(cfg)
@@ -199,7 +199,7 @@ class TestNetworkLifecycle:
                 raise CommandError("reset failed")
             return ""
 
-        def launch(cmd: list[str], *, classify_output) -> SimpleNamespace:
+        def launch(cmd: list[str], *, classify_output, keep_lines=0) -> SimpleNamespace:
             assert cmd[:2] == ["hostapd", "-d"]
             events.append("ap")
             if failure == "ap":
@@ -308,7 +308,7 @@ class TestNetworkLifecycle:
                     raise CommandError("reset failed")
             return ""
 
-        def launch(cmd: list[str], *, classify_output) -> SimpleNamespace:
+        def launch(cmd: list[str], *, classify_output, keep_lines=0) -> SimpleNamespace:
             nonlocal now
             events.append("ap")
             code = None
@@ -416,7 +416,7 @@ class TestNetworkLifecycle:
         calls = []
         ap_started = []
 
-        def iptables(args):
+        def iptables(args, **kwargs):
             calls.append(args)
             if len(calls) == 2:
                 raise CommandError("block failed")
@@ -821,7 +821,7 @@ class TestTxPower:
         status = mgr.start_network('wls16', req)
         assert status.tx_power_level == 3
         # Hardware-independent: verify interface from config, not hardcoded
-        cfg_interface = cfg.networks[0].interface
+        cfg_interface = cfg.antennas[0].interface
         assert calls[-1] == (cfg_interface, 3, 6)
 
     def test_set_tx_power_level(self, monkeypatch):

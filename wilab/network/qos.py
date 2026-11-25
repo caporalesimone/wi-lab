@@ -208,23 +208,14 @@ class QosManager:
             return
 
         rate = _UNLIMITED_RATE_KBIT  # will be changed immediately after
-        try:
-            execute_tc(["qdisc", "add", "dev", device, "root", "handle", "1:", "htb", "default", "10"])
-        except CommandError:
-            # Tree may already exist – replace
-            execute_tc(["qdisc", "replace", "dev", device, "root", "handle", "1:", "htb", "default", "10"])
+        # `replace` creates the qdisc or replaces an existing one: no failing `add` (NET-5).
+        execute_tc(["qdisc", "replace", "dev", device, "root", "handle", "1:", "htb", "default", "10"])
 
         burst = self._calc_burst(rate)
-        try:
-            execute_tc([
-                "class", "add", "dev", device, "parent", "1:", "classid", "1:10",
-                "htb", "rate", f"{rate}kbit", "ceil", f"{rate}kbit", "burst", burst,
-            ])
-        except CommandError:
-            execute_tc([
-                "class", "change", "dev", device, "parent", "1:", "classid", "1:10",
-                "htb", "rate", f"{rate}kbit", "ceil", f"{rate}kbit", "burst", burst,
-            ])
+        execute_tc([
+            "class", "replace", "dev", device, "parent", "1:", "classid", "1:10",
+            "htb", "rate", f"{rate}kbit", "ceil", f"{rate}kbit", "burst", burst,
+        ])
 
         if direction == "download":
             state.htb_installed = True
@@ -261,14 +252,14 @@ class QosManager:
 
         # Bring IFB device up
         try:
-            execute_command(["ip", "link", "add", ifb, "type", "ifb"])
+            execute_command(["ip", "link", "add", ifb, "type", "ifb"], quiet=True)
         except CommandError:
             pass  # device may already exist
         execute_command(["ip", "link", "set", "dev", ifb, "up"])
 
         # Set up ingress redirect on physical interface
         try:
-            execute_tc(["qdisc", "add", "dev", interface, "handle", "ffff:", "ingress"])
+            execute_tc(["qdisc", "add", "dev", interface, "handle", "ffff:", "ingress"], quiet=True)
         except CommandError:
             pass  # ingress qdisc may already exist
 
@@ -287,20 +278,20 @@ class QosManager:
         if ifb is None:
             return
         try:
-            execute_tc(["qdisc", "del", "dev", ifb, "root"])
+            execute_tc(["qdisc", "del", "dev", ifb, "root"], quiet=True)
         except CommandError:
             pass
         try:
-            execute_command(["ip", "link", "set", "dev", ifb, "down"])
+            execute_command(["ip", "link", "set", "dev", ifb, "down"], quiet=True)
         except CommandError:
             pass
         try:
-            execute_command(["ip", "link", "del", ifb])
+            execute_command(["ip", "link", "del", ifb], quiet=True)
         except CommandError:
             pass
         # Remove ingress qdisc from physical interface
         try:
-            execute_tc(["qdisc", "del", "dev", interface, "ingress"])
+            execute_tc(["qdisc", "del", "dev", interface, "ingress"], quiet=True)
         except CommandError:
             pass
         state.ifb_device = None
@@ -396,17 +387,10 @@ class QosManager:
             ])
         else:
             # Add netem qdisc
-            try:
-                execute_tc([
-                    "qdisc", "add", "dev", device, "parent", "1:10", "handle", "10:",
-                    "netem", *netem_args,
-                ])
-            except CommandError:
-                # May already exist – try replace
-                execute_tc([
-                    "qdisc", "replace", "dev", device, "parent", "1:10", "handle", "10:",
-                    "netem", *netem_args,
-                ])
+            execute_tc([
+                "qdisc", "replace", "dev", device, "parent", "1:10", "handle", "10:",
+                "netem", *netem_args,
+            ])
             if direction == "download":
                 state.download_netem_installed = True
             else:
@@ -417,7 +401,7 @@ class QosManager:
     def _remove_netem(self, device: str, state: _InterfaceQosState, direction: str) -> None:
         """Remove netem qdisc from *device*."""
         try:
-            execute_tc(["qdisc", "del", "dev", device, "parent", "1:10", "handle", "10:"])
+            execute_tc(["qdisc", "del", "dev", device, "parent", "1:10", "handle", "10:"], quiet=True)
         except CommandError:
             pass
         if direction == "download":
@@ -451,7 +435,7 @@ class QosManager:
 
     def _remove_root_qdisc(self, device: str) -> None:
         try:
-            execute_tc(["qdisc", "del", "dev", device, "root"])
+            execute_tc(["qdisc", "del", "dev", device, "root"], quiet=True)
         except CommandError:
             pass
 

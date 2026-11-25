@@ -22,7 +22,7 @@ def clock(monkeypatch):
 @pytest.fixture
 def stuck_network(monkeypatch, clock):
     mgr = NetworkManager(load_config())
-    device = mgr.config.networks[0].device_id
+    device = mgr.config.antennas[0].device_id
     status = NetworkStatus(interface=device, active=True)
     status._expires_at_timestamp = 1.0  # long expired
     mgr.active[device] = status

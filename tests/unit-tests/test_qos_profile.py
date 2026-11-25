@@ -276,7 +276,7 @@ class TestQosProfileManager:
 
         original_apply = QosManager.apply_qos
 
-        def mock_tc(args):
+        def mock_tc(args, **kwargs):
             return ""
 
         def mock_command(cmd, **kwargs):
@@ -510,7 +510,7 @@ class TestQosProfileAPI:
 
         self.tc_calls = []
 
-        def mock_tc(args):
+        def mock_tc(args, **kwargs):
             self.tc_calls.append(args)
             return ""
 
@@ -536,7 +536,7 @@ class TestQosProfileAPI:
         from wilab.reservation import ReservationManager
 
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         # Reserve a device

@@ -71,11 +71,8 @@ class TestPhyCapabilities:
         assert "wpa1" not in caps.encryptions()
 
     def test_channel_manager_reads_capabilities_with_channels(self):
-        mgr = ChannelManager()
-        assert mgr.cached_capabilities("wls16") is None
-        mgr.get_channels("wls16")
-        caps = mgr.cached_capabilities("wls16")
-        assert caps is not None and caps.tkip
+        caps = ChannelManager().get_channels("wls16").capabilities
+        assert caps.tkip
 
 
 # --------------------------------------------------------------------------- channel layouts
@@ -111,7 +108,7 @@ class TestValidateNetwork:
     def test_80mhz_needs_every_channel_of_the_block(self):
         # The mock lists 100 but not 104-112.
         with pytest.raises(ValueError, match="80 MHz on channel 100 is not available"):
-            ChannelManager(allow_dfs_channels=True).validate_network("wls16", "5ghz", 100, 80, 5, "wpa2")
+            ChannelManager(show_dfs=lambda interface: True).validate_network("wls16", "5ghz", 100, 80, 5, "wpa2")
 
     def test_165_at_80mhz_needs_169_to_177(self):
         # The mock lists 169 as disabled, as most regulatory domains do.
@@ -119,8 +116,8 @@ class TestValidateNetwork:
             ChannelManager().validate_network("wls16", "5ghz", 165, 80, 5, "wpa2")
 
     def test_dfs_channels_inside_a_wide_channel_follow_the_policy(self):
-        with pytest.raises(ValueError, match="allow_dfs_channels"):
-            ChannelManager().validate_network("wls16", "5ghz", 56, 40, 4, "wpa2")
+        with pytest.raises(ValueError, match="show_dfs: false"):
+            ChannelManager(show_dfs=lambda interface: False).validate_network("wls16", "5ghz", 56, 40, 4, "wpa2")
 
     def test_24ghz_40mhz_falls_back_to_secondary_below(self):
         # Channel 12 is No IR in the mock: channel 8 uses 4 below it.
@@ -240,7 +237,7 @@ def token():
 def reservation_id(client, token, monkeypatch):
     cfg = load_config()
     monkeypatch.setattr(
-        dependencies, "_reservation_manager", ReservationManager([n.device_id for n in cfg.networks]),
+        dependencies, "_reservation_manager", ReservationManager([n.device_id for n in cfg.antennas]),
         raising=False,
     )
     monkeypatch.setattr(dependencies, "_channel_manager", None, raising=False)
@@ -279,12 +276,15 @@ class TestApi:
         assert "wifi_generation 6 is not supported" in resp.json()["detail"]["message"]
         start.assert_not_called()
 
-    def test_status_lists_capabilities_once_read(self, client, token, reservation_id, monkeypatch):
+    def test_capabilities_are_in_antennas_not_in_status(self, client, token, reservation_id, monkeypatch):
         self._create(client, token, reservation_id, monkeypatch)
-        networks = client.get("/api/v1/status", headers={"Authorization": token}).json()["networks"]
-        reserved = next(n for n in networks if n["reserved"])
-        assert reserved["capabilities"]["channel_widths"]["5ghz"] == [20, 40, 80]
-        assert "wpa1" in reserved["capabilities"]["encryptions"]
+        headers = {"Authorization": token}
+        networks = client.get("/api/v1/status", headers=headers).json()["networks"]
+        assert all("capabilities" not in n for n in networks)
+        antenna = client.get(f"/api/v1/antennas/{networks[0]['interface']}", headers=headers).json()
+        widths = {g["wifi_generation"]: g["channel_widths"] for g in antenna["bands"]["5ghz"]["wifi_generations"]}
+        assert widths[5] == [20, 40, 80]
+        assert "wpa1" in antenna["encryptions"]
 
 
 # --------------------------------------------------------------------------- manager and watchdog
@@ -294,7 +294,7 @@ class TestManagerAndWatchdog:
         start = Mock()
         monkeypatch.setattr(clean_manager.hostapd_manager, "start", start)
         monkeypatch.setattr(clean_manager.hostapd_manager, "is_running", Mock(return_value=True))
-        device = clean_manager.config.networks[0].device_id
+        device = clean_manager.config.antennas[0].device_id
         req = _request(band="5ghz", channel=44, channel_width=80, wifi_generation=6)
         status = clean_manager.start_network(device, req)
         kwargs = start.call_args.kwargs

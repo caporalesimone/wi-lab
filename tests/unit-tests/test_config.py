@@ -14,8 +14,8 @@ class TestConfigLoading:
         cfg = load_config(path)
         assert isinstance(cfg, AppConfig)
         assert cfg.api_port == 8080
-        assert cfg.networks[0].device_id == 'wlxbc071dc527d6'
-        assert cfg.networks[0].interface == 'wlxbc071dc527d6'
+        assert cfg.antennas[0].device_id == 'wlxbc071dc527d6'
+        assert cfg.antennas[0].interface == 'wlxbc071dc527d6'
     
     def test_load_config_default_path(self):
         """Test loading config from default location."""
@@ -31,7 +31,7 @@ class TestConfigLoading:
         assert hasattr(cfg, 'dhcp_base_network')
         assert hasattr(cfg, 'upstream_interface')
         assert hasattr(cfg, 'dns_server')
-        assert hasattr(cfg, 'networks')
+        assert hasattr(cfg, 'antennas')
     
     def test_config_defaults(self):
         """Test that config has correct default values."""
@@ -88,7 +88,7 @@ class TestNetworkEntryValidation:
     def test_each_interface_has_unique_device_id(self):
         """Test that each configured interface has unique device_id."""
         cfg = load_config()
-        device_ids = [n.device_id for n in cfg.networks]
+        device_ids = [n.device_id for n in cfg.antennas]
         assert len(device_ids) == len(set(device_ids))
 
 

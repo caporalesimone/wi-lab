@@ -64,6 +64,32 @@ def detect_usb_port(interface: str) -> str | None:
     return port if USB_PORT_PATTERN.match(port) else None
 
 
+@dataclass(frozen=True)
+class DeviceInfo:
+    """Where an antenna is attached, from sysfs: USB, PCI (also built-in cards) or SDIO."""
+    bus: str        # sysfs subsystem: usb, pci, sdio, ...
+    address: str    # USB port (2-1.3), PCI address (0000:02:00.0) or bus device name
+    driver: str | None
+
+
+def detect_device(interface: str) -> DeviceInfo | None:
+    """Bus, address and driver of *interface*; None when sysfs does not show it."""
+    device = SYS_CLASS_NET / interface / "device"
+    try:
+        function = device.resolve(strict=True)
+        bus = (device / "subsystem").resolve(strict=True).name
+    except OSError:
+        return None
+    try:
+        driver: str | None = (device / "driver").resolve(strict=True).name
+    except OSError:
+        driver = None
+    # A USB network device is an interface (2-1:1.0) of the device on port 2-1.
+    port = function.parent.name
+    address = port if bus == "usb" and function.name.startswith(f"{port}:") else function.name
+    return DeviceInfo(bus=bus, address=address, driver=driver)
+
+
 def default_route_interfaces() -> set[str]:
     """Interfaces carrying an IPv4 or IPv6 default route."""
     devices: set[str] = set()

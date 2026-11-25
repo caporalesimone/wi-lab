@@ -10,13 +10,13 @@ All notable changes to Wi-Lab are documented in this file.
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 46 |
-| ⚠️ Breaking changes | 9 |
-| 🔧 Maintenance changes | 10 |
-| ✨ New features | 16 |
-| 📦 Commits since 3.0.0 | 86 |
+| 🐛 Bug fixes | 54 |
+| ⚠️ Breaking changes | 12 |
+| 🔧 Maintenance changes | 12 |
+| ✨ New features | 18 |
+| 📦 Commits since 3.0.0 | 89 |
 
-Counts are the entries of the sections below (as of 2026-11-25) and `git rev-list --count 3.0.0..HEAD` (as of 2026-11-24).
+Counts are the entries of the sections below (as of 2026-11-25) and `git rev-list --count 3.0.0..HEAD` (as of 2026-11-25).
 
 ### ⚠️ Breaking Changes
 
@@ -29,11 +29,14 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - A create that quarantines the adapter and invalidates the reservation (`detail.code: 1003`, `reservation_invalidated: true`) now returns `503` instead of `500`, so clients and proxies no longer treat it as a retryable server error; the code and body are unchanged (Fable API-4).
 - The create body and `GET .../network` are grouped in sections: `radio`, `wifi` (with `security`), `internet`, `captive_portal`, plus `reservation` and `ip` in the answer. Duplicated and internal fields (`dhcp.*` paths and files, `clients_connected`, the second `interface` and `subnet`) are gone, and `ip.dns_server` is new. Flat bodies return `422` (Fable API-8; first step of ARCH-3).
 - AP creation with `encryption: "wpa"` returns `422`: it silently created WPA2. Use `wpa2` for the same network, or the new `wpa1` for real legacy WPA/TKIP (Fable HAP-10).
+- Configuration: the `networks` section is renamed `antennas`, and every entry must set `show_dfs: true|false`; there is no fallback for the old name.
+- `GET /api/v1/interface/{id}/network/available-channels` is removed: use `GET /api/v1/antennas/{interface}`, which lists only the usable channels, grouped by band with the widths each can use, and needs no reservation.
+- Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all: `GET /api/v1/debug` now returns `403` without it, or when `protected_commands_password` is not set.
 
 ### ✨ Features
 
 - Add an optional captive portal to AP creation (`captive_portal`). Its sign-in button releases only the client that pressed it.
-- Block DFS channels in the channel listing and reject AP creation on them by default; opt in with `allow_dfs_channels: true`.
+- DFS channels (5 GHz 52–144) are chosen per antenna with `antennas[].show_dfs`: when `false` they are not listed and AP creation on them returns `422`; antennas not listed in the configuration offer them.
 - Run backend tests, type checks and the frontend build in CI and publish API documentation.
 - Export the current API schema and offline Swagger/ReDoc documentation.
 - Explain adapter-dependent TX power control in the frontend.
@@ -41,12 +44,14 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Add an optional offline configuration check with actionable errors and warnings.
 - Allow clients to retry classified radio startup failures using the same reservation after `Retry-After`. A terminal creation failure returns `503 / 1003` and invalidates the reservation. New reservations still return `503` when blocked by recovery or quarantine.
 - Restart failed active access points or DHCP processes and verify AP and DHCP startup before a USB-reset antenna returns to the pool.
-- Discover AP-capable Wi-Fi interfaces (USB or built-in) automatically instead of requiring each one in `networks`. The section now only assigns display names, and `disable: true` keeps a radio out of Wi-Lab; unlisted interfaces use their interface name. A missing configured interface no longer prevents startup; with no usable adapter, reservations return `503 / 1003`. USB ports are detected automatically for recovery resets; `usb_recovery_port` is ignored.
-- Add a device discovery service: Wi-Lab starts without antennas and scans as soon as the API starts, then every 5 seconds while none is available and every 30 seconds afterwards. Antennas plugged in later are added without a restart. Each scan re-reads `networks` (display names and `disable`) and only adds devices; existing antennas, subnets and reservations are unchanged. Interfaces still being renamed by udev are skipped until they have their final name.
+- Discover AP-capable Wi-Fi interfaces (USB or built-in) automatically instead of requiring each one in the configuration. The `antennas` section (was `networks`) now only assigns display names and `show_dfs`, and `disable: true` keeps a radio out of Wi-Lab; unlisted interfaces use their interface name. A missing configured interface no longer prevents startup; with no usable adapter, reservations return `503 / 1003`. USB ports are detected automatically for recovery resets; `usb_recovery_port` is ignored.
+- Add a device discovery service: Wi-Lab starts without antennas and scans as soon as the API starts, then every 5 seconds while none is available and every 30 seconds afterwards. Antennas plugged in later are added without a restart. Each scan re-reads `antennas` (display names, `disable` and `show_dfs`) and only adds devices; existing antennas, subnets and reservations are unchanged. Interfaces still being renamed by udev are skipped until they have their final name.
 - Frontend: requests answered `503 / 1006` (antenna busy) are repeated automatically after `Retry-After`, and `1006`/`1007` errors show a readable explanation instead of the raw body.
 - New `encryption: "wpa1"` (legacy WPA, PSK/TKIP, 802.11a/g only) to test old clients; accepted only on antennas whose driver supports TKIP (Fable HAP-10).
-- AP creation takes optional `channel_width` (20, 40, 80 MHz) and `wifi_generation` (4 = 802.11n, 5 = 802.11ac, 6 = 802.11ax); defaults 20 MHz / 802.11n keep the previous behaviour. `GET /status` lists per antenna the encryptions, widths and generations it accepts (`networks[].capabilities`), and `GET .../network` reports the width the radio actually uses (Fable HAP-11).
-- Frontend: the start dialog offers only the encryptions, channel widths and Wi-Fi generations the antenna supports (`wpa` replaced by `wpa1` where available), and a running network shows its width and Wi-Fi generation.
+- AP creation takes optional `channel_width` (20, 40, 80 MHz) and `wifi_generation` (4 = 802.11n, 5 = 802.11ac, 6 = 802.11ax); defaults 20 MHz / 802.11n keep the previous behaviour. `GET /antennas/{interface}` lists per band the generations, widths and channels an antenna accepts, and `GET .../network` reports the width the radio actually uses (Fable HAP-11).
+- Frontend: the start dialog reads the antenna (`GET /antennas/{interface}`) and offers in dropdowns only the encryptions, Wi-Fi generations, channel widths and channels it supports (DFS channels marked, `wpa` replaced by `wpa1` where available), and a running network shows its width and Wi-Fi generation.
+- Optional `hostapd_debug_dir` setting: every hostapd start that fails writes a report there (hostapd configuration without passwords and the last 400 lines of `hostapd -d`); only failures are written and the newest 100 reports are kept.
+- New **Antennas** API, listed in Swagger before Network and readable with the token only: `GET /api/v1/antennas` lists the managed antennas (`display_name`, `interface`); `GET /api/v1/antennas/{interface}` gives `device` (`bus`, `address`, `driver`), `encryptions` and per band the Wi-Fi generations with their widths and the usable channels with the widths each can use, to fill a form's dropdowns.
 - Frontend: a captive portal switch on each reserved antenna card chooses whether the next network starts with a portal page (it presets the start dialog, which has the same switch), and a running network shows the captive portal as On or Off with its URL and a header badge.
 
 ### 🐛 Bug Fixes
@@ -96,6 +101,14 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Stopping a network on a disconnected adapter completes its cleanup, and an interface lost during startup returns `409 / 1001` instead of `500` (Fable WD-5).
 - The create request is validated before touching the antenna: SSID, password and channel rules, and no line injection into `hostapd.conf` (Fable BUG-1).
 - `wpa3` and `wpa2-wpa3` networks no longer write `wpa_key_mgmt` and `ieee80211w` several times in `hostapd.conf` (they worked only because hostapd keeps the last one); the mixed mode now requires PMF for WPA3 clients only, and SAE accepts H2E (Fable HAP-10).
+- The service refuses to start with an empty `auth_token`, `api_port` outside 1–65535, `max_timeout` below `min_timeout` or a `dns_server` that is not an IPv4 address, as `--validate-config` already reported; before, `dns_server: foo` started and every network creation failed with `500` (Fable BUG-3).
+- Networks are isolated from each other whatever `dhcp_base_network` is: with subnets outside `192.168.*` (e.g. `10.20.0.0/24`) no isolation rule was installed and clients of different networks could talk to each other (Fable NET-3).
+- `DELETE .../network` no longer answers a bare `500` when hostapd stays stuck in the kernel after SIGKILL (seen with mt7921u firmware timeouts): it answers `503 / 1004` with `Retry-After: 5`, the half-stopped network reports `runtime_state: stop_failed`, the watchdog no longer "repairs" it, and repeating the DELETE finishes the stop.
+- An unexpected server error answers `500 / 500` without closing the connection: before, uvicorn dropped it after the answer, so the client's next request on the same keep-alive connection failed with a transport error (seen by the stress test as `ReadError` / `RemoteProtocolError` right after the `500` of a stop).
+- Normal answers are no longer logged as errors: a missing `iptables -C` rule, a `tc` qdisc with nothing to delete, `iw set txpower` unsupported by the driver and a stop without DHCP are logged at debug level, and QoS uses `tc ... replace` instead of a failing `add` (Fable NET-5). In a stress run they were most of the `ERROR` lines.
+- The log line `Starting network ... with SSID` is written only for a create that really starts, not for one refused because the network is already active.
+- 6 GHz channels are no longer listed as 5 GHz channels (in 3.x `available-channels`, now `GET /antennas/{interface}`): Wi-Fi 6E antennas added 59 channels that cannot be used, some with the same number as a 5 GHz channel (e.g. two `149`).
+- Every `422` message starts with the path of the refused field written with dots (`radio.channel_width: ...`, was `radio: channel_width: ...`), without pydantic's `Value error, ` prefix, also for rules between fields and antenna checks (`wifi.security.password`, `radio.channel`).
 - APs with SSIDs that hostapd reports with escapes (non-ASCII, quotes, backslashes) become ready instead of ending in quarantine (Fable HAP-1).
 
 ### 🔧 Maintenance
@@ -109,6 +122,8 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Explain the reservation and recovery lifecycle in Swagger and ReDoc, including retry, quarantine and watchdog response examples.
 - Include the API operation, HTTP status, and error code in journal entries for server errors, without request or response data.
 - Swagger lists release-all (`DELETE /api/v1/device-reservation/all`) and `GET /api/v1/debug` only under **Maintenance**; release-all also appeared under Reservation.
+- `GET /api/v1/debug` is deprecated and will be removed.
+- Detailed sequence diagrams of the whole flow, reservation to release, with every error answer and when to retry: client view in the [AP creation procedure](docs/ap-creation-procedure.md#3-sequence-diagram) (with a table of the answers that allow an automatic retry), server view in [Architecture 6.1](docs/architecture.md#61-end-to-end-sequence-server-view). The captive portal diagram in the architecture guide did not render (a `;` in a note).
 - Document `GET /api/v1/status` health values (`standby`, `ok`, `degraded`), what makes the service `degraded` (quarantined adapter, network being repaired, failed health check) and how clients learn about quarantined adapters, in Swagger (three response examples), the API overview, the AP creation procedure (2.8) and the Swagger guide.
 
 ### ✅ Tests
@@ -152,7 +167,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
   - `radio.band: "dual"` removed (`422`).
   - `encryption: "wpa"` removed (`422`): use `wpa2` (same network as before). New `wpa1` for legacy WPA/TKIP, only on antennas that list it.
   - widths and generations the antenna does not support return `422`.
-  - stricter validation, `422`: `ssid` 1–32 bytes, `password` 8–63 bytes, no control characters, channel must match the band, DFS channels refused unless the server allows them.
+  - stricter validation, `422`: `ssid` 1–32 bytes, `password` 8–63 bytes, no control characters, channel must match the band, DFS channels refused unless the antenna has `show_dfs: true`.
   - new `409 / 1001` + `Retry-After` (5 s, then 10 s): repeat the same request with the same ID.
   - new `503 / 1003` with `reservation_invalidated: true`: discard the ID.
   - `500`: startup failed, reservation still valid.
@@ -176,8 +191,25 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
   | `clients` | `clients` (new `captive_authorized` with a portal) |
 
   `interface`, `active` and the new `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`) stay at the top level.
-- `DELETE /api/v1/interface/{id}/network`: also cancels a pending `restore_failed`, and returns `200`.
-- `GET /api/v1/interface/{id}/network/available-channels`: DFS channels are `disabled: true` unless the server allows them.
+- `DELETE /api/v1/interface/{id}/network`: also cancels a pending `restore_failed`, and returns `200`. New `503 / 1004` + `Retry-After: 5` when the stop does not complete (`runtime_state: stop_failed`): repeat the DELETE.
+- `GET /api/v1/interface/{id}/network/available-channels`: removed, see **Antennas**.
+
+**Antennas** (new, token only, no reservation)
+
+- `GET /api/v1/antennas` → `{"antennas": [{display_name, interface}]}`.
+- `GET /api/v1/antennas/{interface}` replaces `available-channels`:
+
+  | 3.x `available-channels` | 4.0.0 `GET /antennas/{interface}` |
+  |---|---|
+  | `interface` | `interface` (+ `display_name`, `device`, `encryptions`) |
+  | `channels_24ghz`, `channels_5ghz` | `bands["2.4ghz"].channels`, `bands["5ghz"].channels` |
+  | entries with `disabled: true` | not listed |
+  | `channel`, `frequency_mhz`, `max_power_dbm` | same, plus `dfs` and `channel_widths` |
+  | — | `bands[...].wifi_generations[]`: `{wifi_generation, channel_widths}` |
+
+**Configuration**
+
+- `networks:` → `antennas:`; each entry needs `show_dfs: true|false` (DFS channels offered or not).
 
 **Internet, TX power, QoS profile**
 
@@ -191,9 +223,10 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 **Status**
 
 - `GET /api/v1/status`:
-  - `networks[]` gains `recovery_state` (`recovering`, `unavailable`), `runtime_state` and `capabilities` (`encryptions`, `channel_widths`, `wifi_generations` per band).
+  - `networks[]` gains `recovery_state` (`recovering`, `unavailable`) and `runtime_state`. What an antenna supports is in `GET /api/v1/antennas/{interface}`.
   - `checks` gains `hostapd`, `commands`, `loops`, and `missing` lists in `dnsmasq` and `iptables_nat`.
   - `degraded` now also covers quarantined antennas, networks being repaired, stuck commands and stalled loops.
+- `GET /api/v1/debug`: send the `X-Confirm-Password` header too (`403` without it), as for every Maintenance endpoint.
 
 **Access**
 

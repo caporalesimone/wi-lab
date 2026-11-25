@@ -137,12 +137,11 @@ class NatManager:
             True if rule exists, False otherwise
         """
         try:
-            cmd = ["-t", table] if table else []
-            cmd.extend(["-C", *args])
-            execute_iptables(cmd)
-            return True
-        except Exception:
+            # A missing rule is the normal answer: not logged as an error (NET-5).
+            execute_iptables([*(["-t", table] if table else []), "-C", *args], quiet=True)
+        except CommandError:
             return False
+        return True
 
     def block_internet(self, wifi_interface: str, net_id: str) -> None:
         """Block forwarded traffic for an AP, including established flows."""

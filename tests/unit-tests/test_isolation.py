@@ -83,7 +83,7 @@ class TestAddNetwork:
         manager.add_network('192.168.11.0/24')
         calls = []
 
-        def iptables(args):
+        def iptables(args, **kwargs):
             calls.append(args)
             # Fail on the third rule: two rules were added for 192.168.12.0/24.
             if args[0] == "-A" and len([c for c in calls if c[0] == "-A"]) == 3:
@@ -204,3 +204,34 @@ class TestIptablesRuleFormat:
             assert '-d' in args
             assert '-j' in args
             assert 'DROP' in args
+
+
+class TestAnyPrivateRange:
+    """NET-3: isolation does not depend on 192.168.x.x subnets."""
+
+    @pytest.mark.parametrize("subnets", [
+        ("10.20.0.0/24", "10.20.1.0/24"),
+        ("172.16.5.0/24", "172.16.6.0/24"),
+        ("192.168.10.0/24", "192.168.11.0/24"),
+    ])
+    @patch('wilab.network.isolation.execute_iptables')
+    def test_both_directions_are_blocked(self, mock_iptables, subnets):
+        manager = IsolationManager()
+        for subnet in subnets:
+            manager.add_network(subnet)
+        rules = [call.args[0] for call in mock_iptables.call_args_list]
+        a, b = subnets
+        assert ["-A", "FORWARD", "-s", a, "-d", b, "-j", "DROP", "-m", "comment", "--comment", "wilab-isolation"] in rules
+        assert ["-A", "FORWARD", "-s", b, "-d", a, "-j", "DROP", "-m", "comment", "--comment", "wilab-isolation"] in rules
+
+    @patch('wilab.network.isolation.execute_iptables')
+    def test_verify_repairs_rules_outside_192_168(self, mock_iptables):
+        manager = IsolationManager()
+        manager.add_network("10.20.0.0/24")
+        manager.add_network("10.20.1.0/24")
+
+        def missing_on_check(args, **kwargs):
+            if args[0] == "-C":
+                raise CommandError("rule missing")
+        mock_iptables.side_effect = missing_on_check
+        assert manager.verify() == ["isolation 10.20.0.0/24 -> 10.20.1.0/24", "isolation 10.20.1.0/24 -> 10.20.0.0/24"]

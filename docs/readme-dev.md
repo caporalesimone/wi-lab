@@ -82,9 +82,10 @@ upstream_interface: "auto"
 dns_server: "192.168.10.1"
 internet_enabled_by_default: true
 
-networks:  # Optional: display names only; interfaces are discovered automatically
+antennas:  # Optional: names and DFS choice; interfaces are discovered automatically
   - interface: "wlx782051245264"
     display_name: "bench-antenna-1"
+    show_dfs: false
 ```
 
 ---

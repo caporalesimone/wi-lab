@@ -120,9 +120,9 @@ protetto è quello che interessa di più: una rete che funzionava e deve continu
 | 25 | [NET-6](#net-6) ✅ | Media | Un lancio di dnsmasq andato in timeout non può più essere ripulito. |
 | 26 | [WD-8](#wd-8) | Media | Una rete ripristinata dal watchdog perde il profilo QoS senza dirlo. |
 | 27 | [STAB-5](#stab-5) | Media | Le scadenze usano l'orologio di sistema: un salto di orario fa scadere o allunga tutto. |
-| 28 | [BUG-3](#bug-3) | Media | La validazione offline della configurazione è più severa di quella usata all'avvio. |
-| 29 | [NET-5](#net-5) | Media | Ogni avvio di rete scrive nel log condizioni normali come `ERROR`. |
-| 30 | [NET-3](#net-3) | Media | L'isolamento tra reti funziona solo se le subnet iniziano per `192.168.`. |
+| 28 | [BUG-3](#bug-3) ✅ | Media | La validazione offline della configurazione è più severa di quella usata all'avvio. |
+| 29 | [NET-5](#net-5) ✅ | Media | Ogni avvio di rete scrive nel log condizioni normali come `ERROR`. |
+| 30 | [NET-3](#net-3) ✅ | Media | L'isolamento tra reti funziona solo se le subnet iniziano per `192.168.`. |
 | 31 | [STAB-2](#stab-2) | Media | I file di runtime stanno in `/tmp`: possono essere cancellati per età e il percorso è prevedibile. |
 | 32 | [STAB-7](#stab-7) | Media | Le dipendenze Python non sono bloccate a versioni precise. |
 | 33 | [NET-11](#net-11) | Media | QoS inline: `upload_quality` viene ignorato se è presente `download_quality`. |

@@ -10,15 +10,6 @@
     </mat-form-field>
 
     <mat-form-field appearance="outline">
-      <mat-label>Channel</mat-label>
-      <input matInput type="number" formControlName="channel" required>
-      <mat-hint *ngIf="form.get('band')?.value === '2.4ghz'">1-14 for 2.4GHz</mat-hint>
-      <mat-hint *ngIf="form.get('band')?.value === '5ghz'">36-165 for 5GHz</mat-hint>
-      <mat-error *ngIf="form.get('channel')?.hasError('required')">Channel is required</mat-error>
-      <mat-error *ngIf="form.get('channel')?.hasError('min') || form.get('channel')?.hasError('max')">Invalid channel for selected band</mat-error>
-    </mat-form-field>
-
-    <mat-form-field appearance="outline">
       <mat-label>Band</mat-label>
       <mat-select formControlName="band" required>
         <mat-option *ngFor="let band of bands" [value]="band">{{ band }}</mat-option>
@@ -49,6 +40,18 @@
       </mat-select>
       <mat-hint *ngIf="mayFallBackTo20">
         On 2.4 GHz the radio falls back to 20 MHz when it sees neighbouring networks.
+      </mat-hint>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Channel</mat-label>
+      <mat-select formControlName="channel" required>
+        <mat-option *ngFor="let ch of channels" [value]="ch.channel">
+          {{ ch.channel }} ({{ ch.frequency_mhz }} MHz){{ ch.dfs ? ' - DFS' : '' }}
+        </mat-option>
+      </mat-select>
+      <mat-hint *ngIf="form.get('channel')?.value && isDfs(form.get('channel')?.value)">
+        DFS channel: the AP listens for radar for about a minute before starting.
       </mat-hint>
     </mat-form-field>
 

@@ -39,7 +39,7 @@ def test_full_network_cycle_never_calls_iptables_without_wait(monkeypatch):
         ssid="lock", channel=6, encryption="open", band="2.4ghz", tx_power_level=4,
         internet_enabled=True, captive_portal=True,
     )
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     manager.start_network(device, request)
     manager.firewall_status()
     manager.stop_network(device)

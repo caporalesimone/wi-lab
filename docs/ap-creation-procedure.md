@@ -27,6 +27,11 @@ Content-Type: application/json
 {"duration_seconds": 600}
 ```
 
+`duration_seconds: 0` asks for an unlimited reservation. It is accepted only
+when the server allows it: `GET /api/v1/status` reports
+`reservation_policy.allow_unlimited` (with `min_seconds` and `max_seconds`).
+When it is `false`, `0` returns `422`.
+
 | Response | Meaning | Client action |
 |---|---|---|
 | `200` | Antenna reserved. Body has `reservation_id`, `interface`, `display_name`, `expires_at`, `expires_in`. | Keep `reservation_id`: every following call uses it. |
@@ -54,25 +59,70 @@ Rules that matter for the AP:
 
 ## 2. Creating the AP
 
-### 2.1 Choose a channel
+### 2.1 Read what the antenna can use
 
-Ask which channels the reserved antenna supports:
+The reservation answer names the antenna (`interface`). Ask what a network on
+it can use; no reservation is needed, so a GUI can also show free antennas:
 
 ```http
-GET /api/v1/interface/{reservation_id}/network/available-channels
+GET /api/v1/antennas                 → every antenna: display_name, interface
+GET /api/v1/antennas/{interface}     → device, encryptions, and per band the
+                                       Wi-Fi generations, widths and channels
 ```
 
-The response lists 2.4 GHz and 5 GHz channels. Skip entries with
-`"disabled": true`: they are blocked by regulatory restrictions or by the
-server's DFS policy. By default (`allow_dfs_channels: false`, including when
-omitted), Wi-Lab blocks channels flagged by the radio as requiring radar
-detection. A creation request selecting one of those channels returns `422`
-without starting the AP or substituting another channel.
+```json
+{
+  "display_name": "antenna-1",
+  "interface": "wlx7419f8176286",
+  "device": {"bus": "usb", "address": "2-1", "driver": "mt7921u"},
+  "encryptions": ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"],
+  "bands": {
+    "2.4ghz": {
+      "wifi_generations": [
+        {"wifi_generation": 4, "channel_widths": [20, 40]},
+        {"wifi_generation": 6, "channel_widths": [20, 40]}
+      ],
+      "channels": [
+        {"channel": 1, "frequency_mhz": 2412, "max_power_dbm": 20.0, "dfs": false, "channel_widths": [20, 40]}
+      ]
+    },
+    "5ghz": {
+      "wifi_generations": [
+        {"wifi_generation": 4, "channel_widths": [20, 40]},
+        {"wifi_generation": 5, "channel_widths": [20, 40, 80]},
+        {"wifi_generation": 6, "channel_widths": [20, 40, 80]}
+      ],
+      "channels": [
+        {"channel": 36, "frequency_mhz": 5180, "max_power_dbm": 23.0, "dfs": false, "channel_widths": [20, 40, 80]},
+        {"channel": 165, "frequency_mhz": 5825, "max_power_dbm": 13.0, "dfs": false, "channel_widths": [20]}
+      ]
+    }
+  }
+}
+```
 
-To allow DFS channels where permitted, set `allow_dfs_channels: true` in
-`config.yaml` and restart Wi-Lab. The radar check (CAC) on a DFS channel
-usually takes about 60 seconds; Wi-Lab's current startup timeout for 5 GHz
-channels 52–144 is 75 seconds, so longer checks can time out.
+Fill a form in this order: band, then a generation of that band, then one of
+its `channel_widths`, then a channel whose `channel_widths` contains that
+width. Every combination built this way is accepted by the create. The only
+extra rule is `wpa1`: 802.11n (`wifi_generation` 4) at 20 MHz only.
+
+- **Only usable channels are listed.** Channels disabled by the regulatory
+  domain, No-IR channels and 6 GHz channels (reported by some Wi-Fi 6E
+  antennas; Wi-Lab cannot create a 6 GHz network) are not in the list.
+- **`device`** says where the antenna is attached: `bus` is `usb`, `pci` (also
+  cards built into the motherboard) or `sdio`; `address` is the USB port
+  (`2-1.3`) or the PCI address (`0000:02:00.0`); `driver` is the kernel driver.
+  It is `null` when sysfs does not show the device.
+- **DFS channels** (5 GHz 52–144, shared with radar) are listed, with
+  `dfs: true`, only when the antenna has `show_dfs: true` in `config.yaml`
+  (`antennas[].show_dfs`, required for every listed antenna; antennas not
+  listed in the configuration behave as `true`). When `false` they are not
+  listed and a create asking for one returns `422`. Before transmitting on a
+  DFS channel the radio listens for radar (CAC), usually about 60 seconds;
+  Wi-Lab's startup timeout for 5 GHz channels 52–144 is 75 seconds, so longer
+  checks can time out.
+- **`404`**: no managed antenna has this interface. **`503`**: the radio
+  cannot be read now (unplugged or being reset); retry later.
 
 ### 2.2 Build the request
 
@@ -116,23 +166,20 @@ are required; `internet` and `captive_portal` can be omitted.
 | `captive_portal.enabled` | no | Default `false`. Puts clients behind a simulated captive portal; see [2.7](#27-captive-portal). |
 
 Validate the body on the client side when possible: an invalid body returns
-`422` without touching the antenna. The message names the field by its path,
-for example `wifi.security.password: ...`.
+`422` without touching the antenna. The message starts with the path of the
+refused field, written with dots, for example `radio.channel_width: Input should
+be 20, 40 or 80` or `wifi.security.password: wpa2 requires a password of 8 to 63
+bytes (got 5)`. Rules between fields name the field they refuse (the password
+for a short password, `radio.channel` for a channel outside the band,
+`radio.channel_width` for a width the channel or the antenna cannot use), and
+so do the antenna checks made before starting the AP.
 
 #### 2.2.1 Encryption, channel width and Wi-Fi generation
 
-Each antenna reports what it supports in `GET /api/v1/status`, under
-`networks[].capabilities`. The list is read from the radio (`iw phy`) when
-discovery adds the antenna; it is absent until then. A create that asks for
-anything else returns `422` without touching the antenna.
-
-```json
-"capabilities": {
-  "encryptions": ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"],
-  "channel_widths": {"2.4ghz": [20, 40], "5ghz": [20, 40, 80]},
-  "wifi_generations": {"2.4ghz": [4, 6], "5ghz": [4, 5, 6]}
-}
-```
+Each antenna reports what it supports in `GET /api/v1/antennas/{interface}`
+(see [2.1](#21-read-what-the-antenna-can-use)), read from the radio (`iw phy`).
+A create that asks for anything else returns `422` without touching the
+antenna.
 
 | `wifi.security.encryption` | What hostapd runs | Notes |
 |---|---|---|
@@ -158,7 +205,7 @@ points to `wpa2` (same network as before) or `wpa1` (real legacy WPA).
   132–144, 149–161, 165–177. `channel` is the primary channel inside the block.
   **Every channel of the block** must be enabled on the antenna: 165 at 80 MHz
   usually returns `422` because 169–177 are not allowed, and a block with DFS
-  channels follows `allow_dfs_channels`.
+  channels follows the antenna's `show_dfs`.
 - On 2.4 GHz `channel_width: 40` is accepted: the second channel is 4 above
   (or 4 below when above is not available). It occupies most of the band, and
   hostapd falls back to 20 MHz when it sees neighbouring networks (20/40
@@ -260,7 +307,7 @@ A success resets the counter. Further rules:
   on these endpoints always means the reservation itself is unknown, expired
   or invalidated.
 - **Adapter busy: `503 / 1006`.** Every request on a reservation other than
-  the create (`GET`/`DELETE .../network`, `available-channels`, Internet,
+  the create (`GET`/`DELETE .../network`, Internet,
   TX power, QoS profile) waits at most **5 s** for another operation on the
   same adapter, such as a network start (up to 20 s, 75 s on a DFS channel).
   After that it returns `503` with `detail.code: 1006`,
@@ -323,6 +370,7 @@ A success resets the counter. Further rules:
   | `restoring_dhcp` | Only DHCP is being restarted. The AP stays up. | Wait. |
   | `dhcp_failed` | DHCP could not be repaired alone (a restart failed, or dnsmasq died more than 3 times in an hour). Within 5 s the watchdog restarts the whole network (`restoring_ap`). | Wait. |
   | `restore_failed` | The AP restart failed for a non-radio reason. The AP is down (`active: false`); the watchdog retries after 15 s, 30 s, 60 s, 120 s, then every 5 minutes while the reservation is valid. | Wait for `runtime_state` to clear, or `DELETE .../network` to stop the retries (the reservation stays valid), or create a new network. |
+  | `stop_failed` | Only in `GET .../network`, after a `DELETE .../network` answered `503 / 1004`: the stop did not complete, usually because hostapd stayed stuck in the kernel for a few seconds after a driver firmware timeout. The network is half stopped and the watchdog leaves it alone. | Repeat `DELETE .../network` after `Retry-After` (5 s). |
 
 - An AP restart clears traffic shaping and QoS profiles: reapply them after a
   `restoring_ap` phase.
@@ -424,68 +472,216 @@ Find the cause in `networks[]` and `checks`:
 
 ## 3. Sequence diagram
 
+The whole client flow, from the reservation to the release, with every answer
+a client must handle. `id` is the `reservation_id`; every call carries
+`Authorization: Bearer <token>` (a `401` anywhere means a wrong token: fix it,
+never retry). Phases 4 and 5 are optional; the release (phase 6) also stops the
+AP.
+
 ```mermaid
 sequenceDiagram
     autonumber
     participant C as Client
     participant W as Wi-Lab API
 
-    C->>W: POST /device-reservation {duration_seconds}
-    alt 200
-        W-->>C: reservation_id, interface, expires_in
-    else 409 / 1005
-        W-->>C: next_available_in
-        Note over C: Retry the reservation later with backoff
-    else 503 / 1002 + Retry-After 10
-        W-->>C: an antenna is in recovery
-        Note over C: Retry the reservation after Retry-After
-    else 503 / 1003
-        W-->>C: no antenna discovered or usable
-        Note over C: Check status after startup discovery or ask an operator
-    else 503 / 1004
-        W-->>C: cleanup failure
-        Note over C: Stop and ask an operator
+    rect rgba(128,128,128,0.08)
+    Note over C,W: Phase 0 - before reserving (optional, no reservation needed)
+    C->>W: GET /status
+    W-->>C: status, networks[] (reserved, recovery_state), reservation_policy
+    Note over C: allow_unlimited tells whether duration_seconds 0 is accepted.<br/>Entries with recovery_state are not allocatable.
     end
 
-    C->>W: GET /interface/{id}/network/available-channels
-    W-->>C: channels per band (skip disabled ones)
-
-    loop At most 3 attempts with the same ID and body
-        C->>W: POST /interface/{id}/network {ssid, channel, band, ...}
-        Note over W: Prepare radio, start hostapd, wait for AP ready,<br/>assign gateway, start DHCP. May start the AP up to 3 times internally.
+    rect rgba(128,128,128,0.08)
+    Note over C,W: Phase 1 - reserve an antenna
+    loop Until 200, or until the client gives up
+        C->>W: POST /device-reservation {duration_seconds}
         alt 200
-            W-->>C: network created
-            Note over C: Done. Leave the loop
-        else 409 / 1001 + Retry-After (5 then 10)
-            W-->>C: classified radio failure, reservation kept
-            Note over C: Check remaining reservation time,<br/>wait Retry-After, then repeat
+            W-->>C: reservation_id, interface, display_name, expires_at, expires_in
+            Note over C: Keep id and interface. Leave the loop
+        else 409 / 1005 all antennas reserved
+            W-->>C: next_available_at, next_available_in (null if no release is scheduled)
+            Note over C: Automatic retry allowed: wait next_available_in<br/>(or a backoff of 10 to 60 s when null), then repeat
+        else 503 / 1002 + Retry-After 10
+            W-->>C: an antenna is being recovered, nothing allocatable now
+            Note over C: Automatic retry allowed: wait Retry-After, then repeat
         else 503 / 1003
-            W-->>C: reservation invalidated, antenna quarantined
-            Note over C: Discard the ID. Do not release it.<br/>Reserve again if needed
-        else 500 / 500 from AP startup
-            W-->>C: startup failed, reservation kept
-            Note over C: No automatic retry. Leave the loop.<br/>Release if abandoning or reserving again
-        else 409 (other), 422, 404
-            W-->>C: error detail
-            Note over C: No automatic retry. Show detail to the user
-        else transport timeout or connection error
-            C->>W: GET /interface/{id}/network
-            W-->>C: active and runtime_state, or 404
-            Note over C: Resend only if inactive and not restoring
+            W-->>C: no antenna discovered or usable, no recovery running
+            Note over C: Right after a service start: wait for discovery (up to 30 s),<br/>check GET /status, then retry. Otherwise stop and ask an operator
+        else 503 / 1004
+            W-->>C: cleanup of an expired reservation failed
+            Note over C: No automatic retry. Check GET /status, ask an operator
+        else 422
+            W-->>C: duration outside min/max, or 0 while unlimited is off
+            Note over C: Fix duration_seconds. Never repeat the same body
         end
     end
-
-    loop While the AP is needed
-        C->>W: GET /interface/{id}/network
-        W-->>C: status, clients, runtime_state
-        Note over C: During restoring_ap or restoring_dhcp just wait.<br/>Reapply QoS after restoring_ap. 404 means invalidated
     end
 
-    opt Client is done and still holds a valid reservation
-        C->>W: DELETE /device-reservation/{id}
-        W-->>C: 200 (AP stopped, antenna freed) or 503 / 1004
+    rect rgba(128,128,128,0.08)
+    Note over C,W: Phase 2 - read what the antenna can use (no reservation needed)
+    C->>W: GET /antennas/{interface}
+    alt 200
+        W-->>C: device, encryptions, bands: wifi_generations (widths) and usable channels (widths)
+        Note over C: Build the body: band, then generation, then width,<br/>then a channel whose channel_widths contains that width.<br/>wpa1 only with wifi_generation 4 at 20 MHz
+    else 503
+        W-->>C: the radio cannot be read now (unplugged, being reset)
+        Note over C: Retry after a few seconds, or create with the defaults (20 MHz, 802.11n)
+    else 404
+        W-->>C: no managed antenna has this interface
+        Note over C: Should not happen with an interface from the reservation: reserve again
+    end
+    end
+
+    rect rgba(128,128,128,0.08)
+    Note over C,W: Phase 3 - create the AP (at most 3 attempts, same id, same body)
+    loop Attempt 1 to 3
+        C->>W: POST /interface/{id}/network {radio, wifi, internet, captive_portal}
+        Note over W: Waits for the antenna (never 1006). Prepares the radio, starts hostapd,<br/>waits for the AP (20 s, 75 s on DFS), gateway, DHCP, NAT, isolation.<br/>Attempt 1 only: up to 3 internal starts within 20 s on a radio failure
+        alt 200
+            W-->>C: detail "Network ... created successfully"
+            Note over C: Done. Read the network with GET .../network. Leave the loop
+        else 409 / 1001 + Retry-After (5 on attempt 1, 10 on attempt 2)
+            W-->>C: classified radio failure, rolled back, reservation still valid
+            C->>W: GET /device-reservation/{id}
+            W-->>C: expires_in
+            Note over C: Automatic retry allowed. If expires_in is shorter than Retry-After<br/>plus the startup time, release and start over at phase 1.<br/>Otherwise wait Retry-After and repeat the SAME request.<br/>A request sent too early gets 409 / 1001 again and costs no attempt
+        else 503 / 1003 (attempt 3, or the antenna was lost)
+            W-->>C: reservation_invalidated true, antenna quarantined
+            Note over C: Terminal. Discard the id, do NOT release it.<br/>Reserve again (phase 1): you will get another antenna
+        else 422
+            W-->>C: message starts with the field path (radio.channel: ..., wifi.security.password: ...)
+            Note over C: Fix that field. Never repeat the same body
+        else 409 "already active"
+            W-->>C: an AP already runs on this reservation
+            Note over C: Usually a previous create that succeeded but whose answer was lost.<br/>Read it with GET .../network, or DELETE .../network first
+        else 409 "restoration in progress"
+            W-->>C: the watchdog is restarting this AP
+            Note over C: Do not create. Poll GET .../network until runtime_state is null
+        else 404
+            W-->>C: reservation unknown, expired, released or invalidated
+            Note over C: Discard the id. Reserve again if needed
+        else 500 / 500 generic startup error
+            W-->>C: detail.message (hostapd exit, gateway, DHCP, NAT, isolation)
+            Note over C: Rolled back, reservation still valid. No automatic retry.<br/>Show the message. Release the id before reserving again
+        else 503 / 1004
+            W-->>C: cleanup of the previous startup failed
+            Note over C: No automatic retry. Check GET /status, ask an operator
+        else transport error or client timeout (no answer)
+            Note over C: Ambiguous: the server may have finished, or still be working
+            C->>W: GET /interface/{id}/network (long timeout: it waits for the create)
+            alt active true and runtime_state null
+                W-->>C: the AP is up
+                Note over C: Done. Do not create again
+            else runtime_state restoring_ap or restoring_dhcp
+                W-->>C: being repaired
+                Note over C: Wait and read again
+            else active false and runtime_state null
+                W-->>C: no AP
+                Note over C: Repeat the create (counts as the next attempt)
+            else 404
+                W-->>C: id gone
+                Note over C: Reserve again
+            end
+        end
+    end
+    end
+
+    rect rgba(128,128,128,0.08)
+    Note over C,W: Phase 4 - while the AP is in use
+    par Owner polls its network (every 5 to 30 s)
+        C->>W: GET /interface/{id}/network
+        alt 200, runtime_state null
+            W-->>C: active, radio, wifi, ip, internet, captive_portal, clients, reservation
+        else 200, runtime_state restoring_ap
+            W-->>C: active false, sections null: the AP is being restarted
+            Note over C: Wait. Clients must reconnect. Reapply QoS profiles afterwards
+        else 200, runtime_state restoring_dhcp or dhcp_failed
+            W-->>C: DHCP is being repaired, the whole network restarts within 5 s if needed
+            Note over C: Wait
+        else 200, runtime_state restore_failed
+            W-->>C: AP down, the watchdog retries (15 s, 30 s, 60 s, 120 s, then every 5 min)
+            Note over C: Wait, or DELETE .../network to stop the retries, or create again
+        else 200, runtime_state stop_failed
+            W-->>C: a previous stop did not complete
+            Note over C: Repeat DELETE .../network (phase 5)
+        else 503 / 1006 + Retry-After 2
+            W-->>C: another operation holds the antenna, nothing changed
+            Note over C: Automatic retry allowed after Retry-After
+        else 404
+            W-->>C: expired, released or invalidated (quarantine)
+            Note over C: The AP is gone. Reserve again if needed
+        end
+    and Anyone polls the service (every 10 to 30 s)
+        C->>W: GET /status
+        W-->>C: ok, degraded or standby, recovery_state, runtime_state, checks
+        Note over C: Show degraded with the affected antenna
+    end
+    opt Change the running network
+        C->>W: POST .../internet/enable or disable, POST .../txpower, POST or DELETE .../qos/profile
+        alt 200
+            W-->>C: applied
+        else 409 / 1007
+            W-->>C: no running network on this reservation
+            Note over C: Create the network first
+        else 503 / 1006 + Retry-After 2
+            W-->>C: antenna busy, nothing changed
+            Note over C: Automatic retry allowed after Retry-After
+        else 404
+            W-->>C: reservation gone
+        end
+    end
+    end
+
+    rect rgba(128,128,128,0.08)
+    Note over C,W: Phase 5 - stop the AP and keep the reservation (optional)
+    loop Until 200, 409 or 404
+        C->>W: DELETE /interface/{id}/network
+        alt 200
+            W-->>C: stopped (also cancels the retries of restore_failed)
+        else 409
+            W-->>C: already inactive
+        else 503 / 1006 + Retry-After 2
+            W-->>C: antenna busy, nothing changed
+            Note over C: Automatic retry allowed after Retry-After
+        else 503 / 1004 + Retry-After 5
+            W-->>C: stop not completed (hostapd stuck in the kernel), runtime_state stop_failed
+            Note over C: Automatic retry allowed: repeat the DELETE after Retry-After.<br/>The watchdog leaves the half-stopped network alone
+        else 404
+            W-->>C: reservation gone (the AP was stopped with it)
+        end
+    end
+    end
+
+    rect rgba(128,128,128,0.08)
+    Note over C,W: Phase 6 - release (also stops the AP), or let the reservation expire
+    C->>W: DELETE /device-reservation/{id}
+    alt 200
+        W-->>C: released, AP stopped, antenna free
+    else 404
+        W-->>C: already expired, released or invalidated
+        Note over C: Nothing to do
+    else 503 / 1004
+        W-->>C: cleanup failed, the antenna is still held
+        Note over C: Usually transient (hostapd stuck for a few seconds): repeat the release<br/>after a few seconds. If it persists, check GET /status and ask an operator.<br/>At expiry Wi-Lab retries the cleanup by itself (5 s, 15 s, 60 s, 300 s)
+    end
+    Note over W: At expires_at Wi-Lab stops the AP and frees the antenna without any call.<br/>Creating or restarting an AP never extends the reservation
     end
 ```
+
+### 3.1 When a client may retry by itself
+
+| Answer | Automatic retry | How |
+|---|---|---|
+| `409 / 1005` on reserve | yes | After `next_available_in`, or a backoff when it is `null`. |
+| `503 / 1002` on reserve | yes | After `Retry-After` (10 s). |
+| `409 / 1001` on create | yes, at most twice | After `Retry-After`, same ID and body, if the reservation lasts long enough. |
+| `503 / 1006` on any call with an ID except the create | yes | After `Retry-After` (2 s), the same request. |
+| `503 / 1004` on `DELETE .../network` | yes | After `Retry-After` (5 s), repeat the DELETE. |
+| `503 / 1004` on release | a few times | After a few seconds; then stop and check `/status`. |
+| Transport error on create | only after a GET | `GET .../network` first; create again only if `active: false` and no `runtime_state`. |
+| `503 / 1003` on reserve | only after discovery | Right after a service start; otherwise ask an operator. |
+| `503 / 1003` on create | no | Discard the ID (do not release it) and reserve again. |
+| `422`, `409` other, `404`, `500`, `503 / 1004` elsewhere, `401` | no | Fix the request, read the state, or ask an operator. |
 
 ## 4. Reference client logic
 

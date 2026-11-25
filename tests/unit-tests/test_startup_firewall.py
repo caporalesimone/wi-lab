@@ -34,7 +34,7 @@ def manager(monkeypatch) -> NetworkManager:
 
 
 def test_nat_failure_fails_the_startup_and_rolls_back(monkeypatch, manager):
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     monkeypatch.setattr(
         manager.nat_manager, "enable_nat", Mock(side_effect=RuntimeError("Cannot enable NAT: no default route")),
     )
@@ -51,7 +51,7 @@ def test_nat_failure_fails_the_startup_and_rolls_back(monkeypatch, manager):
 
 
 def test_isolation_failure_fails_the_startup_and_removes_nat(monkeypatch, manager):
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     # Another network is already isolated, so this one needs blocking rules.
     manager.isolation_manager._active_subnets.add("192.168.199.0/24")
     monkeypatch.setattr(
@@ -65,7 +65,7 @@ def test_isolation_failure_fails_the_startup_and_removes_nat(monkeypatch, manage
 
 
 def test_rollback_removes_isolation_of_a_network_that_never_became_active(monkeypatch, manager):
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     removed = []
     original = manager.isolation_manager.remove_network
     monkeypatch.setattr(
@@ -81,7 +81,7 @@ def test_rollback_removes_isolation_of_a_network_that_never_became_active(monkey
 
 
 def test_successful_start_logs_no_false_isolation_line(manager, caplog):
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     with caplog.at_level(logging.INFO):
         manager.start_network(device, _request(internet_enabled=True))
     assert "Isolation rules applied" in caplog.text

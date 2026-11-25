@@ -168,7 +168,7 @@ flowchart TD
 Each scan (`scan_devices()`):
 
 1. Serializes with the scan lock.
-2. Re-reads `networks` from `config.yaml`, so new display names and `disable`
+2. Re-reads `antennas` from `config.yaml`, so new display names, `disable` and `show_dfs`
    flags apply to antennas found later.
 3. Discovers radios and keeps only those not already managed (by interface and
    by phy), not disabled and not upstream.
@@ -522,7 +522,7 @@ sequenceDiagram
     PS->>NM: MAC for source IP: DHCP lease, else neighbour table
     PS->>FW: insert RETURN for this MAC + IP in both chains (firewall lock)
     PS-->>ST: 303 to the portal: "signed in"
-    Note over ST,FW: this station now uses the configured DNS and the AP's<br/>normal Internet setting; other stations stay captive
+    Note over ST,FW: this station now uses the configured DNS and the AP's<br/>normal Internet setting, other stations stay captive
 ```
 
 | Element | Captive AP only |
@@ -616,6 +616,202 @@ Do not classify an isolated hostapd exit code `1` as a radio failure based on
 the exit code alone: that would also make persistent non-radio failures eligible
 for quarantine after three attempts. A more specific transient failure signal
 would be needed before routing these exits through the cooldown path.
+
+### 6.1 End-to-end sequence (server view)
+
+The same flow as the client diagram in
+[AP creation procedure, 3](ap-creation-procedure.md#3-sequence-diagram), seen
+from inside: which component decides each answer, which lock is held, and
+which background loop acts on its own. `RM` is the `ReservationManager` (one
+lock per device), `NM` the `NetworkManager` (device lock, firewall lock), `CM`
+the `ChannelManager` (cached `iw` reading), `H` the hostapd child process,
+`FW` dnsmasq, gateway and iptables (NAT, isolation, host guard, captive
+portal), `WD` the per-antenna watchdog thread, `EX` the expiry loop.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant A as API routes
+    participant RM as ReservationManager
+    participant NM as NetworkManager
+    participant CM as ChannelManager
+    participant H as hostapd
+    participant FW as dnsmasq and iptables
+    participant WD as Watchdog (per antenna)
+    participant EX as Expiry loop
+
+    rect rgba(128,128,128,0.08)
+    Note over C,EX: Reserve
+    C->>A: POST /device-reservation {duration_seconds}
+    A->>A: duration vs min_timeout, max_timeout, allow_unlimited_reservation
+    alt invalid
+        A-->>C: 422
+    end
+    A->>RM: create(duration)
+    RM->>RM: purge expired reservations (their cleanup runs here, under the device lock)
+    alt cleanup of an expired reservation fails
+        RM-->>A: ReservationCleanupError
+        A-->>C: 503 / 1004 (device stays held, retried with backoff)
+    else first discovered antenna that is free and not quarantined
+        RM-->>A: Reservation(id, device, expires_at)
+        A-->>C: 200 reservation_id, interface, expires_at, expires_in
+    else every antenna reserved
+        A-->>C: 409 / 1005 next_available_at, next_available_in
+    else none allocatable, a USB recovery is running
+        A-->>C: 503 / 1002 Retry-After 10
+    else none allocatable, nothing recovering (or none discovered yet)
+        A-->>C: 503 / 1003
+    end
+    end
+
+    rect rgba(128,128,128,0.08)
+    Note over C,EX: Antenna options (no reservation)
+    C->>A: GET /antennas/{interface}
+    A->>CM: get_channels(interface)
+    CM->>CM: cached, else iw phy channels and iw phy info (6 GHz dropped,<br/>DFS disabled when antennas[].show_dfs is false)
+    alt read fails
+        A-->>C: 503
+    else
+        A->>A: band_options(): same rules as validate_network
+        A-->>C: 200 device, encryptions, bands
+    end
+    end
+
+    rect rgba(128,128,128,0.08)
+    Note over C,EX: Create (POST /interface/{id}/network)
+    C->>A: body {radio, wifi, internet, captive_portal}
+    A->>A: NetworkCreateBody to flat request, field rules (FieldError keeps the path)
+    alt body invalid
+        A-->>C: 422 "radio.channel_width: ..."
+    end
+    A->>RM: resolve id
+    alt unknown, expired, released or invalidated
+        A-->>C: 404
+    end
+    alt watchdog state restoring_ap or restoring_dhcp
+        A-->>C: 409 "Network restoration is in progress"
+    end
+    A->>RM: hold the reservation, waiting for the device lock (no 1006 on create)
+    alt cooldown of a previous radio failure still running
+        A-->>C: 409 / 1001 Retry-After remaining (no radio work, no attempt used)
+    end
+    A->>CM: validate_network(band, channel, width, generation, encryption)
+    alt refused (refused again after one fresh iw reading)
+        A-->>C: 422 "radio.channel: ..." or "radio.channel_width: ..."
+    end
+    A->>NM: start_network(device, request, allow_internal_retry = first attempt)
+    alt network already in active
+        NM-->>A: ValueError already active
+        A-->>C: 409 "already active"
+    end
+    NM->>NM: release_device(): remove leftovers of an earlier start
+    alt leftover cleanup fails
+        A-->>C: 503 / 1004
+    end
+    loop Layer 1: up to 3 starts within 20 s (first attempt of the sequence only)
+        NM->>NM: subnet, interface validation, NetworkManager unmanaged
+        NM->>H: ip link down, iw set type managed, hostapd -d hostapd.conf
+        H-->>NM: output events, control socket, state ENABLED (timeout 20 s, 75 s on DFS)
+        alt radio failure (segfault, beacon or init failure, readiness timeout)
+            NM->>NM: report in hostapd_debug_dir if set, rollback, wait 1 s, start again
+        end
+    end
+    alt AP ready
+        NM->>FW: gateway IP, dnsmasq, NAT (if internet), isolation, host guard, captive portal
+        alt one of them fails
+            NM->>NM: rollback the whole network
+            A-->>C: 500 / 500 reservation kept, no attempt used
+        else all installed
+            NM->>NM: TX power (unsupported: one warning), active[device] = status
+            A-->>C: 200 "Network ... created successfully"
+        end
+    else classified radio failure after layer 1
+        NM->>NM: rollback, radio_failures += 1
+        alt radio_failures 1 or 2
+            A-->>C: 409 / 1001 Retry-After 5 or 10 (reservation kept)
+        else radio_failures 3, or the rollback failed
+            NM->>RM: quarantine the antenna, invalidate the reservation
+            A-->>C: 503 / 1003 reservation_invalidated true
+            Note over RM: USB antenna: reset and probe (recovering)<br/>otherwise periodic re-probe (unavailable)
+        end
+    else unclassified failure (hostapd exit code, interface validation)
+        NM->>NM: rollback
+        A-->>C: 500 / 500 reservation kept
+    end
+    end
+
+    rect rgba(128,128,128,0.08)
+    Note over C,EX: While the AP runs
+    loop Every 5 s, only when the device lock is free
+        WD->>NM: active network? stop_failed? reservation valid?
+        alt stop_failed (a stop did not complete)
+            WD->>WD: leave it alone (repairing would undo the client's stop)
+        else hostapd dead or not ENABLED 3 times
+            WD->>WD: runtime_state restoring_ap (budget 3 per hour per antenna)
+            WD->>NM: restart the network with the same request
+            alt restart fails, radio fault, or 4th failure in the hour
+                WD->>RM: quarantine, invalidate (the owner then gets 404)
+            else restart fails for another reason
+                WD->>WD: restore_failed, retry after 15, 30, 60, 120 s, then every 5 min
+            end
+        else dnsmasq dead
+            WD->>FW: restart dnsmasq (restoring_dhcp), after 3 in an hour restart the network
+        else every 30 s (6 healthy ticks)
+            WD->>FW: verify gateway, ip_forward, NAT, Internet block, isolation, captive portal, re-add missing rules
+        end
+    end
+    C->>A: GET .../network, Internet, TX power, QoS (any call with an id except create)
+    A->>RM: hold the reservation, wait at most 5 s for the device lock
+    alt lock still held after 5 s (a start or restore is running)
+        A-->>C: 503 / 1006 Retry-After 2 (nothing changed)
+    else no running network (Internet, TX power, QoS)
+        A-->>C: 409 / 1007
+    else
+        A-->>C: 200 (GET adds runtime_state from WD, or stop_failed from NM)
+    end
+    end
+
+    rect rgba(128,128,128,0.08)
+    Note over C,EX: Stop (DELETE /interface/{id}/network)
+    C->>A: DELETE .../network
+    A->>NM: stop_network(device) under the device lock
+    NM->>H: SIGTERM, after 2 s SIGKILL, wait 2 s more
+    alt hostapd stuck in the kernel (driver firmware timeout)
+        NM->>FW: remove the rest (QoS, captive portal, host guard, isolation, DHCP)
+        NM->>NM: keep the network in active, mark stop_failed
+        A-->>C: 503 / 1004 Retry-After 5
+        C->>A: DELETE .../network again after Retry-After
+        A->>NM: stop_network: hostapd has exited, NAT released
+        A-->>C: 200
+    else
+        NM->>FW: release NAT, captive portal, host guard, isolation, DHCP
+        A-->>C: 200
+    end
+    end
+
+    rect rgba(128,128,128,0.08)
+    Note over C,EX: Release and expiry
+    C->>A: DELETE /device-reservation/{id}
+    A->>RM: delete: release_requests += 1, device lock
+    RM->>NM: release_device(): tracked stop of everything still running
+    alt stop fails
+        NM->>NM: cleanup backoff 5, 15, 60, 300 s
+        A-->>C: 503 / 1004 (reservation and antenna still held)
+    else
+        A-->>C: 200
+    end
+    loop Every 5 s
+        EX->>RM: expired reservations whose cleanup is due
+        RM->>NM: release_device()
+        alt cleanup fails
+            NM->>NM: next attempt after the backoff, device stays held
+        else
+            RM->>RM: antenna free again
+        end
+    end
+    end
+```
 
 ## 7. After start: watchdog
 
@@ -902,8 +1098,9 @@ is logged once as a warning. Set `upstream_interface` to force an interface.
 - Discovery logs every added antenna with its USB port (or `non-USB`) and
   subnet. The first scan also logs skipped interfaces with the reason.
 - `GET /api/v1/status` exposes `runtime_state` (watchdog) and `recovery_state`
-  (quarantine) per antenna. `GET /api/v1/debug` gives a detailed, slower
-  snapshot for troubleshooting.
+  (quarantine) per antenna. `GET /api/v1/debug` (deprecated) gives a detailed, slower
+  snapshot for troubleshooting (header `X-Confirm-Password`, like every
+  Maintenance endpoint).
 
 ## 12. Known limitations
 

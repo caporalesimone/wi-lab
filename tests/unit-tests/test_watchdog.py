@@ -284,3 +284,19 @@ def test_dhcp_budget_renews_after_the_window(monkeypatch):
         (3700.0, False),
     ]
     assert _dhcp_setup(monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp", "dhcp"]
+
+
+def test_a_half_stopped_network_is_not_repaired(monkeypatch):
+    """After a stop that did not complete (hostapd stuck), the watchdog must not undo the stop."""
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    reservations = dependencies.get_reservation_manager(config)
+    device = reservations.create(0).device_id
+    monkeypatch.setitem(manager.active, device, NetworkStatus(interface=device, active=True))
+    monkeypatch.setattr(manager, "_stop_failed", {device})
+    monkeypatch.setattr(manager.hostapd_manager, "is_running", Mock(return_value=False))
+    restore = Mock()
+    monkeypatch.setattr(manager.watchdog, "_restore_ap", restore)
+    monkeypatch.setattr(manager.watchdog, "_restore_dhcp", restore)
+    _run_ticks(monkeypatch, manager, reservations, device, [0.0, 5.0, 10.0, 15.0])
+    restore.assert_not_called()

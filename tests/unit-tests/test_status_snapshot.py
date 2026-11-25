@@ -16,7 +16,7 @@ def stopping_network(monkeypatch):
     with TestClient(create_app()) as client:
         headers = {"Authorization": f"Bearer {load_config().auth_token}"}
         manager = dependencies.get_manager(dependencies.get_config())
-        device = manager.config.networks[0].device_id
+        device = manager.config.antennas[0].device_id
         monkeypatch.setitem(
             manager.active, device,
             NetworkStatus(interface=device, active=True, subnet="192.168.120.0/24"),

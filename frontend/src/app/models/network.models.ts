@@ -1,14 +1,32 @@
 export type RecoveryState = 'recovering' | 'unavailable';
-export type RuntimeState = 'restoring_ap' | 'restoring_dhcp' | 'dhcp_failed';
+export type RuntimeState = 'restoring_ap' | 'restoring_dhcp' | 'dhcp_failed' | 'restore_failed' | 'stop_failed';
 
 export type ChannelWidth = 20 | 40 | 80;
 export type WifiGeneration = 4 | 5 | 6;
 
-/** What an antenna accepts on a create (GET /status, networks[].capabilities). */
-export interface AntennaCapabilities {
+export type Band = '2.4ghz' | '5ghz';
+
+/** A channel a create can use on an antenna, with the widths it can be the primary of. */
+export interface ChannelOption {
+  channel: number;
+  frequency_mhz: number;
+  max_power_dbm: number;
+  dfs: boolean;
+  channel_widths: ChannelWidth[];
+}
+
+export interface BandOptions {
+  wifi_generations: { wifi_generation: WifiGeneration; channel_widths: ChannelWidth[] }[];
+  channels: ChannelOption[];
+}
+
+/** GET /antennas/{interface}: what a network on the antenna can use. */
+export interface AntennaDetails {
+  display_name: string;
+  interface: string;
+  device: { bus: string; address: string; driver: string | null } | null;
   encryptions: string[];
-  channel_widths: Record<string, ChannelWidth[]>;
-  wifi_generations: Record<string, WifiGeneration[]>;
+  bands: Record<Band, BandOptions>;
 }
 
 export interface InterfaceInfo {
@@ -18,7 +36,6 @@ export interface InterfaceInfo {
   reservation_remaining_seconds: number | null;
   recovery_state?: RecoveryState;
   runtime_state?: RuntimeState;
-  capabilities?: AntennaCapabilities;
 }
 
 export interface ReservationPolicy {

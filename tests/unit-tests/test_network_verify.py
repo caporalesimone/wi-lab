@@ -23,7 +23,7 @@ class FakeFirewall:
         self.rules: list[tuple[str, tuple[str, ...]]] = []
         self.changes: list[list[str]] = []
 
-    def __call__(self, args: list[str]) -> str:
+    def __call__(self, args: list[str], **kwargs) -> str:
         table = "filter"
         if args[:1] == ["-t"]:
             table, args = args[1], args[2:]
@@ -127,7 +127,7 @@ def test_lost_isolation_rules_are_restored(firewall):
 def running(monkeypatch):
     config = dependencies.get_config()
     mgr = dependencies.get_manager(config)
-    device = config.networks[0].device_id
+    device = config.antennas[0].device_id
     status = NetworkStatus(interface=device, active=True, subnet="192.168.10.0/24")
     monkeypatch.setitem(mgr.active, device, status)
     monkeypatch.setattr(mgr.nat_manager, "verify", Mock(return_value=[]))

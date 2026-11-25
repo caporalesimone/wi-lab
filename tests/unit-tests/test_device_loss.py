@@ -81,7 +81,7 @@ def test_hostapd_stop_still_resets_a_present_interface(monkeypatch, tmp_path):
 def test_release_device_succeeds_after_the_adapter_vanished(monkeypatch, tmp_path):
     """Before WD-5 this raised RuntimeError forever and the adapter could not be reused."""
     mgr = _manager()
-    device = mgr.config.networks[0].device_id
+    device = mgr.config.antennas[0].device_id
     control_dir = tmp_path / "ap" / "ctrl"
     control_dir.mkdir(parents=True)
     mgr.hostapd_manager._instances[device] = {
@@ -105,7 +105,7 @@ def test_release_device_succeeds_after_the_adapter_vanished(monkeypatch, tmp_pat
 def test_interface_vanishing_during_start_is_a_radio_failure(monkeypatch):
     """The 12:23 case: hostapd exits with code 1 because the USB adapter dropped."""
     mgr = _manager()
-    device = mgr.config.networks[0].device_id
+    device = mgr.config.antennas[0].device_id
     present = {"value": True}
     monkeypatch.setattr(manager_module, "interface_present", lambda iface: present["value"])
 
@@ -128,7 +128,7 @@ def test_interface_vanishing_during_start_is_a_radio_failure(monkeypatch):
 
 def test_interface_vanishing_with_failed_cleanup_is_still_a_radio_failure(monkeypatch):
     mgr = _manager()
-    device = mgr.config.networks[0].device_id
+    device = mgr.config.antennas[0].device_id
     present = {"value": True}
     monkeypatch.setattr(manager_module, "interface_present", lambda iface: present["value"])
 
@@ -154,7 +154,7 @@ def test_interface_vanishing_with_failed_cleanup_is_still_a_radio_failure(monkey
 @pytest.mark.parametrize("present, expected", [(False, StartupFailure), (True, ValueError)])
 def test_missing_interface_at_validation(monkeypatch, present, expected):
     mgr = _manager()
-    device = mgr.config.networks[0].device_id
+    device = mgr.config.antennas[0].device_id
     monkeypatch.setattr(manager_module, "interface_present", lambda iface: present)
 
     def missing(iface):
@@ -197,7 +197,7 @@ def test_api_vanished_interface_returns_retry_later_not_quarantine(monkeypatch):
 def unavailable(monkeypatch):
     """One quarantined adapter with no recovery running, and mocked probe steps."""
     mgr = _manager()
-    device = mgr.config.networks[0].device_id
+    device = mgr.config.antennas[0].device_id
     reservations = ReservationManager([device])
     reservations.quarantine(reservations.create(60), recovering=False)
     steps = SimpleNamespace(
@@ -259,7 +259,7 @@ def test_absent_adapter_is_not_probed(unavailable):
 
 def test_recovering_adapter_is_left_to_usb_recovery(monkeypatch):
     mgr = _manager()
-    device = mgr.config.networks[0].device_id
+    device = mgr.config.antennas[0].device_id
     reservations = ReservationManager([device])
     reservations.quarantine(reservations.create(60), recovering=True)
     probe = Mock()
@@ -280,7 +280,7 @@ def test_reprobe_uses_the_band_and_channel_of_the_last_network(unavailable):
 
 def test_quarantine_remembers_radio(monkeypatch):
     mgr = _manager()
-    device = mgr.config.networks[0].device_id
+    device = mgr.config.antennas[0].device_id
     reservations = ReservationManager([device])
     mgr.quarantine_radio(
         reservations, reservations.create(60), radio_fault=False, band="5ghz", channel=36,
@@ -304,11 +304,11 @@ def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch):
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     with TestClient(create_app()) as client:
         reservations = dependencies.get_reservation_manager(config)
-        device = config.networks[0].device_id
+        device = config.antennas[0].device_id
         # Keep the other adapters busy so the quarantined one is the only candidate.
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).json()["reservation_id"]
         assert reservations.get(rid).device_id == device
-        for _ in config.networks[1:]:
+        for _ in config.antennas[1:]:
             assert client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).status_code == 200
         result = client.post(f"/api/v1/interface/{rid}/network", headers=headers, json=network_body(**PAYLOAD))
         assert (result.status_code, result.json()["detail"]["code"]) == (503, 1003)

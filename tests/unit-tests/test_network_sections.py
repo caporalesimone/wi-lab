@@ -5,7 +5,12 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from wilab.api import create_app
-from wilab.models import NetworkCreateBody, NetworkResponse, NetworkStatus, NetworkTxPower
+from wilab.models import (
+    NetworkCreateBody,
+    NetworkResponse,
+    NetworkStatus,
+    NetworkTxPower,
+)
 
 CREATE = "/api/v1/interface/{reservation_id}/network"
 
@@ -43,6 +48,40 @@ class TestCreateBody:
             NetworkCreateBody(**_body(wifi={"ssid": "n", "security": {"encryption": "wpa", "password": "testpass123"}}))
         with pytest.raises(ValidationError, match="wifi.security.password: .*8 to 63 bytes|requires a password"):
             NetworkCreateBody(**_body(wifi={"ssid": "n", "security": {"encryption": "wpa2", "password": "short"}}))
+
+    @pytest.mark.parametrize(("radio", "security", "message"), [
+        ({}, {"password": "short"}, "wifi.security.password: wpa2 requires a password of 8 to 63 bytes (got 5)"),
+        ({}, {"password": None}, "wifi.security.password: Password required for wpa2 encryption"),
+        ({"channel": 6}, {}, "radio.channel: Channel 6 is not a valid WiFi channel for band 5ghz"),
+        ({"channel_width": 80}, {}, "radio.channel_width: channel_width 80 needs wifi_generation 5 or 6"),
+        ({"band": "2.4ghz", "channel": 6, "wifi_generation": 5}, {},
+         "radio.wifi_generation: wifi_generation 5 (802.11ac) is only available on 5ghz"),
+        ({"channel_width": 40}, {"encryption": "wpa1"}, "wifi.security.encryption: wpa1 (TKIP) cannot use"),
+    ])
+    def test_rules_between_fields_name_the_refused_field(self, radio, security, message):
+        body = _body()
+        body["radio"].update({"band": "5ghz", "channel": 36, **radio})
+        body["wifi"]["security"].update(security)
+        with pytest.raises(ValidationError) as exc:
+            NetworkCreateBody(**body)
+        assert exc.value.errors()[0]["msg"].removeprefix("Value error, ").startswith(message)
+
+    def test_422_paths_use_dots_without_the_pydantic_prefix(self):
+        app = create_app()
+
+        @app.post("/probe")
+        def probe(body: NetworkCreateBody) -> None:
+            return None
+
+        client = TestClient(app)
+        nested = _body()
+        nested["radio"]["channel_width"] = 30
+        assert client.post("/probe", json=nested).json()["detail"]["message"] == (
+            "radio.channel_width: Input should be 20, 40 or 80")
+        short = _body()
+        short["wifi"]["security"]["password"] = "short"
+        assert client.post("/probe", json=short).json()["detail"]["message"] == (
+            "wifi.security.password: wpa2 requires a password of 8 to 63 bytes (got 5)")
 
     def test_flat_body_is_refused(self):
         with pytest.raises(ValidationError):
@@ -100,6 +139,12 @@ class TestSwagger:
     ])
     def test_maintenance_operations_are_only_under_maintenance(self, spec, method, path):
         assert spec["paths"][path][method]["tags"] == ["Maintenance"]
+
+    @pytest.mark.parametrize("path", ["/api/v1/device-reservation/all", "/api/v1/debug"])
+    def test_maintenance_documents_the_password(self, spec, path):
+        operation = next(iter(spec["paths"][path].values()))
+        assert "403" in operation["responses"]
+        assert any(p["name"] == "X-Confirm-Password" for p in operation["parameters"])
 
     def test_release_all_still_wins_over_a_reservation_id(self, spec):
         paths = list(spec["paths"])

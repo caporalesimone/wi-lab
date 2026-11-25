@@ -24,7 +24,7 @@ class TestQosManagerThrottle:
         self.tc_calls = []
         self.cmd_calls = []
 
-        def mock_tc(args):
+        def mock_tc(args, **kwargs):
             self.tc_calls.append(args)
             return ""
 
@@ -210,7 +210,7 @@ class TestQosManagerQuality:
 
         self.tc_calls = []
 
-        def mock_tc(args):
+        def mock_tc(args, **kwargs):
             self.tc_calls.append(args)
             return ""
 

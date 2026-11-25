@@ -18,7 +18,7 @@ class FakeTable:
     def __init__(self) -> None:
         self.chains: dict[str, list[list[str]]] = {"INPUT": []}
 
-    def __call__(self, args: list[str]) -> str:
+    def __call__(self, args: list[str], **kwargs) -> str:
         args = [a for a in args if a not in ("-w", "5")]
         op = args[0]
         if op == "-N":
@@ -132,7 +132,7 @@ def manager(monkeypatch, tables) -> NetworkManager:
 
 def test_network_start_installs_the_guard_and_stop_removes_it(manager, tables):
     v4, _ = tables
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     manager.start_network(device, _request(internet_enabled=False))
     assert f"wilab-in-{device}" in v4.chains
     manager.stop_network(device)
@@ -141,7 +141,7 @@ def test_network_start_installs_the_guard_and_stop_removes_it(manager, tables):
 
 def test_guard_failure_fails_the_startup_and_rolls_back(manager, tables, monkeypatch):
     v4, _ = tables
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
 
     def broken(args):
         if args[:1] == ["-N"]:

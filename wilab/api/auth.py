@@ -1,6 +1,7 @@
 import hmac
+from typing import Any
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..config import AppConfig
@@ -43,3 +44,33 @@ async def require_protected_password(
             status_code=status.HTTP_403_FORBIDDEN, detail=f"Missing or wrong {CONFIRM_PASSWORD_HEADER}",
         )
     return True
+
+
+PROTECTED_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: {"description": "Unauthorized (missing or invalid auth token)"},
+    403: {
+        "description": "Protected commands disabled, or missing or wrong X-Confirm-Password. Nothing was done.",
+        "content": {"application/json": {"examples": {
+            "wrong_password": {"summary": "Missing or wrong X-Confirm-Password", "value": {"detail": {
+                "code": 403, "reason": "forbidden", "message": "Missing or wrong X-Confirm-Password",
+            }}},
+            "disabled": {"summary": "protected_commands_password not configured", "value": {"detail": {
+                "code": 403, "reason": "forbidden",
+                "message": "Protected commands are disabled: protected_commands_password is not configured",
+            }}},
+        }}},
+    },
+}
+
+
+def maintenance_router(prefix: str = "") -> APIRouter:
+    """Router for operator-only endpoints (Swagger group Maintenance).
+
+    Rule: every Maintenance endpoint needs the Bearer token and the
+    X-Confirm-Password header. The router enforces both, so a new endpoint
+    added here cannot forget them (checked by test_network_sections).
+    """
+    return APIRouter(
+        prefix=prefix, tags=["Maintenance"], responses=PROTECTED_RESPONSES,
+        dependencies=[Depends(require_token), Depends(require_protected_password)],
+    )

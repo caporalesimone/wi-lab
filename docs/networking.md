@@ -141,6 +141,7 @@ Each WiFi network operates on an isolated subnet:
 - Third network: `192.168.122.0/24`
 
 Clients on one network **cannot** communicate with clients on other networks by default (via iptables isolation rules).
+This holds for any `dhcp_base_network`, not only `192.168.*` (Fable NET-3).
 Clients on the same network can reach each other, as on any Wi-Fi network.
 Clients of every network cannot reach the Wi-Lab host itself (host guard,
 section 5), so they cannot hop through the host either.
@@ -158,7 +159,7 @@ iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o ens18 -j MASQUERADE
 
 ### SSH Protection Considerations
 
-When network isolation is enabled, Wi-Lab adds rules to explicitly protect SSH connections. However, isolation is **currently disabled** to prevent unintended networking issues during development.
+Isolation rules only match traffic between two Wi-Lab subnets (`-s <AP subnet> -d <AP subnet>`), so SSH and other traffic to or from the management network is not affected. Isolation is always active (Fable NET-4).
 
 ---
 

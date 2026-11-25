@@ -233,7 +233,8 @@ class DhcpServer:
             net_id: Network identifier
         """
         if net_id not in self._instances:
-            logger.warning(f"No DHCP server running for {net_id}")
+            # Normal after a startup that failed before DHCP started (NET-5).
+            logger.debug(f"No DHCP server running for {net_id}")
             return
         
         try:

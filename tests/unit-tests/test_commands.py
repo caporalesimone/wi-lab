@@ -521,3 +521,59 @@ class TestStuckCommands:
     def test_non_utf8_output_does_not_raise(self):
         out = execute_command([sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'ok\\xff')"])
         assert out.startswith("ok")
+
+
+# --------------------------------------------------------------------------- NET-5
+
+def test_expected_failures_are_not_logged_as_errors(monkeypatch, caplog):
+    """A missing rule, nothing to delete or an unsupported setting is an answer, not an error."""
+    import logging
+
+    from wilab.network import commands, nat
+
+    # The real runners (conftest replaces them), on top of a command that always fails.
+    monkeypatch.setattr(commands, "_run", lambda cmd, timeout: (1, "", "Bad rule (does a matching rule exist?)"))
+    monkeypatch.setattr(nat, "execute_iptables", execute_iptables)
+    caplog.set_level(logging.DEBUG)
+    assert nat.NatManager(upstream_interface="eth0")._rule_exists("nat", ["POSTROUTING", "-j", "MASQUERADE"]) is False
+    with pytest.raises(CommandError):
+        execute_command(["tc", "qdisc", "del", "dev", "wlan0", "root"], quiet=True)
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+    with pytest.raises(CommandError):
+        execute_command(["tc", "qdisc", "add", "dev", "wlan0", "root"])
+    assert [r.levelname for r in caplog.records if r.levelno >= logging.WARNING] == ["ERROR"]
+
+
+def test_hostapd_failure_report_keeps_config_and_output_without_secrets(tmp_path):
+    from wilab.wifi.hostapd import DEBUG_MAX_FILES, save_failure
+
+    class Process:
+        def poll(self):
+            return -11
+
+        def output_tail(self, *, exited=False):
+            return ["wlan0: interface state UNINITIALIZED->COUNTRY_UPDATE", "nl80211: Set beacon"]
+
+    for _ in range(DEBUG_MAX_FILES + 3):
+        (tmp_path / f"0000-old-{_:03d}.log").write_text("x")
+    config = "interface=wlan0\nssid=net\nwpa_passphrase=secret-pass\nsae_password=secret-sae\n"
+    path = save_failure(str(tmp_path), "wlan0", RuntimeError("hostapd segfault on wlan0"), Process(), config)
+    assert path is not None
+    with open(path) as f:
+        report = f.read()
+    assert "exit code: -11" in report and "nl80211: Set beacon" in report and "ssid=net" in report
+    assert "secret" not in report and "wpa_passphrase=<removed>" in report
+    assert len(list(tmp_path.glob("*.log"))) == DEBUG_MAX_FILES
+
+
+def test_foreground_process_keeps_the_last_output_lines_only_on_request():
+    process = start_foreground(
+        [sys.executable, "-c", "print('\\n'.join(str(i) for i in range(10)))"],
+        classify_output=lambda line: None, keep_lines=3,
+    )
+    process._process.wait(timeout=5)
+    assert process.output_tail(exited=True) == ["7", "8", "9"]
+    quiet = start_foreground([sys.executable, "-c", "print(1)"], classify_output=lambda line: None)
+    quiet._process.wait(timeout=5)
+    assert quiet.output_tail(exited=True) == []

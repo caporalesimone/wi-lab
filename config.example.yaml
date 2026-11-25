@@ -1,6 +1,6 @@
 # Wi-Lab Configuration File
 # 
-# This file defines WiFi Access Point networks and global settings.
+# This file defines Wi-Lab's global settings and its antennas.
 # All comments provide detailed guidance for each parameter.
 #
 # IMPORTANT: Review and update parameters before starting Wi-Lab!
@@ -97,13 +97,20 @@ internet_enabled_by_default: true
 # PROTECTED COMMANDS
 # ==================================================================================================
 
-# Password that confirms maintenance commands which must not be triggered by mistake,
-# currently DELETE /api/v1/device-reservation/all (release ALL reservations).
+# Password required by every Maintenance endpoint (commands and diagnostics that clients must
+# not use): DELETE /api/v1/device-reservation/all (release ALL reservations) and GET /api/v1/debug.
 # Callers send it in the X-Confirm-Password header, together with the bearer token;
 # the web UI asks for it every time "Release All" is pressed.
 # It guards against accidental use, not against attackers: share it only with operators.
 # If omitted or empty, protected commands are disabled (HTTP 403).
 protected_commands_password: "change-me"
+
+# Diagnostics for hostapd failures (optional; omit or leave empty to disable).
+# When set, every hostapd start that fails (crash, timeout, beacon setup failure)
+# writes a report in this directory: the hostapd configuration without passwords
+# and the last 400 lines of `hostapd -d`. Only failures are written, the journal
+# does not grow, and only the newest 100 reports are kept.
+# hostapd_debug_dir: "/var/log/wilab/hostapd"
 
 # ==================================================================================================
 # REGULATORY DOMAIN
@@ -125,19 +132,6 @@ protected_commands_password: "change-me"
 #   KR  - South Korea        AU  - Australia
 country_code: "IT"
 
-# Whether Wi-Lab allows AP creation on channels that require DFS (5 GHz).
-# DFS protects radar systems. Before an AP can transmit on a DFS channel, the
-# radio may need to listen for radar, usually for about 60 seconds and on some
-# frequencies for several minutes. Radar detected later can also interrupt an AP.
-# - true: Allow DFS channels if the radio and local regulations permit them.
-# - false (default, also if omitted): Exclude channels flagged for radar detection
-#   by the radio. The available-channels API lists them as disabled, and requests for
-#   those channels return HTTP 422 before starting the AP. No automatic fallback.
-# Set to false for shorter, more predictable AP startup, at the cost of fewer
-# 5 GHz channels. This does not turn off radar detection or override regulations.
-# Restart Wi-Lab after changing this setting.
-allow_dfs_channels: false
-
 # ==================================================================================================
 # WiFi DEVICES (auto-discovered)
 # ==================================================================================================
@@ -150,7 +144,7 @@ allow_dfs_channels: false
 # default route and `upstream_interface` are never managed. A configured interface
 # that is missing does not stop the service.
 #
-# This optional section only assigns a human-readable display_name to an interface.
+# This optional section assigns a human-readable display_name and the DFS choice to an interface.
 # Discovered interfaces not listed here use the interface name as display_name.
 # Listed interfaces are allocated DHCP subnets first, in this order; the others
 # follow sorted by name.
@@ -170,17 +164,32 @@ allow_dfs_channels: false
 #                   (optional when disable is true)
 #   - disable:      Optional, default false. When true, Wi-Lab never uses this radio
 #                   (any interface on the same physical radio is excluded too)
+#   - show_dfs:     Required (true or false). Whether this antenna offers the 5 GHz
+#                   channels that require DFS (52-144, shared with radar). They are
+#                   listed by GET /api/v1/antennas/{interface} and accepted by the
+#                   create only when true; when false they are not listed and a create
+#                   asking for one returns HTTP 422. Before transmitting on a DFS channel
+#                   the radio listens for radar, usually about 60 seconds (on some
+#                   frequencies several minutes), and radar detected later can interrupt
+#                   the AP. false gives a shorter, predictable startup with fewer 5 GHz
+#                   channels. It never turns off radar detection or overrides regulations.
+#                   Discovered antennas not listed here behave as true.
+#                   Restart Wi-Lab after changing it for an antenna already in use.
 
-networks:
+antennas:
   - interface: "wlxbc071dc527d6"
     display_name: "bench-antenna-1"
+    show_dfs: false
 
   - interface: "wlx7820512451b4"
     display_name: "bench-antenna-2"
+    show_dfs: false
 
   - interface: "wlx782051245264"
     display_name: "bench-antenna-3"
+    show_dfs: false
 
   # Example: keep the built-in card out of Wi-Lab
   # - interface: "wlan0"
   #   disable: true
+  #   show_dfs: false

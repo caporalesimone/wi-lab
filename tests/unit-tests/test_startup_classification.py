@@ -38,7 +38,7 @@ def test_init_failure_is_radio_on_every_request(monkeypatch, manager, allow_inte
     """The second and third create of a sequence (no internal retry) and the
     watchdog restart got a generic 500 for the same failure the first create
     reported as 409 / 1001."""
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     start = Mock(side_effect=_init_failure())
     monkeypatch.setattr(manager.hostapd_manager, "start", start)
     with pytest.raises(StartupFailure) as failure:
@@ -48,7 +48,7 @@ def test_init_failure_is_radio_on_every_request(monkeypatch, manager, allow_inte
 
 
 def test_unclassified_hostapd_error_is_not_radio(monkeypatch, manager) -> None:
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     start = Mock(side_effect=HostapdError("hostapd exited with code 1 on wlan0"))
     monkeypatch.setattr(manager.hostapd_manager, "start", start)
     with pytest.raises(StartupFailure) as failure:
@@ -59,7 +59,7 @@ def test_unclassified_hostapd_error_is_not_radio(monkeypatch, manager) -> None:
 
 def test_retry_after_a_radio_failure_keeps_the_classification(monkeypatch, manager) -> None:
     """An unclassified exit on the retry still follows a radio failure of this request."""
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     start = Mock(side_effect=[_init_failure(), HostapdError("hostapd exited with code 1 on wlan0")])
     monkeypatch.setattr(manager.hostapd_manager, "start", start)
     with pytest.raises(StartupFailure) as failure:
@@ -72,7 +72,7 @@ def test_non_ap_stage_after_a_radio_retry_is_not_radio(monkeypatch, manager) -> 
     """A DHCP failure after the AP came up on the retry is not a radio failure."""
     from wilab.network.dhcp import DhcpServerError
 
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     monkeypatch.setattr(manager.hostapd_manager, "start", Mock(side_effect=[_init_failure(), None]))
     monkeypatch.setattr(manager.dhcp_server, "start", Mock(side_effect=DhcpServerError("port 67 in use")))
     with pytest.raises(StartupFailure, match="configure DHCP") as failure:
@@ -107,7 +107,7 @@ def _timed_start(clock, durations, budgets):
 
 
 def test_every_internal_retry_gets_at_least_four_seconds(monkeypatch, manager, clock):
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     monkeypatch.setattr(manager_module, "STARTUP_RETRY_DELAY", 1.0)
     budgets: list[float | None] = []
     # First start: 10 s readiness timeout plus 2 s of rollback. With the old values
@@ -123,7 +123,7 @@ def test_every_internal_retry_gets_at_least_four_seconds(monkeypatch, manager, c
 
 def test_no_retry_is_started_without_enough_time(monkeypatch, manager, clock):
     """Before HAP-4 a retry could start with 0.75 s and add an artificial radio failure."""
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     monkeypatch.setattr(manager_module, "STARTUP_RETRY_DELAY", 1.0)
     budgets: list[float | None] = []
     # 16 s used: 4 s left, less than the 1 s wait plus a 4 s attempt.
@@ -141,7 +141,7 @@ def test_start_runs_no_redundant_commands(monkeypatch, manager):
     """PERF-1: no iw capability checks, no nmcli/dnsmasq --version on each start."""
     from wilab.wifi import interface as interface_module
 
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     monkeypatch.setattr(manager.hostapd_manager, "start", Mock())
     seen: list[list[str]] = []
     real = manager_module.execute_command

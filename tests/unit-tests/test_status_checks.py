@@ -23,7 +23,7 @@ def running(monkeypatch):
     with TestClient(create_app()) as client:
         headers = {"Authorization": f"Bearer {load_config().auth_token}"}
         manager = dependencies.get_manager(dependencies.get_config())
-        device = manager.config.networks[0].device_id
+        device = manager.config.antennas[0].device_id
         state = {"internet": False, "nat": "-P POSTROUTING ACCEPT", "link": _link("UP", ["UP", "LOWER_UP"])}
 
         def network():

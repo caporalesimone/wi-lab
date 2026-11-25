@@ -5,7 +5,8 @@ import logging
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
 from pydantic import BaseModel, Field, field_validator
 
-from ...api.auth import require_protected_password, require_token
+from ...api.auth import maintenance_router as protected_router
+from ...api.auth import require_token
 from ...api.dependencies import get_config, get_reservation_manager
 from ...api.errors import ApiErrorCode, domain_error
 from ...config import AppConfig
@@ -27,15 +28,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
 # Route tags add to the router's: a separate router keeps release-all only under
 # Maintenance in Swagger. It is included before `router`, so `/all` is matched
-# before `/{reservation_id}`.
-maintenance_router = APIRouter(prefix="/device-reservation", tags=["Maintenance"])
+# before `/{reservation_id}`. Token and X-Confirm-Password come from the router.
+maintenance_router = protected_router(prefix="/device-reservation")
 
 
 # ---- Request / Response models ----
 
 class ReservationCreateRequest(BaseModel):
     duration_seconds: int = Field(
-        ..., description="Reservation duration in seconds (0 = unlimited, if allowed by config)",
+        ..., description="Reservation duration in seconds. 0 = unlimited, accepted only when "
+        "`GET /status` reports `reservation_policy.allow_unlimited: true`; otherwise `422`.",
         json_schema_extra={"example": 3600}
     )
 
@@ -62,7 +64,7 @@ class ReservationResponse(BaseModel):
 
 def _display_name_for(device_id: str, config: AppConfig) -> str:
     """Look up user-facing display name from config."""
-    for n in config.networks:
+    for n in config.antennas:
         if n.device_id == device_id:
             return n.display_name
     return device_id
@@ -169,26 +171,11 @@ def _build_response(r, config: AppConfig) -> ReservationResponse:
     summary="Release ALL reservations (maintenance only)",
     responses={
         200: {"description": "All reservations released"},
-        401: {"description": "Unauthorized"},
-        403: {
-            "description": "Protected commands disabled, or missing or wrong X-Confirm-Password. Nothing was released.",
-            "content": {"application/json": {"examples": {
-                "wrong_password": {"summary": "Missing or wrong X-Confirm-Password", "value": {"detail": {
-                    "code": 403, "reason": "forbidden", "message": "Missing or wrong X-Confirm-Password",
-                }}},
-                "disabled": {"summary": "protected_commands_password not configured", "value": {"detail": {
-                    "code": 403, "reason": "forbidden",
-                    "message": "Protected commands are disabled: protected_commands_password is not configured",
-                }}},
-            }}},
-        },
         503: {"description": "Cleanup failed; remaining reservations are still held"},
     },
 )
 def delete_all_reservations(
     mgr: ReservationManager = Depends(get_reservation_manager),
-    _auth: bool = Depends(require_token),
-    _confirmed: bool = Depends(require_protected_password),
 ):
     """Release **all** active reservations, including those held by other clients.
 

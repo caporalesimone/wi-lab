@@ -80,6 +80,15 @@ class TxPowerMismatchError(Exception):
     """Raised when reported TX power does not match the requested level."""
 
 
+class NetworkStopError(RuntimeError):
+    """A stop did not complete (e.g. hostapd stuck in the kernel after SIGKILL).
+
+    The network stays in `active` so that repeating the stop finishes it; until
+    then the watchdog leaves it alone and `GET .../network` reports
+    `runtime_state: stop_failed`.
+    """
+
+
 class StartupFailure(ValueError):
     def __init__(self, message: str, *, radio: bool = False, cleanup_failed: bool = False):
         super().__init__(message)
@@ -95,23 +104,22 @@ class NetworkManager:
         self.active: dict[str, NetworkStatus] = {}
         self.dhcp_server = DhcpServer()
         self.nat_manager = NatManager(upstream_interface=config.upstream_interface)
-        self.hostapd_manager = HostapdManager()
+        self.hostapd_manager = HostapdManager(debug_dir=config.hostapd_debug_dir)
         self.isolation_manager = IsolationManager()
         self.host_guard = HostGuard()  # SEC-3: AP clients cannot reach the host
         self.captive_portals: dict[str, CaptivePortal] = {}
         # One channel cache for the whole service (BUG-4): the API passes its own.
-        self._channel_manager = channel_manager or ChannelManager(
-            allow_dfs_channels=config.allow_dfs_channels,
-        )
+        self._channel_manager = channel_manager or ChannelManager(show_dfs=config.show_dfs_for)
         self.qos_manager: QosManager | None = None
         self.qos_profile_manager: QosProfileManager | None = None
-        self._device_locks = {n.device_id: threading.RLock() for n in config.networks}
+        self._device_locks = {n.device_id: threading.RLock() for n in config.antennas}
         self._device_locks_guard = threading.Lock()
         self._firewall_lock = threading.Lock()
         self._subnet_lock = threading.Lock()
         self._assigned_subnets: dict[str, IPv4Network] = {}
         # WD-6: consecutive cleanup failures and next background attempt per device
         self._cleanup_failures: dict[str, int] = {}
+        self._stop_failed: set[str] = set()  # stops to repeat (NetworkStopError)
         self._cleanup_retry_at: dict[str, float] = {}
         self.expire_reservations: Callable[[], None] | None = None
         self.recovery = RadioRecovery(self)
@@ -143,7 +151,7 @@ class NetworkManager:
 
     def _get_subnet(self, device_id: str) -> str:
         """Allocate or reuse a non-overlapping /24 before a new AP start."""
-        devices = [n.device_id for n in self.config.networks]
+        devices = [n.device_id for n in self.config.antennas]
         if device_id not in devices:
             raise ValueError("Unknown device_id")
 
@@ -218,6 +226,10 @@ class NetworkManager:
             logger.warning("Cleanup of %s succeeded after earlier failures", device_id)
         self._cleanup_retry_at.pop(device_id, None)
 
+    def stop_failed(self, device_id: str) -> bool:
+        """True after a stop that did not complete, until a stop completes."""
+        return device_id in self._stop_failed
+
     def cleanup_due(self, device_id: str) -> bool:
         """False while a failed cleanup of this device waits for its next background attempt."""
         return time.monotonic() >= self._cleanup_retry_at.get(device_id, 0.0)
@@ -235,7 +247,7 @@ class NetworkManager:
     ) -> None:
         device = reservation.device_id
         self.recovery.remember_radio(device, band, channel)
-        port = next(n.usb_recovery_port for n in self.config.networks if n.device_id == device)
+        port = next(n.usb_recovery_port for n in self.config.antennas if n.device_id == device)
         if not radio_fault or self.config.upstream_interface == device:
             port = None
         reservations.quarantine(reservation, recovering=port is not None)
@@ -288,16 +300,16 @@ class NetworkManager:
                 retry_deadline,
                 time.monotonic() + (expires_at_timestamp - time.time()),
             )
-        logger.info(f"Starting network {device_id} with SSID '{req.ssid}'")
-        
         # Validate device_id exists in config
-        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
             raise ValueError("Unknown device_id")
-        
+
         # Check if network is already active (check both self.active and hostapd)
         if device_id in self.active:
             raise ValueError(f"Network {device_id} is already active. Stop it first before creating a new one.")
+        # Logged only for a create that really starts (a refused one used to log it too).
+        logger.info(f"Starting network {device_id} with SSID '{req.ssid}'")
         
         # Clear any tracked resources left by a failed startup before retrying.
         try:
@@ -529,7 +541,7 @@ class NetworkManager:
         errors: list[str] = []
         
         # Get interface and subnet before removing from active dict
-        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         # A startup rollback runs before the network is active: use the assigned
         # subnet so its isolation rules are removed too (NET-2).
         assigned = self._assigned_subnets.get(device_id)
@@ -600,10 +612,12 @@ class NetworkManager:
             errors.append(f"DHCP: {e}")
 
         if errors:
-            raise RuntimeError(f"Failed to stop network {device_id}: {'; '.join(errors)}")
-        
+            self._stop_failed.add(device_id)
+            raise NetworkStopError(f"Failed to stop network {device_id}: {'; '.join(errors)}")
+
         # Remove from active dict
         self.active.pop(device_id, None)
+        self._stop_failed.discard(device_id)
         
         logger.info(f"Network {device_id} stopped")
 
@@ -625,7 +639,7 @@ class NetworkManager:
         st = self.active.get(device_id)
         if not st:
             # Return inactive status if known device_id
-            cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+            cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
             if not cfg_net:
                 return None
             return NetworkStatus(interface=cfg_net.interface, active=False)
@@ -634,7 +648,7 @@ class NetworkManager:
         if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp is not None and st._expires_at_timestamp < time.time():
             logger.info(f"Network {device_id} expired, stopping")
             self.stop_network(device_id)
-            cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+            cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
             if not cfg_net:
                 return None
             return NetworkStatus(interface=cfg_net.interface, active=False)
@@ -706,7 +720,7 @@ class NetworkManager:
             raise NetworkNotActive(device_id)
         
         # Get interface for NAT rules
-        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
             raise ValueError("Unknown device_id")
         
@@ -745,7 +759,7 @@ class NetworkManager:
             raise NetworkNotActive(device_id)
         
         # Get interface for NAT rules
-        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
             raise ValueError("Unknown device_id")
         
@@ -781,7 +795,7 @@ class NetworkManager:
         clients: list[ClientInfo] = []
         
         # Get interface for this network
-        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
             return clients
         
@@ -918,7 +932,7 @@ class NetworkManager:
         self.recovery.stop()
         self.watchdog.stopping.set()
         logger.info("Shutting down all networks")
-        device_ids = {n.device_id for n in self.config.networks} | self.active.keys()
+        device_ids = {n.device_id for n in self.config.antennas} | self.active.keys()
         for device_id in device_ids:
             try:
                 self.release_device(device_id)
@@ -1000,7 +1014,8 @@ class NetworkManager:
         desired_mbm = int(round(desired_dbm * 100))
         
         try:
-            execute_iw(["dev", interface, "set", "txpower", "fixed", str(desired_mbm)])
+            # Some drivers (mt7921u) do not support it: the caller logs one warning.
+            execute_iw(["dev", interface, "set", "txpower", "fixed", str(desired_mbm)], quiet=True)
         except CommandError as e:
             raise ValueError(f"Failed to set txpower: {e}") from e
 
@@ -1041,7 +1056,7 @@ class NetworkManager:
             raise ValueError("TX power level must be 1-4")
         if st.channel is None:
             raise ValueError("Channel unknown for this network")
-        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
             raise ValueError("Unknown device_id")
         
@@ -1061,7 +1076,7 @@ class NetworkManager:
             raise NetworkNotActive(device_id)
         if st.channel is None:
             raise ValueError("Channel unknown for this network")
-        cfg_net = next((n for n in self.config.networks if n.device_id == device_id), None)
+        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
             raise ValueError("Unknown device_id")
         

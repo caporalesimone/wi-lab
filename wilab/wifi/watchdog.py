@@ -57,7 +57,7 @@ class NetworkWatchdog:
 
     def start(self, reservations: ReservationManager) -> None:
         self._reservations = reservations
-        self.watch([device.device_id for device in self.manager.config.networks])
+        self.watch([device.device_id for device in self.manager.config.antennas])
 
     def watch(self, device_ids: list[str]) -> None:
         """Start one watcher thread per device; devices already watched are ignored."""
@@ -110,6 +110,9 @@ class NetworkWatchdog:
                     current, misses = status, 0
                     restart_network = ""
                 if status is None or reservation is None or self._cancelled(reservation):
+                    continue
+                if self.manager.stop_failed(device):
+                    # Half stopped on purpose: repairing it would undo the client's stop.
                     continue
                 alive = self.manager.hostapd_manager.is_running(device)
                 misses = 0 if alive and self.manager.hostapd_manager.is_enabled(device) else misses + 1

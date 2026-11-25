@@ -73,7 +73,6 @@ def busy_adapter(valid_token, monkeypatch):
 @pytest.mark.parametrize(("method", "path", "body"), [
     ("get", "/network", None),
     ("delete", "/network", None),
-    ("get", "/network/available-channels", None),
     ("post", "/internet/enable", None),
     ("get", "/txpower", None),
     ("post", "/txpower", {"level": 2}),

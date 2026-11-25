@@ -15,7 +15,6 @@ import { TokenDialogComponent } from './components/token-dialog/token-dialog.com
 import { WilabApiService } from './services/wilab-api.service';
 import { AuthService } from './services/auth.service';
 import {
-  AntennaCapabilities,
   InterfaceInfo,
   RecoveryState,
   RuntimeState,
@@ -36,7 +35,6 @@ export interface InterfaceSlot {
   otherReservationSeconds: number | null;
   recoveryState?: RecoveryState;
   runtimeState?: RuntimeState | null;
-  capabilities?: AntennaCapabilities;
   /** Set when this client owns the reservation */
   myReservation: ReservationResponse | null;
 }
@@ -225,7 +223,6 @@ export class AppComponent implements OnInit, OnDestroy {
         otherReservationSeconds: myRes ? null : n.reservation_remaining_seconds,
         recoveryState: n.recovery_state,
         runtimeState: n.runtime_state ?? null,
-        capabilities: n.capabilities,
         myReservation: myRes,
       };
     });

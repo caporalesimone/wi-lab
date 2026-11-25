@@ -185,23 +185,25 @@ def test_load_config_starts_empty_and_scan_applies_labels(monkeypatch, tmp_path,
     ])
     path = _write_config(
         tmp_path,
-        "networks:\n"
+        "antennas:\n"
         "  - interface: wlx-b\n"
         "    display_name: Bench B\n"
+        "    show_dfs: false\n"
         "    usb_recovery_port: '9-9'\n"
         "  - interface: wlx-missing\n"
-        "    display_name: Missing\n",
+        "    display_name: Missing\n"
+        "    show_dfs: false\n",
     )
 
     cfg = load_config(path)
-    assert cfg.networks == []
+    assert cfg.antennas == []
     assert "usb_recovery_port" not in caplog.text
 
     added = config_module.scan_new_networks(cfg, path)
 
-    assert [(n.interface, n.display_name, n.usb_recovery_port) for n in added] == [
-        ("wlx-b", "Bench B", "2-2"),
-        ("wlx-a", "wlx-a", "2-1"),
+    assert [(n.interface, n.display_name, n.usb_recovery_port, n.show_dfs) for n in added] == [
+        ("wlx-b", "Bench B", "2-2", False),
+        ("wlx-a", "wlx-a", "2-1", True),   # not listed: DFS channels are offered
     ]
     assert "Ignoring usb_recovery_port for wlx-b" in caplog.text
     assert "wlx-missing" in caplog.text
@@ -213,7 +215,7 @@ def test_scan_skips_disabled_entry_without_display_name(monkeypatch, tmp_path):
         DiscoveredRadio("wlx-a", "phy1", "2-1"),
         DiscoveredRadio("wlx-b", "phy2", "2-2"),
     ])
-    path = _write_config(tmp_path, "networks:\n  - interface: wlx-a\n    disable: true\n")
+    path = _write_config(tmp_path, "antennas:\n  - interface: wlx-a\n    disable: true\n    show_dfs: false\n")
 
     added = config_module.scan_new_networks(load_config(path), path)
 
@@ -221,8 +223,8 @@ def test_scan_skips_disabled_entry_without_display_name(monkeypatch, tmp_path):
 
 
 def test_load_config_without_networks(tmp_path):
-    assert load_config(_write_config(tmp_path, "")).networks == []
-    assert load_config(_write_config(tmp_path, "networks:\n")).networks == []
+    assert load_config(_write_config(tmp_path, "")).antennas == []
+    assert load_config(_write_config(tmp_path, "antennas:\n")).antennas == []
 
 
 def test_select_new_networks_skips_managed_and_disabled_radios():
@@ -269,7 +271,7 @@ def test_discovery_loop_scans_every_5s_until_an_antenna_then_every_30s(monkeypat
         if len(quiet_flags) <= 2:
             raise ValueError("Cannot read configuration")
         if len(quiet_flags) == 3:
-            cfg.networks = [NetworkEntry(interface="wlx-a", display_name="A")]
+            cfg.antennas = [NetworkEntry(interface="wlx-a", display_name="A")]
         return []
 
     monkeypatch.setattr(dependencies, "scan_devices", scan)
@@ -290,11 +292,13 @@ def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
     base = (
         "auth_token: test-token\n"
         "dhcp_base_network: '192.168.120.0/24'\n"
-        "networks:\n"
+        "antennas:\n"
         "  - interface: wlx-a\n"
         "    display_name: Antenna A\n"
+        "    show_dfs: false\n"
         "  - interface: wlx-off\n"
         "    disable: true\n"
+        "    show_dfs: false\n"
     )
     path.write_text(base)
     monkeypatch.setenv("CONFIG_PATH", str(path))
@@ -314,7 +318,7 @@ def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
         radios[:] = [DiscoveredRadio("wlx-a", "phy0", "2-1"), DiscoveredRadio("wlx-off", "phy1", "2-2")]
         _wait_for(lambda: managed() == [("wlx-a", "Antenna A")])
         # A label added after startup must be read by the next scan.
-        path.write_text(base + "  - interface: wlx-new\n    display_name: Antenna New\n")
+        path.write_text(base + "  - interface: wlx-new\n    display_name: Antenna New\n    show_dfs: true\n")
         radios.append(DiscoveredRadio("wlx-new", "phy2", "2-3"))
         _wait_for(lambda: len(managed()) == 2)
         final = managed()
@@ -340,7 +344,7 @@ def test_added_antenna_gets_a_watchdog(monkeypatch):
         dependencies.scan_devices(config)
         dependencies.scan_devices(config)
 
-        assert started == {n.device_id for n in config.networks} - {"wlx-late"}
+        assert started == {n.device_id for n in config.antennas} - {"wlx-late"}
         assert watchdog._watched == started | {"wlx-late"}
     finally:
         watchdog.stopping.set()

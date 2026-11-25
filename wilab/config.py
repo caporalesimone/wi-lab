@@ -1,11 +1,11 @@
 import logging
 import os
 import re
-from ipaddress import IPv4Network
+from ipaddress import IPv4Address, IPv4Network
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,9 @@ class NetworkEntry(BaseModel):
     display_name: str
     # Configuration only: exclude this radio from discovery and allocation.
     disable: bool = False
+    # DFS channels (5 GHz 52-144, radar detection) are listed and accepted only
+    # when true. Required in config.yaml; radios not listed there get true.
+    show_dfs: bool = True
     # Detected at startup from sysfs; set only for USB adapters.
     usb_recovery_port: str | None = Field(default=None, pattern=r"^\d+-\d+(\.\d+)*$")
 
@@ -24,24 +27,33 @@ class NetworkEntry(BaseModel):
         return self.interface
 
 class AppConfig(BaseModel):
+    # Every rule lives here, so `--validate-config` and the service startup give
+    # the same verdict (BUG-3). Messages never repeat the configured values.
     auth_token: str
-    api_port: int = 8080
+    api_port: int = Field(8080, ge=1, le=65535)
     max_timeout: int = 86400   # 24 hours default upper bound
     min_timeout: int = 60      # 60 seconds default lower bound
     allow_unlimited_reservation: bool = False
     dhcp_base_network: str
     upstream_interface: str = "auto"
     country_code: str = "IT"
-    allow_dfs_channels: bool = False
     protected_commands_password: str | None = None
+    # Diagnostics: save the `hostapd -d` output and configuration of every failed
+    # hostapd start in this directory (None: off).
+    hostapd_debug_dir: str | None = None
     dns_server: str = "192.168.10.21"
     internet_enabled_by_default: bool = True
-    networks: list[NetworkEntry] = Field(default_factory=list)
+    # Optional display names and settings of the discovered radios (`antennas:`).
+    antennas: list[NetworkEntry] = Field(default_factory=list)
     cors_origins: list[str] | None = Field(
         default=None,
         description="CORS allowed origins. If None or empty, CORS is disabled (secure for production). "
                     "For development, add frontend URLs like ['http://localhost:4200', 'http://192.168.1.100:4200']"
     )
+
+    def show_dfs_for(self, interface: str) -> bool:
+        """`show_dfs` of an antenna; true for a discovered radio not in `antennas`."""
+        return next((n.show_dfs for n in self.antennas if n.interface == interface), True)
 
     @field_validator('country_code')
     @classmethod
@@ -51,6 +63,27 @@ class AppConfig(BaseModel):
         if not re.fullmatch(r"[A-Z]{2}", value):
             raise ValueError("country_code must be two uppercase ASCII letters")
         return value
+
+    @field_validator('auth_token')
+    @classmethod
+    def validate_auth_token(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("auth_token must not be empty")
+        return value
+
+    @field_validator('dns_server')
+    @classmethod
+    def validate_dns_server(cls, value: str) -> str:
+        try:
+            return str(IPv4Address(value))
+        except ValueError:
+            raise ValueError("dns_server must be a valid IPv4 address") from None
+
+    @model_validator(mode="after")
+    def validate_timeouts(self) -> "AppConfig":
+        if self.max_timeout <= 0 or self.max_timeout < self.min_timeout:
+            raise ValueError("max_timeout must be positive and at least min_timeout")
+        return self
 
     @field_validator('protected_commands_password')
     @classmethod
@@ -84,7 +117,17 @@ class AppConfig(BaseModel):
             raise ValueError("dhcp_base_network must be a /24 network")
         return str(net)
 
-    @field_validator('networks')
+    @field_validator('antennas', mode='before')
+    @classmethod
+    def require_show_dfs(cls, value: Any) -> Any:
+        """Every `antennas` entry states `show_dfs`: there is no silent default."""
+        if isinstance(value, list):
+            for index, entry in enumerate(value):
+                if isinstance(entry, dict) and "show_dfs" not in entry:
+                    raise ValueError(f"antennas[{index}].show_dfs is required (true or false)")
+        return value
+
+    @field_validator('antennas')
     @classmethod
     def validate_network_count(cls, v: list[NetworkEntry], info) -> list[NetworkEntry]:
         # Check that dhcp_base_network + len(networks) doesn't overflow third octet
@@ -106,10 +149,10 @@ class AppConfig(BaseModel):
         # Check for duplicate interfaces
         interfaces = [n.interface for n in v]
         if len(interfaces) != len(set(interfaces)):
-            raise ValueError("Duplicate interface names in networks configuration")
+            raise ValueError("Duplicate interface names in antennas configuration")
         ports = [n.usb_recovery_port for n in v if n.usb_recovery_port is not None]
         if len(ports) != len(set(ports)):
-            raise ValueError("Duplicate USB recovery ports in networks configuration")
+            raise ValueError("Duplicate USB recovery ports in antennas configuration")
         
         return v
 
@@ -133,6 +176,7 @@ def resolve_networks(
         info("Skipping %s: disabled in configuration", interface)
     radios = [r for r in radios if r.phy not in disabled_phys]
     names = {label.interface: label.display_name for label in labels}
+    show_dfs = {label.interface: label.show_dfs for label in labels}
     by_interface = {r.interface: r for r in radios if r.interface not in excluded}
     for r in radios:
         if r.interface in excluded:
@@ -156,6 +200,7 @@ def resolve_networks(
         networks.append(NetworkEntry(
             interface=r.interface,
             display_name=names.get(r.interface, r.interface),
+            show_dfs=show_dfs.get(r.interface, True),
             usb_recovery_port=r.usb_port,
         ))
     return networks
@@ -193,11 +238,11 @@ def _read_raw_config(cfg_path: str, *, quiet: bool = False) -> dict:
     # AttributeError/TypeError that kills the discovery thread (WD-9).
     if not isinstance(raw, dict):
         raise TypeError("Configuration must be a YAML mapping")
-    if raw.get('networks') is None:
-        raw['networks'] = []
-    if not isinstance(raw['networks'], list):
-        raise TypeError("networks must be a list")
-    for entry in raw['networks']:
+    if raw.get('antennas') is None:
+        raw['antennas'] = []
+    if not isinstance(raw['antennas'], list):
+        raise TypeError("antennas must be a list")
+    for entry in raw['antennas']:
         if not isinstance(entry, dict):
             continue
         if entry.get('disable') and not entry.get('display_name'):
@@ -213,7 +258,7 @@ def _read_raw_config(cfg_path: str, *, quiet: bool = False) -> dict:
 def scan_new_networks(
     config: AppConfig, path: str | None = None, *, quiet: bool = False,
 ) -> list[NetworkEntry]:
-    """Re-read `networks` from the config file and discover radios not yet managed.
+    """Re-read `antennas` from the config file and discover radios not yet managed.
 
     Only additions are returned; managed devices are never removed or renamed.
 
@@ -224,17 +269,17 @@ def scan_new_networks(
 
     cfg_path = config_path(path)
     try:
-        labels = AppConfig(**_read_raw_config(cfg_path, quiet=quiet)).networks
+        labels = AppConfig(**_read_raw_config(cfg_path, quiet=quiet)).antennas
     except (OSError, yaml.YAMLError, ValidationError) as e:
         raise ValueError(f"Cannot read configuration {cfg_path}: {e}") from e
     excluded = default_route_interfaces()
     if config.upstream_interface != "auto":
         excluded.add(config.upstream_interface)
     added = select_new_networks(
-        config.networks, labels, discover_radios(quiet=quiet), excluded, quiet=quiet,
+        config.antennas, labels, discover_radios(quiet=quiet), excluded, quiet=quiet,
     )
     base_third = int(str(IPv4Network(config.dhcp_base_network).network_address).split('.')[2])
-    room = 256 - base_third - len(config.networks)
+    room = 256 - base_third - len(config.antennas)
     if len(added) > room:
         logger.warning("Only %d new interface(s) fit in dhcp_base_network; ignoring the rest", max(room, 0))
         added = added[:max(room, 0)]
@@ -250,8 +295,8 @@ def load_config(path: str | None = None) -> AppConfig:
     cfg_path = config_path(path)
     try:
         raw = _read_raw_config(cfg_path, quiet=True)
-        labels = AppConfig(**raw).networks
-        return AppConfig(**{**raw, 'networks': [n.model_dump() for n in _initial_networks(labels)]})
+        labels = AppConfig(**raw).antennas
+        return AppConfig(**{**raw, 'antennas': [n.model_dump() for n in _initial_networks(labels)]})
         
     except FileNotFoundError as e:
         raise SystemExit(f"Configuration file not found: {cfg_path}") from e

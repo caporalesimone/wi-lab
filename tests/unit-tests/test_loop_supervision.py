@@ -63,7 +63,7 @@ def test_expiry_loop_logs_unexpected_errors_once(monkeypatch, caplog):
 
 @pytest.mark.parametrize(("content", "message"), [
     ("- a\n- b\n", "must be a YAML mapping"),
-    ("networks: 5\n", "networks must be a list"),
+    ("antennas: 5\n", "antennas must be a list"),
 ])
 def test_config_with_the_wrong_shape_is_a_clear_error(tmp_path, content, message):
     path = tmp_path / "config.yaml"

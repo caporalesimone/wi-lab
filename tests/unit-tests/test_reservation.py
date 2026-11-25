@@ -323,7 +323,7 @@ class TestReservationLifecycleConcurrency:
         second_started = threading.Event()
         original = ReservationManager
         created = []
-        config = SimpleNamespace(networks=[
+        config = SimpleNamespace(antennas=[
             SimpleNamespace(device_id="dev0"), SimpleNamespace(device_id="dev1")
         ])
         network = SimpleNamespace(
@@ -475,8 +475,8 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
     from wilab.config import NetworkEntry
 
     cfg = dependencies.get_config()
-    monkeypatch.setattr(cfg, "networks", [
-        *cfg.networks, NetworkEntry(interface="wlan1", display_name="Second radio"),
+    monkeypatch.setattr(cfg, "antennas", [
+        *cfg.antennas, NetworkEntry(interface="wlan1", display_name="Second radio"),
     ])
     headers = {"Authorization": valid_token}
     reserve = "/api/v1/device-reservation"
@@ -487,7 +487,7 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
     entered, finish = threading.Event(), threading.Event()
     with TestClient(create_app()) as client, ThreadPoolExecutor(max_workers=4) as pool:
         mgr = dependencies.get_manager(cfg)
-        first_device = cfg.networks[0].device_id
+        first_device = cfg.antennas[0].device_id
 
         def start_ap(*, net_id: str, **kwargs) -> None:
             if net_id == first_device:
@@ -520,49 +520,6 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
             finish.set()
         assert slow.result(timeout=3).status_code == 200
         assert release.result(timeout=3).status_code == 200
-
-
-def test_channel_query_holds_reservation_until_complete(valid_token, monkeypatch):
-    started = threading.Event()
-    finish = threading.Event()
-    cleanup_started = threading.Event()
-
-    with TestClient(create_app()) as client:
-        headers = {"Authorization": valid_token}
-        response = client.post(
-            "/api/v1/device-reservation", headers=headers, json={"duration_seconds": 3600}
-        )
-        assert response.status_code == 200
-        reservation_id = response.json()["reservation_id"]
-        channel_manager = dependencies.get_channel_manager()
-        reservation_manager = dependencies._reservation_manager
-        assert reservation_manager is not None
-        get_channels = channel_manager.get_channels
-
-        def slow_channels(interface):
-            started.set()
-            assert finish.wait(timeout=10)
-            return get_channels(interface)
-
-        monkeypatch.setattr(channel_manager, "get_channels", slow_channels)
-        monkeypatch.setattr(reservation_manager, "_cleanup", lambda _: cleanup_started.set())
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            query = pool.submit(
-                client.get,
-                f"/api/v1/interface/{reservation_id}/network/available-channels",
-                headers=headers,
-            )
-            try:
-                assert started.wait(timeout=5)
-                release = pool.submit(
-                    client.delete, f"/api/v1/device-reservation/{reservation_id}", headers=headers
-                )
-                assert not cleanup_started.wait(timeout=0.2)
-            finally:
-                finish.set()
-            assert query.result(timeout=5).status_code == 200
-            assert release.result(timeout=5).status_code == 200
-            assert cleanup_started.is_set()
 
 
 class TestReservationAPICreate:

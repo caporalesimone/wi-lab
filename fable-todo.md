@@ -28,8 +28,8 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [NET-6](Fable-Notes.md#L1709) | ✅ | Ripulire i processi dnsmasq anche dopo un timeout di avvio. |
 | 1 | [HAP-10](Fable-Notes.md#L2499) | ✅ | Correggere chiavi hostapd duplicate e mappatura della cifratura; `wpa` diventa `422` (breaking, documentato); aggiungere `wpa1` (WPA/TKIP) solo sulle antenne in cui la discovery lo conferma utilizzabile. Dettagli nel capitolo 43. La discovery controlla il cifrario TKIP del driver (`iw phy`); la prova reale di `wpa1` è nell'e2e, da eseguire. |
 | 1 | [HAP-11](Fable-Notes.md#L2587) | ✅ | Larghezza di canale (20/40/80 MHz) e generazione Wi-Fi (802.11n/ac/ax) su entrambe le bande. Decisioni (2026-11-25): due campi `channel_width` e `wifi_generation`; 40 MHz sui 2,4 GHz permesso, con la larghezza effettiva in `reported_channel_width`; 802.11ax subito, dove la discovery vede HE in modalità AP; default 20 MHz / 802.11n. Prove su hardware e telefono da fare. |
-| 1 | [BUG-3](Fable-Notes.md#L1849) |  | Allineare la validazione offline a quella eseguita all'avvio. |
-| 1 | [NET-3](Fable-Notes.md#L1950) |  | Applicare l'isolamento anche a subnet diverse da `192.168.*`. |
+| 1 | [BUG-3](Fable-Notes.md#L1849) | ✅ | Allineare la validazione offline a quella eseguita all'avvio. Tutte le regole sono in `AppConfig`; `--validate-config` costruisce solo il modello con la stessa normalizzazione dell'avvio (test di parità T-15). |
+| 1 | [NET-3](Fable-Notes.md#L1950) | ✅ | Applicare l'isolamento anche a subnet diverse da `192.168.*`. Tolto il filtro anche dalla verifica del watchdog (WD-7). |
 | 1 | [BUG-5](Fable-Notes.md#L2244) |  | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
 | 1 | [STAB-9](Fable-Notes.md#L2372) |  | Ripristinare le impostazioni unmanaged se NetworkManager si riavvia. |
 | 1 | [STAB-8](Fable-Notes.md#L2406) |  | Limitare il lavoro di arresto entro il timeout di systemd. |
@@ -45,7 +45,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 6 | [BUG-2](Fable-Notes.md#L1610) | ✅ | Correggere i controlli di salute di `/status` usando output strutturato. |
 | 7 | [BUG-4](Fable-Notes.md#L1659) | ✅ | Aggiornare e unificare la cache dei canali. |
 | 8 | [STAB-5](Fable-Notes.md#L1800) |  | Usare scadenze monotone per misurare il tempo trascorso. |
-| 9 | [NET-5](Fable-Notes.md#L1901) |  | Non registrare come errori le verifiche negative attese. |
+| 9 | [NET-5](Fable-Notes.md#L1901) | ✅ | Non registrare come errori le verifiche negative attese. `execute_command(..., quiet=True)` per i fallimenti attesi (`iptables -C`, `tc ... del`, `iw set txpower` non supportato); QoS con `replace` al posto di add/fallback; test T-13 in `test_commands.py`. |
 | 10 | [STAB-2](Fable-Notes.md#L1995) |  | Spostare i file runtime in una directory privata e gestita. |
 | 11 | [STAB-7](Fable-Notes.md#L2048) |  | Aggiungere un lockfile con versioni esatte delle dipendenze. |
 | 13 | [HAP-8](Fable-Notes.md#L2113) |  | Conservare un estratto sicuro dell'output hostapd per la diagnosi. |

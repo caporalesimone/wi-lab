@@ -46,13 +46,20 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
   an unlimited reservation requires operator intervention.
 
 - **Maintenance** groups operations that clients must not use; they appear
-  only in this group. `DELETE /api/v1/device-reservation/all` releases
-  **every** reservation; it requires the `X-Confirm-Password` header with
-  `protected_commands_password` from the server configuration, and is disabled
-  (`403`) when that setting is missing. It may be removed in a future version.
-  `GET /api/v1/debug` shows internal state for troubleshooting.
+  only in this group. **Every Maintenance operation requires the
+  `X-Confirm-Password` header** with `protected_commands_password` from the
+  server configuration, besides the token, and is disabled (`403`) when that
+  setting is missing. `DELETE /api/v1/device-reservation/all` releases
+  **every** reservation and may be removed in a future version.
+  `GET /api/v1/debug` shows internal state for troubleshooting; it is
+  **deprecated** (struck through in Swagger) and will be removed.
 
 ⚠️ **Note:** `GET /api/v1/debug` is expensive (150-600ms). Use it only for manual troubleshooting, not for frontend polling.
+
+- **Antennas** comes before **Network**: `GET /api/v1/antennas` lists the
+  managed antennas, `GET /api/v1/antennas/{interface}` gives what a network on
+  one can use (encryptions, and per band the Wi-Fi generations, widths and
+  usable channels). Only the token is needed, no reservation.
 
 ## Service health (`degraded`)
 
@@ -84,7 +91,7 @@ accepted: the `422` example **encryption wpa is no longer accepted** shows the
 message, which points to `wpa2`. The other `422` examples show an antenna that
 lacks `wpa1`, a channel that cannot be used at the requested width, and an
 unsupported Wi-Fi generation. What each antenna accepts is in
-**System → Read system and adapter status**, `networks[].capabilities`. See
+**Antennas → Read what a network on an antenna can use**. See
 [AP creation procedure, 2.2.1](ap-creation-procedure.md#221-encryption-channel-width-and-wi-fi-generation).
 
 ## Network creation failure

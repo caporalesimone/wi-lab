@@ -39,7 +39,7 @@ def reservation_id(client, valid_token, monkeypatch):
     The resulting token maps to the first available device (wls16).
     """
     cfg = load_config()
-    rmgr = ReservationManager([n.device_id for n in cfg.networks])
+    rmgr = ReservationManager([n.device_id for n in cfg.antennas])
     monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
     resp = client.post(
@@ -201,8 +201,26 @@ class TestStatusEndpoint:
 
 
 class TestDebugEndpoint:
-    """Tests for debug endpoint."""
-    
+    """Tests for debug endpoint (Maintenance: token and X-Confirm-Password)."""
+
+    @pytest.fixture(autouse=True)
+    def _password(self, client):
+        dependencies.get_config().protected_commands_password = "qwerty-test"
+
+    @pytest.mark.parametrize("password", [None, "wrong"])
+    def test_debug_requires_the_confirm_password(self, client, valid_token, password):
+        headers = {'Authorization': valid_token}
+        if password:
+            headers['X-Confirm-Password'] = password
+        resp = client.get('/api/v1/debug', headers=headers)
+        assert resp.status_code == 403
+        assert "X-Confirm-Password" in resp.json()["detail"]["message"]
+
+    def test_debug_is_disabled_without_a_configured_password(self, client, valid_token):
+        dependencies.get_config().protected_commands_password = None
+        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token, 'X-Confirm-Password': 'x'})
+        assert resp.status_code == 403
+
     def test_debug_requires_auth(self, client):
         """Test debug endpoint requires authentication."""
         resp = client.get('/api/v1/debug')
@@ -215,7 +233,7 @@ class TestDebugEndpoint:
 
     def test_debug_endpoint_basic(self, client, valid_token):
         """Test debug endpoint returns valid response."""
-        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token})
+        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token, 'X-Confirm-Password': 'qwerty-test'})
         assert resp.status_code == 200
         data = resp.json()
         assert 'version' in data
@@ -224,7 +242,7 @@ class TestDebugEndpoint:
     
     def test_debug_endpoint_structure(self, client, valid_token):
         """Test debug endpoint response structure."""
-        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token})
+        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token, 'X-Confirm-Password': 'qwerty-test'})
         data = resp.json()
         
         # Check main sections
@@ -240,7 +258,7 @@ class TestDebugEndpoint:
     
     def test_debug_endpoint_services_section(self, client, valid_token):
         """Test debug endpoint includes services info."""
-        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token})
+        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token, 'X-Confirm-Password': 'qwerty-test'})
         data = resp.json()
         
         assert 'services' in data
@@ -255,7 +273,7 @@ class TestDebugEndpoint:
     
     def test_debug_endpoint_interfaces_section(self, client, valid_token):
         """Test debug endpoint includes interfaces info."""
-        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token})
+        resp = client.get('/api/v1/debug', headers={'Authorization': valid_token, 'X-Confirm-Password': 'qwerty-test'})
         data = resp.json()
         
         assert 'interfaces' in data
@@ -271,6 +289,23 @@ class TestDebugEndpoint:
         
         # Check managed interfaces
         assert isinstance(data['interfaces']['managed'], list)
+
+
+class TestMaintenanceRule:
+    def test_every_maintenance_endpoint_requires_token_and_confirm_password(self, client, valid_token):
+        """Rule: anything listed under Maintenance needs X-Confirm-Password, like release-all."""
+        dependencies.get_config().protected_commands_password = "qwerty-test"
+        spec = client.get("/openapi.json").json()
+        operations = [
+            (method, path) for path, item in spec["paths"].items()
+            for method, op in item.items() if "Maintenance" in op.get("tags", [])
+        ]
+        assert set(operations) >= {("delete", "/api/v1/device-reservation/all"), ("get", "/api/v1/debug")}
+        for method, path in operations:
+            assert client.request(method, path).status_code == 401, path
+            for headers in ({}, {"X-Confirm-Password": "wrong"}):
+                resp = client.request(method, path, headers={"Authorization": valid_token, **headers})
+                assert resp.status_code == 403, path
 
 
 class TestAppMetadata:
@@ -613,6 +648,42 @@ class TestNetworkDeleteEndpoint:
         assert stop_resp.status_code == 200
         assert stop_resp.json() == {'detail': 'Network wls16 stopped successfully'}
     
+    def test_stop_stuck_in_the_kernel_is_503_and_a_repeat_finishes_it(
+        self, client, valid_token, reservation_id, monkeypatch,
+    ):
+        """hostapd stuck after SIGKILL: coded 503 with Retry-After, not a bare 500."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
+        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
+        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.nat_manager, 'disable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
+        monkeypatch.setattr(manager.isolation_manager, 'remove_network', lambda *a, **k: None)
+        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        headers = {'Authorization': valid_token}
+        url = f'/api/v1/interface/{reservation_id}/network'
+        assert client.post(url, headers=headers, json=network_body(
+            ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz',
+            tx_power_level=4)).status_code == 200
+
+        def stuck(*a, **k):
+            raise RuntimeError("Failed to stop hostapd for wls16: Process 101153 stuck in the kernel")
+        monkeypatch.setattr(manager.hostapd_manager, 'stop', stuck)
+        resp = client.delete(url, headers=headers)
+        assert resp.status_code == 503
+        assert resp.headers['Retry-After'] == '5'
+        assert resp.json()['detail']['code'] == 1004
+        assert 'stuck in the kernel' in resp.json()['detail']['message']
+        assert manager.stop_failed('wls16')
+        assert client.get(url, headers=headers).json()['runtime_state'] == 'stop_failed'
+
+        monkeypatch.setattr(manager.hostapd_manager, 'stop', lambda *a, **k: None)
+        assert client.delete(url, headers=headers).status_code == 200
+        assert not manager.stop_failed('wls16')
+        assert 'wls16' not in manager.active
+
     def test_stop_network_inactive(self, client, valid_token, reservation_id, monkeypatch):
         """Test stopping an inactive network returns 409."""
         cfg = load_config()
@@ -988,7 +1059,7 @@ class TestStatusReservationInfo:
     def test_status_networks_include_reservation_remaining(self, client, valid_token, monkeypatch):
         """Status API includes reservation_remaining_seconds for each device."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         # Before reservation: remaining should be None
@@ -1084,7 +1155,7 @@ class TestNamingCleanup:
     def test_static_config_net_id_not_used_as_key(self):
         """Config does not expose net_id as operational key."""
         cfg = load_config()
-        for net in cfg.networks:
+        for net in cfg.antennas:
             assert not hasattr(net, 'net_id') or net.device_id == net.interface
             assert net.device_id == net.interface
 
@@ -1101,7 +1172,7 @@ class TestUnlimitedReservationAPI:
         """POST with duration_seconds=0 and allow_unlimited_reservation=true → 200."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
@@ -1119,7 +1190,7 @@ class TestUnlimitedReservationAPI:
         """POST with duration_seconds=0 and allow_unlimited_reservation=false → 422."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', False)
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         resp = client.post(
@@ -1133,7 +1204,7 @@ class TestUnlimitedReservationAPI:
         """GET reservation returns expires_at/expires_in as null for unlimited."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
@@ -1159,7 +1230,7 @@ class TestUnlimitedReservationAPI:
         cfg = load_config()
         manager = NetworkManager(cfg)
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
@@ -1185,7 +1256,7 @@ class TestUnlimitedReservationAPI:
     def test_create_duration_below_min_timeout(self, client, valid_token, monkeypatch):
         """POST with duration_seconds < min_timeout (and != 0) → 422."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         resp = client.post(
@@ -1198,7 +1269,7 @@ class TestUnlimitedReservationAPI:
     def test_create_duration_above_max_timeout(self, client, valid_token, monkeypatch):
         """POST with duration_seconds > max_timeout → 422."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         resp = client.post(
@@ -1211,7 +1282,7 @@ class TestUnlimitedReservationAPI:
     def test_status_exposes_reservation_policy(self, client, valid_token, monkeypatch):
         """/status includes reservation_policy with min, max, and allow_unlimited."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
         resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
@@ -1227,7 +1298,7 @@ class TestUnlimitedReservationAPI:
         """/status shows reservation_remaining_seconds: null for unlimited."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.networks])
+        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
@@ -1245,3 +1316,21 @@ class TestUnlimitedReservationAPI:
         data = resp.json()
         reserved_net = [n for n in data['networks'] if n['reservation_remaining_seconds'] is None]
         assert len(reserved_net) >= 1
+
+
+def test_unexpected_error_is_answered_without_dropping_the_connection(caplog):
+    """A bug answers a coded 500 and is not re-raised: uvicorn would close the connection."""
+    app = create_app()
+
+    def boom():
+        raise RuntimeError("unexpected")
+
+    app.add_api_route("/api/v1/boom", boom)
+    app.router.routes.insert(0, app.router.routes.pop())   # before the frontend catch-all
+
+    # raise_server_exceptions=True: the test fails if the exception reaches the server.
+    with TestClient(app, raise_server_exceptions=True) as client:
+        resp = client.get("/api/v1/boom")
+    assert resp.status_code == 500
+    assert resp.json()["detail"]["code"] == 500
+    assert "Unhandled error in GET /api/v1/boom" in caplog.text

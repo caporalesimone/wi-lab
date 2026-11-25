@@ -27,8 +27,8 @@ DNS_PORT = 53
 DHCP_PORT = 67
 
 
-def _ip6tables(args: list[str]) -> str:
-    return execute_command(["ip6tables", "-w", "5", *args])
+def _ip6tables(args: list[str], *, quiet: bool = False) -> str:
+    return execute_command(["ip6tables", "-w", "5", *args], quiet=quiet)
 
 
 def chain(net_id: str) -> str:
@@ -110,7 +110,7 @@ class HostGuard:
         found = []
         for family, run in (("IPv4", execute_iptables), ("IPv6", _ip6tables)):
             try:
-                run(["-C", *_jump(interface, net_id)])
+                run(["-C", *_jump(interface, net_id)], quiet=True)   # missing is normal (NET-5)
             except CommandError:
                 found.append(f"{family} host guard")
         return found

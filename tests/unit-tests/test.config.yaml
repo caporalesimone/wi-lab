@@ -10,6 +10,7 @@ upstream_interface: "auto"
 country_code: "IT"
 dns_server: "192.168.10.21"
 internet_enabled_by_default: true
-networks:
+antennas:
   - interface: "wls16"
     display_name: "bench-antenna-1"
+    show_dfs: false

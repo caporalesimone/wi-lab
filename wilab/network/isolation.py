@@ -36,8 +36,8 @@ class IsolationManager:
         try:
             for existing_subnet in self._active_subnets:
                 for pair in ((subnet, existing_subnet), (existing_subnet, subnet)):
-                    if self._block_traffic(*pair):
-                        added.append(pair)
+                    self._block_traffic(*pair)
+                    added.append(pair)
         except CommandError:
             for pair in reversed(added):
                 self._unblock_traffic(*pair)
@@ -69,28 +69,21 @@ class IsolationManager:
         self._active_subnets.discard(subnet)
         logger.info(f"Isolation rules removed for {subnet}")
     
-    def _block_traffic(self, source: str, destination: str) -> bool:
+    def _block_traffic(self, source: str, destination: str) -> None:
         """
         Block traffic from source subnet to destination subnet.
-        
+
+        Both subnets come from the AP subnet allocator, so they are Wi-Lab's own
+        whatever `dhcp_base_network` is (NET-3: 10.x and 172.16-31.x included).
+
         Args:
             source: Source CIDR subnet
             destination: Destination CIDR subnet
-
-        Returns:
-            True if a rule was added, False if the pair is skipped.
 
         Raises:
             CommandError: If iptables fails.
         """
         try:
-            # SAFETY: Only block traffic BETWEEN WiFi subnets (192.168.x.0/24)
-            # Do NOT block traffic to/from host's main network
-            # Skip if either subnet is not a WiFi subnet (not 192.168.x.0/24)
-            if not (source.startswith("192.168.") and destination.startswith("192.168.")):
-                logger.warning(f"Skipping isolation rule for non-WiFi subnets: {source} -> {destination}")
-                return False
-            
             # Append rule to FORWARD chain to block inter-subnet traffic
             # Use -A (append) instead of -I (insert) to avoid interfering with existing rules
             # iptables -A FORWARD -s <source> -d <destination> -j DROP -m comment --comment "wilab-isolation"
@@ -103,7 +96,6 @@ class IsolationManager:
                 "--comment", "wilab-isolation"
             ])
             logger.debug(f"Blocked traffic: {source} -> {destination}")
-            return True
         except CommandError as e:
             logger.error(f"Failed to block traffic {source} -> {destination}: {e}")
             raise
@@ -137,16 +129,14 @@ class IsolationManager:
         repaired: list[str] = []
         for source in sorted(self._active_subnets):
             for destination in sorted(self._active_subnets):
-                if source == destination or not (
-                    source.startswith("192.168.") and destination.startswith("192.168.")
-                ):
+                if source == destination:
                     continue
                 rule = [
                     "FORWARD", "-s", source, "-d", destination, "-j", "DROP",
                     "-m", "comment", "--comment", "wilab-isolation",
                 ]
                 try:
-                    execute_iptables(["-C", *rule])
+                    execute_iptables(["-C", *rule], quiet=True)   # missing is normal (NET-5)
                 except CommandError:
                     execute_iptables(["-A", *rule])
                     repaired.append(f"isolation {source} -> {destination}")

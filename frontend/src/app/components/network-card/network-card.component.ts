@@ -11,7 +11,7 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { interval, Subscription } from 'rxjs';
 import { WilabApiService } from '../../services/wilab-api.service';
-import { ClientInfo, NetworkCreateRequest, NetworkStatus } from '../../models/network.models';
+import { AntennaDetails, ClientInfo, NetworkCreateRequest, NetworkStatus } from '../../models/network.models';
 import { ApiError, RecoveryCode, apiErrorToast } from '../../services/recovery-response';
 import { environment } from '../../../environments/environment';
 import { GENERATION_LABELS, NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
@@ -253,12 +253,22 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
 
   public startWiFi(): void {
     if (!this.isMine || this.loading || this.restoring) return;
+    // The form lists only what this antenna can use (GET /antennas/{interface}).
+    this.wilabApiService.getAntenna(this.slot.interface).subscribe({
+      next: antenna => this.openNetworkForm(antenna),
+      error: (err: ApiError) => this.snackBar.open(
+        apiErrorToast('Failed to read the antenna options', err), 'Close',
+        { duration: 10000, panelClass: ['error-snackbar'] },
+      ),
+    });
+  }
+
+  private openNetworkForm(antenna: AntennaDetails): void {
+    if (!this.isMine || this.loading || this.restoring) return;
     const reservationId = this.reservationId;
     const dialogRef = this.dialog.open(NetworkFormDialogComponent, {
       width: '500px',
-      data: {
-        netId: reservationId, captivePortal: this.captivePortalChoice, capabilities: this.slot.capabilities,
-      }
+      data: { netId: reservationId, captivePortal: this.captivePortalChoice, antenna }
     });
 
     dialogRef.afterClosed().subscribe((result: NetworkCreateRequest | undefined) => {

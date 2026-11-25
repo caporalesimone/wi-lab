@@ -10,14 +10,15 @@ Design decision – disabled channels:
     Channels marked ``No IR`` (no initiate radiation) are also treated as
     disabled because they cannot be used in AP mode.
     Both cases are stored with ``max_power_dbm = 0.0`` and
-    ``    disabled = True``. The same applies to radar-detection channels when
-    ``allow_dfs_channels`` is disabled.  Consumers should check the ``disabled`` flag
+    ``    disabled = True``. The same applies to radar-detection (DFS) channels of
+    an antenna with ``show_dfs: false``.  Consumers should check the ``disabled`` flag
     before using ``max_power_dbm``.
 """
 
 import logging
 import re
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from ..network.commands import CommandError, execute_iw
@@ -27,7 +28,8 @@ logger = logging.getLogger(__name__)
 # ---- Constants ----
 
 _BAND_2_4_MAX_FREQ = 2500  # MHz – everything below is 2.4 GHz
-_BAND_5_MIN_FREQ = 5000    # MHz – everything at or above is 5 GHz
+_BAND_5_MIN_FREQ = 5000    # MHz – 5 GHz starts here...
+_BAND_5_MAX_FREQ = 5925    # MHz – ...and ends before here: 6 GHz (5955+) is not offered
 
 # Standard WiFi channel sets for static (hardware-independent) validation.
 VALID_CHANNELS_24GHZ = frozenset(range(1, 15))  # 1–14
@@ -37,6 +39,17 @@ VALID_CHANNELS_5GHZ = (
     | frozenset(range(100, 145, 4)) # UNII-2 Extended: 100–144
     | frozenset(range(149, 178, 4)) # UNII-3: 149–177
 )
+
+
+class FieldError(ValueError):
+    """A refused network setting; `field` is its name in the flat create request.
+
+    The API turns it into the field's path in the body (`radio.channel_width: ...`).
+    """
+
+    def __init__(self, field: str, message: str) -> None:
+        super().__init__(message)
+        self.field = field
 
 
 def is_valid_channel_for_band(channel: int, band: str) -> bool:
@@ -81,14 +94,14 @@ def channel_layouts(band: str, channel: int, width: int) -> list[ChannelLayout]:
         return [ChannelLayout((channel,))]
     if band == "2.4ghz":
         if width != 40:
-            raise ValueError(f"{width} MHz is not available on 2.4 GHz (only 20 or 40 MHz)")
+            raise FieldError("channel_width", f"{width} MHz is not available on 2.4 GHz (only 20 or 40 MHz)")
         layouts = []
         if channel + 4 <= _MAX_CHANNEL_24GHZ_40MHZ:
             layouts.append(ChannelLayout((channel, channel + 4), channel + 2, True))
         if channel - 4 >= 1 and channel <= _MAX_CHANNEL_24GHZ_40MHZ:
             layouts.append(ChannelLayout((channel - 4, channel), channel - 2, False))
         if not layouts:
-            raise ValueError(f"Channel {channel} cannot be used at 40 MHz on 2.4 GHz")
+            raise FieldError("channel_width", f"Channel {channel} cannot be used at 40 MHz on 2.4 GHz")
         return layouts
     span = width // 20
     first = next(
@@ -96,7 +109,7 @@ def channel_layouts(band: str, channel: int, width: int) -> list[ChannelLayout]:
         None,
     )
     if first is None:
-        raise ValueError(f"Channel {channel} cannot be used at {width} MHz on 5 GHz")
+        raise FieldError("channel_width", f"Channel {channel} cannot be used at {width} MHz on 5 GHz")
     channels = tuple(range(first, first + 4 * span, 4))
     # HT40 pair inside the block: the lower channel of a pair has its secondary above.
     above = (channel - first) // 4 % 2 == 0
@@ -142,7 +155,7 @@ class RadioCapabilities:
         return generations
 
     def summary(self) -> dict:
-        """The JSON form used by `GET /status` (`networks[].capabilities`)."""
+        """A compact form for the log line written when an antenna is read."""
         return {
             "encryptions": self.encryptions(),
             "channel_widths": {band: self.channel_widths(band) for band in ("2.4ghz", "5ghz")},
@@ -152,22 +165,22 @@ class RadioCapabilities:
     def check(self, band: str, encryption: str, width: int, generation: int) -> None:
         """Raise ValueError when the radio cannot run this combination."""
         if encryption not in self.encryptions():
-            raise ValueError(f"{encryption} is not supported on this antenna")
+            raise FieldError("encryption", f"{encryption} is not supported on this antenna")
         if width not in self.channel_widths(band):
-            raise ValueError(f"channel_width {width} MHz is not supported on this antenna for band {band}")
+            raise FieldError("channel_width", f"channel_width {width} MHz is not supported on this antenna for band {band}")
         if generation not in self.wifi_generations(band):
-            raise ValueError(
-                f"wifi_generation {generation} is not supported on this antenna for band {band}"
+            raise FieldError(
+                "wifi_generation", f"wifi_generation {generation} is not supported on this antenna for band {band}"
             )
         caps = self.bands.get(band, BandCapabilities())
         if generation == 6 and width == 40 and not caps.he40:
-            raise ValueError(f"802.11ax at 40 MHz is not supported on this antenna for band {band}")
+            raise FieldError("wifi_generation", f"802.11ax at 40 MHz is not supported on this antenna for band {band}")
         if generation == 6 and width == 80 and not caps.he80:
-            raise ValueError("802.11ax at 80 MHz is not supported on this antenna")
+            raise FieldError("wifi_generation", "802.11ax at 80 MHz is not supported on this antenna")
         if generation == 5 and width == 80 and not caps.vht:
-            raise ValueError("802.11ac at 80 MHz is not supported on this antenna")
+            raise FieldError("wifi_generation", "802.11ac at 80 MHz is not supported on this antenna")
         if width == 40 and generation == 4 and not caps.ht40:
-            raise ValueError(f"802.11n at 40 MHz is not supported on this antenna for band {band}")
+            raise FieldError("channel_width", f"802.11n at 40 MHz is not supported on this antenna for band {band}")
 
 
 def parse_phy_capabilities(output: str) -> RadioCapabilities:
@@ -219,7 +232,7 @@ def parse_phy_capabilities(output: str) -> RadioCapabilities:
         if band is None and (match := re.match(r"\* ([\d.]+) MHz", line)):
             frequency = float(match[1])
             band = "2.4ghz" if frequency < _BAND_2_4_MAX_FREQ else (
-                "5ghz" if _BAND_5_MIN_FREQ <= frequency < 5950 else "other"
+                "5ghz" if _BAND_5_MIN_FREQ <= frequency < _BAND_5_MAX_FREQ else "other"
             )
     flush()
     bands.pop("other", None)
@@ -261,6 +274,59 @@ class InterfaceChannels:
     capabilities: RadioCapabilities = field(default_factory=RadioCapabilities)
 
 
+@dataclass(frozen=True)
+class ChannelOption:
+    """A channel a create can use, with the widths it can be used at (Antennas API)."""
+    info: ChannelInfo
+    channel_widths: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class BandOptions:
+    """What a create can ask on one band: widths per Wi-Fi generation, usable channels."""
+    wifi_generations: dict[int, list[int]]
+    channels: list[ChannelOption]
+
+
+def band_options(info: InterfaceChannels, band: str) -> BandOptions:
+    """The choices :meth:`ChannelManager.validate_network` accepts on *band*.
+
+    A channel is listed when it is enabled (DFS channels only with ``show_dfs``);
+    a width when every 20 MHz channel of one of its layouts is enabled. The rules
+    match the create's, so a choice built from these lists is not refused.
+    """
+    caps = info.capabilities
+    pool = info.channels_24ghz if band == "2.4ghz" else info.channels_5ghz
+    enabled = {c.channel for c in pool if not c.disabled}
+    widths = caps.channel_widths(band)
+
+    def fits(channel: int, width: int) -> bool:
+        try:
+            layouts = channel_layouts(band, channel, width)
+        except ValueError:
+            return False
+        return any(all(sub in enabled for sub in layout.channels) for layout in layouts)
+
+    generations: dict[int, list[int]] = {}
+    for generation in caps.wifi_generations(band):
+        allowed = []
+        for width in widths:
+            if width == 80 and generation == 4:   # 80 MHz needs 802.11ac or 802.11ax
+                continue
+            try:
+                caps.check(band, "open", width, generation)
+            except ValueError:
+                continue
+            allowed.append(width)
+        generations[generation] = allowed
+    channels = [
+        ChannelOption(c, tuple(w for w in widths if fits(c.channel, w)))
+        for c in pool
+        if not c.disabled and is_valid_channel_for_band(c.channel, band)
+    ]
+    return BandOptions(generations, channels)
+
+
 # ---- Manager ----
 
 class ChannelManager:
@@ -270,8 +336,9 @@ class ChannelManager:
     concurrent API requests don't trigger duplicate ``iw`` queries.
     """
 
-    def __init__(self, *, allow_dfs_channels: bool = False) -> None:
-        self._allow_dfs_channels = allow_dfs_channels
+    def __init__(self, *, show_dfs: Callable[[str], bool] | None = None) -> None:
+        # Per antenna (`antennas[].show_dfs`): whether its DFS channels are usable.
+        self._show_dfs = show_dfs or (lambda interface: True)
         self._cache: dict[str, InterfaceChannels] = {}
         self._lock = threading.Lock()
 
@@ -314,19 +381,13 @@ class ChannelManager:
             self.invalidate(interface)
             self._validate(interface, channel, band)
 
-    def cached_capabilities(self, interface: str) -> RadioCapabilities | None:
-        """Capabilities already read for *interface*, without running `iw`."""
-        with self._lock:
-            info = self._cache.get(interface)
-        return info.capabilities if info is not None else None
-
     def validate_network(
         self, interface: str, band: str, channel: int, width: int, generation: int, encryption: str,
     ) -> ChannelLayout:
         """Check a network against the radio (HAP-10, HAP-11) and return its channel layout.
 
         Every 20 MHz channel of a 40 or 80 MHz channel must be usable, so DFS
-        channels inside a wide channel follow ``allow_dfs_channels``. Like
+        channels inside a wide channel follow the antenna's ``show_dfs``. Like
         :meth:`validate_channel`, a refusal is checked again on a fresh reading.
         """
         try:
@@ -350,7 +411,7 @@ class ChannelManager:
                 continue
             return layout
         assert error is not None
-        raise ValueError(f"{width} MHz on channel {channel} is not available: {error}")
+        raise FieldError("channel_width", f"{width} MHz on channel {channel} is not available: {error}")
 
     def _validate(self, interface: str, channel: int, band: str) -> None:
         info = self.get_channels(interface)
@@ -359,18 +420,20 @@ class ChannelManager:
         elif band == "5ghz":
             pool = info.channels_5ghz
         else:
-            raise ValueError(f"Unknown band: {band}")
+            raise FieldError("band", f"Unknown band: {band}")
 
         match = next((c for c in pool if c.channel == channel), None)
         if match is None:
-            raise ValueError(
-                f"Channel {channel} is not supported on {interface} for band {band}"
+            raise FieldError(
+                "channel", f"Channel {channel} is not supported on {interface} for band {band}"
             )
         if match.disabled:
-            if match.requires_dfs and not self._allow_dfs_channels:
-                raise ValueError(f"DFS channel {channel} is disabled by allow_dfs_channels=false")
-            raise ValueError(
-                f"Channel {channel} is disabled on {interface} for band {band}"
+            if match.requires_dfs and not self._show_dfs(interface):
+                raise FieldError(
+                    "channel", f"DFS channel {channel} is not offered on {interface} (show_dfs: false)",
+                )
+            raise FieldError(
+                "channel", f"Channel {channel} is disabled on {interface} for band {band}"
                 " (regulatory domain restriction)"
             )
 
@@ -389,7 +452,7 @@ class ChannelManager:
 
     @staticmethod
     def _parse_iw_phy_output(
-        output: str, *, allow_dfs_channels: bool = False,
+        output: str, *, show_dfs: bool = False,
     ) -> list[ChannelInfo]:
         """Parse the output of ``iw phy<N> channels`` into a list of channels.
 
@@ -413,7 +476,7 @@ class ChannelManager:
             nonlocal current_freq, current_chan, current_disabled
             nonlocal current_power, current_no_ir, current_dfs
             if current_freq is not None and current_chan is not None:
-                disabled = current_disabled or current_no_ir or (current_dfs and not allow_dfs_channels)
+                disabled = current_disabled or current_no_ir or (current_dfs and not show_dfs)
                 channels.append(ChannelInfo(
                     channel=current_chan,
                     frequency_mhz=current_freq,
@@ -451,16 +514,17 @@ class ChannelManager:
         """Query ``iw`` and split results into 2.4 GHz / 5 GHz bands."""
         phy = self._get_phy_for_interface(interface)
         output = execute_iw(["phy" + phy, "channels"])
-        all_channels = self._parse_iw_phy_output(output, allow_dfs_channels=self._allow_dfs_channels)
+        all_channels = self._parse_iw_phy_output(output, show_dfs=self._show_dfs(interface))
 
         ch_24: list[ChannelInfo] = []
         ch_5: list[ChannelInfo] = []
         for ch in all_channels:
             if ch.frequency_mhz < _BAND_2_4_MAX_FREQ:
                 ch_24.append(ch)
-            elif ch.frequency_mhz >= _BAND_5_MIN_FREQ:
+            elif _BAND_5_MIN_FREQ <= ch.frequency_mhz < _BAND_5_MAX_FREQ:
                 ch_5.append(ch)
-            # Anything in between is ignored (unlikely).
+            # Anything else (6 GHz) is ignored: Wi-Lab cannot create a 6 GHz
+            # network, and 6 GHz reuses channel numbers such as 149.
 
         try:
             capabilities = parse_phy_capabilities(execute_iw(["phy" + phy, "info"]))

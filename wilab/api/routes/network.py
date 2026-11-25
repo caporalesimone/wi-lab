@@ -4,7 +4,6 @@ from math import ceil
 from time import monotonic
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from pydantic import BaseModel, Field
 
 from ...api.auth import require_token
 from ...api.dependencies import (
@@ -14,11 +13,12 @@ from ...api.dependencies import (
     hold_reservation,
     resolve_reservation,
 )
-from ...models import NetworkCreateBody, NetworkResponse, ReservationInfo
+from ...api.errors import ApiErrorCode, domain_error
+from ...models import NetworkCreateBody, NetworkResponse, ReservationInfo, body_error
 from ...reservation import Reservation
 from ...timestamps import format_utc_timestamp
-from ...wifi.channels import ChannelManager
-from ...wifi.manager import NetworkManager, StartupFailure
+from ...wifi.channels import ChannelManager, FieldError
+from ...wifi.manager import NetworkManager, NetworkStopError, StartupFailure
 from .recovery_responses import (
     DEVICE_BUSY_RESPONSE,
     RETRY_AFTER_HEADER,
@@ -28,6 +28,29 @@ from .recovery_responses import (
 )
 
 CREATE_RETRY_DELAYS = (5, 10)
+
+# Seconds before repeating a stop that did not complete (hostapd stuck in the
+# kernel usually exits within a few seconds).
+STOP_RETRY_AFTER = 5
+
+_STOP_RESPONSE_503 = {
+    **DEVICE_BUSY_RESPONSE,
+    "description": (
+        "`detail.code: 1006` (`device_busy`): the adapter is busy, nothing was changed; repeat "
+        "after `Retry-After` (2 s). `detail.code: 1004` (`cleanup_failed`): the stop did not "
+        "complete, usually hostapd stuck in the kernel for a few seconds after a driver firmware "
+        "timeout. The network is half stopped: `GET .../network` reports `runtime_state: "
+        "stop_failed` and the watchdog leaves it alone. Repeat the DELETE after `Retry-After` (5 s)."
+    ),
+    "content": {"application/json": {"examples": {
+        **DEVICE_BUSY_RESPONSE["content"]["application/json"]["examples"],  # type: ignore[index]
+        "cleanup_failed": {"summary": "1004 - stop not completed, repeat after Retry-After", "value": {"detail": {
+            "code": 1004, "reason": "cleanup_failed",
+            "message": "Failed to stop network wlan0: hostapd: Failed to stop hostapd for wlan0: "
+                       "Process 101153 stuck in the kernel",
+        }}},
+    }}},
+}
 
 router = APIRouter(
     prefix="/interface", tags=["Network"],
@@ -78,21 +101,21 @@ def _error(code: int, reason: str, message: str) -> dict:
                     "summary": "encryption wpa is no longer accepted",
                     "value": {"detail": _error(
                         422, "validation_error",
-                        "Value error, wifi.security.encryption: 'wpa' is no longer accepted: use "
+                        "wifi.security.encryption: 'wpa' is no longer accepted: use "
                         "'wpa2' (what 'wpa' used to create) or 'wpa1' for legacy WPA/TKIP",
                     )},
                 },
                 "wpa1_unsupported": {
                     "summary": "wpa1 on an antenna without TKIP",
                     "value": {"detail": _error(
-                        422, "validation_error", "wpa1 is not supported on this antenna",
+                        422, "validation_error", "wifi.security.encryption: wpa1 is not supported on this antenna",
                     )},
                 },
                 "width_unavailable": {
                     "summary": "Channel cannot be used at the requested width",
                     "value": {"detail": _error(
                         422, "validation_error",
-                        "80 MHz on channel 165 is not available: Channel 169 is disabled on wlan0 "
+                        "radio.channel_width: 80 MHz on channel 165 is not available: Channel 169 is disabled on wlan0 "
                         "for band 5ghz (regulatory domain restriction)",
                     )},
                 },
@@ -100,27 +123,33 @@ def _error(code: int, reason: str, message: str) -> dict:
                     "summary": "Wi-Fi generation not supported by the antenna",
                     "value": {"detail": _error(
                         422, "validation_error",
-                        "wifi_generation 6 is not supported on this antenna for band 5ghz",
+                        "radio.wifi_generation: wifi_generation 6 is not supported on this antenna for band 5ghz",
+                    )},
+                },
+                "field_validation": {
+                    "summary": "Invalid field: the message starts with its path in the body",
+                    "value": {"detail": _error(
+                        422, "validation_error", "radio.channel_width: Input should be 20, 40 or 80",
                     )},
                 },
                 "body_validation": {
-                    "summary": "Invalid request body",
+                    "summary": "Rule between fields: the path is the refused field",
                     "value": {"detail": _error(
                         422, "validation_error",
-                        "Value error, Channel 99 is not a valid WiFi channel for band 5ghz",
+                        "radio.channel: Channel 99 is not a valid WiFi channel for band 5ghz",
                     )},
                 },
                 "unsupported_channel": {
                     "summary": "Channel not supported by hardware",
                     "value": {"detail": _error(
-                        422, "validation_error", "Channel 173 is not supported on wlan0 for band 5ghz",
+                        422, "validation_error", "radio.channel: Channel 173 is not supported on wlan0 for band 5ghz",
                     )},
                 },
                 "disabled_channel": {
                     "summary": "Channel disabled by regulatory domain",
                     "value": {"detail": _error(
                         422, "validation_error",
-                        "Channel 14 is disabled on wlan0 for band 2.4ghz (regulatory domain restriction)",
+                        "radio.channel: Channel 14 is disabled on wlan0 for band 2.4ghz (regulatory domain restriction)",
                     )},
                 },
             }}},
@@ -308,6 +337,8 @@ def start_network(
                 device_id, req.band, req.channel, req.channel_width, req.wifi_generation,
                 req.encryption,
             )
+        except FieldError as e:
+            raise HTTPException(status_code=422, detail=body_error(e.field, str(e)))
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
@@ -348,7 +379,7 @@ def start_network(
 @router.delete(
     "/{reservation_id}/network",
     responses={
-        503: DEVICE_BUSY_RESPONSE,
+        503: _STOP_RESPONSE_503,
         200: {
             "description": "Network stopped successfully",
             "content": {
@@ -376,6 +407,11 @@ def stop_network(
     and keeps retrying), this stops the retries and returns 200; the
     reservation stays valid.
 
+    If the stop does not complete (usually hostapd stuck in the kernel for a
+    few seconds after a driver firmware timeout) the answer is `503 / 1004`
+    with `Retry-After`: the network is half stopped, reported as
+    `runtime_state: stop_failed`, and repeating the DELETE finishes it.
+
     Returns:
         dict: Confirmation with stopped device_id.
     """
@@ -390,7 +426,16 @@ def stop_network(
                 return {"detail": f"Network {device_id} stopped successfully"}
             raise HTTPException(status_code=409, detail=f"Network {device_id} is already inactive")
 
-        manager.stop_network(device_id)
+        try:
+            manager.stop_network(device_id)
+        except NetworkStopError as exc:
+            # Usually hostapd stuck in the kernel for a few seconds (driver firmware
+            # timeout): repeating the stop finishes it.
+            raise HTTPException(
+                status_code=503,
+                detail=domain_error(ApiErrorCode.CLEANUP_FAILED, str(exc)),
+                headers={"Retry-After": str(STOP_RETRY_AFTER)},
+            ) from exc
         return {"detail": f"Network {device_id} stopped successfully"}
 
 
@@ -523,81 +568,8 @@ def get_network(
             raise HTTPException(status_code=404, detail="Unknown device_id")
         st.expires_at = format_utc_timestamp(reservation.expires_at)
         st.expires_in = reservation.expires_in
-        st = st.model_copy(update={"runtime_state": manager.watchdog.state(reservation)})
+        runtime_state = manager.watchdog.state(reservation) or (
+            "stop_failed" if manager.stop_failed(device_id) else None
+        )
+        st = st.model_copy(update={"runtime_state": runtime_state})
         return NetworkResponse.from_status(st, dns_server=manager.config.dns_server)
-
-
-# ---- Response models for available channels ----
-
-class ChannelDetail(BaseModel):
-    channel: int = Field(description="WiFi channel number")
-    frequency_mhz: int = Field(description="Center frequency in MHz")
-    max_power_dbm: float = Field(
-        description="Maximum allowed TX power in dBm. "
-        "Disabled channels report 0.0 dBm by convention."
-    )
-    disabled: bool = Field(description="True if regulatory restrictions or Wi-Lab's DFS policy block this channel")
-
-
-class AvailableChannelsResponse(BaseModel):
-    interface: str = Field(description="Physical interface name")
-    channels_24ghz: list[ChannelDetail] = Field(description="2.4 GHz band channels")
-    channels_5ghz: list[ChannelDetail] = Field(description="5 GHz band channels")
-
-
-@router.get(
-    "/{reservation_id}/network/available-channels",
-    response_model=AvailableChannelsResponse,
-    responses={
-        503: DEVICE_BUSY_RESPONSE,
-        200: {"description": "Available WiFi channels for the reserved device"},
-        401: {"description": "Unauthorized (missing or invalid auth token)"},
-        404: {"description": "Reservation not found or expired"},
-        500: {"description": "Failed to query interface capabilities"},
-    },
-)
-def get_available_channels(
-    reservation_mgr: ReservationManagerDep,
-    _auth: bool = Depends(require_token),
-    reservation: Reservation = Depends(resolve_reservation),
-    channel_mgr: ChannelManager = Depends(get_channel_manager),
-):
-    """
-    List all WiFi channels supported by the reserved device, split by band.
-
-    Results are cached in memory after the first query per interface.
-    Disabled channels are included with ``max_power_dbm = 0.0`` and
-    ``disabled = true`` so clients can display them as unavailable. This includes
-    channels flagged for radar detection when ``allow_dfs_channels`` is false.
-    """
-    with hold_reservation(reservation_mgr, reservation):
-        device_id = reservation.device_id
-        try:
-            info = channel_mgr.get_channels(device_id)
-        except (ValueError, Exception) as exc:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to query channels for {device_id}: {exc}",
-            )
-
-    return AvailableChannelsResponse(
-        interface=info.interface,
-        channels_24ghz=[
-            ChannelDetail(
-                channel=ch.channel,
-                frequency_mhz=ch.frequency_mhz,
-                max_power_dbm=ch.max_power_dbm,
-                disabled=ch.disabled,
-            )
-            for ch in info.channels_24ghz
-        ],
-        channels_5ghz=[
-            ChannelDetail(
-                channel=ch.channel,
-                frequency_mhz=ch.frequency_mhz,
-                max_power_dbm=ch.max_power_dbm,
-                disabled=ch.disabled,
-            )
-            for ch in info.channels_5ghz
-        ],
-    )

@@ -11,14 +11,14 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import {
-  AntennaCapabilities,
+  AntennaDetails,
+  Band,
+  BandOptions,
+  ChannelOption,
   ChannelWidth,
   NetworkCreateRequest,
   WifiGeneration,
 } from '../../models/network.models';
-
-/** Encryptions every antenna supports; wpa1 is added only where the antenna lists it. */
-const BASE_ENCRYPTIONS = ['open', 'wpa2', 'wpa3', 'wpa2-wpa3'];
 
 export const ENCRYPTION_LABELS: Record<string, string> = {
   'open': 'Open',
@@ -55,7 +55,7 @@ export const GENERATION_LABELS: Record<number, string> = {
 })
 export class NetworkFormDialogComponent {
   form: FormGroup;
-  bands = ['2.4ghz', '5ghz'];
+  bands: Band[];
   encryptionTypes: string[];
   txPowerLevels = [1, 2, 3, 4];
   encryptionLabels = ENCRYPTION_LABELS;
@@ -65,18 +65,22 @@ export class NetworkFormDialogComponent {
     private formBuilder: FormBuilder,
     private dialogRef: MatDialogRef<NetworkFormDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: {
-      netId: string; captivePortal?: boolean; capabilities?: AntennaCapabilities;
+      netId: string; captivePortal?: boolean; antenna: AntennaDetails;
     }
   ) {
-    const offered = this.data.capabilities?.encryptions ?? BASE_ENCRYPTIONS;
-    this.encryptionTypes = offered.filter(enc => enc in ENCRYPTION_LABELS);
+    // Every list comes from GET /antennas/{interface}: band, then generation,
+    // then width, then a channel usable at that width.
+    this.encryptionTypes = this.data.antenna.encryptions.filter(enc => enc in ENCRYPTION_LABELS);
+    this.bands = (['2.4ghz', '5ghz'] as Band[]).filter(b => this.data.antenna.bands[b].channels.length > 0);
+    const band = this.bands[0] ?? '2.4ghz';
+    const firstChannels = this.data.antenna.bands[band].channels.map(c => c.channel);
     // Generate dynamic SSID based on AP ID (e.g., "test-network-ap-01")
     const defaultSsid = `test-network-${this.data.netId}`;
     
     this.form = this.formBuilder.group({
       ssid: [defaultSsid, [Validators.required, Validators.maxLength(32)]],
-      channel: [6, [Validators.required, Validators.min(1), Validators.max(165)]],
-      band: ['2.4ghz', Validators.required],
+      channel: [firstChannels.includes(6) ? 6 : firstChannels[0], Validators.required],
+      band: [band, Validators.required],
       encryption: ['wpa2', Validators.required],
       password: ['12345678', [Validators.minLength(8), Validators.maxLength(63)]],
       hidden: [false],
@@ -87,8 +91,8 @@ export class NetworkFormDialogComponent {
       wifi_generation: [4 as WifiGeneration, Validators.required]
     });
 
-    // Keep width and generation within what the antenna offers for the band.
-    for (const name of ['band', 'encryption', 'wifi_generation']) {
+    // Keep generation, width and channel within what the antenna offers.
+    for (const name of ['band', 'encryption', 'wifi_generation', 'channel_width']) {
       this.form.get(name)?.valueChanges.subscribe(() => setTimeout(() => this.fitMode()));
     }
 
@@ -102,41 +106,33 @@ export class NetworkFormDialogComponent {
       }
       passwordControl?.updateValueAndValidity();
     });
-
-    // Update channel validators based on band
-    this.form.get('band')?.valueChanges.subscribe(band => {
-      const channelControl = this.form.get('channel');
-      if (band === '2.4ghz') {
-        channelControl?.setValidators([Validators.required, Validators.min(1), Validators.max(14)]);
-        if ((channelControl?.value || 0) > 14) {
-          channelControl?.setValue(6);
-        }
-      } else if (band === '5ghz') {
-        channelControl?.setValidators([Validators.required, Validators.min(36), Validators.max(165)]);
-        if ((channelControl?.value || 0) < 36) {
-          channelControl?.setValue(36);
-        }
-      } else {
-        channelControl?.setValidators([Validators.required, Validators.min(1), Validators.max(165)]);
-      }
-      channelControl?.updateValueAndValidity();
-    });
   }
 
-  /** Channel widths offered for the selected band, encryption and generation. */
-  public get channelWidths(): ChannelWidth[] {
-    if (this.form.get('encryption')?.value === 'wpa1') return [20];
-    const band = this.form.get('band')?.value;
-    const widths = this.data.capabilities?.channel_widths[band] ?? [20];
-    // 80 MHz needs 802.11ac or 802.11ax.
-    return this.form.get('wifi_generation')?.value === 4 ? widths.filter(w => w !== 80) : widths;
+  private get bandOptions(): BandOptions {
+    return this.data.antenna.bands[this.form.get('band')?.value as Band];
   }
 
   /** Wi-Fi generations offered for the selected band and encryption. */
   public get wifiGenerations(): WifiGeneration[] {
     if (this.form.get('encryption')?.value === 'wpa1') return [4];
-    const band = this.form.get('band')?.value;
-    return this.data.capabilities?.wifi_generations[band] ?? [4];
+    return this.bandOptions.wifi_generations.map(g => g.wifi_generation);
+  }
+
+  /** Channel widths offered for the selected band, encryption and generation. */
+  public get channelWidths(): ChannelWidth[] {
+    if (this.form.get('encryption')?.value === 'wpa1') return [20];
+    const generation = this.form.get('wifi_generation')?.value;
+    return this.bandOptions.wifi_generations.find(g => g.wifi_generation === generation)?.channel_widths ?? [20];
+  }
+
+  /** Channels of the selected band usable at the selected width. */
+  public get channels(): ChannelOption[] {
+    const width = this.form.get('channel_width')?.value;
+    return this.bandOptions.channels.filter(c => c.channel_widths.includes(width));
+  }
+
+  public isDfs(channel: number): boolean {
+    return this.bandOptions.channels.some(c => c.channel === channel && c.dfs);
   }
 
   public get mayFallBackTo20(): boolean {
@@ -151,6 +147,11 @@ export class NetworkFormDialogComponent {
     const width = this.form.get('channel_width');
     if (!this.channelWidths.includes(width?.value)) {
       width?.setValue(20, { emitEvent: false });
+    }
+    const channel = this.form.get('channel');
+    const usable = this.channels.map(c => c.channel);
+    if (!usable.includes(channel?.value)) {
+      channel?.setValue(usable[0] ?? null, { emitEvent: false });
     }
   }
 

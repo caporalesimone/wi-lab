@@ -14,7 +14,7 @@ from pydantic import (
     model_validator,
 )
 
-from .wifi.channels import channel_layouts, is_valid_channel_for_band
+from .wifi.channels import FieldError, channel_layouts, is_valid_channel_for_band
 
 # ASCII control characters (incl. CR/LF): never allowed in values written to hostapd.conf.
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
@@ -125,31 +125,31 @@ class NetworkCreateRequest(BaseModel):
         must run here, once every field has been parsed.
         """
         if not is_valid_channel_for_band(self.channel, self.band):
-            raise ValueError(f"Channel {self.channel} is not a valid WiFi channel for band {self.band}")
+            raise FieldError("channel", f"Channel {self.channel} is not a valid WiFi channel for band {self.band}")
         if self.password is not None and _CONTROL_CHARS.search(self.password):
-            raise ValueError("password must not contain control characters")
+            raise FieldError("password", "password must not contain control characters")
         self._validate_mode()
         if self.encryption == "open":
             return self
         if self.password is None:
-            raise ValueError(f"Password required for {self.encryption} encryption")
+            raise FieldError("password", f"Password required for {self.encryption} encryption")
         length = len(self.password.encode("utf-8"))
         if not 8 <= length <= 63:
-            raise ValueError(
-                f"{self.encryption} requires a password of 8 to 63 bytes (got {length})"
+            raise FieldError(
+                "password", f"{self.encryption} requires a password of 8 to 63 bytes (got {length})"
             )
         return self
 
     def _validate_mode(self) -> None:
         """Channel width and Wi-Fi generation rules that need no hardware (HAP-11)."""
         if self.encryption == "wpa1" and (self.channel_width != 20 or self.wifi_generation != 4):
-            raise ValueError(
-                "wpa1 (TKIP) cannot use 802.11n or newer: use channel_width 20 and wifi_generation 4"
+            raise FieldError(
+                "encryption", "wpa1 (TKIP) cannot use 802.11n or newer: use channel_width 20 and wifi_generation 4"
             )
         if self.band == "2.4ghz" and self.wifi_generation == 5:
-            raise ValueError("wifi_generation 5 (802.11ac) is only available on 5ghz")
+            raise FieldError("wifi_generation", "wifi_generation 5 (802.11ac) is only available on 5ghz")
         if self.channel_width == 80 and self.wifi_generation == 4:
-            raise ValueError("channel_width 80 needs wifi_generation 5 or 6")
+            raise FieldError("channel_width", "channel_width 80 needs wifi_generation 5 or 6")
         channel_layouts(self.band, self.channel, self.channel_width)
 
 
@@ -179,7 +179,8 @@ class NetworkStatus(BaseModel):
     runtime_state: str | None = Field(
         None, description=(
             "Watchdog state: restoring_ap, restoring_dhcp, dhcp_failed, or restore_failed "
-            "(AP restart failed; the watchdog retries with backoff while the reservation is valid)."
+            "(AP restart failed; the watchdog retries with backoff while the reservation is valid); "
+            "stop_failed: a stop did not complete, repeat DELETE .../network."
         ),
     )
     ssid: str | None = None
@@ -239,6 +240,12 @@ _BODY_PATHS = {
 }
 
 
+def body_error(field: str | None, message: str) -> str:
+    """`message` prefixed with the path of the flat `field` in the create body."""
+    path = _BODY_PATHS.get(field) if field else None
+    return f"{path}: {message}" if path else message
+
+
 class RadioSettings(BaseModel):
     band: str = Field(pattern=r"^(2\.4ghz|5ghz)$", description="`2.4ghz` or `5ghz`")
     channel: int = Field(description="Primary channel; must be valid for `band` and enabled on the antenna")
@@ -290,9 +297,11 @@ class NetworkCreateBody(BaseModel):
         except ValidationError as exc:
             error = exc.errors()[0]
             message = error["msg"].removeprefix("Value error, ")
-            field = str(error["loc"][0]) if error["loc"] else None
-            path = _BODY_PATHS.get(field) if field else None
-            raise ValueError(f"{path}: {message}" if path else message) from None
+            # A rule that compares fields names the field it refuses (FieldError).
+            cause = (error.get("ctx") or {}).get("error")
+            field = cause.field if isinstance(cause, FieldError) else (
+                str(error["loc"][0]) if error["loc"] else None)
+            raise ValueError(body_error(field, message)) from None
         return self
 
     def to_request(self) -> NetworkCreateRequest:

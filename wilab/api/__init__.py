@@ -47,15 +47,15 @@ creation request at a time per reservation. Release with
 `DELETE /api/v1/device-reservation/{reservation_id}` when finished; this also
 stops the network. A failed cleanup can return `503` and keep the device held.
 
-Set `"captive_portal": true` when creating a network to hold each client
-behind a simulated captive portal until it presses **Sign in** on the portal
-page; see the network creation operation. Omitted, it defaults to `false`.
+Set `"captive_portal": {"enabled": true}` when creating a network to hold each
+client behind a simulated captive portal until it presses **Sign in** on the
+portal page; see the network creation operation. Omitted, it is disabled.
 
-`DELETE /api/v1/device-reservation/all` (tag **Maintenance**) releases every
-reservation, including other clients'. It is not part of the client workflow:
-it requires the `X-Confirm-Password` header matching
-`protected_commands_password` in the server configuration, and is disabled
-when that setting is missing.
+Operations under **Maintenance** are not part of the client workflow. Each one
+requires the `X-Confirm-Password` header matching `protected_commands_password`
+in the server configuration, and is disabled when that setting is missing.
+`DELETE /api/v1/device-reservation/all` releases every reservation, including
+other clients'; `GET /api/v1/debug` shows internal state.
 
 Every API error body has a `detail` object with an integer `code` and a
 stable `reason`. Generic errors use the HTTP status as their code and
@@ -108,14 +108,16 @@ create. `dhcp_failed` is brief: the watchdog then restarts the whole network.
 OPENAPI_TAGS = [
     {"name": "System", "description": "Service health, reservations and per-adapter recovery state. Poll status, not debug (Maintenance)."},
     {"name": "Reservation", "description": "Allocate or release an adapter. Use the returned reservation ID for device operations."},
+    {"name": "Antennas", "description": "The managed radios and what a network on each can use "
+     "(encryptions, Wi-Fi generations, channel widths, channels): fill a create form from here. No reservation needed."},
     {"name": "Network", "description": "Create, stop and inspect an AP. The creation response describes when to retry with the same reservation."},
     {"name": "Internet", "description": "Enable or disable Internet access for a reserved network."},
     {"name": "TX Power", "description": "Inspect or request transmit power. Hardware support is not guaranteed."},
     {"name": "QoS Profiles", "description": "Inspect and manage traffic shaping profiles for a reserved network."},
     {"name": "Maintenance", "description": "Operator-only commands and diagnostics, not for clients; "
-     "they may be removed in the future. Releasing all reservations requires the X-Confirm-Password "
-     "header matching protected_commands_password. Debug is expensive and shows internal state: "
-     "use it only for manual troubleshooting, never for polling."},
+     "they may be removed in the future. Every one requires the X-Confirm-Password header matching "
+     "protected_commands_password, besides the token. Debug is deprecated and will be removed: "
+     "it is expensive and shows internal state."},
 ]
 
 
@@ -190,6 +192,23 @@ def create_app() -> FastAPI:
             return await http_exception_handler(request, exc)
         return api_error_response(request, exc.status_code, exc.detail, headers=exc.headers)
 
+    @app.middleware("http")
+    async def answer_unexpected_errors(request: Request, call_next):
+        """Answer an unexpected exception here, keeping the connection open.
+
+        The `Exception` handler below runs in Starlette's outermost middleware,
+        which re-raises after answering: uvicorn then closes the connection, and
+        the client's next keep-alive request on it fails with a transport error
+        (seen as ReadError / RemoteProtocolError right after a 500).
+        """
+        try:
+            return await call_next(request)
+        except Exception:
+            logger.exception("Unhandled error in %s %s", request.method, request.url.path)
+            if request.url.path == "/api/v1" or request.url.path.startswith("/api/v1/"):
+                return api_error_response(request, 500, None)
+            return PlainTextResponse("Internal Server Error", status_code=500)
+
     @app.exception_handler(Exception)
     async def unhandled_api_exception(request: Request, exc: Exception):
         if request.url.path == "/api/v1" or request.url.path.startswith("/api/v1/"):
@@ -238,8 +257,11 @@ def create_app() -> FastAPI:
         if errors:
             first = errors[0]
             loc_parts = [str(part) for part in first.get("loc", []) if part not in ("body", "query", "path")]
-            msg = first.get("msg", "Request validation failed")
-            detail = f"{': '.join(loc_parts)}: {msg}" if loc_parts else msg
+            # pydantic prefixes errors raised by validators with "Value error, ".
+            msg = first.get("msg", "Request validation failed").removeprefix("Value error, ")
+            # One format for every path: `radio.channel_width: ...`, like the
+            # paths the create body adds to the rules that compare fields.
+            detail = f"{'.'.join(loc_parts)}: {msg}" if loc_parts else msg
         else:
             detail = "Request validation failed"
         return api_error_response(request, 422, detail)

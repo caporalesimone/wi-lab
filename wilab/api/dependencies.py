@@ -48,7 +48,7 @@ def get_reservation_manager(config: AppConfig = Depends(get_config)) -> Reservat
     global _reservation_manager
     with _singleton_lock:
         if _reservation_manager is None:
-            device_ids = [n.device_id for n in config.networks]
+            device_ids = [n.device_id for n in config.antennas]
             manager = get_manager(config)
             _reservation_manager = ReservationManager(
                 device_ids, cleanup=manager.release_device, device_lock=manager.device_lock,
@@ -75,8 +75,8 @@ def scan_devices(config: AppConfig, *, quiet: bool = False) -> list[NetworkEntry
         if not added:
             return []
         # Appending preserves the order used for subnet allocation.
-        config.networks = [*config.networks, *added]
-        exclude_from_host_managers(n.interface for n in config.networks)
+        config.antennas = [*config.antennas, *added]
+        exclude_from_host_managers(n.interface for n in config.antennas)
         reservations.add_devices([n.device_id for n in added])
         manager = get_manager(config)
         for net in added:
@@ -118,8 +118,8 @@ def discovery_loop(config: AppConfig, stop: threading.Event) -> None:
         else:
             last_error = None
         first = False
-        if searching != (not config.networks):
-            searching = not config.networks
+        if searching != (not config.antennas):
+            searching = not config.antennas
             if searching:
                 logger.warning(
                     "No Wi-Fi adapter available; discovery runs every %.0f s", DISCOVERY_FAST_INTERVAL,
@@ -127,7 +127,7 @@ def discovery_loop(config: AppConfig, stop: threading.Event) -> None:
             else:
                 logger.info(
                     "%d Wi-Fi adapter(s) managed; discovery runs every %.0f s",
-                    len(config.networks), DISCOVERY_SLOW_INTERVAL,
+                    len(config.antennas), DISCOVERY_SLOW_INTERVAL,
                 )
         interval = DISCOVERY_FAST_INTERVAL if searching else DISCOVERY_SLOW_INTERVAL
 
@@ -144,7 +144,8 @@ def get_channel_manager() -> ChannelManager:
     global _channel_manager
     with _singleton_lock:
         if _channel_manager is None:
-            _channel_manager = ChannelManager(allow_dfs_channels=get_config().allow_dfs_channels)
+            # Read through get_config(): discovery replaces `antennas` as it adds radios.
+            _channel_manager = ChannelManager(show_dfs=lambda interface: get_config().show_dfs_for(interface))
         return _channel_manager
 
 

@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from ... import heartbeat
+from ...api.auth import maintenance_router as protected_router
 from ...api.auth import require_token
 from ...api.dependencies import get_config, get_manager, get_reservation_manager
 from ...config import AppConfig
@@ -24,14 +25,9 @@ _CHECKS_OK_EXAMPLE = {
     "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
 }
 
-_CAPABILITIES_EXAMPLE = {
-    "encryptions": ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"],
-    "channel_widths": {"2.4ghz": [20, 40], "5ghz": [20, 40, 80]},
-    "wifi_generations": {"2.4ghz": [4, 6], "5ghz": [4, 5, 6]},
-}
-
-# /debug is a diagnostic for operators: listed only under Maintenance in Swagger.
-maintenance_router = APIRouter(tags=["Maintenance"])
+# /debug is a diagnostic for operators: listed only under Maintenance in Swagger,
+# with token and X-Confirm-Password required by the router.
+maintenance_router = protected_router()
 
 router = APIRouter(
     tags=["System"],
@@ -60,9 +56,9 @@ router = APIRouter(
                         "version": "4.0.0", "status": "standby", "active_networks": 0,
                         "networks": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
-                             "reservation_remaining_seconds": None, "capabilities": _CAPABILITIES_EXAMPLE},
+                             "reservation_remaining_seconds": None},
                             {"display_name": "Antenna B", "interface": "wlan1", "reserved": False,
-                             "reservation_remaining_seconds": None, "capabilities": _CAPABILITIES_EXAMPLE},
+                             "reservation_remaining_seconds": None},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
                         "checks": _CHECKS_OK_EXAMPLE,
@@ -162,10 +158,8 @@ def system_status(
         dict: Contains:
             - version: Software version
             - networks: List of managed interfaces
-              (`runtime_state` during AP/DHCP restoration or DHCP failure;
-              `capabilities`: the `encryptions`, `channel_widths` and
-              `wifi_generations` per band the antenna accepts on a create,
-              absent until the antenna's capabilities have been read)
+              (`runtime_state` during AP/DHCP restoration or DHCP failure).
+              What a network on each antenna can use is in `GET /antennas/{interface}`
             - status: Overall health (ok|degraded|standby)
             - active_networks: Number of active networks
             - checks: Component health details
@@ -275,7 +269,7 @@ def _system_status(
     reservations = reservation_mgr.snapshot()
     recovery = reservation_mgr.recovery_snapshot()
     runtime_degraded = False
-    for n in config.networks:
+    for n in config.antennas:
         entry: dict = {"display_name": n.display_name, "interface": n.interface}
         reservation = reservations.get(n.device_id)
         entry["reserved"] = reservation is not None
@@ -285,11 +279,6 @@ def _system_status(
             runtime_degraded = True
         if n.device_id in recovery:
             entry["recovery_state"] = "recovering" if recovery[n.device_id] else "unavailable"
-        # HAP-10/HAP-11: what this antenna accepts on a create; read when discovery
-        # added it, never here (a status call does not wait for a radio).
-        capabilities = manager.channel_manager.cached_capabilities(n.device_id)
-        if capabilities is not None:
-            entry["capabilities"] = capabilities.summary()
         networks_info.append(entry)
     status_data["networks"] = networks_info
     if recovery or runtime_degraded or stuck or stale_loops:
@@ -305,17 +294,16 @@ def _system_status(
 
 @maintenance_router.get(
     "/debug",
-    summary="Read internal debug information (operators only)",
+    deprecated=True,
+    summary="Read internal debug information (deprecated, will be removed)",
     responses={
         200: {"description": "Debug information retrieved successfully"},
-        401: {"description": "Unauthorized (missing or invalid auth token)"},
     },
 )
 def debug_info(
     manager: NetworkManager = Depends(get_manager),
     config=Depends(get_config),
     reservation_mgr: ReservationManager = Depends(get_reservation_manager),
-    _: bool = Depends(require_token),
 ):
     """
     Comprehensive debug information for troubleshooting.
@@ -365,7 +353,7 @@ def _debug_info(
         
         "system": {
             "active_networks": active_count,
-            "configured_networks": len(config.networks),
+            "configured_networks": len(config.antennas),
             "upstream_interface": config.upstream_interface,
         },
         
@@ -400,7 +388,7 @@ def _debug_info(
                         if n.device_id in reservations else None
                     ),
                 }
-                for n in config.networks
+                for n in config.antennas
             ],
         },
         

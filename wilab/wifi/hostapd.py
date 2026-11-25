@@ -129,12 +129,56 @@ class HostapdInstance(TypedDict):
     process: ForegroundProcess | None
 
 
+DEBUG_TAIL_LINES = 400      # `hostapd -d` lines kept per start when hostapd_debug_dir is set
+DEBUG_MAX_FILES = 100       # failure reports kept in hostapd_debug_dir (oldest removed)
+_SECRET_KEYS = ("wpa_passphrase=", "sae_password=", "wpa_psk=")
+
+
+def save_failure(
+    directory: str, interface: str, exc: BaseException, process: ForegroundProcess, config: str,
+) -> str | None:
+    """Write the configuration (no secrets) and last `hostapd -d` lines of a failed start.
+
+    Diagnostics only (`hostapd_debug_dir`): a failure here is logged and ignored.
+    """
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    path = os.path.join(directory, f"{stamp}-{interface}-{type(exc).__name__}.log")
+    config_lines = [
+        line.split("=", 1)[0] + "=<removed>" if line.startswith(_SECRET_KEYS) else line
+        for line in config.splitlines()
+    ]
+    try:
+        os.makedirs(directory, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(f"interface: {interface}\nerror: {type(exc).__name__}: {exc}\n")
+            f.write(f"exit code: {process.poll()}\n\n--- hostapd.conf ---\n")
+            f.write("\n".join(config_lines))
+            f.write("\n\n--- hostapd -d (last lines) ---\n")
+            f.write("\n".join(process.output_tail(exited=True)) + "\n")
+        reports = sorted(
+            os.path.join(directory, name) for name in os.listdir(directory) if name.endswith(".log")
+        )
+        for old in reports[:-DEBUG_MAX_FILES]:
+            os.remove(old)
+    except OSError as error:
+        logger.warning("Cannot save hostapd failure report in %s: %s", directory, error)
+        return None
+    logger.info("hostapd failure report saved: %s", path)
+    return path
+
+
 class HostapdManager:
     """Manages hostapd processes for WiFi AP networks."""
     
-    def __init__(self) -> None:
-        """Initialize hostapd manager."""
+    def __init__(self, *, debug_dir: str | None = None) -> None:
+        """Initialize hostapd manager.
+
+        Args:
+            debug_dir: `hostapd_debug_dir`: where to save the `hostapd -d` output and
+                configuration of every start that fails (None: not saved).
+        """
         self._instances: dict[str, HostapdInstance] = {}
+        self._debug_dir = debug_dir
         self._ensure_dirs()
     
     def _ensure_dirs(self) -> None:
@@ -294,12 +338,20 @@ class HostapdManager:
             except CommandTimeout as e:
                 raise HostapdRadioFailure(f"Radio preparation timed out on {interface}") from e
 
-            process = start_foreground(["hostapd", "-d", config_file], classify_output=_classify_output)
+            process = start_foreground(
+                ["hostapd", "-d", config_file], classify_output=_classify_output,
+                keep_lines=DEBUG_TAIL_LINES if self._debug_dir else 0,
+            )
             instance["process"] = process
             sub_channels = layout.channels if layout is not None else (channel,)
             dfs = band == "5ghz" and any(52 <= c <= 144 for c in sub_channels)
             timeout = DFS_READY_TIMEOUT if dfs else AP_READY_TIMEOUT
-            self._wait_until_ready(process, interface, control_dir, timeout)
+            try:
+                self._wait_until_ready(process, interface, control_dir, timeout)
+            except (HostapdError, CommandError) as exc:
+                if self._debug_dir:
+                    save_failure(self._debug_dir, interface, exc, process, config_content)
+                raise
             logger.info(f"hostapd started for {net_id} on {interface}")
             return instance
 

@@ -12,6 +12,7 @@ from wilab.reservation import ReservationManager
 from wilab.wifi.channels import (
     VALID_CHANNELS_5GHZ,
     ChannelManager,
+    FieldError,
     is_valid_channel_for_band,
 )
 
@@ -37,7 +38,7 @@ def valid_token():
 def reservation_id(client, valid_token, monkeypatch):
     """Create a reservation and return the reservation_id token."""
     cfg = load_config()
-    rmgr = ReservationManager([n.device_id for n in cfg.networks])
+    rmgr = ReservationManager([n.device_id for n in cfg.antennas])
     monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
     # Reset channel manager singleton so tests are isolated
     monkeypatch.setattr(dependencies, '_channel_manager', None, raising=False)
@@ -65,7 +66,7 @@ class TestChannelManagerParsing:
           DFS state: available
         * 5745 MHz [149]
           Maximum TX power: 23.0 dBm"""
-        channels = ChannelManager._parse_iw_phy_output(output, allow_dfs_channels=False)
+        channels = ChannelManager._parse_iw_phy_output(output, show_dfs=False)
         assert [(ch.channel, ch.disabled, ch.max_power_dbm) for ch in channels] == [
             (52, True, 0.0),
             (56, True, 0.0),
@@ -114,7 +115,7 @@ class TestChannelManagerParsing:
           Channel widths: 20MHz HT40- HT40+ VHT80
           DFS state: usable (for 1000 sec)
           DFS CAC time: 60000 ms"""
-        channels = ChannelManager._parse_iw_phy_output(output, allow_dfs_channels=True)
+        channels = ChannelManager._parse_iw_phy_output(output, show_dfs=True)
         assert len(channels) == 1
         ch = channels[0]
         assert ch.channel == 52
@@ -192,6 +193,23 @@ class TestChannelManagerResolve:
         assert 36 in channels
         assert 165 in channels
 
+    def test_6ghz_channels_are_not_listed(self):
+        """Wi-Fi 6E antennas report 6 GHz too: 6695 MHz is also numbered 149."""
+        info = ChannelManager().get_channels("wls16")
+        assert all(5000 <= ch.frequency_mhz < 5925 for ch in info.channels_5ghz)
+        assert [ch.frequency_mhz for ch in info.channels_5ghz if ch.channel == 149] == [5745]
+        assert 1 not in {ch.channel for ch in info.channels_5ghz}
+
+    @pytest.mark.parametrize(("band", "channel", "width", "generation", "field"), [
+        ("2.4ghz", 14, 20, 4, "channel"),          # disabled by the regulatory domain
+        ("5ghz", 165, 80, 5, "channel_width"),     # 169, inside the 80 MHz block, is disabled
+        ("2.4ghz", 6, 80, 6, "channel_width"),     # 80 MHz does not exist on 2.4 GHz
+    ])
+    def test_antenna_checks_name_the_refused_field(self, band, channel, width, generation, field):
+        with pytest.raises(FieldError) as exc:
+            ChannelManager().validate_network("wls16", band, channel, width, generation, "wpa2")
+        assert exc.value.field == field
+
     def test_disabled_channel_has_zero_power(self):
         mgr = ChannelManager()
         info = mgr.get_channels("wls16")
@@ -229,92 +247,74 @@ class TestChannelManagerResolve:
 
 
 # ---------------------------------------------------------------------------
-# API tests – GET /interface/{reservation_id}/network/available-channels
+# API tests – GET /api/v1/antennas
 # ---------------------------------------------------------------------------
 
-class TestAvailableChannelsAPI:
-    """Test the available-channels endpoint."""
+def _set_show_dfs(value: bool) -> None:
+    config = dependencies.get_config()
+    config.antennas = [n.model_copy(update={"show_dfs": value}) for n in config.antennas]
+    dependencies.get_channel_manager().invalidate()
+
+
+class TestAntennasAPI:
+    """Antennas: the managed radios and the options of a create on each."""
 
     def test_requires_auth(self, client):
-        resp = client.get('/api/v1/interface/fake-id/network/available-channels')
-        assert resp.status_code == 401
+        assert client.get('/api/v1/antennas').status_code == 401
+        assert client.get('/api/v1/antennas/wls16').status_code == 401
 
-    def test_invalid_reservation_returns_404(self, client, valid_token):
-        resp = client.get(
-            '/api/v1/interface/nonexistent/network/available-channels',
-            headers={'Authorization': valid_token},
-        )
+    def test_list_needs_no_reservation(self, client, valid_token):
+        resp = client.get('/api/v1/antennas', headers={'Authorization': valid_token})
+        assert resp.status_code == 200
+        assert {"display_name": "bench-antenna-1", "interface": "wls16"} in resp.json()["antennas"]
+
+    def test_unknown_antenna_returns_404(self, client, valid_token):
+        resp = client.get('/api/v1/antennas/wlan99', headers={'Authorization': valid_token})
         assert resp.status_code == 404
 
-    def test_returns_both_bands(self, client, valid_token, reservation_id):
-        resp = client.get(
-            f'/api/v1/interface/{reservation_id}/network/available-channels',
-            headers={'Authorization': valid_token},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert 'channels_24ghz' in data
-        assert 'channels_5ghz' in data
-        assert len(data['channels_24ghz']) > 0
-        assert len(data['channels_5ghz']) > 0
+    def test_details(self, client, valid_token, monkeypatch):
+        from wilab.api.routes import antennas
+        from wilab.wifi.discovery import DeviceInfo
+        monkeypatch.setattr(antennas, "detect_device", lambda i: DeviceInfo("usb", "2-1", "mt7921u"))
+        data = client.get('/api/v1/antennas/wls16', headers={'Authorization': valid_token}).json()
+        assert data["interface"] == "wls16"
+        assert data["device"] == {"bus": "usb", "address": "2-1", "driver": "mt7921u"}
+        assert data["encryptions"] == ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"]
+        assert data["bands"]["5ghz"]["wifi_generations"] == [
+            {"wifi_generation": 4, "channel_widths": [20, 40]},
+            {"wifi_generation": 5, "channel_widths": [20, 40, 80]},
+            {"wifi_generation": 6, "channel_widths": [20, 40, 80]},
+        ]
+        channels = {c["channel"]: c for c in data["bands"]["5ghz"]["channels"]}
+        assert channels[36] == {"channel": 36, "frequency_mhz": 5180, "max_power_dbm": 23.0,
+                                "dfs": False, "channel_widths": [20, 40, 80]}
+        assert channels[165]["channel_widths"] == [20]          # 169 is disabled
+        assert 169 not in channels                               # disabled channels are not listed
+        assert all(c["frequency_mhz"] < 5925 for c in channels.values())   # no 6 GHz
+        assert 14 not in {c["channel"] for c in data["bands"]["2.4ghz"]["channels"]}
 
-    def test_response_includes_interface(self, client, valid_token, reservation_id):
-        resp = client.get(
-            f'/api/v1/interface/{reservation_id}/network/available-channels',
-            headers={'Authorization': valid_token},
-        )
-        data = resp.json()
-        assert 'interface' in data
-        assert isinstance(data['interface'], str)
+    def test_device_is_null_when_sysfs_does_not_show_it(self, client, valid_token, monkeypatch):
+        from wilab.api.routes import antennas
+        monkeypatch.setattr(antennas, "detect_device", lambda i: None)
+        data = client.get('/api/v1/antennas/wls16', headers={'Authorization': valid_token}).json()
+        assert data["device"] is None
 
-    def test_channel_fields(self, client, valid_token, reservation_id):
-        resp = client.get(
-            f'/api/v1/interface/{reservation_id}/network/available-channels',
-            headers={'Authorization': valid_token},
-        )
-        data = resp.json()
-        ch = data['channels_24ghz'][0]
-        assert 'channel' in ch
-        assert 'frequency_mhz' in ch
-        assert 'max_power_dbm' in ch
-        assert 'disabled' in ch
-
-    def test_disabled_channel_in_response(self, client, valid_token, reservation_id):
-        resp = client.get(
-            f'/api/v1/interface/{reservation_id}/network/available-channels',
-            headers={'Authorization': valid_token},
-        )
-        data = resp.json()
-        # Channel 14 should be disabled in 2.4 GHz
-        ch14 = next(
-            (c for c in data['channels_24ghz'] if c['channel'] == 14), None
-        )
-        assert ch14 is not None
-        assert ch14['disabled'] is True
-        assert ch14['max_power_dbm'] == 0.0
-
-    def test_5ghz_disabled_channel(self, client, valid_token, reservation_id):
-        resp = client.get(
-            f'/api/v1/interface/{reservation_id}/network/available-channels',
-            headers={'Authorization': valid_token},
-        )
-        data = resp.json()
-        ch169 = next(
-            (c for c in data['channels_5ghz'] if c['channel'] == 169), None
-        )
-        assert ch169 is not None
-        assert ch169['disabled'] is True
-
-    def test_active_channel_power(self, client, valid_token, reservation_id):
-        resp = client.get(
-            f'/api/v1/interface/{reservation_id}/network/available-channels',
-            headers={'Authorization': valid_token},
-        )
-        data = resp.json()
-        ch1 = next(c for c in data['channels_24ghz'] if c['channel'] == 1)
-        assert ch1['disabled'] is False
-        assert ch1['max_power_dbm'] == 20.0
-        assert ch1['frequency_mhz'] == 2412
+    def test_every_listed_choice_is_accepted_by_the_create_check(self, client, valid_token):
+        """The lists and the create use the same rules: no combination is refused."""
+        _set_show_dfs(True)
+        data = client.get('/api/v1/antennas/wls16', headers={'Authorization': valid_token}).json()
+        mgr = dependencies.get_channel_manager()
+        checked = 0
+        for band, options in data["bands"].items():
+            for generation in options["wifi_generations"]:
+                for width in generation["channel_widths"]:
+                    for channel in options["channels"]:
+                        if width in channel["channel_widths"]:
+                            mgr.validate_network(
+                                "wls16", band, channel["channel"], width, generation["wifi_generation"], "wpa2",
+                            )
+                            checked += 1
+        assert checked > 50
 
 
 # ---------------------------------------------------------------------------
@@ -467,34 +467,34 @@ class TestValidateChannel:
 class TestNetworkCreationChannelValidation:
     """Test that POST /network rejects invalid/disabled channels."""
 
-    @pytest.mark.parametrize("allow_dfs", [None, True], ids=["default-policy", "dfs-opt-in"])
-    def test_dfs_policy_applies_to_listing_and_creation(
-        self, client, valid_token, reservation_id, monkeypatch, allow_dfs,
+    @pytest.mark.parametrize("show_dfs", [False, True])
+    def test_show_dfs_applies_to_listing_and_creation(
+        self, client, valid_token, reservation_id, monkeypatch, show_dfs,
     ):
+        _set_show_dfs(show_dfs)
         config = dependencies.get_config()
-        if allow_dfs is not None:
-            config.allow_dfs_channels = allow_dfs
         start_network = Mock()
         monkeypatch.setattr(dependencies.get_manager(config), "start_network", start_network)
         url = f"/api/v1/interface/{reservation_id}/network"
         headers = {"Authorization": valid_token}
 
-        listing = client.get(f"{url}/available-channels", headers=headers)
+        listing = client.get("/api/v1/antennas/wls16", headers=headers)
         assert listing.status_code == 200
-        channels = {ch["channel"]: ch for ch in listing.json()["channels_5ghz"]}
-        assert channels[52]["disabled"] is (allow_dfs is None)
-        assert channels[52]["max_power_dbm"] == (0.0 if allow_dfs is None else 20.0)
-        assert channels[36]["disabled"] is False
-        assert channels[169]["disabled"] is True
+        channels = {ch["channel"]: ch for ch in listing.json()["bands"]["5ghz"]["channels"]}
+        assert (52 in channels) is show_dfs
+        if show_dfs:
+            assert channels[52]["dfs"] is True and channels[52]["max_power_dbm"] == 20.0
+        assert channels[36]["dfs"] is False
 
         request = {
             "ssid": "TestNet", "channel": 52, "encryption": "open",
             "band": "5ghz", "tx_power_level": 4,
         }
         response = client.post(url, headers=headers, json=network_body(**request))
-        if allow_dfs is None:
+        if not show_dfs:
             assert response.status_code == 422
-            assert "allow_dfs_channels=false" in response.json()["detail"]["message"]
+            assert response.json()["detail"]["message"].startswith("radio.channel: DFS channel 52")
+            assert "show_dfs: false" in response.json()["detail"]["message"]
             start_network.assert_not_called()
             response = client.post(url, headers=headers, json=network_body(**{**request, "channel": 36}))
         assert response.status_code == 200

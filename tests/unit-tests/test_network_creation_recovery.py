@@ -24,7 +24,7 @@ PAYLOAD = {
 @pytest.mark.parametrize("authorized_port", [None, "2-1"])
 def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, authorized_port):
     config = dependencies.get_config()
-    radio = config.networks[0]
+    radio = config.antennas[0]
     monkeypatch.setattr(radio, "usb_recovery_port", authorized_port)
     manager = dependencies.get_manager(config)
     start = Mock(side_effect=StartupFailure("radio timeout", radio=True))
@@ -90,7 +90,7 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
 @pytest.mark.parametrize("verified_after", [2, None])
 def test_usb_recovery_is_bounded_and_only_verified_radio_is_released(monkeypatch, verified_after):
     manager = dependencies.get_manager(dependencies.get_config())
-    radio = manager.config.networks[0].device_id
+    radio = manager.config.antennas[0].device_id
     reservations = ReservationManager([radio])
     reservations.quarantine(reservations.create(60), recovering=True)
     monkeypatch.setattr(recovery, "_require_idle", Mock())
@@ -123,7 +123,7 @@ def test_usb_recovery_is_bounded_and_only_verified_radio_is_released(monkeypatch
 
 def test_usb_recovery_refuses_unsafe_target(monkeypatch):
     manager = dependencies.get_manager(dependencies.get_config())
-    radio = manager.config.networks[0].device_id
+    radio = manager.config.antennas[0].device_id
     reservations = ReservationManager([radio])
     reservations.quarantine(reservations.create(60), recovering=True)
     monkeypatch.setattr(recovery, "_require_idle", Mock())
@@ -162,7 +162,7 @@ class _HostLink:
 @pytest.mark.parametrize("upstream", [False, True])
 def test_usb_recovery_takes_back_a_radio_raised_by_host_managers(monkeypatch, upstream):
     manager = dependencies.get_manager(dependencies.get_config())
-    radio = manager.config.networks[0].device_id
+    radio = manager.config.antennas[0].device_id
     reservations = ReservationManager([radio])
     reservations.quarantine(reservations.create(60), recovering=True)
     host = _HostLink(radio, upstream=upstream)
@@ -358,7 +358,7 @@ def test_watchdog_waits_for_confirmed_ap_failure(monkeypatch, ap_alive, checks):
 
 def test_recovery_probe_checks_ap_and_dhcp_and_tears_down_on_failure(monkeypatch):
     manager = dependencies.get_manager(dependencies.get_config())
-    device = manager.config.networks[0].device_id
+    device = manager.config.antennas[0].device_id
     ap = Mock()
     dhcp = Mock()
     teardown = Mock()

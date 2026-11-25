@@ -183,6 +183,10 @@ Band 2:
           Maximum TX power: 13.0 dBm
           Channel widths: 20MHz HT40- HT40+ VHT80
         * 5845 MHz [169] (disabled)
+        * 5955 MHz [1] 
+          Maximum TX power: 12.0 dBm
+          Channel widths: 20MHz HT40- HT40+ VHT80
+        * 6695 MHz [149] (disabled)
 """
 
     # Mock execute_iw to avoid needing real WiFi hardware
@@ -268,7 +272,7 @@ Band 2:
     # Patch commands
     monkeypatch.setattr(commands, "execute_ip", mock_execute_ip)
     monkeypatch.setattr(commands, "execute_iw", mock_execute_iw)
-    monkeypatch.setattr(commands, "execute_tc", lambda args: "")
+    monkeypatch.setattr(commands, "execute_tc", lambda args, **kwargs: "")
     monkeypatch.setattr(commands, "execute_command", mock_execute_command)
 
     # Patch in channels module

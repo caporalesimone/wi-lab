@@ -115,6 +115,37 @@ case needs the adapter to be re-attached.
 
 ---
 
+### Issue 7: hostapd Crashes at Startup (`hostapd segfault`)
+
+The journal shows `Failed to start AP for <interface>: hostapd segfault` and
+the kernel log `hostapd[...]: segfault at 0 ... in hostapd[aaf3a,...]`. Wi-Lab
+classifies it as a radio failure and retries, so a create usually still
+succeeds.
+
+Cause found in November 2026 with hostapd `2:2.11-0ubuntu5`: when the nl80211
+driver initialization fails early, hostapd 2.11 cleans up through
+`wpa_driver_nl80211_del_beacon()` with a NULL link and crashes instead of
+exiting with an error. Upstream fixed it after 2.11 (hostap commit `015f6a5a`,
+"nl80211: NULL pointer check for link before use"). The crash is therefore a
+symptom: the driver initialization failed first, often while the mt7921u
+firmware was timing out (`mt7921u ...: Message ... timeout` in `journalctl -k`).
+
+To see why the initialization fails:
+
+1. Set `hostapd_debug_dir: "/var/log/wilab/hostapd"` in `config.yaml` and
+   restart Wi-Lab. Every failed hostapd start writes a report there: the
+   hostapd configuration (no passwords) and the last 400 lines of
+   `hostapd -d`, whose last lines before the crash show the failing nl80211
+   command.
+2. With `systemd-coredump` installed, each crash is saved: `coredumpctl list
+   hostapd`. For a backtrace, extract the debug symbols of the installed
+   version (`hostapd-dbgsym_<version>_amd64.ddeb` from Launchpad,
+   `dpkg-deb -x` into a directory) and run
+   `coredumpctl gdb hostapd` with `set debug-file-directory <dir>/usr/lib/debug`.
+3. Without a core: the kernel line gives the file offset (`hostapd[aaf3a,...]`);
+   `gdb -batch -ex "info symbol 0xaaf3a" /usr/sbin/hostapd` with the same
+   debug directory names the function.
+
 ## Performance Issues
 
 ### WiFi Slow or Unstable

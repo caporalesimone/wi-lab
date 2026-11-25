@@ -103,9 +103,12 @@ class ForegroundProcess:
     def __init__(
         self, process: subprocess.Popen[bytes],
         classify_output: Callable[[bytes], str | None] | None = None,
+        keep_lines: int = 0,
     ) -> None:
         self._process = process
         self._events: deque[str] = deque(maxlen=12)
+        # Last output lines, kept only on request (hostapd_debug_dir) for diagnostics.
+        self._tail: deque[str] | None = deque(maxlen=keep_lines) if keep_lines else None
         self._events_lock = Lock()
         self._reader: Thread | None = None
         if classify_output is not None and process.stdout is not None:
@@ -120,6 +123,9 @@ class ForegroundProcess:
             with stream:
                 complete = True
                 while line := stream.readline(4096):
+                    if self._tail is not None:
+                        with self._events_lock:
+                            self._tail.append(line.decode("utf-8", "replace").rstrip("\r\n"))
                     if complete and line.endswith(b"\n") and (event := classify(line.rstrip(b"\r\n"))):
                         with self._events_lock:
                             self._events.append(event)
@@ -132,6 +138,13 @@ class ForegroundProcess:
             self._reader.join(timeout=0.05)
         with self._events_lock:
             return tuple(self._events)
+
+    def output_tail(self, *, exited: bool = False) -> list[str]:
+        """The last output lines kept with `keep_lines` (empty when not kept)."""
+        if exited and self._reader is not None:
+            self._reader.join(timeout=0.2)
+        with self._events_lock:
+            return list(self._tail or ())
 
     def poll(self) -> int | None:
         return self._process.poll()
@@ -159,6 +172,7 @@ class ForegroundProcess:
 
 def start_foreground(
     cmd: list[str], *, classify_output: Callable[[bytes], str | None] | None = None,
+    keep_lines: int = 0,
 ) -> ForegroundProcess:
     """Start a child, continuously draining output when a classifier is supplied."""
     bounded_timeout(1.0)
@@ -168,7 +182,7 @@ def start_foreground(
             stdout=subprocess.PIPE if classify_output is not None else subprocess.DEVNULL,
             stderr=subprocess.STDOUT if classify_output is not None else subprocess.DEVNULL,
         )
-        return ForegroundProcess(process, classify_output)
+        return ForegroundProcess(process, classify_output, keep_lines)
     except OSError as e:
         raise CommandError(f"Could not start {cmd[0]}: {e}") from e
 
@@ -214,6 +228,7 @@ def stop_process(pid: int) -> None:
 
 def execute_command(
     cmd: list[str], check: bool = True, timeout: float = 8.0, *, exact_timeout: bool = False,
+    quiet: bool = False,
 ) -> str:
     """
     Execute a shell command safely.
@@ -223,6 +238,9 @@ def execute_command(
         check: Raise CommandError if return code is non-zero
         timeout: Command timeout in seconds (minimum enforced to 5)
         exact_timeout: Honor the supplied timeout without applying the minimum
+        quiet: The failure is an expected answer (a missing rule, nothing to
+            delete, an unsupported setting): log it at debug level, not as an
+            error (NET-5). CommandError is raised all the same.
         
     Returns:
         stdout as string
@@ -242,8 +260,8 @@ def execute_command(
         returncode, stdout, stderr = _run(cmd, effective_timeout)
 
         if check and returncode != 0:
-            logger.error(
-                f"Command failed: {' '.join(cmd)}\nstderr: {stderr}"
+            (logger.debug if quiet else logger.error)(
+                "Command failed: %s\nstderr: %s", " ".join(cmd), stderr,
             )
             raise CommandError(
                 f"Command '{cmd[0]}' failed with code {returncode}: {stderr}"
@@ -261,9 +279,9 @@ def execute_command(
 IPTABLES_LOCK_WAIT = "5"
 
 
-def execute_iptables(args: list[str]) -> str:
+def execute_iptables(args: list[str], *, quiet: bool = False) -> str:
     """Execute iptables, waiting for the xtables lock. Every iptables call must go through here."""
-    return execute_command(["iptables", "-w", IPTABLES_LOCK_WAIT, *args])
+    return execute_command(["iptables", "-w", IPTABLES_LOCK_WAIT, *args], quiet=quiet)
 
 
 def execute_ip(args: list[str]) -> str:
@@ -294,11 +312,11 @@ def execute_pkill(pattern: str, signal: str | None = None) -> str:
     return execute_command(cmd, check=False)
 
 
-def execute_iw(args: list[str]) -> str:
+def execute_iw(args: list[str], *, quiet: bool = False) -> str:
     """Execute iw command (wireless tools)."""
-    return execute_command(["iw", *args])
+    return execute_command(["iw", *args], quiet=quiet)
 
 
-def execute_tc(args: list[str]) -> str:
+def execute_tc(args: list[str], *, quiet: bool = False) -> str:
     """Execute tc command (traffic control)."""
-    return execute_command(["tc", *args])
+    return execute_command(["tc", *args], quiet=quiet)

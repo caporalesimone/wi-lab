@@ -98,8 +98,7 @@ _EXPECTED_SECURITY: dict[str, dict[str, str | None]] = {
 def test_every_encryption_starts_as_announced(wilab: WiLab, server: Server, encryption: str) -> None:
     """HAP-10: each encryption starts and hostapd runs exactly that security mode."""
     antenna = wilab.reserve()
-    capabilities = wilab.device(antenna.interface).get("capabilities", {})
-    if encryption not in capabilities.get("encryptions", []):
+    if encryption not in wilab.antenna(antenna.interface)["encryptions"]:
         pytest.skip(f"{encryption} not supported on {antenna.interface}")
     password = None if encryption == "open" else "e2e-pass-123"
     response = wilab.create(antenna, encryption=encryption, password=password)
@@ -132,10 +131,7 @@ def test_channel_width_and_generation_reach_the_radio(
 ) -> None:
     """HAP-11: the radio runs at the requested width; GET network reports it."""
     antenna = wilab.reserve()
-    capabilities = wilab.device(antenna.interface).get("capabilities", {})
-    if width not in capabilities.get("channel_widths", {}).get(band, []) or (
-        generation not in capabilities.get("wifi_generations", {}).get(band, [])
-    ):
+    if not wilab.offers(antenna.interface, band, channel, width, generation):
         pytest.skip(f"{width} MHz / Wi-Fi {generation} not supported on {antenna.interface} {band}")
     response = wilab.create(
         antenna, band=band, channel=channel, channel_width=width, wifi_generation=generation,
@@ -246,3 +242,14 @@ def test_polling_during_a_create_gets_an_answer_within_the_busy_limit(wilab: WiL
     for code, elapsed, retry_after, detail in results:
         assert elapsed < 7, (code, elapsed)
         assert code == 200 or (code == 503 and detail == 1006 and retry_after == "2"), (code, detail)
+
+
+def test_every_antenna_lists_options_without_a_reservation(wilab: WiLab) -> None:
+    """Antennas API: readable with the token only, for every managed antenna."""
+    listed = wilab.http.get("/antennas").json()["antennas"]
+    assert {a["interface"] for a in listed} == set(wilab.interfaces())
+    for entry in listed:
+        details = wilab.antenna(entry["interface"])
+        assert details["bands"]["2.4ghz"]["channels"] or details["bands"]["5ghz"]["channels"]
+        for options in details["bands"].values():
+            assert all(c["frequency_mhz"] < 5925 for c in options["channels"])   # no 6 GHz

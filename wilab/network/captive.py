@@ -142,7 +142,7 @@ class CaptivePortal:
         jump = ["-i", self.interface, "-m", "comment", "--comment", f"{JUMP_COMMENT_PREFIX}{self.net_id}"]
         for prefix, parent in ((["-t", "nat"], "PREROUTING"), ([], "FORWARD")):
             try:
-                execute_iptables([*prefix, "-C", parent, *jump, "-j", chain])
+                execute_iptables([*prefix, "-C", parent, *jump, "-j", chain], quiet=True)
             except CommandError:
                 found.append(f"captive portal {parent} rule")
         return found
