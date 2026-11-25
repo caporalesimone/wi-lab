@@ -87,14 +87,14 @@ do not blindly repeat it. A `404` for a reservation ID means stop using it.
 Poll `GET /api/v1/status` to know whether the service is fully usable.
 Its `status` is `standby` (nothing active, all adapters healthy), `ok`
 (networks active and healthy) or `degraded`. `degraded` means an adapter is
-quarantined (`networks[].recovery_state`), a reserved network is being
-repaired or lost DHCP (`networks[].runtime_state`), or a health check failed
+quarantined (`antennas[].recovery_state`), a reserved network is being
+repaired or lost DHCP (`antennas[].runtime_state`), or a health check failed
 while networks are active: `degraded_reasons` lists each cause with a stable
 `code`, and `GET /api/v1/monitoring` gives the detail of every check. Show it
 to the user with the affected adapter: fewer adapters may be allocatable than
 are listed.
 
-| `networks[]` field | Value | Client action |
+| `antennas[]` field | Value | Client action |
 |---|---|---|
 | `recovery_state` | `recovering` | Adapter quarantined, USB recovery in progress. It may return by itself; do not count it as allocatable. |
 | `recovery_state` | `unavailable` | Adapter quarantined, no USB reset running. Wi-Lab re-probes it periodically (30 s, backing off to 15 min) and returns it to the pool when it works. Not allocatable meanwhile; report it if it persists. |

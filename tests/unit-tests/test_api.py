@@ -66,7 +66,7 @@ class TestStatusEndpoint:
         data = resp.json()
         assert data['status'] in ['ok', 'degraded', 'standby']
         assert 'version' in data
-        assert 'networks' in data
+        assert 'antennas' in data and 'networks' not in data
         assert 'checks' not in data and data['degraded_reasons'] == []
     
     def test_status_standby_mode(self, client, valid_token, monkeypatch):
@@ -103,14 +103,14 @@ class TestStatusEndpoint:
         # Check required top-level fields
         assert 'status' in data
         assert 'version' in data
-        assert 'networks' in data
+        assert 'antennas' in data
         assert 'active_networks' in data
         assert 'degraded_reasons' in data and 'checks' not in data
         
         # Check version and networks
         assert data['version'] is not None
         assert len(data['version']) > 0
-        assert isinstance(data['networks'], list)
+        assert isinstance(data['antennas'], list)
     
     def test_status_health_checks(self, client, valid_token):
         """Test status includes all health checks."""
@@ -1104,7 +1104,7 @@ class TestStatusReservationInfo:
         # Before reservation: remaining should be None
         resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         data = resp.json()
-        net_entry = data['networks'][0]
+        net_entry = data['antennas'][0]
         assert 'display_name' in net_entry
         assert 'interface' in net_entry
         assert net_entry['reservation_remaining_seconds'] is None
@@ -1113,7 +1113,7 @@ class TestStatusReservationInfo:
         """After reservation, remaining seconds are positive and decrease."""
         resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         data = resp.json()
-        net_entry = data['networks'][0]
+        net_entry = data['antennas'][0]
         assert net_entry['display_name'] == 'bench-antenna-1'
         assert net_entry['interface'] == 'wls16'
         remaining = net_entry['reservation_remaining_seconds']
@@ -1353,7 +1353,7 @@ class TestUnlimitedReservationAPI:
         resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
-        reserved_net = [n for n in data['networks'] if n['reservation_remaining_seconds'] is None]
+        reserved_net = [n for n in data['antennas'] if n['reservation_remaining_seconds'] is None]
         assert len(reserved_net) >= 1
 
 

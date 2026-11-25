@@ -52,7 +52,7 @@ router = APIRouter(
                     "summary": "standby - no network active, every adapter healthy",
                     "value": {
                         "version": "4.0.0", "status": "standby", "degraded_reasons": [], "active_networks": 0,
-                        "networks": [
+                        "antennas": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
                              "reservation_remaining_seconds": None},
                             {"display_name": "Antenna B", "interface": "wlan1", "reserved": False,
@@ -65,7 +65,7 @@ router = APIRouter(
                     "summary": "ok - networks active and healthy",
                     "value": {
                         "version": "4.0.0", "status": "ok", "degraded_reasons": [], "active_networks": 1,
-                        "networks": [
+                        "antennas": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reserved": True,
                              "reservation_remaining_seconds": 540},
                             {"display_name": "Antenna B", "interface": "wlan1", "reserved": False,
@@ -84,7 +84,7 @@ router = APIRouter(
                             {"code": "network_being_repaired", "interface": "wlan1",
                              "message": "Network being repaired by the watchdog (restoring_ap)"},
                         ],
-                        "networks": [
+                        "antennas": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
                              "reservation_remaining_seconds": None, "recovery_state": "unavailable"},
                             {"display_name": "Antenna B", "interface": "wlan1", "reserved": True,
@@ -225,7 +225,7 @@ def _system_status(
         "status": view["status"],
         "degraded_reasons": view["degraded_reasons"],
         "active_networks": view["active_networks"],
-        "networks": view["antennas"],
+        "antennas": view["antennas"],
         "reservation_policy": {
             "min_seconds": config.min_timeout,
             "max_seconds": config.max_timeout,

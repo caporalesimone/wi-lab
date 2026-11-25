@@ -514,7 +514,7 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
             assert pool.submit(create, rid).result(timeout=2).status_code == 200
             status = pool.submit(client.get, "/api/v1/status", headers=headers).result(timeout=2)
             assert status.status_code == 200 and status.json()["active_networks"] == 1
-            assert all(n["reserved"] for n in status.json()["networks"])
+            assert all(n["reserved"] for n in status.json()["antennas"])
             assert not release.done()
         finally:
             finish.set()

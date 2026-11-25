@@ -15,7 +15,7 @@ BUDGET = 3
 
 
 def _reserve_with_budget(wilab: WiLab, server: Server, ap: int = 0, dhcp: int = 0) -> Antenna:
-    for entry in wilab.status()["networks"]:
+    for entry in wilab.status()["antennas"]:
         interface = entry["interface"]
         if entry.get("recovery_state"):
             continue

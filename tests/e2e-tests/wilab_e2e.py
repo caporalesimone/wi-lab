@@ -283,7 +283,7 @@ class WiLab:
         return response.json()
 
     def device(self, interface: str) -> dict[str, Any]:
-        for entry in self.status()["networks"]:
+        for entry in self.status()["antennas"]:
             if entry["interface"] == interface:
                 return entry
         raise KeyError(interface)
@@ -306,7 +306,7 @@ class WiLab:
         )
 
     def interfaces(self) -> list[str]:
-        return [entry["interface"] for entry in self.status()["networks"]]
+        return [entry["interface"] for entry in self.status()["antennas"]]
 
     def reserve(self, interface: str | None = None, duration: int = 3600) -> Antenna:
         """Reserve an antenna; with `interface`, keep reserving until that one is assigned."""

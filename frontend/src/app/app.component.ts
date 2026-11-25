@@ -189,7 +189,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
         this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
         this.title = `Wi-Lab Network Management - ${this.version}`;
-        this.buildSlots(response.networks);
+        this.buildSlots(response.antennas);
         this.loading = false;
       },
       error: (err) => {
@@ -208,7 +208,7 @@ export class AppComponent implements OnInit, OnDestroy {
       next: (response) => {
         this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
         this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
-        this.buildSlots(response.networks);
+        this.buildSlots(response.antennas);
       }
     });
   }

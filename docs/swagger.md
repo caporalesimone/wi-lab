@@ -66,9 +66,9 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
 Open **System → Read system and adapter status**. Under **Responses → 200 →
 Examples** select `standby`, `ok` or `degraded_quarantine`. `status:
 "degraded"` means at least one adapter is quarantined
-(`networks[].recovery_state`: `recovering` or `unavailable`), a reserved
+(`antennas[].recovery_state`: `recovering` or `unavailable`), a reserved
 network is being repaired, lost DHCP or could not be restarted
-(`networks[].runtime_state`: `restoring_ap`, `restoring_dhcp`, `dhcp_failed`,
+(`antennas[].runtime_state`: `restoring_ap`, `restoring_dhcp`, `dhcp_failed`,
 `restore_failed`), a host command is stuck in the kernel, a background loop
 stalled, or a health check failed while networks are active: each cause is an
 entry of `degraded_reasons` with a stable `code`. **System → Read the detailed

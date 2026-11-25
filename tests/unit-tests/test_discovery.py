@@ -311,7 +311,7 @@ def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
 
     def managed():
         return [(n["interface"], n["display_name"])
-                for n in client.get("/api/v1/status", headers=headers).json()["networks"]]
+                for n in client.get("/api/v1/status", headers=headers).json()["antennas"]]
 
     with TestClient(create_app()) as client:
         empty = client.post("/api/v1/reservations", headers=headers, json={"duration_seconds": 60})

@@ -18,7 +18,12 @@ from ...models import NetworkCreateBody, NetworkResponse, ReservationInfo, body_
 from ...reservation import Reservation
 from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager, FieldError
-from ...wifi.manager import UNKNOWN_ANTENNA, NetworkManager, NetworkStopError, StartupFailure
+from ...wifi.manager import (
+    UNKNOWN_ANTENNA,
+    NetworkManager,
+    NetworkStopError,
+    StartupFailure,
+)
 from .recovery_responses import (
     DEVICE_BUSY_RESPONSE,
     RETRY_AFTER_HEADER,
@@ -226,7 +231,7 @@ def start_network(
             "wifi5_80mhz": {
                 "summary": "5 GHz Wi-Fi 5 network at 80 MHz",
                 "description": "Channels 36-48 as one 80 MHz channel, 802.11ac. Needs an antenna "
-                "that lists 80 and 5 for 5ghz in GET /status (networks[].capabilities).",
+                "whose GET /antennas/{interface} lists 80 MHz for wifi_generation 5 on 5ghz.",
                 "value": {
                 "radio": {
                     "band": "5ghz", "channel": 36, "channel_width": 80,
@@ -243,7 +248,7 @@ def start_network(
             "wpa1_legacy": {
                 "summary": "Legacy WPA (TKIP) network for old clients",
                 "description": "Insecure, 802.11a/g only (20 MHz, at most 54 Mbit/s). Accepted "
-                "only on antennas that list wpa1 in GET /status (networks[].capabilities.encryptions).",
+                "only on antennas whose GET /antennas/{interface} lists wpa1 in encryptions.",
                 "value": {
                 "radio": {
                     "band": "2.4ghz", "channel": 6, "channel_width": 20,
@@ -325,7 +330,7 @@ def start_network(
     Optional `radio.channel_width` (20, 40, 80 MHz; default 20) and `radio.wifi_generation`
     (4 = 802.11n, 5 = 802.11ac, 6 = 802.11ax; default 4) select the radio mode;
     the defaults keep the previous behaviour. `GET /status` lists, per antenna,
-    what it supports (`networks[].capabilities`); anything else returns `422`.
+    what it supports (`GET /antennas/{interface}`); anything else returns `422`.
     40 MHz on 2.4 GHz may fall back to 20 MHz when neighbouring networks are
     present: `GET .../network` reports the actual `radio.channel_width.reported`.
     """

@@ -315,12 +315,12 @@ def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch):
         schedule.assert_not_called()
         status = client.get("/api/v1/status", headers=headers).json()
         assert status["status"] == "degraded"
-        assert status["networks"][0]["recovery_state"] == "unavailable"
+        assert status["antennas"][0]["recovery_state"] == "unavailable"
         assert client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).status_code == 503
 
         mgr.recovery.reprobe_unavailable(reservations, now=0.0)
         mgr.recovery.reprobe_unavailable(reservations, now=recovery.REPROBE_DELAYS[0])
 
         status = client.get("/api/v1/status", headers=headers).json()
-        assert "recovery_state" not in status["networks"][0]
+        assert "recovery_state" not in status["antennas"][0]
         assert client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).status_code == 200

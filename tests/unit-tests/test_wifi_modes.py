@@ -279,7 +279,7 @@ class TestApi:
     def test_capabilities_are_in_antennas_not_in_status(self, client, token, reservation_id, monkeypatch):
         self._create(client, token, reservation_id, monkeypatch)
         headers = {"Authorization": token}
-        networks = client.get("/api/v1/status", headers=headers).json()["networks"]
+        networks = client.get("/api/v1/status", headers=headers).json()["antennas"]
         assert all("capabilities" not in n for n in networks)
         antenna = client.get(f"/api/v1/antennas/{networks[0]['interface']}", headers=headers).json()
         widths = {g["wifi_generation"]: g["channel_widths"] for g in antenna["bands"]["5ghz"]["wifi_generations"]}

@@ -11,7 +11,7 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 55 |
-| ⚠️ Breaking changes | 17 |
+| ⚠️ Breaking changes | 18 |
 | 🔧 Maintenance changes | 13 |
 | ✨ New features | 19 |
 | 📦 Commits since 3.0.0 | 89 |
@@ -36,6 +36,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - A create that fails for a non-radio reason answers `500 / 1013` (`startup_failed`) with `detail.stage` (`hostapd`, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation`, `host_guard`) instead of a generic `500 / 500` with only a message.
 - Unknown fields in a request body are refused with `422` and the field path (`captive-portal: Extra inputs are not permitted`, `radio.chanel: ...`) instead of being ignored: a typo no longer creates a network without the intended setting (Fable API-10). Applies to the reservation, the create (every section), TX power and QoS profile bodies.
 - Paths renamed (Fable API-6): `/api/v1/device-reservation` → `/api/v1/reservations`, and every `/api/v1/interface/{reservation_id}/...` → `/api/v1/reservations/{reservation_id}/...` (network, Internet, TX power, QoS profile). The old `interface` segment held a reservation ID, not an interface, which the new `/antennas/{interface}` would have made more confusing. The old paths answer `404`.
+- `GET /api/v1/status` lists the antennas in `antennas[]` (was `networks[]`), like the Antennas API: an entry is an antenna, reserved or not, not a network.
 - Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all: `GET /api/v1/debug` now returns `403` without it, or when `protected_commands_password` is not set.
 
 ### ✨ Features
@@ -253,7 +254,7 @@ The rest of this chapter names each endpoint by its 3.x path.
 **Status**
 
 - `GET /api/v1/status`:
-  - `networks[]` gains `recovery_state` (`recovering`, `unavailable`) and `runtime_state`. What an antenna supports is in `GET /api/v1/antennas/{interface}`.
+  - `networks[]` is renamed `antennas[]`, and its entries gain `recovery_state` (`recovering`, `unavailable`) and `runtime_state`. What an antenna supports is in `GET /api/v1/antennas/{interface}`.
   - `checks` moved to `GET /api/v1/monitoring` (with `hostapd`, `commands`, `loops`, and `missing` lists in `dnsmasq` and `iptables_nat`); `/status` has `degraded_reasons` instead (`{code, interface, message}`).
   - `degraded` now also covers quarantined antennas, networks being repaired, stuck commands and stalled loops.
 - `GET /api/v1/debug`: send the `X-Confirm-Password` header too (`403` without it), as for every Maintenance endpoint.

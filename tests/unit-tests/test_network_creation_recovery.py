@@ -75,7 +75,7 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
         overall = client.get("/api/v1/status", headers=headers).json()
         # A quarantined adapter makes the service degraded even with no active network.
         assert (overall["status"], overall["active_networks"]) == ("degraded", 0)
-        state = overall["networks"][0]
+        state = overall["antennas"][0]
         assert state["recovery_state"] == ("recovering" if authorized_port else "unavailable")
 
         if authorized_port is None:
@@ -217,9 +217,9 @@ def test_api_viewers_share_recovery_guidance_and_examples():
         "standby": "standby", "ok": "ok", "degraded_quarantine": "degraded",
     }
     status = status_examples["degraded_quarantine"]["value"]
-    assert status["networks"][0]["recovery_state"] == "unavailable"
-    assert not status["networks"][0]["reserved"]
-    assert status["networks"][1]["runtime_state"] == "restoring_ap"
+    assert status["antennas"][0]["recovery_state"] == "unavailable"
+    assert not status["antennas"][0]["reserved"]
+    assert status["antennas"][1]["runtime_state"] == "restoring_ap"
     content = paths["/api/v1/reservations/{reservation_id}/network"]["get"]["responses"]["200"]["content"]["application/json"]
     assert "example" not in content
     assert content["examples"]["restoring_dhcp"]["value"]["runtime_state"] == "restoring_dhcp"
@@ -332,7 +332,7 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch):
         assert create.json()["detail"]["code"] == 1009  # restoration_in_progress
         system = client.get("/api/v1/status", headers=headers).json()
         assert system["status"] == "degraded"
-        assert system["networks"][0]["runtime_state"] == "restoring_ap"
+        assert system["antennas"][0]["runtime_state"] == "restoring_ap"
     radio_status.assert_not_called()
 
 

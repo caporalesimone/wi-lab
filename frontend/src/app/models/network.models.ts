@@ -47,7 +47,7 @@ export interface ReservationPolicy {
 export interface StatusResponse {
   version: string;
   status: string;
-  networks: InterfaceInfo[];
+  antennas: InterfaceInfo[];
   active_networks: number;
   reservation_policy: ReservationPolicy;
   degraded_reasons: { code: string; interface: string | null; message: string }[];

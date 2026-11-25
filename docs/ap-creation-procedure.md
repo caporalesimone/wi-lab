@@ -448,7 +448,7 @@ usable. Poll it (for example every 10–30 s) and show the result to the user.
 | `degraded` | At least one entry in `degraded_reasons`. |
 
 `degraded_reasons` says why, with a stable `code` and the `interface` it
-concerns (`null` for the whole service); `networks[]` gives the state of each
+concerns (`null` for the whole service); `antennas[]` gives the state of each
 antenna:
 
 ```json
@@ -458,7 +458,7 @@ antenna:
     {"code": "antenna_quarantined", "interface": "wlx7419f8176286",
      "message": "Antenna quarantined (unavailable)"}
   ],
-  "networks": [
+  "antennas": [
     {"display_name": "antenna-1", "interface": "wlx7419f8176286", "reserved": false,
      "reservation_remaining_seconds": null, "recovery_state": "unavailable"},
     {"display_name": "antenna-2", "interface": "wlx7419f817651c", "reserved": false,
@@ -512,7 +512,7 @@ sequenceDiagram
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 0 - before reserving (optional, no reservation needed)
     C->>W: GET /status
-    W-->>C: status, networks[] (reserved, recovery_state), reservation_policy
+    W-->>C: status, antennas[] (reserved, recovery_state), reservation_policy
     Note over C: allow_unlimited tells whether duration_seconds 0 is accepted.<br/>Entries with recovery_state are not allocatable.
     end
 
