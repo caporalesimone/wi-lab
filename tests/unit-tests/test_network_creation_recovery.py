@@ -256,7 +256,7 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     }
     status = status_examples["degraded_quarantine"]["value"]
     assert status["antennas"][0]["recovery_state"] == "unavailable"
-    assert not status["antennas"][0]["reserved"]
+    assert status["antennas"][0].get("reservation") is None  # OpenAPI drops null example values
     assert status["antennas"][1]["runtime_state"] == "restoring_ap"
     content = paths["/api/v2/reservations/{reservation_id}/network"]["get"]["responses"]["200"]["content"]["application/json"]
     assert "example" not in content

@@ -1167,7 +1167,7 @@ class TestStatusReservationInfo:
     """Tests for reservation info in status endpoint (Task 6)."""
 
     def test_status_networks_include_reservation_remaining(self, client, valid_token, monkeypatch):
-        """Status API includes reservation_remaining_seconds for each device."""
+        """Each antenna has `reservation` (null when free) and `network_active` (API-1)."""
         cfg = load_config()
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
@@ -1178,7 +1178,9 @@ class TestStatusReservationInfo:
         net_entry = data['antennas'][0]
         assert 'display_name' in net_entry
         assert 'interface' in net_entry
-        assert net_entry['reservation_remaining_seconds'] is None
+        assert net_entry['reservation'] is None
+        assert net_entry['network_active'] is False
+        assert 'reserved' not in net_entry and 'reservation_remaining_seconds' not in net_entry
 
     def test_status_reservation_remaining_after_reservation(self, client, valid_token, reservation_id):
         """After reservation, remaining seconds are positive and decrease."""
@@ -1187,7 +1189,8 @@ class TestStatusReservationInfo:
         net_entry = data['antennas'][0]
         assert net_entry['display_name'] == 'bench-antenna-1'
         assert net_entry['interface'] == 'wls16'
-        remaining = net_entry['reservation_remaining_seconds']
+        remaining = net_entry['reservation']['expires_in']
+        assert net_entry['reservation']['expires_at'].endswith('Z')
         assert isinstance(remaining, int)
         assert remaining > 3500  # 3600s reservation, allow small margin
 
@@ -1405,7 +1408,7 @@ class TestUnlimitedReservationAPI:
         assert policy['allow_unlimited'] is False
 
     def test_status_shows_null_remaining_for_unlimited(self, client, valid_token, monkeypatch):
-        """/status shows reservation_remaining_seconds: null for unlimited."""
+        """/status: an unlimited reservation is an object with null expiry, not a free antenna."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
@@ -1424,8 +1427,8 @@ class TestUnlimitedReservationAPI:
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
-        reserved_net = [n for n in data['antennas'] if n['reservation_remaining_seconds'] is None]
-        assert len(reserved_net) >= 1
+        reserved_net = [n for n in data['antennas'] if n['reservation'] is not None]
+        assert reserved_net[0]['reservation'] == {'expires_at': None, 'expires_in': None}
 
 
 def test_unexpected_error_is_answered_without_dropping_the_connection(caplog):

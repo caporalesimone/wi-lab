@@ -13,6 +13,7 @@ from ...api.dependencies import get_config, get_manager, get_reservation_manager
 from ...config import AppConfig
 from ...network.commands import stuck_commands
 from ...reservation import ReservationManager
+from ...timestamps import format_utc_timestamp
 from ...version import __version__
 from ...wifi.manager import NetworkManager
 
@@ -54,10 +55,10 @@ router = APIRouter(
                     "value": {
                         "version": "4.0.0", "status": "standby", "degraded_reasons": [], "active_networks": 0,
                         "antennas": [
-                            {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
-                             "reservation_remaining_seconds": None},
-                            {"display_name": "Antenna B", "interface": "wlan1", "reserved": False,
-                             "reservation_remaining_seconds": None},
+                            {"display_name": "Antenna A", "interface": "wlan0", "reservation": None,
+                             "network_active": False},
+                            {"display_name": "Antenna B", "interface": "wlan1", "reservation": None,
+                             "network_active": False},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
                     },
@@ -67,10 +68,10 @@ router = APIRouter(
                     "value": {
                         "version": "4.0.0", "status": "ok", "degraded_reasons": [], "active_networks": 1,
                         "antennas": [
-                            {"display_name": "Antenna A", "interface": "wlan0", "reserved": True,
-                             "reservation_remaining_seconds": 540},
-                            {"display_name": "Antenna B", "interface": "wlan1", "reserved": False,
-                             "reservation_remaining_seconds": None},
+                            {"display_name": "Antenna A", "interface": "wlan0", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540},
+                             "network_active": True},
+                            {"display_name": "Antenna B", "interface": "wlan1", "reservation": None,
+                             "network_active": False},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
                     },
@@ -86,10 +87,10 @@ router = APIRouter(
                              "message": "Network being repaired by the watchdog (restoring_ap)"},
                         ],
                         "antennas": [
-                            {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
-                             "reservation_remaining_seconds": None, "recovery_state": "unavailable"},
-                            {"display_name": "Antenna B", "interface": "wlan1", "reserved": True,
-                             "reservation_remaining_seconds": 54, "runtime_state": "restoring_ap"},
+                            {"display_name": "Antenna A", "interface": "wlan0", "reservation": None,
+                             "network_active": False, "recovery_state": "unavailable"},
+                            {"display_name": "Antenna B", "interface": "wlan1", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 54},
+                             "network_active": False, "runtime_state": "restoring_ap"},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
                     },
@@ -121,7 +122,7 @@ def system_status(
 
     | `code` | Meaning |
     |---|---|
-    | `antenna_quarantined` | The antenna has `recovery_state`: `recovering` (USB reset and probe running) or `unavailable` (re-probed every 30 s, backing off to 15 min). It may return by itself. Not allocatable, even with `reserved: false`. |
+    | `antenna_quarantined` | The antenna has `recovery_state`: `recovering` (USB reset and probe running) or `unavailable` (re-probed every 30 s, backing off to 15 min). It may return by itself. Not allocatable, even with `reservation: null`. |
     | `network_being_repaired` | A reserved network has `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`). Its owner waits. |
     | `network_stop_incomplete` | A `DELETE .../network` answered `503 / 1012`: the network is half stopped (`runtime_state: stop_failed`) until its owner repeats the DELETE. |
     | `hostapd_not_running`, `dnsmasq_not_running` | The AP or DHCP process of that network is dead; the watchdog normally repairs it within seconds. |
@@ -191,8 +192,12 @@ def _assess(
     for n in config.antennas:
         entry: dict[str, Any] = {"display_name": n.display_name, "interface": n.interface}
         reservation = reservations.get(n.device_id)
-        entry["reserved"] = reservation is not None
-        entry["reservation_remaining_seconds"] = reservation.expires_in if reservation else None
+        # API-1: the same reservation object as the reservation and network answers.
+        entry["reservation"] = None if reservation is None else {
+            "expires_at": format_utc_timestamp(reservation.expires_at),
+            "expires_in": reservation.expires_in,
+        }
+        entry["network_active"] = n.device_id in snapshot
         if reservation is not None and (runtime_state := manager.watchdog.state(reservation)):
             entry["runtime_state"] = runtime_state
             reasons.append(_reason("network_being_repaired", n.interface, state=runtime_state))

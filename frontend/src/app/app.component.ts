@@ -219,8 +219,8 @@ export class AppComponent implements OnInit, OnDestroy {
       return {
         display_name: n.display_name,
         interface: n.interface,
-        occupiedByOther: !myRes && n.reserved,
-        otherReservationSeconds: myRes ? null : n.reservation_remaining_seconds,
+        occupiedByOther: !myRes && n.reservation !== null,
+        otherReservationSeconds: myRes ? null : n.reservation?.expires_in ?? null,
         recoveryState: n.recovery_state,
         runtimeState: n.runtime_state ?? null,
         myReservation: myRes,

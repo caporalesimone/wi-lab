@@ -29,11 +29,18 @@ export interface AntennaDetails {
   bands: Record<Band, BandOptions>;
 }
 
+/** The same reservation object as in the reservation and network answers. */
+export interface StatusReservation {
+  expires_at: string | null;
+  expires_in: number | null;
+}
+
 export interface InterfaceInfo {
   display_name: string;
   interface: string;
-  reserved: boolean;
-  reservation_remaining_seconds: number | null;
+  /** null: no reservation holds the antenna. Unlimited: both fields null. */
+  reservation: StatusReservation | null;
+  network_active: boolean;
   recovery_state?: RecoveryState;
   runtime_state?: RuntimeState;
 }

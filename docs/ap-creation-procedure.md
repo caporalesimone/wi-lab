@@ -392,7 +392,7 @@ because of them. Further rules:
   another reason, the reservation stays valid and `runtime_state` is
   `restore_failed` until a retry succeeds.
 - `GET /api/v2/status` reports `recovery_state` (`recovering` or `unavailable`)
-  for quarantined antennas. They can show `reserved: false` but are **not**
+  for quarantined antennas. They can show `reservation: null` but are **not**
   allocatable.
 - To stop the AP but keep the antenna: `DELETE .../network`. To finish: release
   the reservation.
@@ -457,10 +457,11 @@ antenna:
      "message": "Antenna quarantined (unavailable)"}
   ],
   "antennas": [
-    {"display_name": "antenna-1", "interface": "wlx7419f8176286", "reserved": false,
-     "reservation_remaining_seconds": null, "recovery_state": "unavailable"},
-    {"display_name": "antenna-2", "interface": "wlx7419f817651c", "reserved": false,
-     "reservation_remaining_seconds": null}
+    {"display_name": "antenna-1", "interface": "wlx7419f8176286", "reservation": null,
+     "network_active": false, "recovery_state": "unavailable"},
+    {"display_name": "antenna-2", "interface": "wlx7419f817651c",
+     "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540},
+     "network_active": true}
   ]
 }
 ```
@@ -483,7 +484,10 @@ so a problem can take up to 10 s to appear. The detail of every check
 the last check) is in `GET /api/v2/monitoring`, for operators and monitoring
 views; clients only need `/status`.
 
-- `reserved: false` does **not** mean the antenna can be reserved: an entry
+- Each antenna has `reservation` (`null` when no reservation holds it;
+  `{expires_at, expires_in}` otherwise, both `null` when unlimited) and
+  `network_active` (a network runs on it).
+- `reservation: null` does **not** mean the antenna can be reserved: an entry
   with `recovery_state` is excluded from allocation.
 - How a client learns that *its* antenna was quarantined: the create returns
   `503` with `detail.code: 1003`, `reason: device_unavailable` and

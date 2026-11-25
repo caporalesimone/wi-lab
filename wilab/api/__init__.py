@@ -103,7 +103,7 @@ are listed.
 | `runtime_state` | `restore_failed` | AP down: the restart failed and the watchdog retries (15 s, 30 s, 60 s, 120 s, then every 5 min). Wait, or `DELETE .../network` to stop the retries, or create a new network. |
 
 `GET /api/v2/status` distinguishes quarantined adapters (`recovery_state`)
-from reserved networks being repaired (`runtime_state`). `reserved: false`
+from reserved networks being repaired (`runtime_state`). `reservation: null`
 does not make a quarantined adapter allocatable. During
 `restoring_ap` or `restoring_dhcp`, poll status instead of sending a new
 create. `dhcp_failed` is brief: the watchdog then restarts the whole network.

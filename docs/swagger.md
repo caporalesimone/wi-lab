@@ -75,7 +75,7 @@ entry of `degraded_reasons` with a stable `code`. **System → Read the detailed
 health checks** (`GET /api/v2/monitoring`) gives the detail of every check.
 Clients must poll
 this endpoint to learn about quarantined adapters: a quarantined adapter can
-show `reserved: false` but is not allocatable, and only its former owner is
+show `reservation: null` but is not allocatable, and only its former owner is
 told directly (`503 / 1003` on the create). See
 [AP creation procedure, 2.8](ap-creation-procedure.md#28-service-health-degraded-and-quarantined-antennas).
 
