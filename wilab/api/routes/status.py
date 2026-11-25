@@ -1,6 +1,5 @@
 """System status endpoint."""
 
-import json
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -10,7 +9,7 @@ from ...api.auth import maintenance_router as protected_router
 from ...api.auth import require_token
 from ...api.dependencies import get_config, get_manager, get_reservation_manager
 from ...config import AppConfig
-from ...network.commands import CommandError, execute_command, stuck_commands
+from ...network.commands import stuck_commands
 from ...reservation import ReservationManager
 from ...version import __version__
 from ...wifi.manager import NetworkManager
@@ -108,6 +107,10 @@ def system_status(
     """
     Comprehensive system status including interfaces and health check.
 
+    The checks that run host commands (processes, NAT rules, upstream link)
+    are refreshed in the background every 10 s: this call runs no command and
+    answers at once, so a change can take up to 10 s to show.
+
     Overall `status`:
 
     | Value | Meaning |
@@ -167,58 +170,6 @@ def system_status(
     return _system_status(manager, config, reservation_mgr)
 
 
-def _not_busy(manager: NetworkManager, device: str) -> bool:
-    """True if no start, stop or restore holds the device; never waits (RACE-2)."""
-    lock = manager.device_lock(device)
-    if not lock.acquire(blocking=False):
-        return False
-    lock.release()
-    return True
-
-
-def _process_check(settled: list[str], is_running: Any) -> dict[str, Any]:
-    """Every settled network has its process alive (not just a PID file, BUG-2)."""
-    missing = [device for device in settled if not is_running(device)]
-    return {"running": not missing, "instances": len(settled) - len(missing), "missing": missing}
-
-
-def _nat_check(
-    manager: NetworkManager, snapshot: dict[str, Any], settled: list[str],
-) -> dict[str, Any]:
-    """Wi-Lab's own NAT rule exists for every settled network with Internet (BUG-2).
-
-    Docker's or libvirt's MASQUERADE rules do not count, and a network without
-    Internet needs none.
-    """
-    expected = [device for device in settled if snapshot[device].internet_enabled]
-    try:
-        rules = manager.firewall_status()
-    except Exception as exc:  # noqa: BLE001 - reported in the check, never fails /status
-        return {"configured": not expected, "missing": expected, "errors": [str(exc)]}
-    nat = rules.get("nat") or ""
-    missing = [device for device in expected if f"wilab-nat-{device}" not in nat]
-    return {"configured": not missing, "missing": missing, "errors": rules.get("errors", [])}
-
-
-def _upstream_check(manager: NetworkManager, config: AppConfig) -> dict[str, Any]:
-    """Operational state and IPv4 address of the upstream, from `ip -j` (BUG-2).
-
-    The old text match found "UP" in `LOWER_UP` or in the UP flag of a link
-    whose state is DOWN. A link with state UNKNOWN (VPN, some virtual NICs) is
-    up when the kernel reports LOWER_UP.
-    """
-    try:
-        name = manager.nat_manager.get_upstream_interface()
-        links = json.loads(execute_command(["ip", "-j", "addr", "show", "dev", name]) or "[]")
-    except (CommandError, RuntimeError, ValueError) as exc:
-        return {"name": config.upstream_interface, "reachable": False, "error": str(exc)}
-    link = links[0] if links else {}
-    state = link.get("operstate")
-    up = state == "UP" or (state == "UNKNOWN" and "LOWER_UP" in link.get("flags", []))
-    has_ip = any(a.get("family") == "inet" for a in link.get("addr_info", []))
-    return {"name": name, "up": up, "has_ip": has_ip, "reachable": up and has_ip}
-
-
 def _system_status(
     manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager
 ) -> dict[str, Any]:
@@ -234,20 +185,16 @@ def _system_status(
     stale_loops = heartbeat.stale_loops()
     health_data["checks"]["loops"] = {"stale": stale_loops}
 
-    # RACE-2: one snapshot of the active networks for the whole answer, and health is
-    # judged only on networks with no operation in progress. A start publishes its
-    # network only when it is complete, but a stop removes DHCP and NAT before it
-    # leaves `active`: judging that network would report a passing `degraded`.
+    # Host-command checks come from the background loop (wilab.health): /status
+    # runs no command. Networks stopped since the check are ignored; networks
+    # started since then are judged at the next check (RACE-2).
+    health = manager.health.current()
     snapshot = manager.active.copy()
-    settled = [device for device in snapshot if _not_busy(manager, device)]
     active_count = len(snapshot)
     checks = health_data["checks"]
-    # BUG-2: each check looks at Wi-Lab's own processes and rules, per network.
-    checks["hostapd"] = _process_check(settled, manager.hostapd_manager.is_running)
-    checks["dnsmasq"] = _process_check(settled, manager.dhcp_server.is_running)
-    checks["iptables_nat"] = _nat_check(manager, snapshot, settled)
-    checks["upstream_interface"] = _upstream_check(manager, config)
-    internet_needed = any(snapshot[d].internet_enabled for d in settled)
+    checks.update(health.for_active(set(snapshot)))
+    settled = [device for device in snapshot if device in health.settled]
+    internet_needed = any(device in health.internet for device in settled)
 
     if not active_count:
         # Standby - service is healthy but no networks are active

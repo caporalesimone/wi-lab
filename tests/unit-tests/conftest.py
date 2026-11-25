@@ -326,3 +326,10 @@ def network_body(**flat):
         body["captive_portal"] = {"enabled": flat.pop("captive_portal")}
     body.update(flat)
     return body
+
+
+@pytest.fixture(autouse=True)
+def _fresh_health_checks(monkeypatch):
+    """Tests change state and read /status at once: recompute the checks on every read."""
+    from wilab import health
+    monkeypatch.setattr(health, "MAX_AGE", -1.0)

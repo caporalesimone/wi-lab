@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
-from wilab.api.routes import status as status_module
+from wilab import health as status_module
 from wilab.config import load_config
 from wilab.models import NetworkStatus
 
@@ -89,3 +89,32 @@ def test_dead_hostapd_is_reported_and_degrades(running):
     data = get()
     assert data["checks"]["hostapd"] == {"running": False, "instances": 0, "missing": [device]}
     assert data["status"] == "degraded"
+
+
+def test_status_reads_the_background_checks_without_running_commands(monkeypatch):
+    """The host commands run in the health loop; /status only reads the latest result."""
+    from wilab import health
+
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    monkeypatch.setattr(health, "MAX_AGE", 60.0)
+    manager.health.refresh()
+    calls = []
+    monkeypatch.setattr(health, "execute_command", lambda cmd, **kw: calls.append(cmd) or "[]")
+    monkeypatch.setattr(manager, "firewall_status", lambda: calls.append("fw") or {"nat": ""})
+    client = TestClient(create_app())
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    for _ in range(5):
+        assert client.get("/api/v1/status", headers=headers).status_code == 200
+    assert calls == []
+
+
+def test_a_late_loop_does_not_leave_status_stale(monkeypatch):
+    from wilab import health
+
+    manager = dependencies.get_manager(dependencies.get_config())
+    monkeypatch.setattr(health, "MAX_AGE", 60.0)
+    first = manager.health.refresh()
+    assert manager.health.current() is first
+    monkeypatch.setattr(health.time, "monotonic", lambda: first.taken + 61.0)
+    assert manager.health.current() is not first

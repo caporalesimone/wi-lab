@@ -87,6 +87,7 @@ flowchart LR
 | `wilab/api/routes/*.py` | HTTP endpoints. `network.py` contains the creation retry contract. |
 | `wilab/reservation.py` | In-memory reservation store, expiry, quarantine state. |
 | `wilab/wifi/manager.py` | `NetworkManager`: start/stop pipeline, device locks, expiry loop, TX power. |
+| `wilab/health.py` | Health checks that run host commands (hostapd and dnsmasq alive, NAT rules, upstream link), refreshed every 10 s by the `health-checks` thread; `/status` reads the latest result and runs no command (recomputed by the reader only if older than 20 s). |
 | `wilab/wifi/hostapd.py` | hostapd configuration, process ownership, readiness check. |
 | `wilab/wifi/watchdog.py` | Post-start supervision and bounded AP/DHCP restoration. |
 | `wilab/wifi/recovery.py` | Automatic USB reset and verification of quarantined antennas. |
@@ -255,6 +256,7 @@ flowchart TB
         RP["unavailable-reprobe (5 s tick)<br/>probe unavailable antennas with backoff"]
         DS["device-discovery<br/>every 5 s while no antenna, then every 30 s"]
         CC["channel-cache-scan<br/>one-shot per added antenna"]
+        HC["health-checks (10 s)<br/>host commands behind /status"]
     end
     subgraph Children["Child processes"]
         HP["hostapd (foreground child, one per AP)"]

@@ -154,6 +154,12 @@ async def lifespan(app: FastAPI):
     )
     discovery_thread.start()
 
+    # Host-command health checks in the background: /status only reads them.
+    stop_health = threading.Event()
+    threading.Thread(
+        target=manager.health.loop, args=(stop_health,), name="health-checks", daemon=True,
+    ).start()
+
     # systemd watchdog (STAB-1): restart only when a loop stalled and Wi-Lab is idle.
     reservations = get_reservation_manager(cfg)
     stop_notify = threading.Event()
@@ -167,6 +173,7 @@ async def lifespan(app: FastAPI):
     yield
 
     stop_notify.set()
+    stop_health.set()
     heartbeat.sd_notify("STOPPING=1")
     stop_discovery.set()
     discovery_thread.join(timeout=10)

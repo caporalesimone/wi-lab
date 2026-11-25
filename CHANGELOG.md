@@ -10,7 +10,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 54 |
+| 🐛 Bug fixes | 55 |
 | ⚠️ Breaking changes | 12 |
 | 🔧 Maintenance changes | 12 |
 | ✨ New features | 18 |
@@ -104,6 +104,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - The service refuses to start with an empty `auth_token`, `api_port` outside 1–65535, `max_timeout` below `min_timeout` or a `dns_server` that is not an IPv4 address, as `--validate-config` already reported; before, `dns_server: foo` started and every network creation failed with `500` (Fable BUG-3).
 - Networks are isolated from each other whatever `dhcp_base_network` is: with subnets outside `192.168.*` (e.g. `10.20.0.0/24`) no isolation rule was installed and clients of different networks could talk to each other (Fable NET-3).
 - `DELETE .../network` no longer answers a bare `500` when hostapd stays stuck in the kernel after SIGKILL (seen with mt7921u firmware timeouts): it answers `503 / 1004` with `Retry-After: 5`, the half-stopped network reports `runtime_state: stop_failed`, the watchdog no longer "repairs" it, and repeating the DELETE finishes the stop.
+- `/status` no longer runs host commands on every call: the checks (processes, NAT rules, upstream link) are refreshed every 10 s in the background and `/status` reads the latest result. Under load a call took up to 13 s, and every polling client added `ip` and `iptables` commands; a change now takes up to 10 s to show.
 - An unexpected server error answers `500 / 500` without closing the connection: before, uvicorn dropped it after the answer, so the client's next request on the same keep-alive connection failed with a transport error (seen by the stress test as `ReadError` / `RemoteProtocolError` right after the `500` of a stop).
 - Normal answers are no longer logged as errors: a missing `iptables -C` rule, a `tc` qdisc with nothing to delete, `iw set txpower` unsupported by the driver and a stop without DHCP are logged at debug level, and QoS uses `tc ... replace` instead of a failing `add` (Fable NET-5). In a stress run they were most of the `ERROR` lines.
 - The log line `Starting network ... with SSID` is written only for a create that really starts, not for one refused because the network is already active.

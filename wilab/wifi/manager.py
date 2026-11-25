@@ -13,6 +13,7 @@ from itertools import islice
 
 from .. import heartbeat
 from ..config import AppConfig
+from ..health import HealthChecks
 from ..models import ClientInfo, NetworkCreateRequest, NetworkStatus, NetworkTxPower
 from ..network.captive import CaptivePortal, CaptivePortalError
 from ..network.commands import (
@@ -120,6 +121,8 @@ class NetworkManager:
         # WD-6: consecutive cleanup failures and next background attempt per device
         self._cleanup_failures: dict[str, int] = {}
         self._stop_failed: set[str] = set()  # stops to repeat (NetworkStopError)
+        # Host-command health checks, refreshed by a background loop (wilab.health).
+        self.health = HealthChecks(self)
         self._cleanup_retry_at: dict[str, float] = {}
         self.expire_reservations: Callable[[], None] | None = None
         self.recovery = RadioRecovery(self)
