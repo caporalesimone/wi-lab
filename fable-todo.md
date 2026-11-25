@@ -41,7 +41,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 2 | [SEC-1](Fable-Notes.md#L227) |  | Limitare la route frontend ai file contenuti nella directory frontend. |
 | 3 | [WD-9](Fable-Notes.md#L1218) | ✅ | Supervisionare i loop in background e riavviare quelli terminati. |
 | 4 | [SEC-3](Fable-Notes.md#L1341) | ✅ | Limitare gli indirizzi e le interfacce su cui ascolta l'API. Fatto con una regola `INPUT` per rete (IPv4 e IPv6): i client delle reti Wi-Lab non raggiungono l'host, né API né SSH; restano DHCP, ping e, con il captive portal, DNS e pagina del portale. |
-| 5 | [SEC-2](Fable-Notes.md#L1383) |  | Proteggere o oscurare gli ID reservation nell'output debug. **Decisione:** `/debug` per ora resta; in futuro verrà tolto e sostituito da un sistema diverso. |
+| 5 | [SEC-2](Fable-Notes.md#L1383) | ✅ | Proteggere o oscurare gli ID reservation nell'output debug. **Decisione:** `/debug` rimosso nella 4.0.0, sostituito da `/monitoring`. |
 | 6 | [BUG-2](Fable-Notes.md#L1610) | ✅ | Correggere i controlli di salute di `/status` usando output strutturato. |
 | 7 | [BUG-4](Fable-Notes.md#L1659) | ✅ | Aggiornare e unificare la cache dei canali. |
 | 8 | [STAB-5](Fable-Notes.md#L1800) |  | Usare scadenze monotone per misurare il tempo trascorso. |
@@ -54,7 +54,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 16 | [NET-8](Fable-Notes.md#L2677) |  | Sostituire il DNS predefinito specifico del laboratorio. |
 | 18 | [BUG-7](Fable-Notes.md#L2778) |  | Rendere coerente lo stato della potenza TX in caso di mismatch. |
 | 19 | [BUG-8](Fable-Notes.md#L2811) |  | Usare un confronto constant-time per il token. |
-| 20 | [NET-10](Fable-Notes.md#L2918) |  | Gestire conflitti sulla porta 80, richieste malformate e regole firewall. |
+| 20 | [NET-10](Fable-Notes.md#L2918) | ✅ | Gestire conflitti sulla porta 80, richieste malformate e regole firewall. |
 | 21 | [NET-4](Fable-Notes.md#L2956) | ✅ | Rimuovere il messaggio di log fuorviante sull'isolamento. |
 | 22 | [HAP-7](Fable-Notes.md#L2979) |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
 | 23 | [RACE-2](Fable-Notes.md#L2999) | ✅ | Costruire `/status` da uno snapshot coerente dello stato condiviso. |
@@ -67,11 +67,11 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 31 | [API-2](Fable-Notes.md#L3258) | ✅ | Uniformare i codici di stato per le reti non attive. |
 | 32 | [API-4](Fable-Notes.md#L3296) | ✅ | Usare codici di errore appropriati per gli esiti causati dal client. |
 | 33 | [API-9](Fable-Notes.md#L3328) | ✅ | Allineare gli esempi OpenAPI ai modelli correnti. |
-| 34 | [API-5](Fable-Notes.md#L3353) |  | Restituire dati strutturati sullo stato della rete insieme al messaggio. |
+| 34 | [API-5](Fable-Notes.md#L3353) | ✅ | Restituire dati strutturati sullo stato della rete insieme al messaggio. |
 | 35 | [API-10](Fable-Notes.md#L3388) | ✅ | Rifiutare i campi sconosciuti nelle richieste. `extra="forbid"` sui body di reservation, create (tutte le sezioni), TX power e profilo QoS; 422 con il percorso del campo. |
 | 36 | [API-3](Fable-Notes.md#L3409) | ✅ | Chiarire e uniformare i significati dei conflitti HTTP 409. Ogni 409 ha un `detail.code` (1007, 1008, 1009, 1010, 1011); 404 con un ID di reservation significa solo ID sparito; tutti i codici in `docs/error-codes.md`. |
 | 37 | [API-11](Fable-Notes.md#L3440) |  | Semplificare e documentare i retry tra server e client. |
-| 38 | [API-1](Fable-Notes.md#L3466) |  | Consolidare dati API duplicati e uniformare i nomi. |
+| 38 | [API-1](Fable-Notes.md#L3466) | ✅ | Consolidare dati API duplicati e uniformare i nomi. |
 | 39 | [API-8](Fable-Notes.md#L3485) | ✅ | Rimuovere dettagli implementativi dai modelli di risposta pubblici. Fatto con la `GET .../network` a sezioni (`radio`, `wifi`, `ip`, ...): niente più `dhcp.*_file`, `network_addr`, `interface`/`subnet` ripetuti, `clients_connected`. |
 | 40 | [API-6](Fable-Notes.md#L3514) | ✅ parz. | Uniformare i nomi di endpoint e campi. Fatto: `/reservations`, `/reservations/{id}/...`, nessun `device_id` nei messaggi. Manca `level` del TX power contro `tx_power_level` della create: da decidere con API-7. |
 | 41 | [API-7](Fable-Notes.md#L3537) |  | Valutare un modello API a risorse per le azioni enable/disable. |

@@ -1380,7 +1380,7 @@ Documentare la nuova chiave in `config.example.yaml`.
 ---
 
 <a id="sec-2"></a>
-### 18. SEC-2 - `/debug` consegna a tutti gli ID di reservation
+### 18. SEC-2 - `/debug` consegna a tutti gli ID di reservation ✅
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/api/routes/status.py:284-294](wilab/api/routes/status.py#L284-L294), [wilab/reservation.py:19](wilab/reservation.py#L19)
 
@@ -2926,7 +2926,7 @@ uso. Aggiungere a `stop` un parametro `keep_leases: bool = False` e passarlo `Tr
 ---
 
 <a id="net-10"></a>
-### 53. NET-10 - Captive portal: tre dettagli
+### 53. NET-10 - Captive portal: tre dettagli ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/captive.py:136-137](wilab/network/captive.py#L136-L137), [wilab/network/captive.py:245-248](wilab/network/captive.py#L245-L248), [wilab/network/nat.py:219-228](wilab/network/nat.py#L219-L228)
 
@@ -3361,7 +3361,7 @@ risposta reale: `device_id` non c'è.
 ---
 
 <a id="api-5"></a>
-### 68. API-5 - Le risposte di successo contengono solo una frase
+### 68. API-5 - Le risposte di successo contengono solo una frase ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/network.py:229-231](wilab/api/routes/network.py#L229-L231), [wilab/api/routes/internet.py:52](wilab/api/routes/internet.py#L52)
 
@@ -3474,7 +3474,7 @@ Il client si riduce a: `200` fatto, `503` riprova o interroga lo stato, `404` re
 ---
 
 <a id="api-1"></a>
-### 72. API-1 - Lo stesso dato esposto in più punti
+### 72. API-1 - Lo stesso dato esposto in più punti ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/models.py:103-130](wilab/models.py#L103-L130), [wilab/api/routes/status.py:72-303](wilab/api/routes/status.py#L72-L303)
 
