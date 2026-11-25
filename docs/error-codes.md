@@ -1,6 +1,8 @@
 # Error codes
 
-Every error answered under `/api/v2` has the same body:
+Every error answered under `/api/v2` has the same body (the create is
+asynchronous: it answers `202`, and a failed start is read with
+`GET .../network`, see `1013` and the `404` reasons):
 
 ```json
 {"detail": {"code": 1006, "reason": "device_busy", "message": "text for display"}}
@@ -24,17 +26,17 @@ release it), **STOP** (show the message, ask an operator).
 |---|---|---|---|---|---|---|
 | 1001 | `retry_later` | 409 | — | — | **No longer answered** (4.0.0): radio failures are retried by the server inside the create. Kept reserved. | — |
 | 1002 | `device_recovering` | 503 | 10 | reserve | No antenna is allocatable while one is being recovered (USB reset); with `interface`, that antenna is being recovered. | REPEAT |
-| 1003 | `device_unavailable` | 503 | no | reserve; create | Reserve: no antenna discovered or usable and nothing recovering; with `interface`, that antenna is quarantined. Create: every start failed after the server retries (antenna quarantined), an unsafe rollback, or the reservation expires too soon for another start; adds `reservation_invalidated: true`. | Reserve: STOP (after a service start, wait for discovery first). Create: RESERVE AGAIN |
-| 1004 | `cleanup_failed` | 503 | — | — | **No longer answered** (4.0.0): the release always answers `200` and the server repeats a failed cleanup in the background; the antenna is held meanwhile (reserve: `409 / 1005`; `GET /status`: `cleanup_failed`). A failed cleanup before a create quarantines the antenna (`503 / 1003`). Kept reserved. | — |
+| 1003 | `device_unavailable` | 503 | no | reserve | No antenna discovered or usable and nothing recovering; with `interface`, that antenna is quarantined. (A create whose every start failed is no longer answered with it: the asynchronous create ends with `404` and `reason: reservation_invalidated`.) | STOP (after a service start, wait for discovery first); with `interface`, reserve without it |
+| 1004 | `cleanup_failed` | 503 | — | — | **No longer answered** (4.0.0): the release always answers `200` and the server repeats a failed cleanup in the background; the antenna is held meanwhile (reserve: `409 / 1005`; `GET /status`: `cleanup_failed`). A failed cleanup before a create quarantines the antenna (polling: `404`, `reservation_invalidated`). Kept reserved. | — |
 | 1005 | `no_device_available` | 409 | no | reserve | Every antenna is reserved, or the requested `interface` is. Adds `next_available_at` (UTC) and `next_available_in` (seconds), both `null` when no release is scheduled. | REPEAT after `next_available_in`, or a backoff |
-| 1006 | `device_busy` | 503 | 2 | every call with a reservation ID except the create | Another operation held the antenna for more than 5 s. Nothing was changed. | REPEAT |
+| 1006 | `device_busy` | 503 | 2 | every call with a reservation ID except the create, `GET .../network` and the release | Another operation (for example an AP start) held the antenna for more than 5 s. Nothing was changed. | REPEAT |
 | 1007 | `network_not_active` | 409 | no | Internet, TX power, QoS profile, `DELETE .../network` | The reservation is valid but no network is running. | FIX (create the network first); DONE for a stop |
-| 1008 | `network_already_active` | 409 | no | create | A network with **different** settings already runs on this reservation. The same create again (same body) answers `200` with the network instead. | FIX: read it with `GET .../network`; `DELETE .../network` first to replace it |
-| 1009 | `restoration_in_progress` | 409 | no | create | The watchdog is restarting this network. | WAIT until `runtime_state` is `null`, then create only if `active` is `false` |
+| 1008 | `network_already_active` | 409 | no | create | A network with **different** settings runs or is starting on this reservation, or a stop did not complete. The same body answers `202` (starting) or `200` (running) instead. | FIX: read it with `GET .../network`; `DELETE .../network` first to replace it |
+| 1009 | `restoration_in_progress` | 409 | no | create | The watchdog is repairing this network (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`). | WAIT until `runtime_state` is `null`, then create only if `active` is `false` |
 | 1010 | `qos_profile_already_active` | 409 | no | start a QoS profile | A profile already runs on this network. | FIX: stop it first |
 | 1011 | `qos_profile_not_active` | 409 | no | stop a QoS profile | No profile runs on this network. | DONE |
 | 1012 | `stop_incomplete` | 503 | 5 | `DELETE .../network` | The stop did not complete even after the server repeated it every 2 s for 15 s, usually hostapd stuck in the kernel after a driver firmware timeout. The network is half stopped (`runtime_state: stop_failed`) and the watchdog leaves it alone. | REPEAT the DELETE until `200` |
-| 1013 | `startup_failed` | 500 | no | create | The network could not start for a non-radio reason and was rolled back; the reservation is kept. Adds `stage`: `hostapd`, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation` or `host_guard`. | STOP (release the ID before reserving again) |
+| 1013 | `startup_failed` | — | no | `GET .../network`, in `error` with `runtime_state: start_failed` | The asynchronous create failed for a non-radio reason and was rolled back; the reservation is kept. `error.stage`: `hostapd`, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation` or `host_guard`. Not an HTTP error: the `GET` answers `200`. | STOP (a new create starts again; release the ID if you give up) |
 
 ## Generic codes (the HTTP status)
 

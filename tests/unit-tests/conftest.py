@@ -333,3 +333,14 @@ def _fresh_health_checks(monkeypatch):
     """Tests change state and read /status at once: recompute the checks on every read."""
     from wilab import health
     monkeypatch.setattr(health, "MAX_AGE", -1.0)
+
+
+@pytest.fixture(autouse=True)
+def _create_in_the_request(monkeypatch):
+    """Most tests check the outcome of a start: run it in the request (200 or the failure).
+
+    The asynchronous contract (202, polling, cancel) is tested in
+    test_async_create.py, which turns the background thread back on.
+    """
+    from wilab.api.routes import network
+    monkeypatch.setattr(network, "CREATE_IN_BACKGROUND", False)

@@ -1,9 +1,11 @@
 """WiFi network lifecycle endpoints (create, delete, query)."""
 
 import logging
+import threading
 from time import monotonic, sleep, time
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from ...api.auth import require_token
 from ...api.dependencies import (
@@ -13,9 +15,22 @@ from ...api.dependencies import (
     hold_reservation,
     resolve_reservation,
 )
-from ...api.errors import ApiErrorCode, domain_error
-from ...models import NetworkCreateBody, NetworkResponse, ReservationInfo, RestartsInfo, body_error
-from ...reservation import EXPIRED, Reservation
+from ...api.errors import (
+    DEVICE_BUSY_RETRY_AFTER,
+    ApiErrorCode,
+    domain_error,
+    error_detail,
+)
+from ...models import (
+    NetworkCreateBody,
+    NetworkCreateRequest,
+    NetworkResponse,
+    ReservationInfo,
+    RestartsInfo,
+    StartError,
+    body_error,
+)
+from ...reservation import EXPIRED, Reservation, ReservationManager
 from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager, FieldError
 from ...wifi.hostapd import AP_READY_TIMEOUT, DFS_READY_TIMEOUT
@@ -23,11 +38,13 @@ from ...wifi.manager import (
     UNKNOWN_ANTENNA,
     NetworkManager,
     NetworkStopError,
+    StartJob,
     StartupFailure,
 )
 from .recovery_responses import (
     DEVICE_BUSY_RESPONSE,
     RecoveryCode,
+    device_busy_detail,
     recovery_error,
     recovery_example,
 )
@@ -35,6 +52,9 @@ from .recovery_responses import (
 # After a radio failure the create starts the AP again after these pauses, inside
 # the same request (the client no longer gets 409 / 1001 to do it itself).
 CREATE_RETRY_DELAYS = (5, 10)
+# The create answers 202 and the start runs in a thread; unit tests set it to
+# False to run the same start in the request and read its outcome directly.
+CREATE_IN_BACKGROUND = True
 START_MARGIN = 5.0   # seconds for gateway, DHCP, NAT and the rest after the AP is up
 
 # Seconds before repeating a stop that did not complete (hostapd stuck in the
@@ -100,6 +120,13 @@ _ACTIVE_EXAMPLE = {
 }
 
 
+_STARTING_EXAMPLE = {
+    "interface": "wlx7419f8176286", "active": False, "runtime_state": "starting",
+    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3599},
+    "restarts": {"ap": 0, "dhcp": 0, "last_at": None, "last_reason": None},
+}
+
+
 def _error(code: int, reason: str, message: str) -> dict:
     """An error `detail` object as the API returns it."""
     return {"code": code, "reason": reason, "message": message}
@@ -108,21 +135,27 @@ def _error(code: int, reason: str, message: str) -> dict:
 @router.post(
     "/{reservation_id}/network",
     response_model=NetworkResponse,
-    summary="Create a network on a reserved adapter",
+    status_code=202,
+    summary="Create a network on a reserved adapter (asynchronous)",
     responses={
+        202: {
+            "description": (
+                "Start accepted: the network with `active: false` and `runtime_state: starting` "
+                "(the same schema as `GET .../network`). Poll `GET .../network` every 1-2 s. "
+                "Also the answer to the same body while that start is running."
+            ),
+            "content": {"application/json": {"example": _STARTING_EXAMPLE}},
+        },
         200: {
             "description": (
-                "Network created and started: the same answer as `GET .../network`, "
-                "read right after the start (no clients yet)."
+                "The same body on a network that is already running with exactly these settings "
+                "(e.g. a create repeated after a lost answer): the network, nothing is restarted."
             ),
             "content": {"application/json": {"example": {**_ACTIVE_EXAMPLE, "clients": []}}},
         },
         401: {"description": "Unauthorized", "content": {"application/json": {
             "example": {"detail": _error(401, "unauthorized", "Invalid token")},
         }}},
-        404: {"description": "Reservation not found, expired or invalidated", "content": {
-            "application/json": {"example": {"detail": _error(404, "not_found", "Reservation not found or expired")}},
-        }},
         409: {
             "description": (
                 "A network with different settings already active (1008; the same body answers "
@@ -199,39 +232,6 @@ def _error(code: int, reason: str, message: str) -> dict:
                         422, "validation_error",
                         "radio.channel: Channel 14 is disabled on wlan0 for band 2.4ghz (regulatory domain restriction)",
                     )},
-                },
-            }}},
-        },
-        500: {
-            "description": (
-                "**`500 / 1013` (`startup_failed`):** the network could not start for a non-radio "
-                "reason and was rolled back; the reservation is kept. `detail.stage` names what "
-                "failed: `hostapd`, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, "
-                "`internet_block`, `isolation`, `host_guard`. Do not retry creation automatically; "
-                "release the ID if no longer needed. No `Retry-After`.\n\n"
-                "**`500 / 500`:** an unexpected server error."
-            ),
-            "content": {"application/json": {"examples": {
-                "startup_failure": {
-                    "summary": "500 / 1013 - Startup failed; reservation still valid",
-                    "value": {"detail": {
-                        "code": 1013, "reason": "startup_failed", "stage": "hostapd",
-                        "message": "Failed to start AP: hostapd exited with code 1 on wlan0",
-                    }},
-                },
-            }}},
-        },
-        503: {
-            "description": (
-                "**`503 / 1003`:** every start failed (the adapter is quarantined), or the "
-                "reservation expires too soon for the next start; the reservation is invalidated "
-                "(`reservation_invalidated: true`). Discard the ID; do not retry creation or release "
-                "it. Request a new reservation if needed. No `Retry-After`."
-            ),
-            "content": {"application/json": {"examples": {
-                "device_unavailable": {
-                    "summary": "503 / 1003 - Adapter quarantined; discard the reservation ID",
-                    **recovery_example(RecoveryCode.DEVICE_UNAVAILABLE, invalidated=True),
                 },
             }}},
         },
@@ -322,27 +322,33 @@ def start_network(
     channel_mgr: ChannelManager = Depends(get_channel_manager),
 ):
     """
-    Create and start a WiFi network in AP (access point) mode.
+    Create and start a WiFi network in AP (access point) mode, **asynchronously**.
 
-    Requires a valid reservation token. The network lifetime is bounded
-    by the reservation expiry.
+    The request is checked at once: `422` (invalid body or a setting the antenna
+    does not support), `404` (the reservation ID is gone, see `detail.reason`),
+    `409 / 1008` (a network with other settings runs or is starting; also a stop
+    that did not complete), `409 / 1009` (the watchdog is repairing the network).
+    Otherwise the answer is **`202`** with the network in `runtime_state:
+    starting`, and the start runs in the background. **Poll `GET .../network`**
+    every 1-2 s until one of these outcomes:
 
-    **Radio failures are retried by the server, never by the client.** If
-    starting the AP fails because of the radio (hostapd crash, beacon setup
-    failure, radio or readiness timeout), the server rolls it back and starts it
-    again in the same request: first up to 3 starts 1 s apart within 20 s, then,
-    if they all failed, one more start after 5 s and a last one after 10 s. A
-    normal start takes about 0.5 s; with every retry the answer can take about
-    80 s outside DFS channels (use a read timeout of at least 120 s) and several
-    minutes on DFS channels. Reservation expiry is not extended.
+    | `GET .../network` | Meaning | Client action |
+    |---|---|---|
+    | `active: true`, `runtime_state: null` | The AP is up | Done |
+    | `runtime_state: start_failed`, `error` | Non-radio failure (`error.code` 1013 with `error.stage`), rolled back; the reservation is still valid | Show the error; a new create starts again, `DELETE .../network` clears it |
+    | `404`, `detail.reason: reservation_invalidated` | Every start failed: the antenna is quarantined | Reserve again; do not release the ID |
+    | `404`, `detail.reason: reservation_expired` | The reservation expired, also when it would expire before the next start | Reserve again if needed |
 
-    If every start failed, or the rollback was unsafe, the answer is
-    **503 / 1003** and the ID is invalidated: the antenna is quarantined. The
-    same answer comes, without quarantine, when the reservation expires too soon
-    for the next start. Do not retry creation or release that ID: reserve again.
-    A new reservation request can return **503 / 1002** while recovery is
-    running. No USB reset runs in the creation request.
-    A network being restored by the watchdog returns **409 / 1009**.
+    **Radio failures are retried by the server, never by the client:** after a
+    hostapd crash, beacon setup failure, radio or readiness timeout the server
+    rolls back and starts again, up to 3 times 1 s apart within 20 s, then after
+    5 s and after 10 s. A normal start takes about 0.5 s; with every retry about
+    80 s, several minutes on DFS channels (radar check). Expiry is not extended.
+
+    The same body again is safe: `202` while that start runs, `200` with the
+    network once it runs. `DELETE .../network` during the start cancels it (the
+    reservation stays); releasing the reservation cancels it too. Other calls on
+    the reservation answer `503 / 1006` until the start ends.
 
     **Body:** settings are grouped in `radio`, `wifi` (with `security`),
     `internet` and `captive_portal`, the same sections as `GET .../network`.
@@ -370,27 +376,77 @@ def start_network(
     present: `GET .../network` reports the actual `radio.channel_width.reported`.
     """
     req = body.to_request()
-    if manager.watchdog.state(reservation) in ("restoring_ap", "restoring_dhcp"):
+    device_id = reservation.device_id
+    if manager.watchdog.state(reservation) in ("restoring_ap", "restoring_dhcp", "dhcp_failed"):
         raise HTTPException(status_code=409, detail=domain_error(
             ApiErrorCode.RESTORATION_IN_PROGRESS, "Network restoration is in progress",
         ))
-    # A create waits for the adapter instead of answering 1006: one create at a
-    # time per reservation is the client contract, and the wait is bounded.
-    with hold_reservation(reservation_mgr, reservation, wait=True):
-        device_id = reservation.device_id
+    job = manager.start_job(reservation)
+    if job is not None and job.state == "starting":
+        if job.request == req:
+            # The same create again, e.g. after a lost answer: keep polling the same start.
+            return _json(202, _state_response(reservation, "starting"))
+        raise HTTPException(status_code=409, detail=domain_error(
+            ApiErrorCode.NETWORK_ALREADY_ACTIVE,
+            f"A network with other settings is starting on {device_id}",
+        ))
+    if device_id in manager.active:
         if manager.runs(device_id, req):
             # The same create again, usually after a lost answer: it already succeeded.
-            return _network_response(manager, reservation)
-        try:
-            channel_mgr.validate_network(
-                device_id, req.band, req.channel, req.channel_width, req.wifi_generation,
-                req.encryption,
-            )
-        except FieldError as e:
-            raise HTTPException(status_code=422, detail=body_error(e.field, str(e)))
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
+            with hold_reservation(reservation_mgr, reservation):
+                return _json(200, _network_response(manager, reservation))
+        message = (
+            f"The stop of the network on {device_id} did not complete: repeat DELETE .../network first"
+            if manager.stop_failed(device_id) else
+            f"Network {device_id} is already active with other settings. Stop it first."
+        )
+        raise HTTPException(status_code=409, detail=domain_error(ApiErrorCode.NETWORK_ALREADY_ACTIVE, message))
+    try:
+        channel_mgr.validate_network(
+            device_id, req.band, req.channel, req.channel_width, req.wifi_generation,
+            req.encryption,
+        )
+    except FieldError as e:
+        raise HTTPException(status_code=422, detail=body_error(e.field, str(e)))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
+    if not CREATE_IN_BACKGROUND:
+        # Unit tests: the same start, answered when it ends (200 or the failure).
+        return _json(200, _run_start(manager, channel_mgr, reservation_mgr, reservation, req, None))
+    with manager.start_jobs_lock:
+        running = manager.start_jobs.get(device_id)
+        if running is not None and not running.done.is_set():
+            raise HTTPException(status_code=409, detail=domain_error(
+                ApiErrorCode.NETWORK_ALREADY_ACTIVE, f"A network is starting on {device_id}",
+            ))
+        job = StartJob(reservation=reservation, request=req)
+        job.thread = threading.Thread(
+            target=_run_job, args=(manager, channel_mgr, reservation_mgr, job),
+            name=f"create-{device_id}", daemon=True,
+        )
+        manager.start_jobs[device_id] = job
+    job.thread.start()
+    return _json(202, _state_response(reservation, "starting"))
+
+
+class StartCancelled(Exception):
+    """The client released the reservation or stopped the network during the start."""
+
+
+def _run_start(
+    manager: NetworkManager, channel_mgr: ChannelManager, reservation_mgr: ReservationManager,
+    reservation: Reservation, req: NetworkCreateRequest, cancel: threading.Event | None,
+) -> NetworkResponse:
+    """Start the AP, with the server's retries; raise the HTTP answer of a failure.
+
+    Holds the device for the whole start. Radio failures are retried here: up to
+    3 starts inside `start_network`, then after a 5 s and a 10 s pause. *cancel*
+    stops the start at the next check and rolls it back (StartCancelled).
+    """
+    cancelled = cancel.is_set if cancel is not None else None
+    with hold_reservation(reservation_mgr, reservation, wait=True):
+        device_id = reservation.device_id
         # A new network replaces one the watchdog failed to restore (WD-2).
         manager.watchdog.forget(device_id)
         failures = 0
@@ -399,12 +455,15 @@ def start_network(
                 manager.start_network(
                     device_id, req, expires_at_timestamp=reservation.expires_at,
                     allow_internal_retry=failures == 0,
+                    **({"cancelled": cancelled} if cancelled is not None else {}),
                 )
-                # API-5: the network as GET .../network returns it, so the client saves a call.
+                # API-5: the network as GET .../network returns it.
                 return _network_response(manager, reservation)
             except StartupFailure as e:
                 # The next attempt reads the channel list again (BUG-4).
                 channel_mgr.invalidate(device_id)
+                if cancel is not None and cancel.is_set() and not e.cleanup_failed:
+                    raise StartCancelled from e
                 if not (e.radio or e.cleanup_failed):
                     # Rolled back, reservation kept: the stage tells the client what failed.
                     raise HTTPException(status_code=500, detail=domain_error(
@@ -414,15 +473,17 @@ def start_network(
                 if not e.cleanup_failed and failures <= len(CREATE_RETRY_DELAYS):
                     delay = CREATE_RETRY_DELAYS[failures - 1]
                     if _time_left(reservation) >= delay + _start_time(req):
-                        # The pause the client used to take after 409 / 1001, taken here.
                         logger.info(
                             "AP start on %s failed (%d/%d); starting again in %d s: %s",
                             device_id, failures, len(CREATE_RETRY_DELAYS) + 1, delay, e,
                         )
-                        sleep(delay)
+                        if cancel is None:
+                            sleep(delay)
+                        elif cancel.wait(delay):
+                            raise StartCancelled from e
                         continue
                     # Too little reservation time for another start: free the antenna,
-                    # the client reserves again (same action as a quarantine).
+                    # the client reserves again (404 reservation_expired).
                     logger.warning(
                         "AP start on %s failed and the reservation expires too soon to retry; "
                         "releasing it", device_id,
@@ -435,14 +496,63 @@ def start_network(
                 raise recovery_error(RecoveryCode.DEVICE_UNAVAILABLE, invalidated=True) from e
             except ValueError as e:
                 error_msg = str(e)
-                error_msg_lower = error_msg.lower()
-                if "already active" in error_msg_lower:
+                if "already active" in error_msg.lower():
                     raise HTTPException(
                         status_code=409, detail=domain_error(ApiErrorCode.NETWORK_ALREADY_ACTIVE, error_msg),
                     )
                 if error_msg == UNKNOWN_ANTENNA:
                     raise HTTPException(status_code=404, detail=error_msg)
                 raise HTTPException(status_code=500, detail=error_msg)
+
+
+def _run_job(
+    manager: NetworkManager, channel_mgr: ChannelManager, reservation_mgr: ReservationManager,
+    job: StartJob,
+) -> None:
+    """Background body of an asynchronous create; the outcome is read with GET .../network."""
+    device_id = job.reservation.device_id
+    keep = False
+    try:
+        _run_start(manager, channel_mgr, reservation_mgr, job.reservation, job.request, job.cancel)
+        logger.info("AP start on %s completed", device_id)
+    except StartCancelled:
+        logger.info("AP start on %s cancelled and rolled back", device_id)
+    except HTTPException as exc:
+        detail = error_detail(exc.status_code, exc.detail)
+        if exc.status_code == 404 or detail["code"] == RecoveryCode.DEVICE_UNAVAILABLE:
+            # The reservation ended (invalidated or expired): GET answers 404 with the reason.
+            logger.warning("AP start on %s ended its reservation (%s)", device_id, detail["reason"])
+        else:
+            logger.warning("AP start on %s failed: %s", device_id, detail.get("message"))
+            job.state, job.error, keep = "start_failed", detail, True
+    except Exception:  # the outcome must always be readable, never a dead "starting"
+        logger.exception("AP start on %s failed unexpectedly", device_id)
+        job.state, job.error, keep = "start_failed", error_detail(500, None), True
+    finally:
+        if not keep:
+            with manager.start_jobs_lock:
+                if manager.start_jobs.get(device_id) is job:
+                    del manager.start_jobs[device_id]
+        job.done.set()
+
+
+def _state_response(
+    reservation: Reservation, runtime_state: str, error: dict | None = None,
+) -> NetworkResponse:
+    """A network that is not running: starting, or start_failed with its error."""
+    return NetworkResponse(
+        interface=reservation.device_id, active=False, runtime_state=runtime_state,
+        reservation=ReservationInfo(
+            expires_at=format_utc_timestamp(reservation.expires_at),
+            expires_in=reservation.expires_in,
+        ),
+        restarts=_restarts(reservation),
+        error=StartError(**error) if error is not None else None,
+    )
+
+
+def _json(status_code: int, response: NetworkResponse) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content=response.model_dump(mode="json"))
 
 
 def _time_left(reservation: Reservation) -> float:
@@ -499,6 +609,18 @@ def stop_network(
     Returns:
         dict: Confirmation with stopped device_id.
     """
+    job = manager.start_job(reservation)
+    if job is not None:
+        # Cancel a start in progress (it rolls back) or clear a start_failed.
+        manager.cancel_start(reservation.device_id)
+        if not job.done.is_set():
+            raise HTTPException(
+                status_code=503, detail=device_busy_detail(),
+                headers={"Retry-After": str(DEVICE_BUSY_RETRY_AFTER)},
+            )
+        if reservation.device_id not in manager.active:
+            return {"detail": f"Network {reservation.device_id} stopped successfully"}
+        # The start completed just before the cancel: stop the network it left.
     with hold_reservation(reservation_mgr, reservation):
         device_id = reservation.device_id
         st = manager.get_status(device_id)
@@ -619,6 +741,10 @@ def get_network(
     is not running. `wifi.security.password` is returned so that test devices
     can be connected.
     """
+    job = manager.start_job(reservation)
+    if job is not None:
+        # Answered without waiting for the device, which the start holds.
+        return _state_response(reservation, job.state, job.error)
     runtime_state = manager.watchdog.state(reservation)
     if runtime_state in ("restoring_ap", "restoring_dhcp"):
         return NetworkResponse(

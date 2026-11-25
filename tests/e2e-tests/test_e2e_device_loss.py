@@ -10,7 +10,7 @@ import threading
 import time
 
 import pytest
-from wilab_e2e import Server, WiLab, detail_code, wait_for
+from wilab_e2e import Server, WiLab, wait_for
 
 pytestmark = pytest.mark.usb
 
@@ -63,7 +63,8 @@ def _quarantine_while_gone(wilab: WiLab, server: Server, interface: str) -> str:
     assert server.wait_interface(interface, present=False)
     started = time.monotonic()
     response = wilab.create(antenna)
-    assert (response.status_code, detail_code(response)) == (503, 1003), response.text
+    assert response.status_code == 404, response.text  # asynchronous create: the polling ends in 404
+    assert response.json()["detail"]["reason"] == "reservation_invalidated"
     assert time.monotonic() - started >= 15  # the server took both pauses itself
     wilab.reserved.remove(antenna.reservation_id)  # invalidated by the quarantine
     status = wilab.status()

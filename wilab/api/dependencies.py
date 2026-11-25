@@ -54,6 +54,7 @@ def get_reservation_manager(config: AppConfig = Depends(get_config)) -> Reservat
             _reservation_manager = ReservationManager(
                 device_ids, cleanup=manager.release_device, device_lock=manager.device_lock,
                 cleanup_due=manager.cleanup_due, cleanup_wait=manager.cleanup_wait,
+                before_release=manager.cancel_start,
             )
             manager.expire_reservations = _reservation_manager.expire
             manager.watchdog.start(_reservation_manager)

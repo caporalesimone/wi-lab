@@ -108,5 +108,5 @@ def test_openapi_documents_device_busy():
     assert "1006" in response["description"]
     assert response["headers"]["Retry-After"]["example"] == 2
     assert "device_busy" in response["content"]["application/json"]["examples"]
-    create = schema["paths"]["/api/v2/reservations/{reservation_id}/network"]["post"]["responses"]["503"]
-    assert "1006" not in create.get("description", "")  # a create waits for the adapter
+    create = schema["paths"]["/api/v2/reservations/{reservation_id}/network"]["post"]["responses"]
+    assert "503" not in create  # a create answers 202 at once and never 1006

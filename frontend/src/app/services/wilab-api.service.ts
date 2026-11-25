@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
-import { Observable, throwError } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { Observable, of, throwError, timer } from 'rxjs';
+import { catchError, first, switchMap } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 import { ApiError, RecoveryCode, retryWhenBusy } from './recovery-response';
@@ -13,6 +13,9 @@ import {
   ReservationRequest,
   ReservationResponse
 } from '../models/network.models';
+
+/** How often GET .../network is read while a create is starting. */
+const CREATE_POLL_MS = 1500;
 
 @Injectable({
   providedIn: 'root'
@@ -100,13 +103,22 @@ export class WilabApiService {
     );
   }
 
-  /** Radio failures are retried by the server inside this request: never repeat it. */
+  /**
+   * Asynchronous create: the POST answers 202 with runtime_state "starting", then
+   * GET .../network is polled until the start ends. Emits the final network:
+   * runtime_state null (the AP is up) or "start_failed" (see `error`). A 404 while
+   * polling (reservation invalidated or expired) is an error with detail.reason.
+   * Radio failures are retried by the server: never repeat the create for them.
+   */
   public startNetwork(reservationId: string, config: NetworkCreateRequest): Observable<NetworkStatus> {
-    return this.http.post<NetworkStatus>(
-      `${this.apiUrl}/reservations/${reservationId}/network`,
-      config,
-      { headers: this.getHeaders() }
-    ).pipe(catchError(this.handleError));
+    const url = `${this.apiUrl}/reservations/${reservationId}/network`;
+    return this.http.post<NetworkStatus>(url, config, { headers: this.getHeaders() }).pipe(
+      switchMap(created => created.runtime_state !== 'starting' ? of(created) : timer(CREATE_POLL_MS, CREATE_POLL_MS).pipe(
+        switchMap(() => this.http.get<NetworkStatus>(url, { headers: this.getHeaders() })),
+        first(status => status.runtime_state !== 'starting'),
+      )),
+      catchError(this.handleError)
+    );
   }
 
   public stopNetwork(reservationId: string): Observable<object> {

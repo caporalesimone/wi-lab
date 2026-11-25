@@ -74,7 +74,7 @@ health checks** (`GET /api/v2/monitoring`) gives the detail of every check.
 Clients must poll
 this endpoint to learn about quarantined adapters: a quarantined adapter can
 show `reservation: null` but is not allocatable, and only its former owner is
-told directly (`503 / 1003` on the create). See
+told directly (`404` with `reason: reservation_invalidated` on its next call). See
 [AP creation procedure, 2.8](ap-creation-procedure.md#28-service-health-degraded-and-quarantined-antennas).
 
 ## Encryption, channel width and Wi-Fi generation
@@ -95,16 +95,17 @@ unsupported Wi-Fi generation. What each antenna accepts is in
 
 ## Network creation failure
 
-In the **Network** group, open **Create a network on a reserved adapter**.
-Its `409` examples distinguish an existing AP (`1008`) and a watchdog
-restoration (`1009`). Radio failures are retried by the server inside the
-request, so no create error asks the client to repeat it. Every code is
-listed in [Error codes](error-codes.md). Under **Responses → 500 → Example Value**, select
-**500 / 1013 - Startup failed; reservation still valid**: `detail.stage` names what failed. Under
-**Responses → 503**, **503 / 1003 - Adapter quarantined; discard the reservation
-ID** is the terminal error (`reservation_invalidated: true`); before API-4 it
-was a `500`. Neither includes `Retry-After`. In the **Reservation** group, `503 / 1003` means
-all adapters are quarantined and there is no automatic retry recommendation.
+In the **Network** group, open **Create a network on a reserved adapter
+(asynchronous)**. It answers `202` with `runtime_state: starting`; then read
+**Get network** until the outcome: the network, `runtime_state: start_failed`
+with `error` (`1013` and the failed `stage`, reservation still valid), or `404`
+whose `detail.reason` is `reservation_invalidated` (every start failed, antenna
+quarantined) or `reservation_expired`. Its `409` examples distinguish another
+network (`1008`) and a watchdog repair (`1009`). Radio failures are retried by
+the server during the start, so no outcome asks the client to repeat the
+create. Every code is listed in [Error codes](error-codes.md). In the
+**Reservation** group, `503 / 1003` means all adapters are quarantined and
+there is no automatic retry recommendation.
 In the **Reservation** group, `503 / 1002` instead means that a *new*
 reservation request can be retried after `Retry-After`. `409 / 1005` is ordinary
 reservation contention and can include `detail.next_available_in`. A release
@@ -115,22 +116,22 @@ and QoS profile endpoints when the reservation is valid but has no running
 network; `404` there always means the reservation is gone.
 
 `503 / 1006` (`device_busy`, example **1006 - adapter busy, retry**) is
-documented on every reservation endpoint except the create: another operation
-on the same adapter, for example a network start, still held it after 5 s.
-Nothing was changed; repeat the request after `Retry-After` (2 s). The create
-waits for the adapter instead.
+documented on the reservation endpoints: another operation on the same
+adapter, for example a network start, still held it after 5 s. Nothing was
+changed; repeat the request after `Retry-After` (2 s). The create, `GET
+.../network` and the release never answer it.
 
 For a complete interactive example:
 
 1. In **Reservation**, execute the timed example for `POST /api/v2/reservations`.
 2. In **Network**, copy the returned `reservation_id` into the create endpoint
-   and choose a channel supported by the adapter. The answer can take a while
-   if the radio fails and the server starts it again.
+   and choose a channel supported by the adapter. Then execute **Get network**
+   until `runtime_state` is no longer `starting`.
 3. Use **Read system and adapter status** to distinguish
    `recovery_state` (quarantine) from `runtime_state` (AP/DHCP restoration).
    During restoration, read status instead of sending another create.
 4. When finished, delete the reservation by ID; Wi-Lab stops the network.
-   Do not send this request for an ID already invalidated by `503 / 1003`.
+   For an ID already invalidated the answer is `404` (`reservation_invalidated`).
 
 See the [AP creation procedure](ap-creation-procedure.md) for the complete
 client flow and retry rules, and [Architecture](architecture.md) for USB recovery.

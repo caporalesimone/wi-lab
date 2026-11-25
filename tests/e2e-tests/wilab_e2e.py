@@ -332,7 +332,18 @@ class WiLab:
         }
         body.update(overrides)
         body = {key: value for key, value in body.items() if value is not None}
-        return self.http.post(f"/reservations/{antenna.reservation_id}/network", json=network_body(**body))
+        url = f"/reservations/{antenna.reservation_id}/network"
+        response = self.http.post(url, json=network_body(**body))
+        if response.status_code != 202:
+            return response  # 200 (already running), or an error answered at once
+        # Asynchronous create: poll until the start ends (the network, start_failed or 404).
+        deadline = time.monotonic() + 360
+        while time.monotonic() < deadline:
+            time.sleep(1)
+            response = self.http.get(url)
+            if response.status_code != 200 or response.json().get("runtime_state") != "starting":
+                return response
+        raise TimeoutError(f"{url} still starting after 360 s")
 
     def delete_network(self, antenna: Antenna) -> int:
         return self.http.delete(f"/reservations/{antenna.reservation_id}/network").status_code

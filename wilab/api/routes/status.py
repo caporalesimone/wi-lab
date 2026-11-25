@@ -196,6 +196,8 @@ def _assess(
         if reservation is not None and (runtime_state := manager.watchdog.state(reservation)):
             entry["runtime_state"] = runtime_state
             reasons.append(_reason("network_being_repaired", n.interface, state=runtime_state))
+        elif reservation is not None and (job := manager.start_job(reservation)) is not None:
+            entry["runtime_state"] = job.state  # starting or start_failed: not a fault
         elif manager.stop_failed(n.device_id):
             # Same state as GET .../network; its half-stopped processes are not
             # reported again as hostapd/dnsmasq/NAT problems below.

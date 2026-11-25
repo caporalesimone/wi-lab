@@ -26,7 +26,11 @@ def test_busy_answers_are_retried_on_every_reservation_call_but_the_create():
     assert "retry(" not in create  # radio failures are retried by the server (no 409 / 1001)
 
 
-def test_quarantine_is_detected_by_code_not_status():
+def test_create_polls_and_quarantine_is_detected_by_reason():
+    """Asynchronous create: the card reads start_failed and the 404 reason, not a status code."""
+    service = (APP / "services/wilab-api.service.ts").read_text()
+    create = service.split("public startNetwork(", 1)[1].split("\n  public ", 1)[0]
+    assert "runtime_state !== 'starting'" in create and "timer(" in create
     card = (APP / "components/network-card/network-card.component.ts").read_text()
-    assert "raw?.status === 500" not in card
-    assert "detail?.code === RecoveryCode.DeviceUnavailable" in card
+    assert "runtime_state === 'start_failed'" in card
+    assert "reason === 'reservation_invalidated'" in card

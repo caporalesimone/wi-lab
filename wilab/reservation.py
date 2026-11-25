@@ -114,6 +114,7 @@ class ReservationManager:
         device_lock: Callable[[str], RLock] | None = None,
         cleanup_due: Callable[[str], bool] | None = None,
         cleanup_wait: Callable[[str], float] | None = None,
+        before_release: Callable[[str], object] | None = None,
     ) -> None:
         self._device_ids = list(device_ids)
         self._reservations: dict[str, Reservation] = {}   # reservation_id -> Reservation
@@ -130,6 +131,9 @@ class ReservationManager:
         self._cleanup_due = cleanup_due or (lambda _device: True)
         # Seconds until the next background cleanup of a device whose cleanup failed.
         self._cleanup_wait = cleanup_wait or (lambda _device: 0.0)
+        # Cancels an AP start in progress, which holds the device lock, so that a
+        # release never waits for a long start (asynchronous create).
+        self._before_release = before_release or (lambda _device: None)
         self._failing_cleanup: set[str] = set()  # log the traceback once per failure series
         self._ended: dict[str, tuple[str, float]] = {}  # reservation_id -> (reason, monotonic)
 
@@ -291,6 +295,7 @@ class ReservationManager:
         with self._lock:
             reservation.release_requests += 1
         try:
+            self._before_release(reservation.device_id)
             with self._device_lock(reservation.device_id):
                 with self._lock:
                     current = self._reservations.get(reservation_id)

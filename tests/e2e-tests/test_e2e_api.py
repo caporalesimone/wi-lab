@@ -14,7 +14,7 @@ import time
 from urllib.parse import urlsplit
 
 import pytest
-from wilab_e2e import Server, WiLab, detail_code
+from wilab_e2e import Server, WiLab, detail_code, network_body
 
 
 def pending(fable_id: str):
@@ -66,6 +66,40 @@ def test_create_returns_the_network_state(wilab: WiLab) -> None:
     assert response.status_code == 200, response.text
     body = response.json()
     assert body.get("active") is True and body["wifi"]["ssid"] == "wilab-e2e", body
+
+
+def test_create_is_asynchronous_and_idempotent(wilab: WiLab) -> None:
+    """The create answers 202 at once, the polling ends with the network, the same body is 200."""
+    antenna = wilab.reserve()
+    url = f"/reservations/{antenna.reservation_id}/network"
+    body = network_body(ssid="wilab-async", channel=6, band="2.4ghz", encryption="open", tx_power_level=2)
+    started = time.monotonic()
+    accepted = wilab.http.post(url, json=body)
+    assert accepted.status_code == 202, accepted.text
+    assert time.monotonic() - started < 3
+    assert accepted.json()["runtime_state"] == "starting"
+    assert set(accepted.json()) == set(wilab.http.get(url).json())  # the schema of GET
+    deadline = time.monotonic() + 120
+    while (state := wilab.http.get(url).json())["runtime_state"] == "starting":
+        assert time.monotonic() < deadline
+        time.sleep(1)
+    assert state["active"] is True and state["runtime_state"] is None, state
+    again = wilab.http.post(url, json=body)
+    assert again.status_code == 200 and again.json()["active"] is True
+
+
+def test_release_during_a_start_answers_at_once(wilab: WiLab) -> None:
+    """A Suite Teardown never waits for a long start: the release cancels it."""
+    antenna = wilab.reserve()
+    rid = antenna.reservation_id
+    body = network_body(ssid="wilab-cancel", channel=6, band="2.4ghz", encryption="open", tx_power_level=2)
+    assert wilab.http.post(f"/reservations/{rid}/network", json=body).status_code == 202
+    started = time.monotonic()
+    assert wilab.http.delete(f"/reservations/{rid}").status_code == 200
+    assert time.monotonic() - started < 15
+    wilab.reserved.remove(rid)
+    gone = wilab.http.get(f"/reservations/{rid}/network")
+    assert (gone.status_code, gone.json()["detail"]["reason"]) == (404, "reservation_released")
 
 
 def test_actions_without_a_network_share_one_status_code(wilab: WiLab) -> None:

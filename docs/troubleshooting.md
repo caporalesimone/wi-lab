@@ -91,7 +91,7 @@ Script:
 Symptoms:
 - `GET /api/v2/status` returns `status: degraded` and an entry with
   `recovery_state: unavailable` (or `recovering` for a long time)
-- a create returned `503 / 1003`; fewer antennas can be reserved
+- a create ended with `404` and `reason: reservation_invalidated`; fewer antennas can be reserved
 
 Check, in this order:
 1. Kernel log around the failure: `journalctl -k --since "<time>"`. Look for

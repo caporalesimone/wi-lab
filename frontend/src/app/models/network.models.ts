@@ -1,5 +1,23 @@
 export type RecoveryState = 'recovering' | 'unavailable';
-export type RuntimeState = 'restoring_ap' | 'restoring_dhcp' | 'dhcp_failed' | 'restore_failed' | 'stop_failed';
+export type RuntimeState =
+  'starting' | 'start_failed' |
+  'restoring_ap' | 'restoring_dhcp' | 'dhcp_failed' | 'restore_failed' | 'stop_failed';
+
+/** Why an asynchronous create failed (runtime_state start_failed). */
+export interface StartError {
+  code: number;
+  reason: string;
+  message: string;
+  stage?: string | null;
+}
+
+/** Watchdog repairs over the whole reservation; the counters never decrease. */
+export interface Restarts {
+  ap: number;
+  dhcp: number;
+  last_at: string | null;
+  last_reason: string | null;
+}
 
 export type ChannelWidth = 20 | 40 | 80;
 export type WifiGeneration = 4 | 5 | 6;
@@ -83,6 +101,8 @@ export interface NetworkStatus {
     expires_at: string | null;
     expires_in: number | null;
   };
+  restarts?: Restarts;
+  error?: StartError | null;
   radio: {
     band: string;
     channel: number;

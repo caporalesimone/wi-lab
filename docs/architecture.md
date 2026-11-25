@@ -238,7 +238,11 @@ keep their subnet. Antennas found by the same scan follow the configured order.
 
 Route handlers are synchronous (`def`), so Starlette runs them in its worker
 thread pool, not in the event loop. Every Linux command is therefore blocking
-but isolated to one worker thread.
+but isolated to one worker thread. An AP start runs in its own `create-<interface>`
+thread (`StartJob` in `NetworkManager.start_jobs`): the create answers `202` at
+once and `GET .../network` reads the job without waiting for the device lock.
+A release or a stop sets the job's cancel event first (`cancel_start`), so it
+never waits for a long start: the hostapd readiness wait and the pauses check it.
 
 ```mermaid
 flowchart TB
@@ -367,10 +371,11 @@ sequenceDiagram
     R->>R: validate body: SSID, password, channel/band (422)
     R->>R: require_token (401)
     R->>RM: resolve_reservation (404 if unknown, expired, invalidated)
-    R->>R: watchdog restoring this AP? (409)
-    R->>RM: hold_reservation: take device lock, re-check (404)
+    R->>R: watchdog repairing this AP? (409 / 1009). Same body starting or running? (202 / 200)
     R->>CH: validate_channel (422)
-    R->>NM: start_network(allow_internal_retry = first round of the request)
+    R-->>C: 202 starting, the rest runs in the create job thread
+    R->>RM: (job) hold_reservation: take device lock, re-check (404)
+    R->>NM: (job) start_network(allow_internal_retry = first round, cancelled)
     NM->>NM: retry deadline = now + 5 s, capped by expiry
     NM->>NM: known antenna, not already active (409)
     NM->>NM: release_device: clear leftovers of a failed start
@@ -400,8 +405,7 @@ sequenceDiagram
     end
     NM->>OS: set TX power level (best effort)
     NM->>NM: active[antenna] = NetworkStatus
-    NM-->>R: status
-    R-->>C: 200 the network
+    NM-->>R: status (the job ends, GET .../network shows the network)
 ```
 
 ### 5.2 hostapd startup and readiness
@@ -498,7 +502,7 @@ until a restart (incident of 2026-11-23 12:23).
 `captive_portal.enabled` is optional in the create request; omitted or `false`, none of
 the following happens. When `true`, after DHCP starts Wi-Lab builds a
 `CaptivePortal` for the AP. A failure here is an unclassified startup failure:
-the start is rolled back and the client gets `500 / 1013` with `stage: captive_portal`.
+the start is rolled back and the polling shows `start_failed` with `error.stage: captive_portal`.
 
 ```mermaid
 sequenceDiagram
@@ -554,16 +558,16 @@ drastic.
 
 ```mermaid
 flowchart TD
-    S["POST create"] --> ST["start AP (round 1)"]
+    S["POST create: 202, create job"] --> ST["start AP (round 1)"]
     ST --> OUT{"outcome"}
-    OUT -->|success| OK["200, the network"]
+    OUT -->|success| OK["job dropped, GET: the network"]
     OUT -->|"radio failure while starting the AP (segfault, beacon/init failure,<br/>radio or readiness timeout); round 1, fewer than 3 starts,<br/>at least 5 s of the 20 s budget left"| IR["layer 1: rollback, wait 1 s,<br/>start again inside the same request"]
     IR --> OUT2{"retry outcome"}
     OUT2 -->|success| OK
     OUT2 -->|"AP start failed again, starts or budget left"| IR
     OUT2 -->|"AP start failed again, no starts or budget left"| CL
     OUT2 -->|"gateway or DHCP failed"| G
-    OUT -->|"unclassified: exit code, gateway, DHCP,<br/>NAT, isolation, host guard, interface validation"| G["500 / 1013 with stage<br/>reservation kept"]
+    OUT -->|"unclassified: exit code, gateway, DHCP,<br/>NAT, isolation, host guard, interface validation"| G["start_failed, error 1013 with stage<br/>reservation kept"]
     OUT -->|"interface vanished (any stage)"| CL
     OUT -->|classified radio failure| CL["failures += 1 (this request)"]
     OUT -->|rollback failed| Q
@@ -571,8 +575,8 @@ flowchart TD
     N -->|"1 or 2"| T{"reservation time left for<br/>the pause and one more start?"}
     T -->|yes| P["layer 2: pause 5 s (then 10 s),<br/>one more start, same request"]
     P --> OUT
-    T -->|no| REL["release the reservation, no quarantine<br/>503 / 1003 invalidated"]
-    N -->|3| Q["layer 3: quarantine antenna, invalidate reservation<br/>503 / 1003"]
+    T -->|no| REL["release the reservation as expired, no quarantine<br/>GET: 404 reservation_expired"]
+    N -->|3| Q["layer 3: quarantine antenna, invalidate reservation<br/>GET: 404 reservation_invalidated"]
     Q --> U{"USB antenna, radio fault,<br/>not upstream?"}
     U -->|yes| REC["schedule USB recovery<br/>recovery_state = recovering"]
     U -->|no| UN["recovery_state = unavailable"]
@@ -581,14 +585,15 @@ flowchart TD
 | Layer | Where | Trigger | Limit |
 |---|---|---|---|
 | 1. Internal retry | Inside one request (`NetworkManager`) | Radio failure while starting the AP, on either band: hostapd segfault, beacon setup and interface initialization failure (`HostapdInitFailure`), radio preparation or readiness timeout. First round of the request only. | Up to 3 starts, 1 s apart, within 20 s from the request start, capped by expiry. A start begins only with at least 4 s left (`MIN_RETRY_ATTEMPT_TIME`, Fable HAP-4), so a start cut short by the budget never counts as a radio failure. If the last start fails, the round counts as **one** radio failure. |
-| 2. Paused retry | Same request (route, `CREATE_RETRY_DELAYS`) | Classified radio failure of a round | 3 rounds per request, pauses 5 s and 10 s, each only if the reservation has time for the pause plus one start (`AP_READY_TIMEOUT` or `DFS_READY_TIMEOUT`, plus `START_MARGIN`). The device lock is held during the pauses: other calls on the reservation get `503 / 1006`. |
+| 2. Paused retry | Same create job (route, `CREATE_RETRY_DELAYS`) | Classified radio failure of a round | 3 rounds per create, pauses 5 s and 10 s, each only if the reservation has time for the pause plus one start (`AP_READY_TIMEOUT` or `DFS_READY_TIMEOUT`, plus `START_MARGIN`). The device lock is held during the pauses: other calls on the reservation get `503 / 1006`. |
 | 3. Quarantine and USB recovery | Background worker | 3rd classified failure, unsafe rollback, or a failed watchdog restart | 10 rounds at least 60 s apart, USB antennas only. Then, and for every other quarantine, a periodic re-probe ([8.1](#81-re-probe-of-unavailable-antennas)). |
 
 Layer 1 exists because these failures are short-lived: in test runs nearly
 every one succeeded on an immediate new start. Layer 2 used to be the client's
 job (`409 / 1001` with `Retry-After` 5 and 10 s, then the same create again);
-the server now takes the same pauses inside the request, so the client sends
-one create and gets `200` or a terminal `503 / 1003`. A start without failures
+the server now takes the same pauses in the create job, so the client sends
+one create and polls until the network, `start_failed` or `404`
+(`reservation_invalidated`). A start without failures
 still takes about 0.5 s; one internal retry adds about 2–3 s, two about
 5–6 s; with every layer-2 round the worst case is about 80 s outside DFS
 channels. Gateway, DHCP, captive portal, NAT, isolation and other
@@ -599,8 +604,8 @@ internal retry of a request that already had a radio failure stays radio. On a
 DFS channel the radar check can use up the whole layer-1 budget, so a failure
 there goes straight to layer 2.
 
-An unclassified startup failure with successful rollback returns `500 / 1013`
-with the failed `stage`. It does not count as a radio failure, but the
+An unclassified startup failure with successful rollback leaves the job as
+`runtime_state: start_failed` with `error` (`1013` and the failed `stage`). It does not count as a radio failure, but the
 reservation still holds the antenna. `release_device()` in the rollback cleans
 up the network; it does not delete the reservation. The client can release the
 ID explicitly when it no longer needs it.
@@ -633,6 +638,7 @@ sequenceDiagram
     autonumber
     participant C as Client
     participant A as API routes
+    participant J as Create job (thread)
     participant RM as ReservationManager
     participant NM as NetworkManager
     participant CM as ChannelManager
@@ -687,24 +693,27 @@ sequenceDiagram
     alt unknown, expired, released or invalidated
         A-->>C: 404
     end
-    alt watchdog state restoring_ap or restoring_dhcp
-        A-->>C: 409 "Network restoration is in progress"
+    alt watchdog state restoring_ap, restoring_dhcp or dhcp_failed
+        A-->>C: 409 / 1009 restoration_in_progress
     end
-    A->>RM: hold the reservation, waiting for the device lock (no 1006 on create)
+    alt a start of this reservation is running
+        A-->>C: same body 202 starting, other body 409 / 1008
+    else the network runs (or its stop did not complete)
+        A-->>C: same body 200 the network, other body 409 / 1008
+    end
     A->>CM: validate_network(band, channel, width, generation, encryption)
     alt refused (refused again after one fresh iw reading)
         A-->>C: 422 "radio.channel: ..." or "radio.channel_width: ..."
     end
-    loop Layer 2: up to 3 rounds, pauses 5 s and 10 s (device lock held)
-    A->>NM: start_network(device, request, allow_internal_retry = round 1)
-    alt network already in active
-        NM-->>A: ValueError already active
-        A-->>C: 409 "already active"
-    end
+    A->>J: StartJob(reservation, request) in NetworkManager.start_jobs, thread started
+    A-->>C: 202 runtime_state starting (same schema as GET .../network)
+    J->>RM: hold the reservation, waiting for the device lock
+    loop Layer 2: up to 3 rounds, pauses 5 s and 10 s (device lock held, cancel checked)
+    J->>NM: start_network(device, request, allow_internal_retry = round 1, cancelled)
     NM->>NM: release_device(): remove leftovers of an earlier start
     alt leftover cleanup fails
         NM->>RM: quarantine the antenna, invalidate the reservation
-        A-->>C: 503 / 1003 reservation_invalidated true
+        Note over J: job dropped, GET answers 404 reservation_invalidated
     end
     loop Layer 1: up to 3 starts within 20 s (round 1 only)
         NM->>NM: subnet, interface validation, NetworkManager unmanaged
@@ -718,27 +727,35 @@ sequenceDiagram
         NM->>FW: gateway IP, dnsmasq, NAT (if internet), isolation, host guard, captive portal
         alt one of them fails
             NM->>NM: rollback the whole network
-            A-->>C: 500 / 1013 with stage, reservation kept
+            Note over J: job kept as start_failed with error 1013 and stage, reservation kept
         else all installed
             NM->>NM: TX power (unsupported: one warning), active[device] = status
-            A-->>C: 200 the network (as GET .../network)
+            Note over J: job dropped, GET answers the network
         end
     else classified radio failure after layer 1
         NM->>NM: rollback, failures += 1
         alt failures 1 or 2, time left for the pause and one start
-            A->>A: pause 5 s (then 10 s), next round
+            J->>J: pause 5 s (then 10 s), next round
         else failures 1 or 2, reservation expires too soon
-            A->>RM: release the reservation (no quarantine)
-            A-->>C: 503 / 1003 reservation_invalidated true
+            J->>RM: release the reservation as expired (no quarantine)
+            Note over J: job dropped, GET answers 404 reservation_expired
         else failures 3, or the rollback failed
             NM->>RM: quarantine the antenna, invalidate the reservation
-            A-->>C: 503 / 1003 reservation_invalidated true
+            Note over J: job dropped, GET answers 404 reservation_invalidated
             Note over RM: USB antenna: reset and probe (recovering)<br/>otherwise periodic re-probe (unavailable)
         end
     else unclassified failure (hostapd exit code, interface validation)
         NM->>NM: rollback
-        A-->>C: 500 / 1013 with stage, reservation kept
+        Note over J: job kept as start_failed with error 1013 and stage, reservation kept
     end
+    end
+    loop every 1-2 s until runtime_state is not starting
+        C->>A: GET .../network
+        A-->>C: starting from the job (no device lock), then the outcome
+    end
+    opt DELETE .../network or DELETE /reservations/{id} during the start
+        A->>J: cancel: hostapd wait and pauses stop at the next check, rollback
+        A-->>C: 200 (network stopped, or reservation released)
     end
     end
 

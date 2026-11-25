@@ -39,8 +39,9 @@ same period (44 `Message ... timeout` and 48 firmware reloads in 85 minutes).
 ## Current mitigation (in Wi-Lab, nothing to do)
 
 - A segfault is a classified radio failure (`HostapdSegfault`): up to 3 starts
-  inside the request (20 s budget), then one start after 5 s and one after
-  10 s, still inside the request; only if all fail `503 / 1003`.
+  during the asynchronous create (20 s budget), then one start after 5 s and
+  one after 10 s; only if all fail the reservation is invalidated (polling:
+  `404`, `reservation_invalidated`).
 - Diagnostics added: optional `hostapd_debug_dir` in `config.yaml` writes, for
   every failed hostapd start, the configuration (no passwords) and the last
   400 lines of `hostapd -d`. Enabled on the lab host

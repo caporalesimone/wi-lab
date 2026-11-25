@@ -238,76 +238,84 @@ points to `wpa2` (same network as before) or `wpa1` (real legacy WPA).
 - `wifi_generation: 6` (802.11ax) is accepted where the antenna supports
   802.11ax in AP mode. On 5 GHz it is announced together with 802.11ac.
 
-### 2.3 Send it with the right timeout
+### 2.3 Send it, then poll
 
-Creating an AP is synchronous: the response arrives only when the AP is
-broadcasting and DHCP is running, or when startup has failed and been rolled
-back. A start normally takes about 0.5 s. If the radio fails (for example a
-hostapd crash), Wi-Lab rolls it back and starts it again **inside the same
-request**:
+The create is **asynchronous**. `POST .../network` checks the request and
+answers at once; the AP starts in the background, and the client reads the
+outcome with `GET .../network`:
 
-1. up to 3 starts, 1 s apart, within 20 s: about 3 s with one retry, 5–6 s
-   with two;
-2. if they all failed, one more start after a 5 s pause;
-3. if that failed too, a last start after a 10 s pause.
+1. `POST .../network` answers `202` with the network in
+   `"runtime_state": "starting"`, `"active": false`. The body has the same
+   schema as `GET .../network` (a client library that sees only the body
+   decides from `active` and `runtime_state`).
+2. Read `GET .../network` every 1–2 s while `runtime_state` is `starting`. It
+   answers at once, even while the antenna is busy with the start.
+3. Stop at the first outcome (2.4).
 
-**The client does nothing during these starts**: it only waits for the
-answer. A pause is skipped, and the create answers `503 / 1003`, only when the
-reservation would expire before the next start ends. Configure the HTTP client
-with a long read timeout so that a slow start is not mistaken for a failure:
+A start normally takes about 0.5 s, so the first read often already shows the
+AP. If the radio fails (for example a hostapd crash), Wi-Lab rolls the start
+back and starts again by itself, still in `starting`: up to 3 starts 1 s apart
+within 20 s, then one more after a 5 s pause and a last one after a 10 s pause.
+**The client does nothing during these starts.** Expected time to the outcome:
 
-| Channel | Usual answer | Worst case | Suggested read timeout |
-|---|---|---|---|
-| 2.4 GHz and non-DFS 5 GHz | 0.5–6 s | about 80 s | at least 120 s |
-| DFS 5 GHz (52–144) | about 60 s (radar check) | about 4 min | at least 300 s |
+| Channel | Usual | Worst case |
+|---|---|---|
+| 2.4 GHz and non-DFS 5 GHz | 0.5–6 s | about 80 s |
+| DFS 5 GHz (52–144) | about 60 s (radar check) | about 4 min |
 
-These are client recommendations, not server guarantees.
+Every request is short, so normal HTTP timeouts (10–30 s) are enough. You may
+not see every intermediate state: a state is what the server is doing at the
+moment of the read. There is no percentage of progress: the duration is not
+predictable.
 
-**Send only one create at a time per reservation.** Wi-Lab serializes work per
-antenna, so parallel requests for the same reservation only queue up.
+**Send only one create at a time per reservation.** The same body again is
+safe (see 2.5); another body while a start runs answers `409 / 1008`.
 
-### 2.4 Handle the response
+### 2.4 Handle the answer and the outcome
 
 The actions for every call, in one place, are in [3.1](#31-what-to-do-with-each-answer).
 
+**Answers of the `POST`:**
+
 | Response | Meaning | Client action |
 |---|---|---|
-| `200` | The AP is up and DHCP is running. The body is the network, as `GET .../network` returns it. | Done. Stop retrying. |
-| `409 / 1008` (`network_already_active`) | An AP with **different** settings is already running on this reservation (the same create again answers `200`). | Do not retry. Read it with `GET .../network`, or stop it first with `DELETE .../network`. |
-| `409 / 1009` (`restoration_in_progress`) | The watchdog is restarting this AP. | Do not create. Poll `GET .../network` until `runtime_state` is gone. |
-| `422` | Invalid body (including `encryption: wpa`), channel unsupported/disabled on this antenna, or an encryption, channel width or Wi-Fi generation the antenna does not support. | Fix the request. Do not retry the same body. |
-| `404` | The reservation is unknown, expired or invalidated. | Stop using the ID. Reserve again if needed. |
-| `503 / 1003` | **Terminal failure.** Every start failed (the antenna was quarantined), or the reservation expires too soon for another start; the reservation is **invalidated**. | Discard the ID. Do not retry creation and do not release it. Reserve again if needed. |
-| `500 / 1013` (`startup_failed`) | A non-radio startup error. `detail.stage` says what failed: `hostapd` (e.g. exit code 1), `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation` or `host_guard`. The rollback succeeded and the reservation is **still valid**. | Do not retry automatically. Show `detail.message`. Release the ID if abandoning this attempt; release it before asking for a fresh reservation. |
+| `202` | Start accepted (also the same body while that start runs). | Poll `GET .../network`. |
+| `200` | The same body on a network that already runs with exactly these settings: the network. Nothing was restarted. | Done. |
+| `409 / 1008` (`network_already_active`) | A network with **different** settings runs or is starting on this reservation, or a stop did not complete. | Read it with `GET .../network`; `DELETE .../network` first to replace it. |
+| `409 / 1009` (`restoration_in_progress`) | The watchdog is repairing this network (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`). | Do not create. Poll `GET .../network` until `runtime_state` is `null`. |
+| `422` | Invalid body (including `encryption: wpa`), channel unsupported/disabled on this antenna, or an encryption, channel width or Wi-Fi generation the antenna does not support. | Fix the request. Do not repeat the same body. |
+| `404` | The reservation ID is no longer valid; `detail.reason` says why. | See 3.1. |
 | `401` | Missing or invalid token. | Fix the token. |
 
-The create waits for the adapter if another request on it is running, so it
-never returns `503 / 1006`; the other reservation endpoints do (see
-[2.6](#26-after-the-ap-is-running)).
+**Outcomes of the polling (`GET .../network`):**
 
-After `500 / 1013`, `DELETE /api/v2/reservations/{id}`
-releases the still-held antenna on `200`. The next reservation may get the same
-antenna or a different one. Do not implement release → reserve → create as an
-automatic recovery loop. In contrast, after
-`503 / 1003` the ID is already invalidated and must not be released.
+| Answer | Meaning | Client action |
+|---|---|---|
+| `200`, `active: true`, `runtime_state: null` | The AP is up and DHCP is running. | Done. |
+| `200`, `runtime_state: "start_failed"`, `error` | A non-radio startup error: `error.code` `1013`, `error.stage` says what failed (`hostapd` e.g. exit code 1, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation`, `host_guard`), `error.message` for display. The start was rolled back and the reservation is **still valid**. `start_failed` stays until a new create, a `DELETE .../network` or the end of the reservation. | No automatic retry (it is usually a configuration or host problem). Show the message. A new create starts again; release the ID if you give up. |
+| `404`, `detail.reason: reservation_invalidated` | **Every start failed**: the antenna was quarantined and the reservation invalidated. | Reserve again (you will get another antenna). **Do not release** the old ID. |
+| `404`, `detail.reason: reservation_expired` | The reservation expired, also when it would have expired before the next start. | Reserve again if needed. |
 
-### 2.5 When and how to retry
+A `restoring_*` state never appears between `starting` and the outcome: the
+watchdog takes over a network only after its start completed.
 
-**No create error authorizes an automatic retry.** Radio failures are retried
-by the server inside the request (2.3); the client never repeats a create
-because of them. Further rules:
+### 2.5 When and how to repeat
+
+**No outcome authorizes an automatic retry.** Radio failures are retried by
+the server during the start (2.3); the client never repeats a create because
+of them. Further rules:
 
 - **Reuse the same ID.** A new reservation while this one is held leaves this
   antenna held until it expires.
-- **Do not count your own retries on top of the server's.** The answer is
-  already the final result of every start the server tried.
-- **After a transport error, send the same create again.** If the connection
-  drops or the client times out, the server may have finished the AP or still
-  be working on it. Repeating the **same** create (same ID, same body) is safe:
-  it waits for a create still in progress, and if the AP already runs with
-  exactly those settings it answers `200` with the network instead of starting
-  it twice. Then handle the answer as usual (`404`: the ID is gone, the
-  previous create invalidated it).
+- **After a transport error, send the same create again, or just poll.** The
+  same body never starts a second AP: `202` while that start runs, `200` once
+  it runs. Then handle the answer as usual.
+- **Stopping or releasing during a start cancels it.** `DELETE .../network`
+  cancels the start and keeps the reservation; `DELETE /reservations/{id}`
+  cancels it and releases. Both answer within seconds, also during a long DFS
+  start.
+- **Other calls during a start** (Internet, TX power, QoS) answer
+  `503 / 1006`: wait for the outcome first.
 
 ### 2.6 After the AP is running
 
@@ -376,6 +384,8 @@ because of them. Further rules:
 
   | `runtime_state` | Meaning | Client action |
   |---|---|---|
+  | `starting` | A create is running (2.3). | Poll until the outcome. |
+  | `start_failed` | The last create failed for a non-radio reason; see `error` (2.4). | A new create, or `DELETE .../network` to clear it. |
   | `restoring_ap` | The AP is being restarted. Clients will need to reconnect. | Wait. Do not send a create. |
   | `restoring_dhcp` | Only DHCP is being restarted. The AP stays up. | Wait. |
   | `dhcp_failed` | DHCP could not be repaired alone (a restart failed, or dnsmasq died more than 3 times in an hour). Within 5 s the watchdog restarts the whole network (`restoring_ap`). | Wait. |
@@ -578,35 +588,48 @@ sequenceDiagram
     end
 
     rect rgba(128,128,128,0.08)
-    Note over C,W: Phase 3 - create the AP (one request, read timeout 120 s, 300 s on DFS)
-    loop Only after a lost answer (see the last branch)
-        C->>W: POST /reservations/{id}/network {radio, wifi, internet, captive_portal}
-        Note over W: Waits for the antenna (never 1006). Prepares the radio, starts hostapd,<br/>waits for the AP (20 s, 75 s on DFS), gateway, DHCP, NAT, isolation.<br/>Radio failure: up to 3 starts within 20 s, then one after 5 s, then one after 10 s
-        alt 200
-            W-->>C: the network, as GET .../network returns it
-            Note over C: Done. Leave the loop
-        else 503 / 1003
-            W-->>C: reservation_invalidated true (every start failed: antenna quarantined,<br/>or the reservation expires too soon for another start)
-            Note over C: Terminal. Discard the id, do NOT release it.<br/>Reserve again (phase 1)
-        else 422
-            W-->>C: message starts with the field path (radio.channel: ..., wifi.security.password: ...)
-            Note over C: Fix that field. Never repeat the same body
-        else 409 / 1008 network_already_active
-            W-->>C: an AP with different settings already runs on this reservation
-            Note over C: The same body would have answered 200.<br/>Read it with GET .../network, or DELETE .../network first
-        else 409 / 1009 restoration_in_progress
-            W-->>C: the watchdog is restarting this AP
-            Note over C: Do not create. Poll GET .../network until runtime_state is null
-        else 404
-            W-->>C: reservation unknown, expired, released or invalidated
-            Note over C: Discard the id. Reserve again if needed
-        else 500 / 1013 startup_failed
-            W-->>C: detail.stage (hostapd, interface, gateway, dhcp, nat, isolation, ...) and message
-            Note over C: Rolled back, reservation still valid. No automatic retry.<br/>Show the message. Release the id before reserving again
-        else transport error or client timeout (no answer)
-            Note over C: The server may have finished, or still be working.<br/>Send the SAME create again (same id, same body): it waits for a create<br/>in progress, and an AP already running with that body answers 200
+    Note over C,W: Phase 3 - create the AP (asynchronous: POST, then poll GET)
+    C->>W: POST /reservations/{id}/network {radio, wifi, internet, captive_portal}
+    alt 202 runtime_state starting
+        W-->>C: accepted, same schema as GET .../network
+        Note over W: In the background: prepares the radio, starts hostapd, waits for the AP<br/>(20 s, 75 s on DFS), gateway, DHCP, NAT, isolation. Radio failure: up to<br/>3 starts within 20 s, then one after 5 s, then one after 10 s
+        loop every 1-2 s while runtime_state is starting
+            C->>W: GET /reservations/{id}/network
+            alt runtime_state starting
+                W-->>C: still starting (answered at once)
+            else active true, runtime_state null
+                W-->>C: the network
+                Note over C: Done. Leave the loop
+            else runtime_state start_failed + error
+                W-->>C: error.code 1013, error.stage, error.message, reservation still valid
+                Note over C: No automatic retry. Show the message.<br/>A new create starts again, or release the id if you give up
+            else 404 reason reservation_invalidated
+                W-->>C: every start failed, antenna quarantined
+                Note over C: Terminal. Do NOT release the id. Reserve again (phase 1)
+            else 404 reason reservation_expired
+                W-->>C: expired, also before the next start could run
+                Note over C: Reserve again if needed
+            end
         end
+    else 200
+        W-->>C: the same body on a network already running with it: the network
+        Note over C: Done
+    else 422
+        W-->>C: message starts with the field path (radio.channel: ..., wifi.security.password: ...)
+        Note over C: Fix that field. Never repeat the same body
+    else 409 / 1008 network_already_active
+        W-->>C: a network with different settings runs or is starting
+        Note over C: Read it with GET .../network, or DELETE .../network first
+    else 409 / 1009 restoration_in_progress
+        W-->>C: the watchdog is repairing this AP
+        Note over C: Do not create. Poll GET .../network until runtime_state is null
+    else 404
+        W-->>C: the reservation id is no longer valid, detail.reason says why
+        Note over C: invalidated or expired: reserve again. released or not_found: stop
+    else transport error (no answer)
+        Note over C: Send the SAME create again, or poll GET .../network:<br/>the same body never starts a second AP
     end
+    Note over C,W: DELETE .../network or DELETE /reservations/{id} during starting cancels the start
     end
 
     rect rgba(128,128,128,0.08)
@@ -714,15 +737,16 @@ Every answer leads to exactly one of these actions:
 | | `422` | FIX | `duration_seconds` out of limits, `0` while unlimited reservations are off, or `interface: ...` not a managed antenna. |
 | `GET /antennas/{interface}` | `503` | REPEAT | After a few seconds; the radio is being reset. Or create with the defaults. |
 | | `404` | RESERVE AGAIN | The antenna is no longer managed. |
-| `POST .../network` (create) | `200` | DONE | The body is the network, as `GET .../network` returns it. |
-| | `503 / 1003` | RESERVE AGAIN | Every start failed (the server already retried), or the reservation expires too soon for another start: reservation invalidated. **Do not release it.** |
+| `POST .../network` (create) | `202` | WAIT | Start accepted: poll `GET .../network` every 1–2 s (rows below). |
+| | `200` | DONE | The same body on a network already running with it: the network. |
 | | `422` | FIX | The message starts with the field path, e.g. `radio.channel_width: ...`. |
-| | `409 / 1008` | FIX | An AP with **different** settings already runs on this reservation (the same body answers `200`). Read it with `GET .../network`; to replace it, `DELETE .../network` first. |
+| | `409 / 1008` | FIX | A network with **different** settings runs or is starting (the same body answers `202` or `200`), or a stop did not complete. Read it with `GET .../network`; `DELETE .../network` first to replace it. |
 | | `409 / 1009` | WAIT | Until `runtime_state` is `null`, then create only if `active` is `false`. |
-| | `500 / 1013` | STOP | Startup failed for a non-radio reason (`detail.stage`) and was rolled back; the reservation is still valid. Release it before reserving again. |
 | | `500 / 500` | STOP | An unexpected server error. |
-| | no answer (timeout, connection lost) | REPEAT | Send the **same** create again (same ID, same body), at once: it waits for a create still in progress, and an AP already running with that body answers `200`. Then handle the new answer. |
-| `GET .../network` | `200`, `runtime_state: null` | DONE | |
+| | no answer (timeout, connection lost) | REPEAT | Send the **same** create again, or poll `GET .../network`: the same body never starts a second AP. |
+| `GET .../network` | `200`, `runtime_state: starting` | WAIT | A create is running; read again in 1–2 s. |
+| | `200`, `runtime_state: start_failed` | STOP | Non-radio failure (`error.code` `1013`, `error.stage`, `error.message`), rolled back; the reservation is still valid. A new create starts again; release the ID if you give up. |
+| | `200`, `runtime_state: null` | DONE | |
 | | `200`, `restoring_ap`, `restoring_dhcp`, `dhcp_failed` | WAIT | The watchdog is repairing the network. After `restoring_ap`, devices reconnect and QoS profiles must be reapplied. |
 | | `200`, `restore_failed` | WAIT | The AP is down and the watchdog retries. Or `DELETE .../network` to give up, or create again. |
 | | `200`, `stop_failed` | REPEAT | Repeat the `DELETE .../network` that answered `503 / 1012`. |
@@ -743,18 +767,16 @@ driver firmware timeout, unplugged adapter): the answer code is enough. What
 happens, from the most to the least common case:
 
 1. **The server absorbs it: WAIT.** Wi-Lab starts the AP again by itself
-   inside the create: up to 3 times within 20 s, then after 5 s and after
-   10 s. The create just takes longer and answers `200`. The same holds for a
-   watchdog restart of a running AP: `GET .../network` shows `restoring_ap`,
-   then `runtime_state: null`. Nearly every hostapd crash ends here.
-2. **The reservation is invalidated: RESERVE AGAIN.** It happens when:
-   - every start of the create failed, or the reservation expires too soon
-     for another start: the create answers `503 / 1003`;
-   - a watchdog restart of a running AP fails on every internal start, or the
-     AP fails for the fourth time in an hour: there is **no** answer to wait
-     for, the next call with the ID answers `404`.
-
-   In both cases the antenna is quarantined (`recovery_state` in
+   during the create: up to 3 times within 20 s, then after 5 s and after
+   10 s. The polling just shows `starting` a little longer, then the network.
+   The same holds for a watchdog restart of a running AP: `GET .../network`
+   shows `restoring_ap`, then `runtime_state: null`, and `restarts.ap` grows.
+   Nearly every hostapd crash ends here.
+2. **The reservation is invalidated: RESERVE AGAIN.** It happens when every
+   start of the create failed, or a watchdog restart of a running AP fails on
+   every internal start, or the AP fails for the fourth time in an hour. The
+   next call with the ID answers `404` with `detail.reason:
+   reservation_invalidated`. The antenna is quarantined (`recovery_state` in
    `GET /status`). Do not release the ID; a new reservation gets another
    antenna.
 
@@ -765,20 +787,31 @@ without special code for crashes.
 
 ```python
 def create_ap(api, reservation_id, body):
-    for _ in range(3):  # the same create again only after a lost answer
-        try:
-            r = api.post(f"/reservations/{reservation_id}/network", json=body, timeout=300)
-        except TransportError:
-            continue  # Safe: the same body answers 200 if the AP already runs.
-
-        code = r.json().get("detail", {}).get("code") if r.status_code >= 400 else None
-        if r.status_code == 200:
-            return r.json()  # the network, as GET .../network returns it
-        if r.status_code == 503 and code == 1003 or r.status_code == 404:
-            raise ReservationInvalidated()  # Do not release this ID: reserve again.
-        raise CreateFailed(r.status_code, r.json())  # No automatic retry.
-    raise CreateFailed("no answer after 3 tries")
+    url = f"/reservations/{reservation_id}/network"
+    try:
+        r = api.post(url, json=body, timeout=30)
+    except TransportError:
+        r = None  # Safe: polling (or the same create again) never starts a second AP.
+    if r is not None and r.status_code not in (200, 202):
+        raise CreateFailed(r.status_code, r.json())  # 422, 409: fix; no automatic retry.
+    network = r.json() if r is not None else {"runtime_state": "starting"}
+    while network.get("runtime_state") == "starting":
+        sleep(1.5)
+        r = api.get(url, timeout=30)
+        if r.status_code == 404:
+            reason = r.json()["detail"]["reason"]
+            if reason in ("reservation_invalidated", "reservation_expired"):
+                raise ReserveAgain(reason)  # Do not release this ID.
+            raise ReservationGone(reason)
+        network = r.json()
+    if network["runtime_state"] == "start_failed":
+        raise CreateFailed(network["error"])  # Reservation still valid; no automatic retry.
+    return network  # active, runtime_state null
 ```
+
+The same loop also serves a client that lost the `POST` answer: polling shows
+`starting` or the outcome; if it shows a network that is not running and no
+`starting`, the `POST` did not arrive and can be sent again.
 
 ## 5. What happens on the server
 
@@ -788,15 +821,16 @@ Details and diagrams are in [Architecture](architecture.md).
 - **Classified radio failures** include a `hostapd` crash (segfault), a beacon
   rejected during interface setup, a timeout while preparing the radio, and an
   AP that does not reach the `ENABLED` state in time. They are radio failures in
-  every create. The server retries them inside the request (up to 5 starts);
-  if all fail, the reservation is invalidated (`503 / 1003`).
+  every create. The server retries them during the start (up to 5 starts);
+  if all fail, the reservation is invalidated (polling: `404`,
+  `reservation_invalidated`).
 - **Unclassified failures** (for example `hostapd` exiting with code 1, a
-  gateway, DHCP or captive portal startup error) are rolled back and return
-  `500 / 1013` (`startup_failed`) with the failed `stage`. They do not count as radio failures and do not invalidate the
-  reservation.
+  gateway, DHCP or captive portal startup error) are rolled back and shown as
+  `runtime_state: start_failed` with `error` (`code` 1013, `stage`). They do not
+  count as radio failures and do not invalidate the reservation.
 - **Unsafe cleanup**: if Wi-Lab cannot roll back a failed start, it invalidates
-  the reservation and quarantines the antenna immediately (`503 / 1003`),
-  without further starts.
+  the reservation and quarantines the antenna immediately (polling: `404`,
+  `reservation_invalidated`), without further starts.
 - **Quarantine and USB recovery**: a quarantined USB antenna may be reset
   automatically in the background. Until it is verified, it is reported as
   `recovering` and cannot be reserved; other antennas stay available. See

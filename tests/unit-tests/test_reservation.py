@@ -388,7 +388,7 @@ class TestReservationLifecycleConcurrency:
         ])
         network = SimpleNamespace(
             device_lock=lambda _: threading.RLock(), release_device=lambda _: None,
-            cleanup_due=lambda _: True, cleanup_wait=lambda _: 0.0,
+            cleanup_due=lambda _: True, cleanup_wait=lambda _: 0.0, cancel_start=lambda _: False,
             watchdog=SimpleNamespace(start=lambda _: None),
             recovery=SimpleNamespace(start_reprobe=lambda _: None),
         )

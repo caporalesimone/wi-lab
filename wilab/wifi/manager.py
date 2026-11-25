@@ -8,8 +8,10 @@ import threading
 import time
 from _thread import RLock
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from ipaddress import IPv4Network
 from itertools import islice
+from typing import Any
 
 from .. import heartbeat
 from ..config import AppConfig
@@ -49,7 +51,7 @@ from .watchdog import NetworkWatchdog
 logger = logging.getLogger(__name__)
 
 # Transient radio failures usually clear on an immediate new start, so the
-# server retries inside the request instead of handing the retry to the client.
+# server retries during the create instead of handing the retry to the client.
 STARTUP_ATTEMPTS = 3
 # A retry starts only with at least MIN_RETRY_ATTEMPT_TIME left, so it is a real
 # attempt: a start cut short by the budget would count as one more radio
@@ -61,6 +63,26 @@ MIN_RETRY_ATTEMPT_TIME = 4.0
 # number of consecutive failures; the last value repeats (WD-6). A client's
 # explicit DELETE is never delayed.
 CLEANUP_BACKOFF = (5.0, 15.0, 60.0, 300.0)
+# Longest wait for a running AP start to notice a cancel (release, stop) and roll back.
+CANCEL_TIMEOUT = 30.0
+
+
+@dataclass
+class StartJob:
+    """An AP start running in the background (asynchronous create).
+
+    `state` is `starting` until the start ends: on success the job is dropped (the
+    network is active); a non-radio failure keeps it as `start_failed` with the
+    error until the next create, a stop or the end of the reservation.
+    """
+
+    reservation: Reservation
+    request: NetworkCreateRequest
+    cancel: threading.Event = field(default_factory=threading.Event)
+    done: threading.Event = field(default_factory=threading.Event)
+    state: str = "starting"
+    error: dict[str, Any] | None = None
+    thread: threading.Thread | None = None
 
 
 @functools.lru_cache(maxsize=1)
@@ -94,7 +116,7 @@ class NetworkStopError(RuntimeError):
 # The API names no device_id (Fable API-6): the reservation's antenna is unknown.
 UNKNOWN_ANTENNA = "The antenna of this reservation is not managed"
 
-# Stable names of the startup stages, answered as `stage` with 500 / 1013 startup_failed.
+# Stable names of the startup stages, shown as `error.stage` with start_failed (1013).
 STARTUP_STAGES = {
     "start AP": "hostapd",
     "complete startup retry": "hostapd",
@@ -143,6 +165,9 @@ class NetworkManager:
         # WD-6: consecutive cleanup failures and next background attempt per device
         self._cleanup_failures: dict[str, int] = {}
         self._stop_failed: set[str] = set()  # stops to repeat (NetworkStopError)
+        # Asynchronous creates: one job per device, guarded by start_jobs_lock.
+        self.start_jobs: dict[str, StartJob] = {}
+        self.start_jobs_lock = threading.Lock()
         # Host-command health checks, refreshed by a background loop (wilab.health).
         self.health = HealthChecks(self)
         self._cleanup_retry_at: dict[str, float] = {}
@@ -251,6 +276,34 @@ class NetworkManager:
             logger.warning("Cleanup of %s succeeded after earlier failures", device_id)
         self._cleanup_retry_at.pop(device_id, None)
 
+    def start_job(self, reservation: Reservation) -> StartJob | None:
+        """The create job of *reservation*; a job left by an ended reservation is dropped."""
+        with self.start_jobs_lock:
+            job = self.start_jobs.get(reservation.device_id)
+            if job is not None and job.reservation is not reservation and job.done.is_set():
+                del self.start_jobs[reservation.device_id]
+                return None
+            return job if job is not None and job.reservation is reservation else None
+
+    def cancel_start(self, device_id: str, timeout: float = CANCEL_TIMEOUT) -> bool:
+        """Cancel the create running on *device_id* and wait for its rollback.
+
+        Called before a release or a stop takes the device lock, which the start
+        holds. Returns True if a start was running. Also drops a `start_failed`.
+        """
+        with self.start_jobs_lock:
+            job = self.start_jobs.get(device_id)
+        if job is None or job.thread is threading.current_thread():
+            return False  # nothing to cancel, or the start releasing its own reservation
+        running = not job.done.is_set()
+        job.cancel.set()
+        if running and not job.done.wait(timeout):
+            logger.error("AP start on %s did not stop within %.0f s of the cancel", device_id, timeout)
+        with self.start_jobs_lock:
+            if self.start_jobs.get(device_id) is job:
+                del self.start_jobs[device_id]
+        return running
+
     def runs(self, device_id: str, req: NetworkCreateRequest) -> bool:
         """True if the active network of *device_id* has exactly the settings of *req*.
 
@@ -294,9 +347,12 @@ class NetworkManager:
     def start_network(
         self, device_id: str, req: NetworkCreateRequest,
         expires_at_timestamp: float | None = None, *, allow_internal_retry: bool = True,
+        cancelled: Callable[[], bool] | None = None,
     ) -> NetworkStatus:
         with self.device_lock(device_id):
-            return self._start_network(device_id, req, expires_at_timestamp, allow_internal_retry)
+            return self._start_network(
+                device_id, req, expires_at_timestamp, allow_internal_retry, cancelled,
+            )
 
     def quarantine_radio(
         self, reservations: ReservationManager, reservation: Reservation, *, radio_fault: bool,
@@ -339,6 +395,7 @@ class NetworkManager:
     def _start_network(
         self, device_id: str, req: NetworkCreateRequest,
         expires_at_timestamp: float | None, allow_internal_retry: bool,
+        cancelled: Callable[[], bool] | None = None,
     ) -> NetworkStatus:
         """
         Start an AP network with DHCP server.
@@ -443,6 +500,7 @@ class NetworkManager:
                         channel_width=req.channel_width,
                         wifi_generation=req.wifi_generation,
                         layout=layout,
+                        **({"cancelled": cancelled} if cancelled is not None else {}),
                     )
                     stage = "assign gateway IP"
                     execute_ip(["addr", "add", gateway, "dev", cfg_net.interface])
@@ -532,7 +590,8 @@ class NetworkManager:
                 ):
                     time.sleep(STARTUP_RETRY_DELAY)
                     if (
-                        retry_deadline - time.monotonic() >= MIN_RETRY_ATTEMPT_TIME
+                        not (cancelled is not None and cancelled())
+                        and retry_deadline - time.monotonic() >= MIN_RETRY_ATTEMPT_TIME
                         and (expires_at_timestamp is None or time.time() < expires_at_timestamp)
                     ):
                         logger.info(

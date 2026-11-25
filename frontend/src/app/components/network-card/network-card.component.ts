@@ -12,7 +12,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { interval, Subscription } from 'rxjs';
 import { WilabApiService } from '../../services/wilab-api.service';
 import { AntennaDetails, ClientInfo, NetworkCreateRequest, NetworkStatus } from '../../models/network.models';
-import { ApiError, RecoveryCode, apiErrorToast } from '../../services/recovery-response';
+import { ApiError, apiErrorToast } from '../../services/recovery-response';
 import { environment } from '../../../environments/environment';
 import { GENERATION_LABELS, NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
 import { InterfaceSlot } from '../../app.component';
@@ -75,6 +75,20 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
 
   public get runtimeState() {
     return this.status?.runtime_state ?? this.slot.runtimeState;
+  }
+
+  /** A sentence for every runtime_state of GET .../network or /status. */
+  public get runtimeStateLabel(): string | null {
+    switch (this.runtimeState) {
+      case 'starting': return 'Starting the access point...';
+      case 'start_failed': return 'The last start failed. Start WiFi again or check the error.';
+      case 'restoring_ap': return 'Restoring the access point. Clients may need to reconnect.';
+      case 'restoring_dhcp': return 'Restarting DHCP.';
+      case 'dhcp_failed': return 'DHCP is unavailable; the whole network is being restarted.';
+      case 'restore_failed': return 'The access point is down; Wi-Lab keeps retrying. Stop WiFi to give up.';
+      case 'stop_failed': return 'The last stop did not complete. Stop WiFi again.';
+      default: return null;
+    }
   }
 
   public get restoring(): boolean {
@@ -276,27 +290,35 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
         this.loading = true;
         this.createMessage = 'Starting WiFi... If the radio needs restarting this can take up to a minute.';
         this.creation = this.wilabApiService.startNetwork(reservationId, result).subscribe({
-          next: () => {
+          next: (network) => {
             this.createMessage = null;
             this.loading = false;
-            this.snackBar.open('WiFi network started successfully', 'Close', { duration: 3000 });
+            if (network.runtime_state === 'start_failed') {
+              // Non-radio failure, rolled back; the reservation is still valid.
+              const stage = network.error?.stage ? ` (${network.error.stage})` : '';
+              this.snackBar.open(`Failed to start network${stage}: ${network.error?.message ?? 'unknown error'}`,
+                'Close', { duration: 10000, panelClass: ['error-snackbar'] });
+            } else {
+              this.snackBar.open('WiFi network started successfully', 'Close', { duration: 3000 });
+            }
             this.checkStatus(false);
           },
           error: (err: ApiError) => {
             this.createMessage = null;
             this.loading = false;
             const raw = err.originalError;
-            // 503 since API-4 (500 before): rely on the domain code, not the HTTP status.
-            const invalidated = raw?.error?.detail?.code === RecoveryCode.DeviceUnavailable &&
-              raw.error.detail.reservation_invalidated === true;
-            if (invalidated || raw?.status === 404) {
+            // A 404 while polling: the reservation ended, detail.reason says why.
+            const reason = raw?.status === 404 ? raw?.error?.detail?.reason : null;
+            if (raw?.status === 404) {
               this.released.emit(reservationId);
             } else if (raw?.status === 0) {
               this.checkStatus(false);
             }
-            const message = invalidated
+            const message = reason === 'reservation_invalidated'
               ? 'WiFi startup failed. The reservation was invalidated; request a new device to continue.'
-              : 'Failed to start network';
+              : reason === 'reservation_expired'
+                ? 'The reservation expired before the network could start.'
+                : 'Failed to start network';
             this.snackBar.open(apiErrorToast(message, err), 'Close', {
               duration: 10000, panelClass: ['error-snackbar']
             });

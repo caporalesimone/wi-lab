@@ -43,10 +43,12 @@ API_DESCRIPTION = """
 
 Authenticate with a Bearer token. Reserve an adapter with
 `POST /api/v2/reservations` (for example `{"duration_seconds": 120}`),
-then pass the returned `reservation_id` to the network endpoints. Use one
-creation request at a time per reservation. Release with
-`DELETE /api/v2/reservations/{reservation_id}` when finished; this also
-stops the network. A failed cleanup can return `503` and keep the device held.
+then pass the returned `reservation_id` to the network endpoints. The create
+is asynchronous: `POST .../network` answers `202` with `runtime_state:
+starting`; poll `GET .../network` until `runtime_state` is `null` (the AP is
+up), `start_failed` (see `error`) or the answer is `404` (see `detail.reason`).
+Release with `DELETE /api/v2/reservations/{reservation_id}` when finished; this
+also stops the network, or cancels a start in progress, and always answers `200`.
 
 Set `"captive_portal": {"enabled": true}` when creating a network to hold each
 client behind a simulated captive portal until it presses **Sign in** on the
@@ -65,22 +67,24 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 
 | Operation and response | Client action |
 |---|---|
-| Create `409`, `detail.code: 1008` | A network with different settings already runs on this reservation; read it with `GET .../network`. The same create again (same body, e.g. after a lost answer) answers `200` with the network. |
-| Create `409`, `detail.code: 1009` | The watchdog is restarting this network: poll `GET .../network` until `runtime_state` is `null`. |
-| Create `503`, `detail.code: 1003`, `reservation_invalidated: true` | Every start failed (the server already retried radio failures), or the reservation expires too soon for another start. Discard the ID. Do not retry creation or release it. Request a new reservation if needed. |
-| Create `500`, `detail.code: 1013` | Startup failed for a non-radio reason, named by `detail.stage`. No automatic retry. The reservation is still valid; release it if no longer needed. |
+| Create `202` | Start accepted (also the same body while it runs): poll `GET .../network`. |
+| Create `200` | The same body on a network already running with it: done. |
+| Create `409`, `detail.code: 1008` | A network with different settings runs or is starting on this reservation; read it with `GET .../network`. |
+| Create `409`, `detail.code: 1009` | The watchdog is repairing this network: poll `GET .../network` until `runtime_state` is `null`. |
+| Polling: `runtime_state: start_failed` | Non-radio failure, `error.code` 1013 with `error.stage`. The reservation is still valid: no automatic retry; release it if no longer needed. |
+| `404` on any call with a reservation ID | `detail.reason` (stable): `reservation_invalidated` (every start failed, antenna quarantined) or `reservation_expired`: reserve again, never release the ID. `reservation_released` or `reservation_not_found`: nothing to do. |
 | Reserve `409`, `detail.code: 1005` | Ordinary contention. Use `detail.next_available_in` as an estimate, not a guarantee. |
 | Reserve `503`, `detail.code: 1002` | Retry the **reservation** POST after `Retry-After` (10 seconds, a polling interval). |
 | Reserve `503`, `detail.code: 1003` | All adapters are quarantined and none is recovering. No automatic retry. |
 | Release `200` | Always, even if the cleanup failed: the server then keeps the adapter out of the pool and repeats the cleanup itself (`GET /status`: `cleanup_failed`). |
 | `409`, `detail.code: 1007` | The reservation is valid but has no running network (Internet, TX power, QoS profile, stop). Create a network first. A `404` always means the reservation itself is gone. |
 | `409`, `detail.code: 1010` / `1011` | A QoS profile is already running / no QoS profile is running. |
-| `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Every reservation endpoint except the create, which waits instead. |
+| `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Never on the create, `GET .../network` or a release. |
 
 A transport timeout is not a recovery code. For a lost create response, send
-the same create again (same ID and body): it waits for a create in progress and
-answers `200` if the AP already runs with that body. A lost reservation response may already have allocated an adapter:
-do not blindly repeat it. A `404` for a reservation ID means stop using it.
+the same create again (same ID and body) or poll `GET .../network`: the same
+body never starts a second AP. A lost reservation response may already have
+allocated an adapter: do not blindly repeat it.
 
 ### Service health and quarantined adapters
 

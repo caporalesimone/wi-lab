@@ -1,6 +1,7 @@
 """hostapd configuration generation and process management for WiFi AP mode."""
 
 import logging
+from collections.abc import Callable
 import os
 import re
 import signal
@@ -286,6 +287,7 @@ class HostapdManager:
         channel_width: int = 20,
         wifi_generation: int = 4,
         layout: ChannelLayout | None = None,
+        cancelled: Callable[[], bool] | None = None,
     ) -> HostapdInstance:
         """
         Start hostapd for an AP network.
@@ -347,7 +349,7 @@ class HostapdManager:
             dfs = band == "5ghz" and any(52 <= c <= 144 for c in sub_channels)
             timeout = DFS_READY_TIMEOUT if dfs else AP_READY_TIMEOUT
             try:
-                self._wait_until_ready(process, interface, control_dir, timeout)
+                self._wait_until_ready(process, interface, control_dir, timeout, cancelled)
             except (HostapdError, CommandError) as exc:
                 if self._debug_dir:
                     save_failure(self._debug_dir, interface, exc, process, config_content)
@@ -372,6 +374,7 @@ class HostapdManager:
 
     def _wait_until_ready(
         self, process: ForegroundProcess, interface: str, control_dir: str, timeout: float,
+        cancelled: Callable[[], bool] | None = None,
     ) -> None:
         """Wait for state ENABLED on *interface*.
 
@@ -397,6 +400,10 @@ class HostapdManager:
 
         try:
             while (remaining := deadline - time.monotonic()) > 0:
+                if cancelled is not None and cancelled():
+                    # The client released the reservation or stopped the network
+                    # during the start (up to 75 s on DFS): stop waiting.
+                    raise HostapdError(f"AP start on {interface} cancelled")
                 check_process()
                 fields: dict[str, str] = {}
                 if os.path.exists(os.path.join(control_dir, interface)):

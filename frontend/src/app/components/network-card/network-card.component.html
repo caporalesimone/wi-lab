@@ -133,11 +133,7 @@
           </ng-template>
         </div>
       </div>
-      <p *ngIf="runtimeState as state" role="status">
-        {{ state === 'restoring_ap' ? 'Restoring the access point. Clients may need to reconnect.'
-           : state === 'restoring_dhcp' ? 'Restarting DHCP.'
-           : 'DHCP is unavailable. Restart this network to try again.' }}
-      </p>
+      <p *ngIf="runtimeStateLabel as label" role="status">{{ label }}</p>
       <div *ngIf="!status?.active && !restoring" class="inactive-message">
         <mat-icon>wifi_off</mat-icon>
         <p role="status">{{ createMessage ?? 'Access point not active — start WiFi to begin' }}</p>

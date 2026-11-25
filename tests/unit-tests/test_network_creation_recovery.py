@@ -231,21 +231,16 @@ def test_api_viewers_share_recovery_guidance_and_examples():
         schema = client.get("/openapi.json").json()
     overview = schema["info"]["description"]
     assert "1001" not in overview  # radio failures are retried by the server (A)
-    assert "Do not retry creation or release it" in overview
+    assert "never release the ID" in overview and "poll `GET .../network`" in overview
     assert schema["tags"][0]["name"] == "System"
     paths = schema["paths"]
     create = paths["/api/v2/reservations/{reservation_id}/network"]["post"]["responses"]
     reserve = paths[RESERVE]["post"]["responses"]
     assert "headers" not in create["409"]
-    assert "headers" not in create["500"]
-    generic = create["500"]["content"]["application/json"]["examples"]
-    assert generic["startup_failure"]["value"]["detail"]["code"] == 1013  # startup_failed
-    assert generic["startup_failure"]["value"]["detail"]["stage"] == "hostapd"
-    assert "1003" not in create["500"]["description"]  # API-4: quarantine is a 503
-    failures = create["503"]["content"]["application/json"]["examples"]
-    assert failures["device_unavailable"]["value"]["detail"]["code"] == 1003
-    assert failures["device_unavailable"]["value"]["detail"]["reservation_invalidated"] is True
-    assert "discard the reservation ID" in failures["device_unavailable"]["summary"]
+    # Asynchronous create: 202 starting; failures are read with GET .../network.
+    assert create["202"]["content"]["application/json"]["example"]["runtime_state"] == "starting"
+    assert "1013" not in str(create.get("500", {}))
+    assert "503" not in create
     assert {e["value"]["detail"]["code"] for e in create["409"]["content"]["application/json"]["examples"].values()} == {
         1008, 1009,
     }

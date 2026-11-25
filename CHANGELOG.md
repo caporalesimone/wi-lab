@@ -11,36 +11,33 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 54 |
-| ⚠️ Breaking changes | 23 |
+| ⚠️ Breaking changes | 20 |
 | 🔧 Maintenance changes | 12 |
 | ✨ New features | 24 |
-| 📦 Commits since 3.0.0 | 116 |
+| 📦 Commits since 3.0.0 | 119 |
 
-Counts are the entries of the sections below and `git rev-list --count 3.0.0..HEAD` including the commit of this review (as of 2026-11-25).
+Counts are the entries of the sections below and `git rev-list --count 3.0.0..HEAD` including the commit of the asynchronous create (as of 2026-11-25).
 
 ### ⚠️ Breaking Changes
 
 - Reservation contention returns null availability estimates when no release is scheduled.
 - AP creation requires a single 2.4 GHz or 5 GHz band; `dual` returns 422.
 - Release all reservations moved from `DELETE /api/v1/device-reservation` to `DELETE /api/v2/reservations/all`, and now requires the `X-Confirm-Password` header matching the new `protected_commands_password` setting (disabled when unset). A malformed single-release URL can no longer release everything.
-- All `/api/v2` error bodies now use an object with `detail.code` and `detail.reason`. Clients displaying a former string `detail` should read `detail.message`. Recovery codes 1002–1003 are unchanged; 1001 is no longer answered (see below).
+- All `/api/v2` error bodies now use an object with `detail.code` and `detail.reason`. Clients displaying a former string `detail` should read `detail.message`. Recovery codes 1002 and 1003 keep their meaning on the reservation; 1001, and 1003 on the create, are no longer answered (see the asynchronous create below).
 - API timestamps (`expires_at`, `detail.next_available_at`) now use RFC 3339 UTC with a `Z` suffix. Durations and countdowns remain in seconds.
 - Internet, TX power and QoS profile requests on a valid reservation without a running network return `409` with `detail.code: 1007` (`network_not_active`); Internet and TX power returned `404`, which clients could not tell apart from an expired reservation (Fable API-2).
-- A create that quarantines the adapter and invalidates the reservation (`detail.code: 1003`, `reservation_invalidated: true`) now returns `503` instead of `500`, so clients and proxies no longer treat it as a retryable server error; the code and body are unchanged (Fable API-4).
 - The create body and `GET .../network` are grouped in sections: `radio`, `wifi` (with `security`), `internet`, `captive_portal`, plus `reservation` and `ip` in the answer. Duplicated and internal fields (`dhcp.*` paths and files, `clients_connected`, the second `interface` and `subnet`) are gone, and `ip.dns_server` is new. Flat bodies return `422` (Fable API-8; first step of ARCH-3).
 - AP creation with `encryption: "wpa"` returns `422`: it silently created WPA2. Use `wpa2` for the same network, or the new `wpa1` for real legacy WPA/TKIP (Fable HAP-10).
 - Configuration: the `networks` section is renamed `antennas`, and every entry must set `show_dfs: true|false`; there is no fallback for the old name.
 - `GET /api/v1/interface/{id}/network/available-channels` is removed: use `GET /api/v2/antennas/{interface}`, which lists only the usable channels, grouped by band with the widths each can use, and needs no reservation.
 - `GET /api/v2/status` no longer returns `checks`: it gives `degraded_reasons`, one entry per cause of `degraded` with a stable `code` (`antenna_quarantined`, `network_being_repaired`, `hostapd_not_running`, `dnsmasq_not_running`, `nat_rule_missing`, `upstream_unreachable`, `command_stuck`, `loop_stalled`, `cleanup_failed`, `network_stop_incomplete`), the `interface` it concerns and a `message`. The detail of the checks moved to the new `GET /api/v2/monitoring`.
 - Every `409` has a `detail.code` (Fable API-3): `1008 network_already_active` and `1009 restoration_in_progress` on the create, `1007 network_not_active` on stopping a stopped network, `1010 qos_profile_already_active` and `1011 qos_profile_not_active` on QoS profiles; before they had none and the client had to read the message. `404` on a call with a reservation ID now only means the ID is gone: an unknown QoS `profile_id` and a TX power the driver does not support answer `422` (were `404`), stopping a QoS profile that is not running answers `409 / 1011` (was `404`).
-- A create that fails for a non-radio reason answers `500 / 1013` (`startup_failed`) with `detail.stage` (`hostapd`, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation`, `host_guard`) instead of a generic `500 / 500` with only a message.
 - Unknown fields in a request body are refused with `422` and the field path (`captive-portal: Extra inputs are not permitted`, `radio.chanel: ...`) instead of being ignored: a typo no longer creates a network without the intended setting (Fable API-10). Applies to the reservation, the create (every section), TX power and QoS profile bodies.
 - The API prefix is `/api/v2` (was `/api/v1`): the contract changed, so the version in the URL changes too. `/api/v1` is not kept: every path under it answers `404`, with any method.
 - Paths renamed (Fable API-6): `/api/v1/device-reservation` → `/api/v2/reservations`, and every `/api/v1/interface/{reservation_id}/...` → `/api/v2/reservations/{reservation_id}/...` (network, Internet, TX power, QoS profile). The old `interface` segment held a reservation ID, not an interface, which the new `/antennas/{interface}` would have made more confusing. The old paths answer `404`.
-- The create no longer answers `409 / 1001` (`retry_later`) after a radio failure (such as a hostapd crash): the server takes the same pauses (5 s, then 10 s) and starts the AP again inside the request, so the client sends one create and gets `200` or a terminal `503 / 1003`. `1003` also comes, without quarantine, when the reservation expires too soon for another start. The create can take up to about 80 s (several minutes on DFS channels): use a read timeout of at least 120 s (300 s on DFS).
+- **The create is asynchronous.** `POST .../network` checks the request and answers `202` at once with the network in `runtime_state: starting` (the same schema as `GET .../network`; was a synchronous `200` with `{"detail": "Network ... created successfully"}` after up to 80 s); the client polls `GET .../network` until the outcome: the network (`runtime_state: null`), `runtime_state: start_failed` with `error` (non-radio failure, `1013` with `stage`, rolled back, reservation kept; was `500`), or `404` with `reason: reservation_invalidated` (every start failed, antenna quarantined; was `500` / `1003`) or `reservation_expired`. Radio failures such as a hostapd crash are retried by the server during the start, so `409 / 1001` is no longer answered. Releasing the reservation or `DELETE .../network` during a start cancels it within seconds. Every request is short again: no long read timeouts (Fable API-4, API-5).
 - The release (`DELETE /api/v2/reservations/{id}`, and release-all) always answers `200`: if the cleanup fails (for example hostapd stuck in the kernel) the ID is gone anyway, the antenna stays held and the server repeats the cleanup in the background (5 s, 15 s, 60 s, then every 5 min), shown in `GET /status` as `cleanup_failed`. A failed cleanup never makes reserve, get or release fail: a held antenna counts as reserved (`409 / 1005`, with `next_available_in` until the next cleanup attempt, also when reserved by `interface`) and the get of a released ID answers `404`.
 - `404` on every call with a reservation ID has a stable `detail.reason`: `reservation_released`, `reservation_expired`, `reservation_invalidated` (antenna quarantined) or `reservation_not_found` (never existed, or ended more than an hour ago); before it was always `not_found`. Clients reserve again after `invalidated` or `expired`, and treat a release answered `404` as done.
-- A successful create answers the network, the same body as `GET .../network`, instead of `{"detail": "Network ... created successfully"}`: the client no longer needs a second call (Fable API-5).
 - `GET /api/v2/status` lists the antennas in `antennas[]` (was `networks[]`), like the Antennas API: an entry is an antenna, reserved or not, not a network. Each entry has `reservation` (`null`, or `{expires_at, expires_in}` as in the reservation and network answers) instead of `reserved` and `reservation_remaining_seconds`, which could not tell a free antenna from an unlimited reservation, and `network_active` (Fable API-1).
 - `GET /api/v1/debug` is removed (`404`): `GET /api/v2/monitoring` gives the health checks, and no endpoint lists other clients' reservation IDs any more (Fable SEC-2, API-1).
 
@@ -53,7 +50,7 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - Explain adapter-dependent TX power control in the frontend.
 - Skip AP subnets that overlap host IPv4 routes when selecting a DHCP subnet.
 - Add an optional offline configuration check with actionable errors and warnings.
-- Radio startup failures (hostapd crash, beacon setup failure, radio or readiness timeout) are retried by the server inside the create; when every start fails the create returns `503 / 1003` and invalidates the reservation, and the antenna is quarantined. New reservations return `503 / 1002` or `1003` while recovery or quarantine leaves no antenna.
+- Radio startup failures (hostapd crash, beacon setup failure, radio or readiness timeout) are retried by the server during the create: up to 3 starts within 20 s, then after a 5 s and a 10 s pause; when every start fails the reservation is invalidated and the antenna quarantined. New reservations return `503 / 1002` or `1003` while recovery or quarantine leaves no antenna.
 - Restart failed active access points or DHCP processes and verify AP and DHCP startup before a USB-reset antenna returns to the pool.
 - Discover AP-capable Wi-Fi interfaces (USB or built-in) automatically instead of requiring each one in the configuration. The `antennas` section (was `networks`) now only assigns display names and `show_dfs`, and `disable: true` keeps a radio out of Wi-Lab; unlisted interfaces use their interface name. A missing configured interface no longer prevents startup; with no usable adapter, reservations return `503 / 1003`. USB ports are detected automatically for recovery resets; `usb_recovery_port` is ignored.
 - Add a device discovery service: Wi-Lab starts without antennas and scans as soon as the API starts, then every 5 seconds while none is available and every 30 seconds afterwards. Antennas plugged in later are added without a restart. Each scan re-reads `antennas` (display names, `disable` and `show_dfs`) and only adds devices; existing antennas, subnets and reservations are unchanged. Interfaces still being renamed by udev are skipped until they have their final name.
@@ -66,7 +63,7 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - New **Antennas** API, listed in Swagger before Network and readable with the token only: `GET /api/v2/antennas` lists the managed antennas (`display_name`, `interface`); `GET /api/v2/antennas/{interface}` gives `device` (`bus`, `address`, `driver`), `encryptions` and per band the Wi-Fi generations with their widths and the usable channels with the widths each can use, to fill a form's dropdowns.
 - Frontend: a captive portal switch on each reserved antenna card chooses whether the next network starts with a portal page (it presets the start dialog, which has the same switch), and a running network shows the captive portal as On or Off with its URL and a header badge.
 - `POST /api/v2/reservations` takes an optional `interface` to reserve a given antenna (from `GET /api/v2/antennas`); without it the first free one is reserved, as before. A reserved antenna answers `409 / 1005` with the expiry of its reservation, a quarantined one `503 / 1002` or `1003`, an unknown one `422`.
-- A create repeated with the same body on a network that already runs with exactly those settings answers `200` with the network instead of `409 / 1008`: after a lost answer the client just sends the same create again. A different body still answers `409 / 1008`.
+- The same create body again is safe: `202` while that start runs (no second AP), `200` with the network once it runs; another body answers `409 / 1008`. After a lost answer the client sends the same create again or just polls.
 - New optional `captive_portal_port` setting (default 8081): the captive portal page listens there on each AP gateway, and clients' port-80 traffic is redirected to it. Wi-Lab itself can therefore listen on port 80; `captive_portal.url` includes the port. It must differ from `api_port`, 53 and 67.
 - Frontend: a banner lists why the service is `degraded` (`degraded_reasons` of `GET /status`, with the antenna names), for example an antenna held by a failed cleanup or a half-stopped network.
 - `GET .../network` has a `restarts` section (`ap`, `dhcp`, `last_at`, `last_reason`) counting the watchdog repairs over the whole reservation: a client reads it before and after a test to know whether the AP was interrupted, without polling `runtime_state`.
@@ -74,7 +71,7 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 ### 🐛 Bug Fixes
 
 - Report a hostapd exit during AP startup within about 1 s instead of after the full 10 s readiness timeout. A hostapd exit after a failed beacon setup previously returned a generic `500` after about 10.3 s.
-- Retry transient radio failures inside the create request on both bands (hostapd segfault, beacon setup failure, radio or readiness timeout): up to 3 starts, 1 s apart, within 20 s. If they all fail, the server pauses and starts again (see the breaking change on `409 / 1001`).
+- Retry transient radio failures during the create on both bands (hostapd segfault, beacon setup failure, radio or readiness timeout): up to 3 starts, 1 s apart, within 20 s, then after a 5 s and a 10 s pause.
 - Keep Wi-Lab radios away from NetworkManager (per-device release, no configuration reload) and systemd-networkd (runtime rule under `/run`), and bring a radio down again after a USB reset. Previously a reset adapter could be raised by the host and stay quarantined.
 - Send TCP resets for forwarded client traffic after Internet is disabled.
 - Remove stale Wi-Lab firewall rules after an unclean shutdown without flushing host chains.
@@ -106,9 +103,9 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - If a Wi-Lab background loop stalls, `/status` reports it and the service restarts itself through the systemd watchdog, but only when no reservation is active (Fable STAB-1).
 - A dead dnsmasq is restarted up to 3 times per hour, and when that is not enough the watchdog restarts the whole network, instead of leaving it in `dhcp_failed` for good (Fable WD-3).
 - A beacon failure gets the same classification and message whether the readiness probe sees hostapd `DISABLED` or its exit first (Fable HAP-2).
-- A beacon rejected during hostapd setup is a radio failure in every create and watchdog restart, so it is retried by the server instead of answering a generic `500` (Fable HAP-3).
+- A beacon rejected during hostapd setup is a radio failure in every create and watchdog restart, so it is retried by the server instead of failing with a generic `500` (Fable HAP-3).
 - A host command stuck in the kernel (hung Wi-Fi driver) no longer freezes its thread, device lock and eventually the API: Wi-Lab stops waiting 2 s after SIGKILL, fails the operation and reports it (`degraded_reasons` `command_stuck` in `/status`, `checks.commands.stuck` in `/monitoring`) (Fable STAB-1).
-- A network whose NAT or isolation rules cannot be installed now fails (`500 / 1013` with its `stage`) instead of reporting success, and is rolled back (Fable NET-2); the false "Isolation disabled for testing" log line is gone (Fable NET-4).
+- A network whose NAT or isolation rules cannot be installed now fails (`start_failed` with its `stage`) instead of reporting success, and is rolled back (Fable NET-2); the false "Isolation disabled for testing" log line is gone (Fable NET-4).
 - `iptables` calls wait up to 5 s for the xtables lock instead of failing when another program holds it (Fable NET-1).
 - A failed watchdog AP restore is reported as `runtime_state: restore_failed` and retried with backoff, instead of leaving the AP silently down (Fable WD-2).
 - The watchdog restores a failed AP up to 3 times per hour per antenna, instead of once per network life (Fable WD-1).
@@ -203,12 +200,10 @@ The rest of this chapter names each endpoint by its 3.x path.
   - `encryption: "wpa"` removed (`422`): use `wpa2` (same network as before). New `wpa1` for legacy WPA/TKIP, only on antennas that list it.
   - widths and generations the antenna does not support return `422`.
   - stricter validation, `422`: `ssid` 1–32 bytes, `password` 8–63 bytes, no control characters, channel must match the band, DFS channels refused unless the antenna has `show_dfs: true`.
-  - radio failures are retried by the server inside the request; `409 / 1001` is no longer answered.
-  - new `503 / 1003` with `reservation_invalidated: true`: discard the ID and reserve again.
-  - `500 / 1013` with `detail.stage`: startup failed for a non-radio reason, reservation still valid.
-  - `409 / 1008`: a network with different settings already active (the same body answers `200`); `409 / 1009`: a watchdog restore in progress (both had no code).
-  - `200`: the body is the network, as `GET .../network` returns it (was `{"detail": "Network ... created successfully"}`).
-  - can take up to about 80 s (several minutes on DFS channels): use a read timeout of at least 120 s (300 s on DFS).
+  - radio failures are retried by the server during the start; `409 / 1001` is no longer answered.
+  - asynchronous: `202` with `runtime_state: starting`, then poll `GET .../network` (was a synchronous `200` with `{"detail": "Network ... created successfully"}`). Outcomes: the network; `start_failed` with `error` (`1013`, `stage`; was `500`); `404` with `reason` `reservation_invalidated` (was `500` / `1003`) or `reservation_expired`.
+  - `409 / 1008`: a network with different settings runs or is starting (the same body answers `202` or `200`); `409 / 1009`: a watchdog repair in progress (both had no code).
+  - `DELETE .../network` or a release during the start cancels it.
 - `GET /api/v1/interface/{id}/network`: the answer is grouped in sections, which are `null` while the network is not running:
 
   | 3.x | 4.0.0 |
@@ -227,7 +222,7 @@ The rest of this chapter names each endpoint by its 3.x path.
   | `clients` | `clients` (new `captive_authorized` with a portal) |
   | — | `restarts` (`ap`, `dhcp`, `last_at`, `last_reason`): watchdog repairs over the reservation, present even when the network is not running |
 
-  `interface`, `active` and the new `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`, `stop_failed`) stay at the top level.
+  `interface`, `active` and the new `runtime_state` (`starting`, `start_failed`, `restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`, `stop_failed`) stay at the top level, with the new `error` (set with `start_failed`) and `restarts`.
 - `DELETE /api/v1/interface/{id}/network`: also cancels a pending `restore_failed`, and returns `200`. New `503 / 1012` (`stop_incomplete`) + `Retry-After: 5` when the stop does not complete even after the server repeated it for 15 s (`runtime_state: stop_failed`): repeat the DELETE.
 - `GET /api/v1/interface/{id}/network/available-channels`: removed, see **Antennas**.
 
@@ -252,8 +247,8 @@ The rest of this chapter names each endpoint by its 3.x path.
 
 **Error codes**
 
-- New domain codes on `409`: `1008` (create with a different body on an active network; the same body answers `200`), `1009` (create during a watchdog restoration), `1010` / `1011` (QoS profile already / not running); stopping a stopped network answers `409 / 1007`. Full list: [docs/error-codes.md](docs/error-codes.md).
-- Create: non-radio startup failure `500 / 1013` with `detail.stage` (was `500 / 500`).
+- New domain codes on `409`: `1008` (create with a different body on a running or starting network), `1009` (create during a watchdog restoration), `1010` / `1011` (QoS profile already / not running); stopping a stopped network answers `409 / 1007`. Full list: [docs/error-codes.md](docs/error-codes.md).
+- Create: a non-radio startup failure is `runtime_state: start_failed` with `error.code: 1013` and `error.stage` in `GET .../network` (was `500`).
 - Every request body: unknown fields answer `422` (were ignored).
 - `404` with a reservation ID only means the ID is gone. Unknown QoS `profile_id` and unsupported TX power: `422` (were `404`). Stopping a QoS profile that is not running: `409 / 1011` (was `404`).
 

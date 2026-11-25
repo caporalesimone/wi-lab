@@ -180,7 +180,9 @@ class NetworkStatus(BaseModel):
         None, description=(
             "Watchdog state: restoring_ap, restoring_dhcp, dhcp_failed, or restore_failed "
             "(AP restart failed; the watchdog retries with backoff while the reservation is valid); "
-            "stop_failed: a stop did not complete (503 / 1012), repeat DELETE .../network."
+            "stop_failed: a stop did not complete (503 / 1012), repeat DELETE .../network. "
+            "starting: a create is running, poll GET .../network. start_failed: the create "
+            "failed for a non-radio reason, see `error`."
         ),
     )
     ssid: str | None = None
@@ -403,6 +405,18 @@ class RestartsInfo(BaseModel):
     ))
 
 
+class StartError(BaseModel):
+    """Why an asynchronous create failed (`runtime_state: start_failed`)."""
+
+    code: int = Field(description="Error code, e.g. 1013 (startup_failed)")
+    reason: str = Field(description="Stable reason, e.g. startup_failed")
+    message: str = Field(description="For display")
+    stage: str | None = Field(None, description=(
+        "With 1013, what failed: hostapd, interface, gateway, dhcp, captive_portal, nat, "
+        "internet_block, isolation or host_guard"
+    ))
+
+
 class NetworkResponse(BaseModel):
     """`GET .../network`. Sections are null while the network is not running."""
 
@@ -411,6 +425,10 @@ class NetworkResponse(BaseModel):
     runtime_state: str | None = Field(None, description=NetworkStatus.model_fields["runtime_state"].description)
     reservation: ReservationInfo
     restarts: RestartsInfo = Field(default_factory=RestartsInfo)
+    error: StartError | None = Field(None, description=(
+        "Set only with `runtime_state: start_failed`: why the create failed. The reservation "
+        "is still valid; a new create starts again, `DELETE .../network` clears it"
+    ))
     radio: RadioInfo | None = None
     wifi: WifiInfo | None = None
     ip: IpInfo | None = None
