@@ -10,13 +10,13 @@ All notable changes to Wi-Lab are documented in this file.
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 55 |
+| 🐛 Bug fixes | 54 |
 | ⚠️ Breaking changes | 22 |
-| 🔧 Maintenance changes | 13 |
-| ✨ New features | 21 |
-| 📦 Commits since 3.0.0 | 89 |
+| 🔧 Maintenance changes | 12 |
+| ✨ New features | 22 |
+| 📦 Commits since 3.0.0 | 115 |
 
-Counts are the entries of the sections below (as of 2026-11-25) and `git rev-list --count 3.0.0..HEAD` (as of 2026-11-25).
+Counts are the entries of the sections below and `git rev-list --count 3.0.0..HEAD` including the commit of this review (as of 2026-11-25).
 
 ### ⚠️ Breaking Changes
 
@@ -38,10 +38,9 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - The API prefix is `/api/v2` (was `/api/v1`): the contract changed, so the version in the URL changes too. `/api/v1` is not kept: every path under it answers `404`, with any method.
 - Paths renamed (Fable API-6): `/api/v1/device-reservation` → `/api/v2/reservations`, and every `/api/v1/interface/{reservation_id}/...` → `/api/v2/reservations/{reservation_id}/...` (network, Internet, TX power, QoS profile). The old `interface` segment held a reservation ID, not an interface, which the new `/antennas/{interface}` would have made more confusing. The old paths answer `404`.
 - The create no longer answers `409 / 1001` (`retry_later`) after a radio failure (such as a hostapd crash): the server takes the same pauses (5 s, then 10 s) and starts the AP again inside the request, so the client sends one create and gets `200` or a terminal `503 / 1003`. `1003` also comes, without quarantine, when the reservation expires too soon for another start. The create can take up to about 80 s (several minutes on DFS channels): use a read timeout of at least 120 s (300 s on DFS).
-- The release (`DELETE /api/v2/reservations/{id}`, and release-all) always answers `200`: if the cleanup fails (for example hostapd stuck in the kernel) the ID is gone anyway, the antenna stays held and the server repeats the cleanup in the background (5 s, 15 s, 60 s, then every 5 min), shown in `GET /status` as `cleanup_failed`. Reserve, get and release no longer answer `503 / 1004`: a held antenna counts as reserved (`409 / 1005`, with `next_available_in` until the next cleanup attempt, also when reserved by `interface`) and the get of a released ID answers `404`.
+- The release (`DELETE /api/v2/reservations/{id}`, and release-all) always answers `200`: if the cleanup fails (for example hostapd stuck in the kernel) the ID is gone anyway, the antenna stays held and the server repeats the cleanup in the background (5 s, 15 s, 60 s, then every 5 min), shown in `GET /status` as `cleanup_failed`. A failed cleanup never makes reserve, get or release fail: a held antenna counts as reserved (`409 / 1005`, with `next_available_in` until the next cleanup attempt, also when reserved by `interface`) and the get of a released ID answers `404`.
 - A successful create answers the network, the same body as `GET .../network`, instead of `{"detail": "Network ... created successfully"}`: the client no longer needs a second call (Fable API-5).
 - `GET /api/v2/status` lists the antennas in `antennas[]` (was `networks[]`), like the Antennas API: an entry is an antenna, reserved or not, not a network. Each entry has `reservation` (`null`, or `{expires_at, expires_in}` as in the reservation and network answers) instead of `reserved` and `reservation_remaining_seconds`, which could not tell a free antenna from an unlimited reservation, and `network_active` (Fable API-1).
-- Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all.
 - `GET /api/v1/debug` is removed (`404`): `GET /api/v2/monitoring` gives the health checks, and no endpoint lists other clients' reservation IDs any more (Fable SEC-2, API-1).
 
 ### ✨ Features
@@ -53,7 +52,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Explain adapter-dependent TX power control in the frontend.
 - Skip AP subnets that overlap host IPv4 routes when selecting a DHCP subnet.
 - Add an optional offline configuration check with actionable errors and warnings.
-- Allow clients to retry classified radio startup failures using the same reservation after `Retry-After`. A terminal creation failure returns `503 / 1003` and invalidates the reservation. New reservations still return `503` when blocked by recovery or quarantine.
+- Radio startup failures (hostapd crash, beacon setup failure, radio or readiness timeout) are retried by the server inside the create; when every start fails the create returns `503 / 1003` and invalidates the reservation, and the antenna is quarantined. New reservations return `503 / 1002` or `1003` while recovery or quarantine leaves no antenna.
 - Restart failed active access points or DHCP processes and verify AP and DHCP startup before a USB-reset antenna returns to the pool.
 - Discover AP-capable Wi-Fi interfaces (USB or built-in) automatically instead of requiring each one in the configuration. The `antennas` section (was `networks`) now only assigns display names and `show_dfs`, and `disable: true` keeps a radio out of Wi-Lab; unlisted interfaces use their interface name. A missing configured interface no longer prevents startup; with no usable adapter, reservations return `503 / 1003`. USB ports are detected automatically for recovery resets; `usb_recovery_port` is ignored.
 - Add a device discovery service: Wi-Lab starts without antennas and scans as soon as the API starts, then every 5 seconds while none is available and every 30 seconds afterwards. Antennas plugged in later are added without a restart. Each scan re-reads `antennas` (display names, `disable` and `show_dfs`) and only adds devices; existing antennas, subnets and reservations are unchanged. Interfaces still being renamed by udev are skipped until they have their final name.
@@ -80,17 +79,15 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Disabling Internet cuts existing forwarded connections on the selected AP.
 - Listen on the configured API port instead of always using 8080.
 - Report common invalid regulatory regions at startup.
-- Prevent concurrent reservations in one service process from sharing an antenna, and wait for network cleanup before reassigning it. Failed cleanup keeps the device held and returns 503 when it prevents an operation.
+- Prevent concurrent reservations in one service process from sharing an antenna, and wait for network cleanup before reassigning it. A failed cleanup keeps the device held until the background retry succeeds.
 - Stop active QoS profiles when their network is released or expires.
-- Keep independent API requests responsive during slow device operations.
 - Leave Wi-Fi interfaces managed and down after a network stops to avoid an unnecessary activation cycle.
 - Verify that the access point is enabled before assigning its gateway and starting DHCP. Roll back incomplete network starts.
-- Retry a transient hostapd startup segfault once on 2.4 GHz after successful cleanup, without requiring the client to resubmit the request.
 - Clean up timed-out access point starts by tracking hostapd directly instead of waiting for a PID file.
-- Keep other adapters and system status responsive during a slow AP startup or cleanup.
+- Keep independent API requests, other adapters and the system status responsive during a slow AP startup or cleanup.
 - `wilab/wifi` is a regular Python package (`__init__.py`) like `wilab/network` and `wilab/api`, instead of an implicit namespace package (Fable ARCH-12).
 - A channel refused from the cached channel list is checked once more against a fresh `iw` reading, so 5 GHz channels cached before the regulatory domain was applied are no longer refused until a restart; the API and the TX power code share one channel cache, refreshed after a USB recovery or a failed start (Fable BUG-4).
-- `/status` health checks now look at Wi-Lab's own processes and rules per network: a network without Internet is no longer `degraded` on a host without NAT rules, Docker's MASQUERADE no longer hides a missing Wi-Lab rule, a link that is DOWN is no longer reported up, and hostapd is checked too (new `checks.hostapd`, `missing` lists); `/debug` uses the same checks (Fable BUG-2).
+- `/status` health checks now look at Wi-Lab's own processes and rules per network: a network without Internet is no longer `degraded` on a host without NAT rules, Docker's MASQUERADE no longer hides a missing Wi-Lab rule, a link that is DOWN is no longer reported up, and hostapd is checked too (in `GET /monitoring`: `checks.hostapd` and `missing` lists) (Fable BUG-2).
 - Background loops (discovery, watchdog, expiry) survive any unexpected error and log its traceback once, and a `config.yaml` saved with the wrong shape is reported as a clear configuration error instead of silently stopping discovery (Fable WD-9).
 - `/status` no longer flaps to `degraded` while a network is being stopped or started: it uses one snapshot of the active networks and does not judge a network with an operation in progress (Fable RACE-2).
 - An AP start runs fewer host commands: no repeated wireless/AP capability checks (established by discovery), no `dnsmasq --version`, and `nmcli` is looked up once instead of on every start (Fable PERF-1).
@@ -107,8 +104,8 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - A dead dnsmasq is restarted up to 3 times per hour, and when that is not enough the watchdog restarts the whole network, instead of leaving it in `dhcp_failed` for good (Fable WD-3).
 - A beacon failure gets the same classification and message whether the readiness probe sees hostapd `DISABLED` or its exit first (Fable HAP-2).
 - A beacon rejected during hostapd setup is a radio failure in every create and watchdog restart, so it is retried by the server instead of answering a generic `500` (Fable HAP-3).
-- A host command stuck in the kernel (hung Wi-Fi driver) no longer freezes its thread, device lock and eventually the API: Wi-Lab stops waiting 2 s after SIGKILL, fails the operation and reports `checks.commands.stuck` and `degraded` in `/status` (Fable STAB-1).
-- A network whose NAT or isolation rules cannot be installed now fails with `500` instead of reporting success, and is rolled back (Fable NET-2); the false "Isolation disabled for testing" log line is gone (Fable NET-4).
+- A host command stuck in the kernel (hung Wi-Fi driver) no longer freezes its thread, device lock and eventually the API: Wi-Lab stops waiting 2 s after SIGKILL, fails the operation and reports it (`degraded_reasons` `command_stuck` in `/status`, `checks.commands.stuck` in `/monitoring`) (Fable STAB-1).
+- A network whose NAT or isolation rules cannot be installed now fails (`500 / 1013` with its `stage`) instead of reporting success, and is rolled back (Fable NET-2); the false "Isolation disabled for testing" log line is gone (Fable NET-4).
 - `iptables` calls wait up to 5 s for the xtables lock instead of failing when another program holds it (Fable NET-1).
 - A failed watchdog AP restore is reported as `runtime_state: restore_failed` and retried with backoff, instead of leaving the AP silently down (Fable WD-2).
 - The watchdog restores a failed AP up to 3 times per hour per antenna, instead of once per network life (Fable WD-1).
@@ -118,8 +115,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - `wpa3` and `wpa2-wpa3` networks no longer write `wpa_key_mgmt` and `ieee80211w` several times in `hostapd.conf` (they worked only because hostapd keeps the last one); the mixed mode now requires PMF for WPA3 clients only, and SAE accepts H2E (Fable HAP-10).
 - The service refuses to start with an empty `auth_token`, `api_port` outside 1–65535, `max_timeout` below `min_timeout` or a `dns_server` that is not an IPv4 address, as `--validate-config` already reported; before, `dns_server: foo` started and every network creation failed with `500` (Fable BUG-3).
 - Networks are isolated from each other whatever `dhcp_base_network` is: with subnets outside `192.168.*` (e.g. `10.20.0.0/24`) no isolation rule was installed and clients of different networks could talk to each other (Fable NET-3).
-- `DELETE .../network` no longer answers a bare `500` when hostapd stays stuck in the kernel after SIGKILL (seen with mt7921u firmware timeouts): it answers `503` with its own code `1012 stop_incomplete` (not `1004`, which means a cleanup not to retry) and `Retry-After: 5`, the half-stopped network reports `runtime_state: stop_failed`, the watchdog no longer "repairs" it, and repeating the DELETE finishes the stop.
-- `DELETE .../network` repeats a stop that did not complete every 2 s for up to 15 s before answering `503 / 1012`: hostapd stuck in the kernel is usually released within seconds, so the client rarely sees `1012`.
+- `DELETE .../network` no longer answers a bare `500` when hostapd stays stuck in the kernel after SIGKILL (seen with mt7921u firmware timeouts): the server repeats the stop every 2 s for up to 15 s (hostapd is usually released within seconds); only if it still fails it answers `503 / 1012 stop_incomplete` with `Retry-After: 5`, the half-stopped network reports `runtime_state: stop_failed` (also in `/status`), the watchdog does not "repair" it, and repeating the DELETE finishes the stop.
 - `/status` no longer runs host commands on every call: the checks (processes, NAT rules, upstream link) are refreshed every 10 s in the background and `/status` reads the latest result. Under load a call took up to 13 s, and every polling client added `ip` and `iptables` commands; a change now takes up to 10 s to show.
 - An unexpected server error answers `500 / 500` without closing the connection: before, uvicorn dropped it after the answer, so the client's next request on the same keep-alive connection failed with a transport error (seen by the stress test as `ReadError` / `RemoteProtocolError` right after the `500` of a stop).
 - Normal answers are no longer logged as errors: a missing `iptables -C` rule, a `tc` qdisc with nothing to delete, `iw set txpower` unsupported by the driver and a stop without DHCP are logged at debug level, and QoS uses `tc ... replace` instead of a failing `add` (Fable NET-5). In a stress run they were most of the `ERROR` lines.
@@ -182,7 +178,8 @@ The rest of this chapter names each endpoint by its 3.x path.
   - new `503 / 1002`: an antenna is recovering; retry after `Retry-After` (10 s).
   - new `503 / 1003`: no usable antenna (all quarantined or none found).
   - new optional `interface`: reserve that antenna only (see Features).
-- Release: always `200`; a failed cleanup is repeated by the server (see the breaking changes). `1004` is no longer answered.
+- Release: always `200`; a failed cleanup is repeated by the server, which keeps the antenna held meanwhile (see the breaking changes).
+- `409 / 1005` also when every free antenna is held by a failed cleanup; `next_available_in` is then the time to the next cleanup attempt.
 
 **Network**
 
@@ -226,7 +223,7 @@ The rest of this chapter names each endpoint by its 3.x path.
   | `clients_connected` | removed: use the length of `clients` |
   | `clients` | `clients` (new `captive_authorized` with a portal) |
 
-  `interface`, `active` and the new `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`) stay at the top level.
+  `interface`, `active` and the new `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`, `stop_failed`) stay at the top level.
 - `DELETE /api/v1/interface/{id}/network`: also cancels a pending `restore_failed`, and returns `200`. New `503 / 1012` (`stop_incomplete`) + `Retry-After: 5` when the stop does not complete even after the server repeated it for 15 s (`runtime_state: stop_failed`): repeat the DELETE.
 - `GET /api/v1/interface/{id}/network/available-channels`: removed, see **Antennas**.
 
@@ -246,10 +243,12 @@ The rest of this chapter names each endpoint by its 3.x path.
 **Configuration**
 
 - `networks:` → `antennas:`; each entry needs `show_dfs: true|false` (DFS channels offered or not).
+- New optional `captive_portal_port` (default 8081), the port of the captive portal page on each AP gateway.
+- New optional `hostapd_debug_dir`, for diagnostics of failed hostapd starts.
 
 **Error codes**
 
-- New domain codes on `409`: `1008` (create on an active network), `1009` (create during a watchdog restoration), `1010` / `1011` (QoS profile already / not running); stopping a stopped network answers `409 / 1007`. Full list: [docs/error-codes.md](docs/error-codes.md).
+- New domain codes on `409`: `1008` (create with a different body on an active network; the same body answers `200`), `1009` (create during a watchdog restoration), `1010` / `1011` (QoS profile already / not running); stopping a stopped network answers `409 / 1007`. Full list: [docs/error-codes.md](docs/error-codes.md).
 - Create: non-radio startup failure `500 / 1013` with `detail.stage` (was `500 / 500`).
 - Every request body: unknown fields answer `422` (were ignored).
 - `404` with a reservation ID only means the ID is gone. Unknown QoS `profile_id` and unsupported TX power: `422` (were `404`). Stopping a QoS profile that is not running: `409 / 1011` (was `404`).
@@ -266,9 +265,9 @@ The rest of this chapter names each endpoint by its 3.x path.
 **Status**
 
 - `GET /api/v1/status`:
-  - `networks[]` is renamed `antennas[]`, and its entries gain `recovery_state` (`recovering`, `unavailable`) and `runtime_state`. What an antenna supports is in `GET /api/v2/antennas/{interface}`.
+  - `networks[]` is renamed `antennas[]`. In each entry `reserved` and `reservation_remaining_seconds` become `reservation` (`null`, or `{expires_at, expires_in}`; both `null` when unlimited), and `network_active`, `recovery_state` (`recovering`, `unavailable`) and `runtime_state` are new. What an antenna supports is in `GET /api/v2/antennas/{interface}`.
   - `checks` moved to `GET /api/v2/monitoring` (with `hostapd`, `commands`, `loops`, and `missing` lists in `dnsmasq` and `iptables_nat`); `/status` has `degraded_reasons` instead (`{code, interface, message}`).
-  - `degraded` now also covers quarantined antennas, networks being repaired, stuck commands and stalled loops.
+  - `degraded` now also covers quarantined antennas, networks being repaired or half stopped, failed cleanups, stuck commands and stalled loops.
 - `GET /api/v1/debug`: removed; use `GET /api/v2/monitoring`.
 
 **Access**
