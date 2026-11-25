@@ -79,7 +79,7 @@ def _nat_check(manager: NetworkManager, expected: list[str]) -> dict[str, Any]:
     """
     try:
         rules = manager.firewall_status()
-    except Exception as exc:  # noqa: BLE001 - reported in the check, never fails a reader
+    except Exception as exc:
         return {"configured": not expected, "missing": expected, "errors": [str(exc)]}
     nat = rules.get("nat") or ""
     missing = [device for device in expected if f"wilab-nat-{device}" not in nat]
@@ -149,7 +149,7 @@ class HealthChecks:
             heartbeat.beat("health")
             try:
                 self.refresh()
-            except Exception as exc:  # noqa: BLE001 - this loop must survive anything (WD-9)
+            except Exception as exc:
                 if repr(exc) != last_error:
                     logger.exception("[health-loop] Unexpected error")
                 last_error = repr(exc)

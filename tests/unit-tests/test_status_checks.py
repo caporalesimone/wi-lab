@@ -6,8 +6,8 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
 from wilab import health as status_module
+from wilab.api import create_app, dependencies
 from wilab.config import load_config
 from wilab.models import NetworkStatus
 
