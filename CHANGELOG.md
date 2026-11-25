@@ -13,8 +13,8 @@ All notable changes to Wi-Lab are documented in this file.
 | 🐛 Bug fixes | 54 |
 | ⚠️ Breaking changes | 22 |
 | 🔧 Maintenance changes | 12 |
-| ✨ New features | 22 |
-| 📦 Commits since 3.0.0 | 115 |
+| ✨ New features | 23 |
+| 📦 Commits since 3.0.0 | 116 |
 
 Counts are the entries of the sections below and `git rev-list --count 3.0.0..HEAD` including the commit of this review (as of 2026-11-25).
 
@@ -67,6 +67,7 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - `POST /api/v2/reservations` takes an optional `interface` to reserve a given antenna (from `GET /api/v2/antennas`); without it the first free one is reserved, as before. A reserved antenna answers `409 / 1005` with the expiry of its reservation, a quarantined one `503 / 1002` or `1003`, an unknown one `422`.
 - A create repeated with the same body on a network that already runs with exactly those settings answers `200` with the network instead of `409 / 1008`: after a lost answer the client just sends the same create again. A different body still answers `409 / 1008`.
 - New optional `captive_portal_port` setting (default 8081): the captive portal page listens there on each AP gateway, and clients' port-80 traffic is redirected to it. Wi-Lab itself can therefore listen on port 80; `captive_portal.url` includes the port. It must differ from `api_port`, 53 and 67.
+- Frontend: a banner lists why the service is `degraded` (`degraded_reasons` of `GET /status`, with the antenna names), for example an antenna held by a failed cleanup or a half-stopped network.
 
 ### 🐛 Bug Fixes
 

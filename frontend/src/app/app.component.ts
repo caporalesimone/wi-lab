@@ -21,8 +21,7 @@ import {
   ReservationPolicy,
   ReservationRequest,
   ReservationResponse,
-  NoDeviceAvailableError
-} from './models/network.models';
+  NoDeviceAvailableError, StatusResponse } from './models/network.models';
 import { ApiError, RecoveryCode, apiErrorToast, retryAfterSeconds } from './services/recovery-response';
 
 /** Unified view-model for each interface card. */
@@ -66,6 +65,8 @@ export class AppComponent implements OnInit, OnDestroy {
 
   /** All interface slots (one per system interface) */
   slots: InterfaceSlot[] = [];
+  /** Why the service is degraded (GET /status degraded_reasons), with antenna names. */
+  degradedReasons: string[] = [];
 
   /** Whether the server allows unlimited reservations */
   allowUnlimitedReservation = false;
@@ -190,6 +191,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
         this.title = `Wi-Lab Network Management - ${this.version}`;
         this.buildSlots(response.antennas);
+        this.showDegradedReasons(response);
         this.loading = false;
       },
       error: (err) => {
@@ -209,8 +211,15 @@ export class AppComponent implements OnInit, OnDestroy {
         this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
         this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
         this.buildSlots(response.antennas);
+        this.showDegradedReasons(response);
       }
     });
+  }
+
+  private showDegradedReasons(response: StatusResponse): void {
+    const names = new Map(response.antennas.map(a => [a.interface, a.display_name]));
+    this.degradedReasons = (response.degraded_reasons ?? []).map(r =>
+      r.interface ? `${names.get(r.interface) ?? r.interface}: ${r.message}` : r.message);
   }
 
   private buildSlots(networks: InterfaceInfo[]): void {

@@ -20,7 +20,7 @@ export enum RecoveryCode {
 const CODE_HINTS: Partial<Record<number, string>> = {
   [RecoveryCode.DeviceBusy]: 'The antenna is busy with another operation. Try again in a few seconds.',
   [RecoveryCode.NetworkNotActive]: 'The network is not running on this antenna. Start WiFi first.',
-  [RecoveryCode.NetworkAlreadyActive]: 'A network is already running on this antenna.',
+  [RecoveryCode.NetworkAlreadyActive]: 'A network with different settings is already running on this antenna. Stop it first.',
   [RecoveryCode.RestorationInProgress]: 'The network is being restarted by the watchdog. Wait a few seconds.',
   [RecoveryCode.StopIncomplete]: 'The radio did not stop in time. Try stopping again in a few seconds.',
 };

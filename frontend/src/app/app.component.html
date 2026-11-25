@@ -36,6 +36,15 @@
     <!-- Main content (not loading, no error) -->
     <div *ngIf="!loading && !error">
 
+      <!-- Service degraded: the reasons from GET /status -->
+      <div *ngIf="degradedReasons.length" class="degraded-banner" role="status">
+        <mat-icon color="warn">warning</mat-icon>
+        <div>
+          <strong>Service degraded</strong>
+          <ul><li *ngFor="let reason of degradedReasons">{{ reason }}</li></ul>
+        </div>
+      </div>
+
       <!-- Summary bar -->
       <div class="summary-bar">
         <span class="summary-label">
