@@ -149,3 +149,35 @@ class TestSwagger:
     def test_release_all_still_wins_over_a_reservation_id(self, spec):
         paths = list(spec["paths"])
         assert paths.index("/api/v1/device-reservation/all") < paths.index("/api/v1/device-reservation/{reservation_id}")
+
+
+class TestUnknownFields:
+    """API-10: a typo in a field name is refused with its path, not silently ignored."""
+
+    @pytest.mark.parametrize(("change", "path"), [
+        (lambda b: b.update({"captive-portal": {"enabled": True}}), "captive-portal"),
+        (lambda b: b["radio"].update({"chanel": 6}), "radio.chanel"),
+        (lambda b: b["wifi"]["security"].update({"passwd": "x"}), "wifi.security.passwd"),
+        (lambda b: b.update({"internet": {"enable": True}}), "internet.enable"),
+    ])
+    def test_unknown_field_in_the_create_body_is_422_with_its_path(self, change, path):
+        app = create_app()
+
+        def probe(body: NetworkCreateBody) -> None:
+            return None
+
+        app.add_api_route("/probe", probe, methods=["POST"])
+        app.router.routes.insert(0, app.router.routes.pop())
+        body = _body()
+        change(body)
+        resp = TestClient(app).post("/probe", json=body)
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["message"] == f"{path}: Extra inputs are not permitted"
+
+    @pytest.mark.parametrize("model", ["ReservationCreateRequest", "TxPowerRequest", "QosProfileStartRequest"])
+    def test_other_request_bodies_refuse_unknown_fields(self, model):
+        from wilab import models
+        from wilab.api.routes import reservation
+
+        cls = getattr(models, model, None) or getattr(reservation, model)
+        assert cls.model_config.get("extra") == "forbid"

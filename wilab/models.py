@@ -247,6 +247,9 @@ def body_error(field: str | None, message: str) -> str:
 
 
 class RadioSettings(BaseModel):
+    # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
+    model_config = ConfigDict(extra="forbid")
+
     band: str = Field(pattern=r"^(2\.4ghz|5ghz)$", description="`2.4ghz` or `5ghz`")
     channel: int = Field(description="Primary channel; must be valid for `band` and enabled on the antenna")
     channel_width: Literal[20, 40, 80] = Field(20, description=_doc("channel_width"))
@@ -255,18 +258,27 @@ class RadioSettings(BaseModel):
 
 
 class SecuritySettings(BaseModel):
+    # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
+    model_config = ConfigDict(extra="forbid")
+
     # Checked by NetworkCreateRequest, which explains a refused `wpa`.
     encryption: str = Field(description=_doc("encryption"), json_schema_extra={"enum": _ENCRYPTIONS})
     password: str | None = Field(None, description=_doc("password"))
 
 
 class WifiSettings(BaseModel):
+    # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
+    model_config = ConfigDict(extra="forbid")
+
     ssid: str = Field(description=_doc("ssid"))
     hidden: bool = Field(False, description="Hide the SSID from scans; clients must know it")
     security: SecuritySettings
 
 
 class InternetSettings(BaseModel):
+    # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool | None = Field(
         None, description="NAT to the upstream network; omitted means the server default "
         "(`internet_enabled_by_default`)",
@@ -274,11 +286,17 @@ class InternetSettings(BaseModel):
 
 
 class CaptivePortalSettings(BaseModel):
+    # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = Field(False, description=_doc("captive_portal"))
 
 
 class NetworkCreateBody(BaseModel):
     """Body of `POST .../network`. Only `radio` and `wifi` are required."""
+
+    # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
+    model_config = ConfigDict(extra="forbid")
 
     radio: RadioSettings
     wifi: WifiSettings
@@ -425,7 +443,7 @@ class NetworkResponse(BaseModel):
 class TxPowerRequest(BaseModel):
     level: int = Field(..., description="TX power level 1 (low) to 4 (max)")
 
-    model_config = ConfigDict(json_schema_extra={"examples": [{"level": 2}]})
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [{"level": 2}]})
 
 
 class TxPowerInfo(BaseModel):
@@ -456,6 +474,9 @@ class QosQualityAdvanced(BaseModel):
     When provided, these values override the formula-derived parameters
     from the simple quality score.
     """
+
+    # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
+    model_config = ConfigDict(extra="forbid")
 
     packet_loss_percent: float | None = Field(
         None, ge=0, le=100, description="Packet loss percentage (0-100)"
@@ -528,6 +549,9 @@ class QosProfileStartRequest(BaseModel):
 
     Either ``profile_id`` or at least one inline QoS parameter must be set, but not both.
     """
+
+    # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
+    model_config = ConfigDict(extra="forbid")
 
     profile_id: str | None = Field(None, description="Profile from the catalogue")
     download_speed_kbit: int | None = Field(None, ge=_QOS_SPEED_MIN, le=_QOS_SPEED_MAX, description="Download speed cap in kbit/s")

@@ -161,7 +161,7 @@ protetto è quello che interessa di più: una rete che funzionava e deve continu
 | 66 | [API-4](#api-4) ✅ | Media | `500` usato per esiti che riguardano il client. |
 | 67 | [API-9](#api-9) ✅ | Media | Gli esempi OpenAPI sono corretti a mano e non corrispondono più ai modelli. |
 | 68 | [API-5](#api-5) | Bassa | Le risposte di successo contengono solo una frase. |
-| 69 | [API-10](#api-10) | Bassa | I campi sconosciuti nelle richieste vengono ignorati. |
+| 69 | [API-10](#api-10) ✅ | Bassa | I campi sconosciuti nelle richieste vengono ignorati. |
 | 70 | [API-3](#api-3) ✅ | Bassa | `409` significa sette cose diverse. |
 | 71 | [API-11](#api-11) | Bassa | Il contratto di retry ha tre livelli; quello lato client è ormai ridondante. |
 | 72 | [API-1](#api-1) | Bassa | Lo stesso dato è esposto in più punti con nomi diversi. |

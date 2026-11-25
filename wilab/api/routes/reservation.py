@@ -3,7 +3,7 @@
 import logging
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ...api.auth import maintenance_router as protected_router
 from ...api.auth import require_token
@@ -35,6 +35,9 @@ maintenance_router = protected_router(prefix="/device-reservation")
 # ---- Request / Response models ----
 
 class ReservationCreateRequest(BaseModel):
+    # API-10: an unknown field is a 422, not ignored.
+    model_config = ConfigDict(extra="forbid")
+
     duration_seconds: int = Field(
         ..., description="Reservation duration in seconds. 0 = unlimited, accepted only when "
         "`GET /status` reports `reservation_policy.allow_unlimited: true`; otherwise `422`.",

@@ -51,11 +51,12 @@ def test_debug_does_not_expose_other_clients_reservation_ids(wilab: WiLab) -> No
 
 # --------------------------------------------------------------------------- request contract
 
-@pending("API-10")
 def test_unknown_create_field_is_rejected(wilab: WiLab) -> None:
+    """API-10: a typo is refused with the field path."""
     antenna = wilab.reserve()
     response = wilab.create(antenna, **{"captive-portal": True})
     assert response.status_code == 422, response.text
+    assert response.json()["detail"]["message"].startswith("captive-portal: ")
 
 
 @pending("API-5")
