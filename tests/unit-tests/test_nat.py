@@ -119,7 +119,7 @@ def test_internet_block_precedes_protection_and_is_removed_on_reenable(monkeypat
     calls.clear()
     nat.enable_nat("wlan1", "b", "192.168.121.0/24")
     protect = next(c for c in calls if "wilab-protect-existing" in c)
-    assert protect[:3] == ["-I", "FORWARD", "4"]
+    assert protect[:2] == ["-A", "FORWARD"]  # NET-10: appended, never between block rules
     calls.clear()
     nat.enable_nat("wlan0", "a", "192.168.120.0/24")
     assert calls[-1][:2] == ["-D", "FORWARD"]

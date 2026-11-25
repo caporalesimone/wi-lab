@@ -31,6 +31,10 @@ class AppConfig(BaseModel):
     # the same verdict (BUG-3). Messages never repeat the configured values.
     auth_token: str
     api_port: int = Field(8080, ge=1, le=65535)
+    # Port of the captive portal pages on each gateway (NET-10). Clients still
+    # browse to port 80: a DNAT rule sends them here. Not 80, so Wi-Lab itself
+    # can listen on port 80 of every address.
+    captive_portal_port: int = Field(8081, ge=1, le=65535)
     max_timeout: int = 86400   # 24 hours default upper bound
     min_timeout: int = 60      # 60 seconds default lower bound
     allow_unlimited_reservation: bool = False
@@ -83,6 +87,9 @@ class AppConfig(BaseModel):
     def validate_timeouts(self) -> "AppConfig":
         if self.max_timeout <= 0 or self.max_timeout < self.min_timeout:
             raise ValueError("max_timeout must be positive and at least min_timeout")
+        if self.captive_portal_port in (self.api_port, 53, 67):
+            # The API listens on every address; DNS and DHCP run on the gateway.
+            raise ValueError("captive_portal_port must differ from api_port, 53 (DNS) and 67 (DHCP)")
         return self
 
     @field_validator('protected_commands_password')

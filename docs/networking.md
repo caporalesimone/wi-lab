@@ -44,7 +44,8 @@ iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE
 **What:** Per-AP chains `wilab-cp-<interface>` in the `nat` and `filter` tables, jumped
 to from `PREROUTING` and `FORWARD` (comment `wilab-captive-<interface>`)  
 **When:** Network created with `captive_portal: true`  
-**Impact:** Unsigned clients' DNS and HTTP are redirected to the AP gateway and
+**Impact:** Unsigned clients' DNS and HTTP are redirected to the AP gateway
+(TCP 80 to `captive_portal_port`, default 8081, where the portal listens) and
 other forwarded traffic is rejected. Signing in adds a `RETURN` rule for that
 client's MAC and IP only.  
 **Reversible:** Yes - chains are removed when the network stops; stale chains
@@ -66,7 +67,7 @@ tables, jumped to first in `INPUT` for packets arriving on the AP interface
 **Impact:** AP clients cannot reach the Wi-Lab host: not the API, not SSH (also
 over IPv6 link-local), not any other host service. They can still use DHCP
 (UDP 67), ping the gateway and, with the captive portal, DNS (53) and the portal
-page. Forwarded traffic (Internet, isolation) is not affected (Fable SEC-3).  
+page (`captive_portal_port`, default 8081). Forwarded traffic (Internet, isolation) is not affected (Fable SEC-3).  
 **Reversible:** Yes - removed when the network stops; stale chains are removed
 when Wi-Lab starts; the watchdog restores the network if the jump disappears
 

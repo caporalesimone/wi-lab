@@ -6,6 +6,7 @@ portal page, and any other forwarded traffic is rejected. Pressing the button
 exempts only that client (MAC and IP) from the redirection.
 """
 
+import errno
 import html
 import logging
 import re
@@ -20,7 +21,7 @@ from .commands import CommandError, execute_iptables
 
 logger = logging.getLogger(__name__)
 
-PORTAL_PORT = 80
+PORTAL_PORT = 8081  # default of captive_portal_port (NET-10)
 DNS_PORT = 53
 CHAIN_PREFIX = "wilab-cp-"
 JUMP_COMMENT_PREFIX = "wilab-captive-"
@@ -118,8 +119,17 @@ class CaptivePortal:
                 execute_iptables(["-A", chain, "-j", "REJECT"])
                 execute_iptables(["-t", "nat", "-I", "PREROUTING", "1", *jump, "-j", chain])
                 execute_iptables(["-I", "FORWARD", "1", *jump, "-j", chain])
-            server = self._open_server()
-        except (CommandError, OSError) as exc:
+            try:
+                server = self._open_server()
+            except OSError as exc:
+                if exc.errno == errno.EADDRINUSE:
+                    # NET-10: say what is wrong instead of a bare OSError.
+                    raise CaptivePortalError(
+                        f"port {self.port} is already in use on the host (another service "
+                        "listens on it): choose a free captive_portal_port"
+                    ) from exc
+                raise
+        except (CommandError, OSError, CaptivePortalError) as exc:
             try:
                 with self._firewall_lock:
                     _remove_rules(self.net_id)
@@ -257,7 +267,11 @@ class _PortalHandler(BaseHTTPRequestHandler):
         self._redirect()
 
     def do_POST(self) -> None:
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:  # NET-10: a malformed header is the client's error, not a traceback
+            self.send_error(400, "Malformed Content-Length")
+            return
         if length > 0:
             self.rfile.read(min(length, _MAX_BODY))
         if not (self._on_portal() and self.path.split("?", 1)[0] == "/login"):

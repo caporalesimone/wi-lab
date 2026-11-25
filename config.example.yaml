@@ -26,6 +26,12 @@ auth_token: "secret-token-12345"
 # Swagger UI docs at: http://localhost:8080/docs
 api_port: 8080
 
+# Port of the captive portal page on each AP gateway (optional, default 8081).
+# AP clients still browse to port 80: Wi-Lab redirects them here. Every portal
+# uses this port on its own gateway address, so any number of portals can run
+# at once. It must differ from api_port, 53 and 67, and be free on the host.
+# captive_portal_port: 8081
+
 # CORS allowed origins (for frontend development)
 # If the field is not specified or empty (all entries are commented), 
 # CORS is disabled (secure for production).

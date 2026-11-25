@@ -462,6 +462,7 @@ class NetworkManager:
                             context=lambda: self._portal_context(device_id),
                             lookup_mac=lambda ip: self._client_mac(device_id, ip),
                             firewall_lock=self._firewall_lock,
+                            port=self.config.captive_portal_port,
                         )
                         # Tracked before start so a rollback removes partial rules.
                         self.captive_portals[device_id] = portal

@@ -67,6 +67,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Frontend: a captive portal switch on each reserved antenna card chooses whether the next network starts with a portal page (it presets the start dialog, which has the same switch), and a running network shows the captive portal as On or Off with its URL and a header badge.
 - `POST /api/v2/reservations` takes an optional `interface` to reserve a given antenna (from `GET /api/v2/antennas`); without it the first free one is reserved, as before. A reserved antenna answers `409 / 1005` with the expiry of its reservation, a quarantined one `503 / 1002` or `1003`, an unknown one `422`.
 - A create repeated with the same body on a network that already runs with exactly those settings answers `200` with the network instead of `409 / 1008`: after a lost answer the client just sends the same create again. A different body still answers `409 / 1008`.
+- New optional `captive_portal_port` setting (default 8081): the captive portal page listens there on each AP gateway, and clients' port-80 traffic is redirected to it. Wi-Lab itself can therefore listen on port 80; `captive_portal.url` includes the port. It must differ from `api_port`, 53 and 67.
 
 ### 🐛 Bug Fixes
 
@@ -126,6 +127,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - 6 GHz channels are no longer listed as 5 GHz channels (in 3.x `available-channels`, now `GET /antennas/{interface}`): Wi-Fi 6E antennas added 59 channels that cannot be used, some with the same number as a 5 GHz channel (e.g. two `149`).
 - Every `422` message starts with the path of the refused field written with dots (`radio.channel_width: ...`, was `radio: channel_width: ...`), without pydantic's `Value error, ` prefix, also for rules between fields and antenna checks (`wifi.security.password`, `radio.channel`).
 - APs with SSIDs that hostapd reports with escapes (non-ASCII, quotes, backslashes) become ready instead of ending in quarantine (Fable HAP-1).
+- Captive portal: a port already in use fails the start with a message naming the port and `captive_portal_port` instead of a bare socket error; a malformed `Content-Length` answers `400` instead of a traceback; the `wilab-protect-existing` FORWARD rule is appended instead of inserted at a computed index that could land between another network's block rules (Fable NET-10).
 
 ### 🔧 Maintenance
 

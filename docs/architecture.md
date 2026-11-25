@@ -274,7 +274,7 @@ flowchart TB
 |---|---|---|
 | Device lock (`RLock` per antenna) | `NetworkManager.device_lock()` | Start, stop, status, cleanup, watchdog restore and USB recovery of one antenna. Different antennas never wait for each other. |
 | Store lock | `ReservationManager._lock` | Reservation maps and quarantine state. Held only briefly. |
-| Firewall lock | `NetworkManager._firewall_lock` | iptables changes (NAT, isolation, captive portal, host guard) shared by all antennas, and the firewall reads of `/status` and `/debug` (`firewall_status()`), so a read never collides with a change. Every `iptables` call goes through `execute_iptables()`, which adds `-w 5`: with the legacy backend iptables then waits up to 5 s for the global xtables lock (also taken by Docker, ufw or fail2ban) instead of failing at once (NET-1). The nf_tables backend accepts and ignores `-w`. |
+| Firewall lock | `NetworkManager._firewall_lock` | iptables changes (NAT, isolation, captive portal, host guard) shared by all antennas, and the firewall reads of the health checks (`firewall_status()`), so a read never collides with a change. Every `iptables` call goes through `execute_iptables()`, which adds `-w 5`: with the legacy backend iptables then waits up to 5 s for the global xtables lock (also taken by Docker, ufw or fail2ban) instead of failing at once (NET-1). The nf_tables backend accepts and ignores `-w`. |
 | Scan lock | `dependencies._scan_lock` | One device scan at a time. |
 | Singleton lock | `dependencies._singleton_lock` | Lazy creation of the managers. |
 
@@ -498,7 +498,7 @@ until a restart (incident of 2026-11-23 12:23).
 `captive_portal.enabled` is optional in the create request; omitted or `false`, none of
 the following happens. When `true`, after DHCP starts Wi-Lab builds a
 `CaptivePortal` for the AP. A failure here is an unclassified startup failure:
-the start is rolled back and the client gets a generic `500`.
+the start is rolled back and the client gets `500 / 1013` with `stage: captive_portal`.
 
 ```mermaid
 sequenceDiagram
@@ -506,7 +506,7 @@ sequenceDiagram
     participant ST as Station
     participant DN as dnsmasq (captive DNS)
     participant FW as iptables wilab-cp chains
-    participant PS as Portal web server (gateway:80)
+    participant PS as Portal web server (gateway:8081)
     participant NM as NetworkManager
 
     ST->>DN: DHCP: address, router, configured DNS server
@@ -514,7 +514,7 @@ sequenceDiagram
     FW->>DN: DNAT to gateway:53
     DN-->>ST: every name resolves to the gateway
     ST->>FW: HTTP connectivity check (any host)
-    FW->>PS: DNAT to gateway:80
+    FW->>PS: DNAT to gateway:captive_portal_port (8081)
     PS-->>ST: 302 to the portal page on the gateway
     ST->>FW: HTTPS or other forwarded traffic
     FW-->>ST: rejected (TCP reset or ICMP)
@@ -529,9 +529,9 @@ sequenceDiagram
 | Element | Captive AP only |
 |---|---|
 | dnsmasq | Listens on gateway:53 (`except-interface=lo`), answers `address=/#/<gateway>`. Clients still receive the configured DNS server. |
-| `nat` chain `wilab-cp-<interface>` | Jumped to first from `PREROUTING` for traffic entering the AP. Per-client `RETURN` rules, then DNAT of UDP/TCP 53 to gateway:53 and TCP 80 to gateway:80. |
+| `nat` chain `wilab-cp-<interface>` | Jumped to first from `PREROUTING` for traffic entering the AP. Per-client `RETURN` rules, then DNAT of UDP/TCP 53 to gateway:53 and TCP 80 to gateway:`captive_portal_port` (8081). |
 | `filter` chain `wilab-cp-<interface>` | Jumped to first from `FORWARD`. Per-client `RETURN` rules, then reject everything else. |
-| Portal web server | Threaded HTTP server bound to gateway:80 only. `GET /` renders the page, `POST /login` signs in the caller, anything else redirects to the page. |
+| Portal web server | Threaded HTTP server bound to gateway:`captive_portal_port` only (default 8081, not 80, so the Wi-Lab API itself can listen on port 80 of every address; one port serves every AP because each binds its own gateway). A port already in use fails the start with a message naming the setting; a malformed `Content-Length` answers `400`. `GET /` renders the page, `POST /login` signs in the caller, anything else redirects to the page. |
 
 - Chains are complete before the jump rules are added, so unsigned traffic is
   never forwarded. Signed-in clients bypass only the portal chains: Internet

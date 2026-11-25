@@ -80,6 +80,7 @@ Key sections:
 ```yaml
 auth_token: "change-me"                 # Bearer token for API authentication
 api_port: 8080
+# captive_portal_port: 8081            # portal page on each AP gateway (not 80, not api_port)
 
 # Reservation timeouts
 max_timeout: 86400                      # 24 h

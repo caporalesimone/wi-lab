@@ -277,8 +277,11 @@ class NatManager:
                     ]
                     if not self._rule_exists(None, protect_rule):
                         logger.warning("FORWARD policy is DROP - adding accept rule for existing connections first")
+                        # NET-10: appended, so it can never land between another
+                        # network's block or portal rules; with policy DROP it only
+                        # has to exist.
                         execute_iptables([
-                            "-I", "FORWARD", str(1 + sum(len(r) for r in self._blocked_rules.values())),
+                            "-A", "FORWARD",
                             "-m", "conntrack",
                             "--ctstate", "ESTABLISHED,RELATED",
                             "-j", "ACCEPT",

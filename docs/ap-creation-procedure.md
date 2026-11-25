@@ -408,7 +408,8 @@ Until the client signs in:
 - DNS queries are answered by the AP with the gateway address, so connectivity
   checks resolve and reach the portal even when `internet.enabled` is `false`.
 - HTTP requests on port 80, to any host, are redirected (`302`) to the portal
-  page, `http://<gateway>/`.
+  page, `http://<gateway>:8081/` (the port is `captive_portal_port` in the
+  server configuration; `captive_portal.url` gives the exact address).
 - Any other forwarded traffic, including HTTPS, is rejected.
 
 The page, titled **WiLab Captive Portal**, shows the SSID, band and channel,
@@ -431,8 +432,9 @@ Notes:
 - A client that obtains a new IP address, or changes its MAC address, must
   sign in again. Sign-ins are cleared when the AP stops, the reservation ends
   or the watchdog restarts the AP.
-- The portal listens on port 80 and dnsmasq answers DNS on port 53, both on
-  the AP gateway address only.
+- The portal listens on `captive_portal_port` (default 8081) and dnsmasq
+  answers DNS on port 53, both on the AP gateway address only. Every AP uses
+  its own gateway address, so several captive APs can run at the same time.
 
 ### 2.8 Service health: `degraded` and quarantined antennas
 

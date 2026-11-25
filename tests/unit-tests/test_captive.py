@@ -116,6 +116,50 @@ def test_unidentified_client_is_not_released(served, iptables):
     assert iptables == []
 
 
+def test_malformed_content_length_is_400_not_a_traceback(served, iptables):
+    """NET-10 #2."""
+    portal = served(_portal())
+    conn = http.client.HTTPConnection("127.0.0.1", portal.port, timeout=5)
+    conn.putrequest("POST", "/login", skip_host=True)
+    conn.putheader("Host", f"127.0.0.1:{portal.port}")
+    conn.putheader("Content-Length", "abc")
+    conn.endheaders()
+    response = conn.getresponse()
+    conn.close()
+    assert response.status == 400
+    assert iptables == []
+
+
+def test_port_in_use_is_a_clear_error_and_rolls_back(iptables, monkeypatch):
+    """NET-10 #1: EADDRINUSE names the port and the setting; no rule is left behind."""
+    import socket
+
+    # conftest replaces the real server; this test needs the real bind.
+    monkeypatch.setattr(
+        captive.CaptivePortal, "_open_server",
+        lambda self: captive._PortalHTTPServer((self.gateway, self.port), self),
+    )
+    busy = socket.socket()
+    busy.bind(("127.0.0.1", 0))
+    busy.listen()
+    try:
+        portal = _portal(port=busy.getsockname()[1])
+        with pytest.raises(captive.CaptivePortalError, match="already in use.*captive_portal_port"):
+            portal.start()
+    finally:
+        busy.close()
+    assert any(call[:1] == ["-X"] or "-X" in call for call in iptables)  # chains removed
+
+
+def test_portal_serves_on_the_configured_port_and_redirects_port_80(iptables):
+    portal = _portal(port=8081)
+    assert portal.url == "http://127.0.0.1:8081/"
+    portal._open_server = Mock()
+    portal.start()
+    dnat = next(c for c in iptables if "--dport" in c and c[c.index("--dport") + 1] == "80")
+    assert dnat[-1] == "127.0.0.1:8081"
+
+
 def test_start_redirects_dns_and_http_and_stop_removes_only_its_rules(iptables):
     portal = _portal(port=80)
     portal.start()
@@ -179,7 +223,7 @@ def test_network_lifecycle_starts_and_removes_the_portal(monkeypatch, iptables):
 
     status = mgr.start_network("wls16", _captive_request())
     assert dhcp_start.call_args.kwargs["captive_dns"] is True
-    assert status.captive_portal is True and status.captive_portal_url == "http://192.168.120.1/"
+    assert status.captive_portal is True and status.captive_portal_url == "http://192.168.120.1:8081/"
     portal = mgr.captive_portals["wls16"]
     assert portal.gateway == "192.168.120.1"
     assert portal.context()["ssid"] == "Portal"

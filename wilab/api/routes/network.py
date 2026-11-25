@@ -349,7 +349,8 @@ def start_network(
 
     **Captive portal** (optional `captive_portal.enabled`, default `false`; omitted means
     no portal): each client that joins is held behind a simple portal page on the
-    gateway (`http://<gateway>/`, reported as `captive_portal_url`). Until it
+    gateway (`http://<gateway>:8081/`, the port being `captive_portal_port` in the
+    configuration; reported as `captive_portal.url`). Until it
     presses **Sign in**, its DNS queries resolve to the gateway, its HTTP requests
     are redirected to the portal and other forwarded traffic, including HTTPS, is
     rejected. Sign-in releases only that client (MAC and IP); there is no API to
@@ -586,7 +587,7 @@ def stop_network(
                             "dns_server": "192.168.10.21",
                         },
                         "internet": {"enabled": True},
-                        "captive_portal": {"enabled": True, "url": "http://192.168.120.1/"},
+                        "captive_portal": {"enabled": True, "url": "http://192.168.120.1:8081/"},
                         "clients": [
                             {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.120.23", "captive_authorized": True},
                             {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.120.57", "captive_authorized": False},

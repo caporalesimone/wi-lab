@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from pydantic import ValidationError
 
 from wilab.config import AppConfig, NetworkEntry, load_config
 
@@ -162,3 +163,15 @@ def test_country_code_shape_and_valid_japan(country):
     config = AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", country_code=country)
     assert config.country_code == country
 
+
+
+@pytest.mark.parametrize("port", [8080, 53, 67])
+def test_captive_portal_port_must_not_clash(port):
+    """NET-10: the portal port differs from the API (on every address), DNS and DHCP."""
+    with pytest.raises(ValidationError, match="captive_portal_port"):
+        AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", captive_portal_port=port)
+
+
+def test_captive_portal_port_defaults_to_8081_so_the_api_can_use_80():
+    config = AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", api_port=80)
+    assert config.captive_portal_port == 8081
