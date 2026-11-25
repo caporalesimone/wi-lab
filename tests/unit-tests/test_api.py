@@ -650,6 +650,12 @@ class TestNetworkDeleteEndpoint:
         assert 'stuck in the kernel' in resp.json()['detail']['message']
         assert manager.stop_failed('wls16')
         assert client.get(url, headers=headers).json()['runtime_state'] == 'stop_failed'
+        # A create now has its own code, not 1008: repeat the DELETE, then the create.
+        create = client.post(url, headers=headers, json=network_body(
+            ssid='OtherAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz',
+            tx_power_level=4))
+        assert (create.status_code, create.json()['detail']['code']) == (409, 1012)
+        assert create.json()['detail']['reason'] == 'stop_incomplete'
 
         monkeypatch.setattr(manager.hostapd_manager, 'stop', lambda *a, **k: None)
         assert client.delete(url, headers=headers).status_code == 200

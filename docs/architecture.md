@@ -698,7 +698,9 @@ sequenceDiagram
     end
     alt a start of this reservation is running
         A-->>C: same body 202 starting, other body 409 / 1008
-    else the network runs (or its stop did not complete)
+    else the last stop did not complete (stop_failed)
+        A-->>C: 409 / 1012 stop_incomplete (repeat the DELETE, then the create)
+    else the network runs
         A-->>C: same body 200 the network, other body 409 / 1008
     end
     A->>CM: validate_network(band, channel, width, generation, encryption)

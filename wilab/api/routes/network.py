@@ -158,8 +158,9 @@ def _error(code: int, reason: str, message: str) -> dict:
         }}},
         409: {
             "description": (
-                "A network with different settings already active (1008; the same body answers "
-                "200) or watchdog restoration in progress (1009)."
+                "A network with different settings runs or is starting (1008; the same body "
+                "answers 202 or 200), a watchdog repair in progress (1009), or the last stop did "
+                "not complete (1012: repeat DELETE .../network, then the create)."
             ),
             "content": {"application/json": {"examples": {
                 "active_network": {"value": {"detail": _error(
@@ -168,6 +169,13 @@ def _error(code: int, reason: str, message: str) -> dict:
                 )}},
                 "restoration_in_progress": {
                     "value": {"detail": _error(1009, "restoration_in_progress", "Network restoration is in progress")},
+                },
+                "stop_incomplete": {
+                    "summary": "1012 - the last stop did not complete: repeat DELETE .../network, then the create",
+                    "value": {"detail": _error(
+                        1012, "stop_incomplete",
+                        "The stop of the network on wlan0 did not complete: repeat DELETE .../network first",
+                    )},
                 },
             }}},
         },
@@ -326,8 +334,9 @@ def start_network(
 
     The request is checked at once: `422` (invalid body or a setting the antenna
     does not support), `404` (the reservation ID is gone, see `detail.reason`),
-    `409 / 1008` (a network with other settings runs or is starting; also a stop
-    that did not complete), `409 / 1009` (the watchdog is repairing the network).
+    `409 / 1008` (a network with other settings runs or is starting), `409 / 1012`
+    (the last stop did not complete: repeat `DELETE .../network`, then the create),
+    `409 / 1009` (the watchdog is repairing the network).
     Otherwise the answer is **`202`** with the network in `runtime_state:
     starting`, and the start runs in the background. **Poll `GET .../network`**
     every 1-2 s until one of these outcomes:
@@ -395,12 +404,16 @@ def start_network(
             # The same create again, usually after a lost answer: it already succeeded.
             with hold_reservation(reservation_mgr, reservation):
                 return _json(200, _network_response(manager, reservation))
-        message = (
-            f"The stop of the network on {device_id} did not complete: repeat DELETE .../network first"
-            if manager.stop_failed(device_id) else
-            f"Network {device_id} is already active with other settings. Stop it first."
-        )
-        raise HTTPException(status_code=409, detail=domain_error(ApiErrorCode.NETWORK_ALREADY_ACTIVE, message))
+        if manager.stop_failed(device_id):
+            # Its own code, not 1008: the client must repeat the DELETE, then the create.
+            raise HTTPException(status_code=409, detail=domain_error(
+                ApiErrorCode.STOP_INCOMPLETE,
+                f"The stop of the network on {device_id} did not complete: repeat DELETE .../network first",
+            ))
+        raise HTTPException(status_code=409, detail=domain_error(
+            ApiErrorCode.NETWORK_ALREADY_ACTIVE,
+            f"Network {device_id} is already active with other settings. Stop it first.",
+        ))
     try:
         channel_mgr.validate_network(
             device_id, req.band, req.channel, req.channel_width, req.wifi_generation,

@@ -281,7 +281,8 @@ The actions for every call, in one place, are in [3.1](#31-what-to-do-with-each-
 |---|---|---|
 | `202` | Start accepted (also the same body while that start runs). | Poll `GET .../network`. |
 | `200` | The same body on a network that already runs with exactly these settings: the network. Nothing was restarted. | Done. |
-| `409 / 1008` (`network_already_active`) | A network with **different** settings runs or is starting on this reservation, or a stop did not complete. | Read it with `GET .../network`; `DELETE .../network` first to replace it. |
+| `409 / 1008` (`network_already_active`) | A network with **different** settings runs or is starting on this reservation. | Read it with `GET .../network`; `DELETE .../network` first to replace it. |
+| `409 / 1012` (`stop_incomplete`) | The last `DELETE .../network` did not complete (`runtime_state: stop_failed`). | Repeat `DELETE .../network` until `200`, then the create. |
 | `409 / 1009` (`restoration_in_progress`) | The watchdog is repairing this network (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`). | Do not create. Poll `GET .../network` until `runtime_state` is `null`. |
 | `422` | Invalid body (including `encryption: wpa`), channel unsupported/disabled on this antenna, or an encryption, channel width or Wi-Fi generation the antenna does not support. | Fix the request. Do not repeat the same body. |
 | `404` | The reservation ID is no longer valid; `detail.reason` says why. | See 3.1. |
@@ -620,6 +621,9 @@ sequenceDiagram
     else 409 / 1008 network_already_active
         W-->>C: a network with different settings runs or is starting
         Note over C: Read it with GET .../network, or DELETE .../network first
+    else 409 / 1012 stop_incomplete
+        W-->>C: the last DELETE .../network did not complete
+        Note over C: Repeat DELETE .../network until 200, then the create
     else 409 / 1009 restoration_in_progress
         W-->>C: the watchdog is repairing this AP
         Note over C: Do not create. Poll GET .../network until runtime_state is null
@@ -740,7 +744,8 @@ Every answer leads to exactly one of these actions:
 | `POST .../network` (create) | `202` | WAIT | Start accepted: poll `GET .../network` every 1–2 s (rows below). |
 | | `200` | DONE | The same body on a network already running with it: the network. |
 | | `422` | FIX | The message starts with the field path, e.g. `radio.channel_width: ...`. |
-| | `409 / 1008` | FIX | A network with **different** settings runs or is starting (the same body answers `202` or `200`), or a stop did not complete. Read it with `GET .../network`; `DELETE .../network` first to replace it. |
+| | `409 / 1008` | FIX | A network with **different** settings runs or is starting (the same body answers `202` or `200`). Read it with `GET .../network`; `DELETE .../network` first to replace it. |
+| | `409 / 1012` | REPEAT | The last `DELETE .../network` did not complete: repeat it until `200`, then send the create again. |
 | | `409 / 1009` | WAIT | Until `runtime_state` is `null`, then create only if `active` is `false`. |
 | | `500 / 500` | STOP | An unexpected server error. |
 | | no answer (timeout, connection lost) | REPEAT | Send the **same** create again, or poll `GET .../network`: the same body never starts a second AP. |

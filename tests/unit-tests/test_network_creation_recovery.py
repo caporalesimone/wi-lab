@@ -242,7 +242,7 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert "1013" not in str(create.get("500", {}))
     assert "503" not in create
     assert {e["value"]["detail"]["code"] for e in create["409"]["content"]["application/json"]["examples"].values()} == {
-        1008, 1009,
+        1008, 1009, 1012,
     }
     assert reserve["503"]["content"]["application/json"]["examples"]["device_recovering"]["value"]["detail"]["code"] == 1002
     status_examples = paths["/api/v2/status"]["get"]["responses"]["200"]["content"]["application/json"]["examples"]

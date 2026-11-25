@@ -14,9 +14,9 @@ All notable changes to Wi-Lab are documented in this file.
 | ⚠️ Breaking changes | 20 |
 | 🔧 Maintenance changes | 12 |
 | ✨ New features | 24 |
-| 📦 Commits since 3.0.0 | 119 |
+| 📦 Commits since 3.0.0 | 120 |
 
-Counts are the entries of the sections below and `git rev-list --count 3.0.0..HEAD` including the commit of the asynchronous create (as of 2026-11-25).
+Counts are the entries of the sections below and `git rev-list --count 3.0.0..HEAD` including the latest changelog commit (as of 2026-11-25).
 
 ### ⚠️ Breaking Changes
 
@@ -115,7 +115,7 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - `wpa3` and `wpa2-wpa3` networks no longer write `wpa_key_mgmt` and `ieee80211w` several times in `hostapd.conf` (they worked only because hostapd keeps the last one); the mixed mode now requires PMF for WPA3 clients only, and SAE accepts H2E (Fable HAP-10).
 - The service refuses to start with an empty `auth_token`, `api_port` outside 1–65535, `max_timeout` below `min_timeout` or a `dns_server` that is not an IPv4 address, as `--validate-config` already reported; before, `dns_server: foo` started and every network creation failed with `500` (Fable BUG-3).
 - Networks are isolated from each other whatever `dhcp_base_network` is: with subnets outside `192.168.*` (e.g. `10.20.0.0/24`) no isolation rule was installed and clients of different networks could talk to each other (Fable NET-3).
-- `DELETE .../network` no longer answers a bare `500` when hostapd stays stuck in the kernel after SIGKILL (seen with mt7921u firmware timeouts): the server repeats the stop every 2 s for up to 15 s (hostapd is usually released within seconds); only if it still fails it answers `503 / 1012 stop_incomplete` with `Retry-After: 5`, the half-stopped network reports `runtime_state: stop_failed` (also in `/status`), the watchdog does not "repair" it, and repeating the DELETE finishes the stop.
+- `DELETE .../network` no longer answers a bare `500` when hostapd stays stuck in the kernel after SIGKILL (seen with mt7921u firmware timeouts): the server repeats the stop every 2 s for up to 15 s (hostapd is usually released within seconds); only if it still fails it answers `503 / 1012 stop_incomplete` with `Retry-After: 5`, the half-stopped network reports `runtime_state: stop_failed` (also in `/status`), the watchdog does not "repair" it, and repeating the DELETE finishes the stop. A create on that reservation answers `409 / 1012` (its own code, not `1008`) until the stop completes.
 - `/status` no longer runs host commands on every call: the checks (processes, NAT rules, upstream link) are refreshed every 10 s in the background and `/status` reads the latest result. Under load a call took up to 13 s, and every polling client added `ip` and `iptables` commands; a change now takes up to 10 s to show.
 - An unexpected server error answers `500 / 500` without closing the connection: before, uvicorn dropped it after the answer, so the client's next request on the same keep-alive connection failed with a transport error (seen by the stress test as `ReadError` / `RemoteProtocolError` right after the `500` of a stop).
 - Normal answers are no longer logged as errors: a missing `iptables -C` rule, a `tc` qdisc with nothing to delete, `iw set txpower` unsupported by the driver and a stop without DHCP are logged at debug level, and QoS uses `tc ... replace` instead of a failing `add` (Fable NET-5). In a stress run they were most of the `ERROR` lines.
@@ -202,7 +202,7 @@ The rest of this chapter names each endpoint by its 3.x path.
   - stricter validation, `422`: `ssid` 1–32 bytes, `password` 8–63 bytes, no control characters, channel must match the band, DFS channels refused unless the antenna has `show_dfs: true`.
   - radio failures are retried by the server during the start; `409 / 1001` is no longer answered.
   - asynchronous: `202` with `runtime_state: starting`, then poll `GET .../network` (was a synchronous `200` with `{"detail": "Network ... created successfully"}`). Outcomes: the network; `start_failed` with `error` (`1013`, `stage`; was `500`); `404` with `reason` `reservation_invalidated` (was `500` / `1003`) or `reservation_expired`.
-  - `409 / 1008`: a network with different settings runs or is starting (the same body answers `202` or `200`); `409 / 1009`: a watchdog repair in progress (both had no code).
+  - `409 / 1008`: a network with different settings runs or is starting (the same body answers `202` or `200`); `409 / 1009`: a watchdog repair in progress (both had no code); `409 / 1012`: the last stop did not complete, repeat the DELETE then the create.
   - `DELETE .../network` or a release during the start cancels it.
 - `GET /api/v1/interface/{id}/network`: the answer is grouped in sections, which are `null` while the network is not running:
 

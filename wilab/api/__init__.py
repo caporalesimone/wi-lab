@@ -70,6 +70,7 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 | Create `202` | Start accepted (also the same body while it runs): poll `GET .../network`. |
 | Create `200` | The same body on a network already running with it: done. |
 | Create `409`, `detail.code: 1008` | A network with different settings runs or is starting on this reservation; read it with `GET .../network`. |
+| Create `409`, `detail.code: 1012` | The last stop on this reservation did not complete: repeat `DELETE .../network` until `200`, then the create. |
 | Create `409`, `detail.code: 1009` | The watchdog is repairing this network: poll `GET .../network` until `runtime_state` is `null`. |
 | Polling: `runtime_state: start_failed` | Non-radio failure, `error.code` 1013 with `error.stage`. The reservation is still valid: no automatic retry; release it if no longer needed. |
 | `404` on any call with a reservation ID | `detail.reason` (stable): `reservation_invalidated` (every start failed, antenna quarantined) or `reservation_expired`: reserve again, never release the ID. `reservation_released` or `reservation_not_found`: nothing to do. |
