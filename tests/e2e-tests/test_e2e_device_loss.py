@@ -110,7 +110,7 @@ def test_antenna_gone_with_active_network(wilab: WiLab, server: Server, first_in
 
     def settled() -> bool:
         entry = wilab.device(first_interface)
-        network = wilab.http.get(f"/interface/{antenna.reservation_id}/network").status_code
+        network = wilab.http.get(f"/reservations/{antenna.reservation_id}/network").status_code
         restored = network == 200 and not entry.get("runtime_state") and not entry.get("recovery_state")
         return restored or (network == 404 and not entry.get("recovery_state"))
 

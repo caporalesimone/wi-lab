@@ -545,7 +545,7 @@ class QosProfile(BaseModel):
 
 
 class QosProfileStartRequest(BaseModel):
-    """Request body for POST /interface/{reservation_id}/qos/profile.
+    """Request body for POST /reservations/{reservation_id}/qos/profile.
 
     Either ``profile_id`` or at least one inline QoS parameter must be set, but not both.
     """

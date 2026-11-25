@@ -11,7 +11,7 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 55 |
-| ⚠️ Breaking changes | 16 |
+| ⚠️ Breaking changes | 17 |
 | 🔧 Maintenance changes | 13 |
 | ✨ New features | 19 |
 | 📦 Commits since 3.0.0 | 89 |
@@ -22,7 +22,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 
 - Reservation contention returns null availability estimates when no release is scheduled.
 - AP creation requires a single 2.4 GHz or 5 GHz band; `dual` returns 422.
-- Release all reservations moved from `DELETE /api/v1/device-reservation` to `DELETE /api/v1/device-reservation/all`, and now requires the `X-Confirm-Password` header matching the new `protected_commands_password` setting (disabled when unset). A malformed single-release URL can no longer release everything.
+- Release all reservations moved from `DELETE /api/v1/device-reservation` to `DELETE /api/v1/reservations/all`, and now requires the `X-Confirm-Password` header matching the new `protected_commands_password` setting (disabled when unset). A malformed single-release URL can no longer release everything.
 - All `/api/v1` error bodies now use an object with `detail.code` and `detail.reason`. Clients displaying a former string `detail` should read `detail.message`. Recovery codes 1001–1003 are unchanged.
 - API timestamps (`expires_at`, `detail.next_available_at`) now use RFC 3339 UTC with a `Z` suffix. Durations and countdowns remain in seconds.
 - Internet, TX power and QoS profile requests on a valid reservation without a running network return `409` with `detail.code: 1007` (`network_not_active`); Internet and TX power returned `404`, which clients could not tell apart from an expired reservation (Fable API-2).
@@ -35,6 +35,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Every `409` has a `detail.code` (Fable API-3): `1008 network_already_active` and `1009 restoration_in_progress` on the create, `1007 network_not_active` on stopping a stopped network, `1010 qos_profile_already_active` and `1011 qos_profile_not_active` on QoS profiles; before they had none and the client had to read the message. `404` on a call with a reservation ID now only means the ID is gone: an unknown QoS `profile_id` and a TX power the driver does not support answer `422` (were `404`), stopping a QoS profile that is not running answers `409 / 1011` (was `404`).
 - A create that fails for a non-radio reason answers `500 / 1013` (`startup_failed`) with `detail.stage` (`hostapd`, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation`, `host_guard`) instead of a generic `500 / 500` with only a message.
 - Unknown fields in a request body are refused with `422` and the field path (`captive-portal: Extra inputs are not permitted`, `radio.chanel: ...`) instead of being ignored: a typo no longer creates a network without the intended setting (Fable API-10). Applies to the reservation, the create (every section), TX power and QoS profile bodies.
+- Paths renamed (Fable API-6): `/api/v1/device-reservation` → `/api/v1/reservations`, and every `/api/v1/interface/{reservation_id}/...` → `/api/v1/reservations/{reservation_id}/...` (network, Internet, TX power, QoS profile). The old `interface` segment held a reservation ID, not an interface, which the new `/antennas/{interface}` would have made more confusing. The old paths answer `404`.
 - Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all: `GET /api/v1/debug` now returns `403` without it, or when `protected_commands_password` is not set.
 
 ### ✨ Features
@@ -127,7 +128,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Added an [AP creation procedure](docs/ap-creation-procedure.md) for client developers and a backend [architecture](docs/architecture.md) guide with startup, threading, creation, retry, watchdog and recovery diagrams.
 - Explain the reservation and recovery lifecycle in Swagger and ReDoc, including retry, quarantine and watchdog response examples.
 - Include the API operation, HTTP status, and error code in journal entries for server errors, without request or response data.
-- Swagger lists release-all (`DELETE /api/v1/device-reservation/all`) and `GET /api/v1/debug` only under **Maintenance**; release-all also appeared under Reservation.
+- Swagger lists release-all (`DELETE /api/v1/reservations/all`) and `GET /api/v1/debug` only under **Maintenance**; release-all also appeared under Reservation.
 - `GET /api/v1/debug` is deprecated and will be removed.
 - New [docs/error-codes.md](docs/error-codes.md): every `detail.code`, its HTTP status, `Retry-After`, where it is answered and the client action, plus the `degraded_reasons` codes; a test fails when a code is not documented.
 - Detailed sequence diagrams of the whole flow, reservation to release, with every error answer and when to retry: client view in the [AP creation procedure](docs/ap-creation-procedure.md#3-sequence-diagram), with one action (done, wait, repeat, fix, reserve again, stop) for every answer of every call and how radio failures such as a hostapd crash reach the client, server view in [Architecture 6.1](docs/architecture.md#61-end-to-end-sequence-server-view). The captive portal diagram in the architecture guide did not render (a `;` in a note).
@@ -141,6 +142,21 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Tests are split into `tests/unit-tests/` (the existing suite: mocked hardware, run by `make test-local` and CI) and `tests/e2e-tests/` (new). The e2e tests run on the Wi-Lab machine against the running service and combine API calls with server actions: journal checks, the SSID on the air via `iw`, and USB unplugs simulated through sysfs. They cover BUG-1, HAP-1, WD-4 and WD-5, are skipped unless `WILAB_E2E=1`, and have their own flags for USB unplugs and long tests (`make test-e2e`, `make test-e2e-usb`, see `docs/e2e-testing.md`).
 
 ### 🔌 API changes from 3.x (client migration)
+
+**Paths (rename first)**
+
+| 3.x | 4.0.0 |
+|---|---|
+| `POST /api/v1/device-reservation` | `POST /api/v1/reservations` |
+| `GET`, `DELETE /api/v1/device-reservation/{reservation_id}` | `GET`, `DELETE /api/v1/reservations/{reservation_id}` |
+| `DELETE /api/v1/device-reservation` (release all) | `DELETE /api/v1/reservations/all` (Maintenance, `X-Confirm-Password`) |
+| `/api/v1/interface/{reservation_id}/network` | `/api/v1/reservations/{reservation_id}/network` |
+| `/api/v1/interface/{reservation_id}/internet/enable`, `/disable` | `/api/v1/reservations/{reservation_id}/internet/enable`, `/disable` |
+| `/api/v1/interface/{reservation_id}/txpower` | `/api/v1/reservations/{reservation_id}/txpower` |
+| `/api/v1/interface/{reservation_id}/qos/profile` | `/api/v1/reservations/{reservation_id}/qos/profile` |
+| `/api/v1/interface/{reservation_id}/network/available-channels` | removed: `GET /api/v1/antennas/{interface}` |
+
+The rest of this chapter names each endpoint by its 3.x path.
 
 **All endpoints**
 

@@ -73,7 +73,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 37 | [API-11](Fable-Notes.md#L3440) |  | Semplificare e documentare i retry tra server e client. |
 | 38 | [API-1](Fable-Notes.md#L3466) |  | Consolidare dati API duplicati e uniformare i nomi. |
 | 39 | [API-8](Fable-Notes.md#L3485) | ✅ | Rimuovere dettagli implementativi dai modelli di risposta pubblici. Fatto con la `GET .../network` a sezioni (`radio`, `wifi`, `ip`, ...): niente più `dhcp.*_file`, `network_addr`, `interface`/`subnet` ripetuti, `clients_connected`. |
-| 40 | [API-6](Fable-Notes.md#L3514) |  | Uniformare i nomi di endpoint e campi. |
+| 40 | [API-6](Fable-Notes.md#L3514) | ✅ parz. | Uniformare i nomi di endpoint e campi. Fatto: `/reservations`, `/reservations/{id}/...`, nessun `device_id` nei messaggi. Manca `level` del TX power contro `tx_power_level` della create: da decidere con API-7. |
 | 41 | [API-7](Fable-Notes.md#L3537) |  | Valutare un modello API a risorse per le azioni enable/disable. |
 | 42 | [ARCH-2](Fable-Notes.md#L3564) |  | Centralizzare la classificazione dei guasti. |
 | 43 | [ARCH-1](Fable-Notes.md#L3601) |  | Separare le responsabilità di `NetworkManager`. |

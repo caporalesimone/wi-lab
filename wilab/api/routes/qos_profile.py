@@ -55,7 +55,7 @@ async def list_profiles(
 # ---------------------------------------------------------------------------
 
 reservation_router = APIRouter(
-    prefix="/interface", tags=["QoS Profiles"],
+    prefix="/reservations", tags=["QoS Profiles"],
     responses={503: {"description": "Device cleanup failed; retry after resolving the error"}},
 )
 

@@ -29,7 +29,7 @@ An AP always runs on a reserved antenna. The reservation decides **which**
 antenna you get and **how long** you may use it.
 
 ```http
-POST /api/v1/device-reservation
+POST /api/v1/reservations
 Content-Type: application/json
 
 {"duration_seconds": 600}
@@ -59,10 +59,10 @@ Rules that matter for the AP:
   reservations. `expires_in` is a countdown in seconds.
 - The server picks the antenna (the first free one). You cannot choose it.
 - Release the reservation when you are done:
-  `DELETE /api/v1/device-reservation/{reservation_id}`. This also stops the AP;
+  `DELETE /api/v1/reservations/{reservation_id}`. This also stops the AP;
   a separate network stop is not required. A `503 / 1004` on release means
   cleanup failed and the antenna is still held.
-- `GET /api/v1/device-reservation/{reservation_id}` returns the remaining time.
+- `GET /api/v1/reservations/{reservation_id}` returns the remaining time.
   `404` means the ID is no longer valid (expired, released or invalidated).
 
 ## 2. Creating the AP
@@ -135,7 +135,7 @@ extra rule is `wpa1`: 802.11n (`wifi_generation` 4) at 20 MHz only.
 ### 2.2 Build the request
 
 ```http
-POST /api/v1/interface/{reservation_id}/network
+POST /api/v1/reservations/{reservation_id}/network
 Content-Type: application/json
 
 {
@@ -265,7 +265,7 @@ The create waits for the adapter if another request on it is running, so it
 never returns `503 / 1006`; the other reservation endpoints do (see
 [2.6](#26-after-the-ap-is-running)).
 
-After `500 / 1013`, `DELETE /api/v1/device-reservation/{id}`
+After `500 / 1013`, `DELETE /api/v1/reservations/{id}`
 releases the still-held antenna on `200`. The next reservation may get the same
 antenna or a different one. Do not implement release → reserve → create as an
 automatic recovery loop: that bypasses the retry budget. In contrast, after
@@ -302,7 +302,7 @@ A success resets the counter. Further rules:
   not resend the create blindly; first read the state:
 
   ```http
-  GET /api/v1/interface/{reservation_id}/network
+  GET /api/v1/reservations/{reservation_id}/network
   ```
 
   The status call can wait for an in-progress create, so use a long timeout.
@@ -334,7 +334,7 @@ A success resets the counter. Further rules:
               "message": "Another operation on this adapter is still running; retry after Retry-After"}}
   ```
 
-- `GET /api/v1/interface/{reservation_id}/network` returns the network in
+- `GET /api/v1/reservations/{reservation_id}/network` returns the network in
   sections:
 
   ```json
@@ -519,7 +519,7 @@ sequenceDiagram
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 1 - reserve an antenna
     loop Until 200, or until the client gives up
-        C->>W: POST /device-reservation {duration_seconds}
+        C->>W: POST /reservations {duration_seconds}
         alt 200
             W-->>C: reservation_id, interface, display_name, expires_at, expires_in
             Note over C: Keep id and interface. Leave the loop
@@ -560,14 +560,14 @@ sequenceDiagram
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 3 - create the AP (at most 3 attempts, same id, same body)
     loop Attempt 1 to 3
-        C->>W: POST /interface/{id}/network {radio, wifi, internet, captive_portal}
+        C->>W: POST /reservations/{id}/network {radio, wifi, internet, captive_portal}
         Note over W: Waits for the antenna (never 1006). Prepares the radio, starts hostapd,<br/>waits for the AP (20 s, 75 s on DFS), gateway, DHCP, NAT, isolation.<br/>Attempt 1 only: up to 3 internal starts within 20 s on a radio failure
         alt 200
             W-->>C: detail "Network ... created successfully"
             Note over C: Done. Read the network with GET .../network. Leave the loop
         else 409 / 1001 + Retry-After (5 on attempt 1, 10 on attempt 2)
             W-->>C: classified radio failure, rolled back, reservation still valid
-            C->>W: GET /device-reservation/{id}
+            C->>W: GET /reservations/{id}
             W-->>C: expires_in
             Note over C: Automatic retry allowed. If expires_in is shorter than Retry-After<br/>plus the startup time, release and start over at phase 1.<br/>Otherwise wait Retry-After and repeat the SAME request.<br/>A request sent too early gets 409 / 1001 again and costs no attempt
         else 503 / 1003 (attempt 3, or the antenna was lost)
@@ -593,7 +593,7 @@ sequenceDiagram
             Note over C: No automatic retry. Check GET /status, ask an operator
         else transport error or client timeout (no answer)
             Note over C: Ambiguous: the server may have finished, or still be working
-            C->>W: GET /interface/{id}/network (long timeout: it waits for the create)
+            C->>W: GET /reservations/{id}/network (long timeout: it waits for the create)
             alt active true and runtime_state null
                 W-->>C: the AP is up
                 Note over C: Done. Do not create again
@@ -614,7 +614,7 @@ sequenceDiagram
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 4 - while the AP is in use
     par Owner polls its network (every 5 to 30 s)
-        C->>W: GET /interface/{id}/network
+        C->>W: GET /reservations/{id}/network
         alt 200, runtime_state null
             W-->>C: active, radio, wifi, ip, internet, captive_portal, clients, reservation
         else 200, runtime_state restoring_ap
@@ -660,7 +660,7 @@ sequenceDiagram
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 5 - stop the AP and keep the reservation (optional)
     loop Until 200, 409 / 1007 or 404
-        C->>W: DELETE /interface/{id}/network
+        C->>W: DELETE /reservations/{id}/network
         alt 200
             W-->>C: stopped (also cancels the retries of restore_failed)
         else 409 / 1007
@@ -679,7 +679,7 @@ sequenceDiagram
 
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 6 - release (also stops the AP), or let the reservation expire
-    C->>W: DELETE /device-reservation/{id}
+    C->>W: DELETE /reservations/{id}
     alt 200
         W-->>C: released, AP stopped, antenna free
     else 404
@@ -703,7 +703,7 @@ Every answer leads to exactly one of these actions:
 | **WAIT** | The server is working on it. Send nothing that changes the network; read the state again (`GET .../network`) every few seconds. |
 | **REPEAT** | Send the **same** request again (same ID, same body) after `Retry-After`. Automatic retries are allowed only here. |
 | **FIX** | The request is wrong. Change it; never resend the same one. |
-| **RESERVE AGAIN** | The reservation ID is gone. Stop using it, **do not release it**, and reserve again (`POST /device-reservation`) if you still need an AP. You may get another antenna. |
+| **RESERVE AGAIN** | The reservation ID is gone. Stop using it, **do not release it**, and reserve again (`POST /reservations`) if you still need an AP. You may get another antenna. |
 | **STOP** | A problem the client cannot solve. Show `detail.message`, check `GET /status`, and ask an operator. No automatic retry. |
 
 | Call | Answer | Action | Notes |
@@ -711,7 +711,7 @@ Every answer leads to exactly one of these actions:
 | any | `401` | FIX | Wrong or missing token. |
 | any call with an ID, except the release | `404` | RESERVE AGAIN | The ID expired, was released, or was **invalidated** because its antenna was quarantined (radio failures, also during a watchdog restart). Never release it. |
 | any call with an ID except the create | `503 / 1006` + `Retry-After: 2` | REPEAT | Another operation holds the antenna. Nothing was changed. |
-| `POST /device-reservation` | `200` | DONE | Keep `reservation_id` and `interface`. |
+| `POST /reservations` | `200` | DONE | Keep `reservation_id` and `interface`. |
 | | `409 / 1005` | REPEAT | All antennas reserved. Wait `next_available_in`, or a backoff of 10–60 s when it is `null`. |
 | | `503 / 1002` + `Retry-After: 10` | REPEAT | An antenna is being recovered. |
 | | `503 / 1003` | STOP | No usable antenna. Right after a service start, wait up to 30 s for discovery and check `GET /status` first. |
@@ -740,7 +740,7 @@ Every answer leads to exactly one of these actions:
 | `DELETE .../network` | `200` | DONE | The reservation stays. |
 | | `409 / 1007` | DONE | Already inactive. |
 | | `503 / 1012` + `Retry-After: 5` | REPEAT | The stop did not complete (hostapd stuck for a few seconds). Repeat until `200`. |
-| `DELETE /device-reservation/{id}` | `200` | DONE | AP stopped, antenna free. |
+| `DELETE /reservations/{id}` | `200` | DONE | AP stopped, antenna free. |
 | | `404` | DONE | Already expired, released or invalidated: nothing left to release. |
 | | `503 / 1004` | REPEAT, then STOP | Cleanup failed, the antenna is still held. Repeat a few times a few seconds apart (usually transient), then STOP. After expiry Wi-Lab retries the cleanup by itself. |
 
@@ -779,9 +779,9 @@ without special code for crashes.
 def create_ap(api, reservation_id, body):
     for _ in range(3):
         try:
-            r = api.post(f"/interface/{reservation_id}/network", json=body, timeout=120)
+            r = api.post(f"/reservations/{reservation_id}/network", json=body, timeout=120)
         except TransportError:
-            state = api.get(f"/interface/{reservation_id}/network", timeout=120)
+            state = api.get(f"/reservations/{reservation_id}/network", timeout=120)
             if state.status_code == 404:
                 raise ReservationLost()
             state.raise_for_status()
@@ -794,7 +794,7 @@ def create_ap(api, reservation_id, body):
 
         code = r.json().get("detail", {}).get("code") if r.status_code >= 400 else None
         if r.status_code == 200:
-            return api.get(f"/interface/{reservation_id}/network").json()
+            return api.get(f"/reservations/{reservation_id}/network").json()
         if r.status_code == 409 and code == 1001:
             wait = int(r.headers["Retry-After"])
             if remaining_seconds(api, reservation_id) <= wait:

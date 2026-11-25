@@ -12,7 +12,7 @@ def idle_reservation():
     with TestClient(create_app()) as client:
         headers = {"Authorization": f"Bearer {load_config().auth_token}"}
         rid = client.post(
-            "/api/v1/device-reservation", headers=headers, json={"duration_seconds": 600},
+            "/api/v1/reservations", headers=headers, json={"duration_seconds": 600},
         ).json()["reservation_id"]
         yield client, headers, rid
 
@@ -29,7 +29,7 @@ def idle_reservation():
 def test_action_without_network_is_409_1007(idle_reservation, method, path, body):
     client, headers, rid = idle_reservation
     kwargs = {"headers": headers, **({"json": body} if body is not None else {})}
-    response = getattr(client, method)(f"/api/v1/interface/{rid}{path}", **kwargs)
+    response = getattr(client, method)(f"/api/v1/reservations/{rid}{path}", **kwargs)
     assert response.status_code == 409, response.text
     assert response.json()["detail"]["code"] == 1007
     assert response.json()["detail"]["reason"] == "network_not_active"
@@ -37,15 +37,15 @@ def test_action_without_network_is_409_1007(idle_reservation, method, path, body
 
 def test_unknown_reservation_is_still_404(idle_reservation):
     client, headers, _rid = idle_reservation
-    response = client.post("/api/v1/interface/deadbeef/internet/enable", headers=headers)
+    response = client.post("/api/v1/reservations/deadbeef/internet/enable", headers=headers)
     assert response.status_code == 404
 
 
 def test_openapi_documents_1007():
     paths = create_app().openapi()["paths"]
     for path, method in (
-        ("/api/v1/interface/{reservation_id}/internet/enable", "post"),
-        ("/api/v1/interface/{reservation_id}/txpower", "get"),
-        ("/api/v1/interface/{reservation_id}/qos/profile", "post"),
+        ("/api/v1/reservations/{reservation_id}/internet/enable", "post"),
+        ("/api/v1/reservations/{reservation_id}/txpower", "get"),
+        ("/api/v1/reservations/{reservation_id}/qos/profile", "post"),
     ):
         assert "1007" in paths[path][method]["responses"]["409"]["description"], (path, method)

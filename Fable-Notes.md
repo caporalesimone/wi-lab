@@ -166,7 +166,7 @@ protetto è quello che interessa di più: una rete che funzionava e deve continu
 | 71 | [API-11](#api-11) | Bassa | Il contratto di retry ha tre livelli; quello lato client è ormai ridondante. |
 | 72 | [API-1](#api-1) | Bassa | Lo stesso dato è esposto in più punti con nomi diversi. |
 | 73 | [API-8](#api-8) ✅ | Bassa | La risposta espone dettagli interni (`pid_file`, `process_stopped`). |
-| 74 | [API-6](#api-6) | Bassa | Nomi incoerenti (`/interface/{reservation_id}`, `tx_power_level` contro `level`). |
+| 74 | [API-6](#api-6) ✅ parz. | Bassa | Nomi incoerenti (`/interface/{reservation_id}`, `tx_power_level` contro `level`). |
 | 75 | [API-7](#api-7) | Bassa | Azioni modellate come percorsi (`/internet/enable`, `/internet/disable`). |
 | 76 | [ARCH-2](#arch-2) | Media | La classificazione dei guasti è sparsa in quattro posti. |
 | 77 | [ARCH-1](#arch-1) | Media | `NetworkManager` fa troppe cose (970 righe). |

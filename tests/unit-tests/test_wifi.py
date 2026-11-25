@@ -78,7 +78,7 @@ class TestSubnetResolution:
         """Test that unknown device_id raises ValueError."""
         cfg = load_config()
         mgr = NetworkManager(cfg)
-        with pytest.raises(ValueError, match="Unknown device_id"):
+        with pytest.raises(ValueError, match="antenna of this reservation is not managed"):
             mgr._get_subnet('unknown-network')
     
     def test_get_subnet_fallback_calculation(self):

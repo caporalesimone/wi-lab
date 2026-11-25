@@ -14,7 +14,7 @@ from wilab_e2e import Server, WiLab, wait_for
 
 
 def _gateway(wilab: WiLab, reservation_id: str) -> str:
-    subnet = ipaddress.ip_network(wilab.http.get(f"/interface/{reservation_id}/network").json()["ip"]["subnet"])
+    subnet = ipaddress.ip_network(wilab.http.get(f"/reservations/{reservation_id}/network").json()["ip"]["subnet"])
     return f"{subnet[1]}/{subnet.prefixlen}"
 
 
@@ -47,7 +47,7 @@ def test_lost_gateway_and_nat_rule_are_repaired_in_place(wilab: WiLab, server: S
     # The check runs every 30 s on a healthy network.
     assert wait_for(lambda: _has_address(antenna.interface, gateway), timeout=45, interval=2)
     assert _masquerade_rule(server, antenna.interface) is not None
-    body = wilab.http.get(f"/interface/{antenna.reservation_id}/network").json()
+    body = wilab.http.get(f"/reservations/{antenna.reservation_id}/network").json()
     assert body["active"] is True and not body.get("runtime_state")
     journal = server.journal(start)
     assert "repaired in place" in journal

@@ -75,7 +75,7 @@ def test_success_means_the_firewall_is_in_place(wilab: WiLab, server: Server, in
     start = time.time()
     response = wilab.create(antenna, internet_enabled=internet)
     assert response.status_code == 200, response.text
-    network = wilab.http.get(f"/interface/{antenna.reservation_id}/network").json()
+    network = wilab.http.get(f"/reservations/{antenna.reservation_id}/network").json()
     assert network["internet"]["enabled"] is internet
     nat = server.iptables_rules("nat")
     forward = server.iptables_rules("filter")

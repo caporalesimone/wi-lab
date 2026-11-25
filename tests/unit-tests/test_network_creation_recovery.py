@@ -14,7 +14,7 @@ from wilab.reservation import ReservationManager
 from wilab.wifi import recovery
 from wilab.wifi.manager import StartupFailure
 
-RESERVE = "/api/v1/device-reservation"
+RESERVE = "/api/v1/reservations"
 PAYLOAD = {
     "ssid": "recovery-test", "channel": 1, "band": "2.4ghz",
     "encryption": "open", "tx_power_level": 4,
@@ -39,7 +39,7 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
         reservation = client.post(RESERVE, headers=headers, json={"duration_seconds": 60})
         assert reservation.status_code == 200
         rid = reservation.json()["reservation_id"]
-        create = f"/api/v1/interface/{rid}/network"
+        create = f"/api/v1/reservations/{rid}/network"
 
         for expected_attempt, delay in enumerate((5, 10), start=1):
             result = client.post(create, headers=headers, json=network_body(**PAYLOAD))
@@ -198,7 +198,7 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert "Do not retry creation or release it" in overview
     assert schema["tags"][0]["name"] == "System"
     paths = schema["paths"]
-    create = paths["/api/v1/interface/{reservation_id}/network"]["post"]["responses"]
+    create = paths["/api/v1/reservations/{reservation_id}/network"]["post"]["responses"]
     reserve = paths[RESERVE]["post"]["responses"]
     assert "Retry-After" in create["409"]["headers"]
     assert "headers" not in create["500"]
@@ -220,7 +220,7 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert status["networks"][0]["recovery_state"] == "unavailable"
     assert not status["networks"][0]["reserved"]
     assert status["networks"][1]["runtime_state"] == "restoring_ap"
-    content = paths["/api/v1/interface/{reservation_id}/network"]["get"]["responses"]["200"]["content"]["application/json"]
+    content = paths["/api/v1/reservations/{reservation_id}/network"]["get"]["responses"]["200"]["content"]["application/json"]
     assert "example" not in content
     assert content["examples"]["restoring_dhcp"]["value"]["runtime_state"] == "restoring_dhcp"
 
@@ -317,7 +317,7 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch):
     radio_status = Mock(side_effect=AssertionError("Should not query the recovering radio"))
     monkeypatch.setattr(manager, "get_status", radio_status)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    path = f"/api/v1/interface/{reservation.reservation_id}/network"
+    path = f"/api/v1/reservations/{reservation.reservation_id}/network"
 
     with TestClient(create_app()) as client:
         response = client.get(path, headers=headers)
@@ -325,7 +325,7 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch):
         assert response.json()["runtime_state"] == "restoring_ap"
         expiry = response.json()["reservation"]["expires_at"]
         assert expiry.endswith("Z")
-        reserved = client.get(f"/api/v1/device-reservation/{reservation.reservation_id}", headers=headers)
+        reserved = client.get(f"/api/v1/reservations/{reservation.reservation_id}", headers=headers)
         assert reserved.status_code == 200 and reserved.json()["expires_at"] == expiry
         create = client.post(path, headers=headers, json=network_body(**PAYLOAD))
         assert create.status_code == 409 and "Retry-After" not in create.headers

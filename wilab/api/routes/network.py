@@ -18,7 +18,7 @@ from ...models import NetworkCreateBody, NetworkResponse, ReservationInfo, body_
 from ...reservation import Reservation
 from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager, FieldError
-from ...wifi.manager import NetworkManager, NetworkStopError, StartupFailure
+from ...wifi.manager import UNKNOWN_ANTENNA, NetworkManager, NetworkStopError, StartupFailure
 from .recovery_responses import (
     DEVICE_BUSY_RESPONSE,
     RETRY_AFTER_HEADER,
@@ -53,7 +53,7 @@ _STOP_RESPONSE_503 = {
 }
 
 router = APIRouter(
-    prefix="/interface", tags=["Network"],
+    prefix="/reservations", tags=["Network"],
     responses={503: {"description": "Device cleanup failed; retry after resolving the error"}},
 )
 
@@ -385,7 +385,7 @@ def start_network(
                 raise HTTPException(
                     status_code=409, detail=domain_error(ApiErrorCode.NETWORK_ALREADY_ACTIVE, error_msg),
                 )
-            if "unknown device_id" in error_msg_lower:
+            if error_msg == UNKNOWN_ANTENNA:
                 raise HTTPException(status_code=404, detail=error_msg)
             raise HTTPException(status_code=500, detail=error_msg)
 
@@ -433,7 +433,7 @@ def stop_network(
         device_id = reservation.device_id
         st = manager.get_status(device_id)
         if not st:
-            raise HTTPException(status_code=404, detail="Unknown device_id")
+            raise HTTPException(status_code=404, detail=UNKNOWN_ANTENNA)
         if not st.active:
             if manager.watchdog.forget(device_id):
                 # The client gives up a network the watchdog failed to restore (WD-2).
@@ -581,7 +581,7 @@ def get_network(
         device_id = reservation.device_id
         st = manager.get_status(device_id)
         if not st:
-            raise HTTPException(status_code=404, detail="Unknown device_id")
+            raise HTTPException(status_code=404, detail=UNKNOWN_ANTENNA)
         st.expires_at = format_utc_timestamp(reservation.expires_at)
         st.expires_in = reservation.expires_in
         runtime_state = manager.watchdog.state(reservation) or (

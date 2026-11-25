@@ -38,7 +38,7 @@ def _kill_only_hostapd(server: Server) -> None:
 
 
 def _restored(wilab: WiLab, antenna: Antenna) -> bool:
-    response = wilab.http.get(f"/interface/{antenna.reservation_id}/network")
+    response = wilab.http.get(f"/reservations/{antenna.reservation_id}/network")
     body = response.json()
     return response.status_code == 200 and body.get("active") is True and not body.get("runtime_state")
 
@@ -57,11 +57,11 @@ def test_ap_is_restored_after_each_hostapd_crash(wilab: WiLab, server: Server) -
         time.sleep(10)
     journal = server.journal(start)
     assert "quarantin" not in journal.lower()
-    assert wilab.http.get(f"/device-reservation/{antenna.reservation_id}").status_code == 200
+    assert wilab.http.get(f"/reservations/{antenna.reservation_id}").status_code == 200
 
 
 def _network(wilab: WiLab, antenna: Antenna) -> dict:
-    return wilab.http.get(f"/interface/{antenna.reservation_id}/network").json()
+    return wilab.http.get(f"/reservations/{antenna.reservation_id}/network").json()
 
 
 def test_failed_restore_is_reported_and_retried(wilab: WiLab, server: Server) -> None:
@@ -99,7 +99,7 @@ def test_delete_stops_the_retries_and_keeps_the_reservation(wilab: WiLab, server
         assert _network(wilab, antenna).get("runtime_state") is None
     time.sleep(35)  # past two retry delays: nothing may come back
     assert _network(wilab, antenna)["active"] is False
-    assert wilab.http.get(f"/device-reservation/{antenna.reservation_id}").status_code == 200
+    assert wilab.http.get(f"/reservations/{antenna.reservation_id}").status_code == 200
     assert wilab.create(antenna).status_code == 200
 
 

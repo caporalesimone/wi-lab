@@ -15,7 +15,7 @@ from ...wifi.manager import NetworkManager, NetworkNotActive, TxPowerMismatchErr
 from .recovery_responses import DEVICE_BUSY_RESPONSE, NETWORK_NOT_ACTIVE_RESPONSE
 
 router = APIRouter(
-    prefix="/interface", tags=["TX Power"],
+    prefix="/reservations", tags=["TX Power"],
     responses={503: {"description": "Device cleanup failed; retry after resolving the error"}},
 )
 VALID_TX_POWER_LEVELS = (1, 2, 3, 4)

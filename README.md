@@ -149,7 +149,7 @@ All requests require the header `Authorization: Bearer <auth_token>`.
 
 ```bash
 # 1. Reserve a device for 15 minutes (900 seconds)
-curl -X POST http://localhost:8080/api/v1/device-reservation \
+curl -X POST http://localhost:8080/api/v1/reservations \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"duration_seconds": 900}'
@@ -164,7 +164,7 @@ curl -X POST http://localhost:8080/api/v1/device-reservation \
 # }
 
 # 2. Create a WiFi network on the reserved device
-curl -X POST http://localhost:8080/api/v1/interface/a1b2c3d4/network \
+curl -X POST http://localhost:8080/api/v1/reservations/a1b2c3d4/network \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"radio": {"band": "2.4ghz", "channel": 6, "tx_power_level": 4},

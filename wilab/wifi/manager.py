@@ -91,6 +91,9 @@ class NetworkStopError(RuntimeError):
     """
 
 
+# The API names no device_id (Fable API-6): the reservation's antenna is unknown.
+UNKNOWN_ANTENNA = "The antenna of this reservation is not managed"
+
 # Stable names of the startup stages, answered as `stage` with 500 / 1013 startup_failed.
 STARTUP_STAGES = {
     "start AP": "hostapd",
@@ -175,7 +178,7 @@ class NetworkManager:
         """Allocate or reuse a non-overlapping /24 before a new AP start."""
         devices = [n.device_id for n in self.config.antennas]
         if device_id not in devices:
-            raise ValueError("Unknown device_id")
+            raise ValueError(UNKNOWN_ANTENNA)
 
         base_net = IPv4Network(self.config.dhcp_base_network, strict=False)
         if base_net.prefixlen != 24:
@@ -325,7 +328,7 @@ class NetworkManager:
         # Validate device_id exists in config
         cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
-            raise ValueError("Unknown device_id")
+            raise ValueError(UNKNOWN_ANTENNA)
 
         # Check if network is already active (check both self.active and hostapd)
         if device_id in self.active:
@@ -746,7 +749,7 @@ class NetworkManager:
         # Get interface for NAT rules
         cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
-            raise ValueError("Unknown device_id")
+            raise ValueError(UNKNOWN_ANTENNA)
         
         # Enable NAT if not already enabled
         if not st.internet_enabled:
@@ -785,7 +788,7 @@ class NetworkManager:
         # Get interface for NAT rules
         cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
-            raise ValueError("Unknown device_id")
+            raise ValueError(UNKNOWN_ANTENNA)
         
         # Disable NAT if currently enabled
         if st.internet_enabled:
@@ -1082,7 +1085,7 @@ class NetworkManager:
             raise ValueError("Channel unknown for this network")
         cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
-            raise ValueError("Unknown device_id")
+            raise ValueError(UNKNOWN_ANTENNA)
         
         # Set power with verification (waits 3s and checks if change applied)
         info = self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
@@ -1102,7 +1105,7 @@ class NetworkManager:
             raise ValueError("Channel unknown for this network")
         cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
-            raise ValueError("Unknown device_id")
+            raise ValueError(UNKNOWN_ANTENNA)
         
         # Get configured level
         level = st.tx_power_level

@@ -41,10 +41,10 @@ API_DESCRIPTION = """
 ## Reservation and network lifecycle
 
 Authenticate with a Bearer token. Reserve an adapter with
-`POST /api/v1/device-reservation` (for example `{"duration_seconds": 120}`),
+`POST /api/v1/reservations` (for example `{"duration_seconds": 120}`),
 then pass the returned `reservation_id` to the network endpoints. Use one
 creation request at a time per reservation. Release with
-`DELETE /api/v1/device-reservation/{reservation_id}` when finished; this also
+`DELETE /api/v1/reservations/{reservation_id}` when finished; this also
 stops the network. A failed cleanup can return `503` and keep the device held.
 
 Set `"captive_portal": {"enabled": true}` when creating a network to hold each
@@ -54,7 +54,7 @@ portal page; see the network creation operation. Omitted, it is disabled.
 Operations under **Maintenance** are not part of the client workflow. Each one
 requires the `X-Confirm-Password` header matching `protected_commands_password`
 in the server configuration, and is disabled when that setting is missing.
-`DELETE /api/v1/device-reservation/all` releases every reservation, including
+`DELETE /api/v1/reservations/all` releases every reservation, including
 other clients'; `GET /api/v1/debug` shows internal state.
 
 Every API error body has a `detail` object with an integer `code` and a
@@ -78,7 +78,7 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 | `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Every reservation endpoint except the create, which waits instead. |
 
 A transport timeout is not a recovery code. For a lost create response, check
-`GET /api/v1/interface/{reservation_id}/network` before attempting another
+`GET /api/v1/reservations/{reservation_id}/network` before attempting another
 create. A lost reservation response may already have allocated an adapter:
 do not blindly repeat it. A `404` for a reservation ID means stop using it.
 

@@ -12,8 +12,8 @@ Fine-grained control over individual client devices. Block/unblock specific MAC 
 
 ### Implementation Tasks
 
-- [ ] Create `POST /interface/{net_id}/client/{mac}/block` endpoint
-- [ ] Create `POST /interface/{net_id}/client/{mac}/unblock` endpoint
+- [ ] Create `POST /reservations/{net_id}/client/{mac}/block` endpoint
+- [ ] Create `POST /reservations/{net_id}/client/{mac}/unblock` endpoint
 - [ ] Validate MAC address format
 - [ ] Check if client is currently connected (return 404 if not)
 - [ ] Store blocked clients per network in memory
@@ -27,8 +27,8 @@ Fine-grained control over individual client devices. Block/unblock specific MAC 
 
 - [ ] Include block status in client info response
 - [ ] Add endpoints:
-  - `GET /interface/{net_id}/clients/blocked` - List blocked MACs
-  - `GET /interface/{net_id}/client/{mac}/block-status` - Check if blocked
+  - `GET /reservations/{net_id}/clients/blocked` - List blocked MACs
+  - `GET /reservations/{net_id}/client/{mac}/block-status` - Check if blocked
 - [ ] Return reason and timestamp of block
 
 ### Testing
@@ -44,7 +44,7 @@ Fine-grained control over individual client devices. Block/unblock specific MAC 
 
 ### Implementation Tasks
 
-- [ ] Create `POST /interface/{net_id}/client/{mac}/rate-limit` endpoint
+- [ ] Create `POST /reservations/{net_id}/client/{mac}/rate-limit` endpoint
 - [ ] Parameters:
   - `rate_mbps` (1-100 Mbps range)
   - `direction` (upload, download, both) - optional, default both
@@ -53,13 +53,13 @@ Fine-grained control over individual client devices. Block/unblock specific MAC 
   - Create class per MAC with rate limit
   - Rules applied at egress (outgoing) and ingress (incoming)
   - Add identifying marks/comments for tracking
-- [ ] Create `POST /interface/{net_id}/client/{mac}/clear-rate-limit` endpoint
+- [ ] Create `POST /reservations/{net_id}/client/{mac}/clear-rate-limit` endpoint
 - [ ] Validate rate parameters before application
 
 ### Rate Limit Status
 
 - [ ] Include rate limit in client info response
-- [ ] Add endpoint: `GET /interface/{net_id}/client/{mac}/rate-limit-status`
+- [ ] Add endpoint: `GET /reservations/{net_id}/client/{mac}/rate-limit-status`
 - [ ] Return current rate limit and direction
 
 ### Error Handling

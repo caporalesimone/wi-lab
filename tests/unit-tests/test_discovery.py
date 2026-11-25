@@ -314,7 +314,7 @@ def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
                 for n in client.get("/api/v1/status", headers=headers).json()["networks"]]
 
     with TestClient(create_app()) as client:
-        empty = client.post("/api/v1/device-reservation", headers=headers, json={"duration_seconds": 60})
+        empty = client.post("/api/v1/reservations", headers=headers, json={"duration_seconds": 60})
         radios[:] = [DiscoveredRadio("wlx-a", "phy0", "2-1"), DiscoveredRadio("wlx-off", "phy1", "2-2")]
         _wait_for(lambda: managed() == [("wlx-a", "Antenna A")])
         # A label added after startup must be read by the next scan.
@@ -322,8 +322,8 @@ def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
         radios.append(DiscoveredRadio("wlx-new", "phy2", "2-3"))
         _wait_for(lambda: len(managed()) == 2)
         final = managed()
-        first = client.post("/api/v1/device-reservation", headers=headers, json={"duration_seconds": 60})
-        second = client.post("/api/v1/device-reservation", headers=headers, json={"duration_seconds": 60})
+        first = client.post("/api/v1/reservations", headers=headers, json={"duration_seconds": 60})
+        second = client.post("/api/v1/reservations", headers=headers, json={"duration_seconds": 60})
 
     assert (empty.status_code, empty.json()["detail"]["code"]) == (503, 1003)
     assert final == [("wlx-a", "Antenna A"), ("wlx-new", "Antenna New")]

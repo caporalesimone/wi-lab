@@ -54,7 +54,7 @@ export class WilabApiService {
 
   public createReservation(req: ReservationRequest): Observable<ReservationResponse> {
     return this.http.post<ReservationResponse>(
-      `${this.apiUrl}/device-reservation`,
+      `${this.apiUrl}/reservations`,
       req,
       { headers: this.getHeaders() }
     ).pipe(
@@ -64,7 +64,7 @@ export class WilabApiService {
 
   public getReservation(reservationId: string): Observable<ReservationResponse> {
     return this.http.get<ReservationResponse>(
-      `${this.apiUrl}/device-reservation/${reservationId}`,
+      `${this.apiUrl}/reservations/${reservationId}`,
       { headers: this.getHeaders() }
     ).pipe(
       catchError(this.handleError)
@@ -73,7 +73,7 @@ export class WilabApiService {
 
   public deleteReservation(reservationId: string): Observable<object> {
     return this.http.delete(
-      `${this.apiUrl}/device-reservation/${reservationId}`,
+      `${this.apiUrl}/reservations/${reservationId}`,
       { headers: this.getHeaders() }
     ).pipe(
       catchError(this.handleError)
@@ -82,7 +82,7 @@ export class WilabApiService {
 
   public deleteAllReservations(confirmPassword: string): Observable<object> {
     return this.http.delete(
-      `${this.apiUrl}/device-reservation/all`,
+      `${this.apiUrl}/reservations/all`,
       { headers: this.getHeaders().set('X-Confirm-Password', confirmPassword) }
     ).pipe(
       catchError(this.handleError)
@@ -92,7 +92,7 @@ export class WilabApiService {
   // ---- Network (keyed by reservation_id) ----
 
   public getNetworkStatus(reservationId: string): Observable<NetworkStatus> {
-    return this.http.get<NetworkStatus>(`${this.apiUrl}/interface/${reservationId}/network`, {
+    return this.http.get<NetworkStatus>(`${this.apiUrl}/reservations/${reservationId}/network`, {
       headers: this.getHeaders()
     }).pipe(
       retryWhenBusy(),
@@ -104,7 +104,7 @@ export class WilabApiService {
     reservationId: string, config: NetworkCreateRequest, onRetry: (seconds: number) => void
   ): Observable<NetworkStatus> {
     return this.http.post<NetworkStatus>(
-      `${this.apiUrl}/interface/${reservationId}/network`,
+      `${this.apiUrl}/reservations/${reservationId}/network`,
       config,
       { headers: this.getHeaders() }
     ).pipe(
@@ -123,7 +123,7 @@ export class WilabApiService {
 
   public stopNetwork(reservationId: string): Observable<object> {
     return this.http.delete(
-      `${this.apiUrl}/interface/${reservationId}/network`,
+      `${this.apiUrl}/reservations/${reservationId}/network`,
       { headers: this.getHeaders() }
     ).pipe(
       // 1012: the stop did not complete (hostapd stuck a few seconds); repeating it finishes it.
@@ -136,7 +136,7 @@ export class WilabApiService {
 
   public enableInternet(reservationId: string): Observable<object> {
     return this.http.post(
-      `${this.apiUrl}/interface/${reservationId}/internet/enable`,
+      `${this.apiUrl}/reservations/${reservationId}/internet/enable`,
       {},
       { headers: this.getHeaders() }
     ).pipe(
@@ -147,7 +147,7 @@ export class WilabApiService {
 
   public disableInternet(reservationId: string): Observable<object> {
     return this.http.post(
-      `${this.apiUrl}/interface/${reservationId}/internet/disable`,
+      `${this.apiUrl}/reservations/${reservationId}/internet/disable`,
       {},
       { headers: this.getHeaders() }
     ).pipe(

@@ -25,11 +25,11 @@ from .recovery_responses import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
+router = APIRouter(prefix="/reservations", tags=["Reservation"])
 # Route tags add to the router's: a separate router keeps release-all only under
 # Maintenance in Swagger. It is included before `router`, so `/all` is matched
 # before `/{reservation_id}`. Token and X-Confirm-Password come from the router.
-maintenance_router = protected_router(prefix="/device-reservation")
+maintenance_router = protected_router(prefix="/reservations")
 
 
 # ---- Request / Response models ----

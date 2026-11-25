@@ -184,7 +184,7 @@ def test_release_stops_the_retries(monkeypatch):
 def test_api_reports_restore_failed_and_delete_stops_retries(monkeypatch):
     config, manager, _, reservation, _, _ = _failed_restore(monkeypatch)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    path = f"/api/v1/interface/{reservation.reservation_id}/network"
+    path = f"/api/v1/reservations/{reservation.reservation_id}/network"
     with TestClient(create_app()) as client:
         network = client.get(path, headers=headers).json()
         assert (network["active"], network["runtime_state"]) == (False, "restore_failed")
@@ -194,14 +194,14 @@ def test_api_reports_restore_failed_and_delete_stops_retries(monkeypatch):
         assert client.delete(path, headers=headers).status_code == 200
         assert manager.watchdog.state(reservation) is None
         assert client.delete(path, headers=headers).status_code == 409
-        assert client.get(f"/api/v1/device-reservation/{reservation.reservation_id}", headers=headers).status_code == 200
+        assert client.get(f"/api/v1/reservations/{reservation.reservation_id}", headers=headers).status_code == 200
 
 
 def test_new_create_replaces_the_pending_restore(monkeypatch):
     config, manager, _, reservation, start, _ = _failed_restore(monkeypatch)
     start.side_effect = None
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    path = f"/api/v1/interface/{reservation.reservation_id}/network"
+    path = f"/api/v1/reservations/{reservation.reservation_id}/network"
     body = network_body(ssid="new", channel=1, band="2.4ghz", encryption="open", tx_power_level=4)
     with TestClient(create_app()) as client:
         assert client.post(path, headers=headers, json=body).status_code == 200

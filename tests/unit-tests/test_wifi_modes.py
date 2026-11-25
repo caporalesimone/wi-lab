@@ -241,7 +241,7 @@ def reservation_id(client, token, monkeypatch):
         raising=False,
     )
     monkeypatch.setattr(dependencies, "_channel_manager", None, raising=False)
-    resp = client.post("/api/v1/device-reservation", headers={"Authorization": token}, json={"duration_seconds": 3600})
+    resp = client.post("/api/v1/reservations", headers={"Authorization": token}, json={"duration_seconds": 3600})
     assert resp.status_code == 200
     return resp.json()["reservation_id"]
 
@@ -252,7 +252,7 @@ class TestApi:
         start = Mock()
         monkeypatch.setattr(manager, "start_network", start)
         resp = client.post(
-            f"/api/v1/interface/{reservation_id}/network",
+            f"/api/v1/reservations/{reservation_id}/network",
             headers={"Authorization": token}, json=network_body(**{"encryption": "wpa2", **BASE, **body}),
         )
         return resp, start

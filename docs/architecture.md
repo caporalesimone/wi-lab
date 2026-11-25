@@ -307,7 +307,7 @@ stateDiagram-v2
     state "Quarantined, unavailable" as Unavailable
 
     [*] --> Free
-    Free --> Reserved: POST device-reservation
+    Free --> Reserved: POST reservations
     Reserved --> Reserved: create, stop, restart AP
     Reserved --> Releasing: DELETE reservation or expiry
     Releasing --> Free: cleanup succeeded
@@ -362,7 +362,7 @@ sequenceDiagram
     participant DH as DhcpServer
     participant FW as NAT / isolation
 
-    C->>R: POST /interface/{id}/network
+    C->>R: POST /reservations/{id}/network
     R->>R: validate body: SSID, password, channel/band (422)
     R->>R: require_token (401)
     R->>RM: resolve_reservation (404 if unknown, expired, invalidated)
@@ -645,7 +645,7 @@ sequenceDiagram
 
     rect rgba(128,128,128,0.08)
     Note over C,EX: Reserve
-    C->>A: POST /device-reservation {duration_seconds}
+    C->>A: POST /reservations {duration_seconds}
     A->>A: duration vs min_timeout, max_timeout, allow_unlimited_reservation
     alt invalid
         A-->>C: 422
@@ -681,7 +681,7 @@ sequenceDiagram
     end
 
     rect rgba(128,128,128,0.08)
-    Note over C,EX: Create (POST /interface/{id}/network)
+    Note over C,EX: Create (POST /reservations/{id}/network)
     C->>A: body {radio, wifi, internet, captive_portal}
     A->>A: NetworkCreateBody to flat request, field rules (FieldError keeps the path)
     alt body invalid
@@ -775,7 +775,7 @@ sequenceDiagram
     end
 
     rect rgba(128,128,128,0.08)
-    Note over C,EX: Stop (DELETE /interface/{id}/network)
+    Note over C,EX: Stop (DELETE /reservations/{id}/network)
     C->>A: DELETE .../network
     A->>NM: stop_network(device) under the device lock
     NM->>H: SIGTERM, after 2 s SIGKILL, wait 2 s more
@@ -794,7 +794,7 @@ sequenceDiagram
 
     rect rgba(128,128,128,0.08)
     Note over C,EX: Release and expiry
-    C->>A: DELETE /device-reservation/{id}
+    C->>A: DELETE /reservations/{id}
     A->>RM: delete: release_requests += 1, device lock
     RM->>NM: release_device(): tracked stop of everything still running
     alt stop fails
@@ -985,7 +985,7 @@ hardware.
 
 - Stopping Wi-Lab affects every adapter. Agree a maintenance window and check
   `GET /api/v1/status`: no reservations and no active networks. Ask owners to
-  release theirs; do not use `DELETE /api/v1/device-reservation/all`.
+  release theirs; do not use `DELETE /api/v1/reservations/all`.
 - Check that nothing outside Wi-Lab uses the adapter, and that it is neither the
   management nor the upstream interface (`ip -br link`, `ip route show default`,
   `iw dev`). Keep console access (for example KVM) in case the management

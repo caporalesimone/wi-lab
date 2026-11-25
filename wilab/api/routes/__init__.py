@@ -28,7 +28,7 @@ from .txpower import router as txpower_router
 router = APIRouter(prefix="/api/v1")
 
 # Include all domain routers. Release-all comes before the reservation routes so
-# that DELETE /device-reservation/all is not read as a reservation ID.
+# that DELETE /reservations/all is not read as a reservation ID.
 router.include_router(reservation_maintenance_router)
 router.include_router(reservation_router)
 router.include_router(health_router)

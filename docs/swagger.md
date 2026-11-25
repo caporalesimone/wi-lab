@@ -49,7 +49,7 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
   only in this group. **Every Maintenance operation requires the
   `X-Confirm-Password` header** with `protected_commands_password` from the
   server configuration, besides the token, and is disabled (`403`) when that
-  setting is missing. `DELETE /api/v1/device-reservation/all` releases
+  setting is missing. `DELETE /api/v1/reservations/all` releases
   **every** reservation and may be removed in a future version.
   `GET /api/v1/debug` shows internal state for troubleshooting; it is
   **deprecated** (struck through in Swagger) and will be removed.
@@ -124,7 +124,7 @@ waits for the adapter instead.
 
 For a complete interactive example:
 
-1. In **Reservation**, execute the timed example for `POST /api/v1/device-reservation`.
+1. In **Reservation**, execute the timed example for `POST /api/v1/reservations`.
 2. In **Network**, copy the returned `reservation_id` into the create endpoint
    and choose a channel supported by the adapter. If you get `409 / 1001`,
    wait for `Retry-After` before repeating the same body and ID.

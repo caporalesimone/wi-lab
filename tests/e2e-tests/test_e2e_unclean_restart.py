@@ -26,7 +26,7 @@ def test_unclean_restart_cleans_shaping_addresses_and_runtime_files(wilab: WiLab
     profiles = wilab.http.get("/qos/profiles").json()
     assert isinstance(profiles, list) and profiles, "no QoS profile in the catalogue"
     started = wilab.http.post(
-        f"/interface/{antenna.reservation_id}/qos/profile", json={"profile_id": profiles[0]["id"]},
+        f"/reservations/{antenna.reservation_id}/qos/profile", json={"profile_id": profiles[0]["id"]},
     )
     assert started.status_code == 200, started.text
     assert wait_for(lambda: "htb" in server.qdiscs(antenna.interface) or "netem" in server.qdiscs(antenna.interface),

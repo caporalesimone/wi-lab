@@ -26,9 +26,9 @@ A **profile** is an ordered sequence of steps. Each step defines a duration and 
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/interface/{reservation_id}/qos/profile` | Start a profile |
-| `GET` | `/api/v1/interface/{reservation_id}/qos/profile` | Get active profile state |
-| `DELETE` | `/api/v1/interface/{reservation_id}/qos/profile` | Stop profile and clear QoS |
+| `POST` | `/api/v1/reservations/{reservation_id}/qos/profile` | Start a profile |
+| `GET` | `/api/v1/reservations/{reservation_id}/qos/profile` | Get active profile state |
+| `DELETE` | `/api/v1/reservations/{reservation_id}/qos/profile` | Stop profile and clear QoS |
 
 ---
 
@@ -157,7 +157,7 @@ RES=<reservation_id>
 ### 1. Start a profile from the catalogue
 
 ```bash
-curl -X POST "$BASE/interface/$RES/qos/profile" \
+curl -X POST "$BASE/reservations/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"profile_id": "4g_urban_moving"}'
@@ -186,7 +186,7 @@ Response:
 ### 2. Apply static QoS (inline parameters)
 
 ```bash
-curl -X POST "$BASE/interface/$RES/qos/profile" \
+curl -X POST "$BASE/reservations/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -201,7 +201,7 @@ This creates an auto-generated `once-hold-last` profile with a single step. The 
 ### 3. Apply inline QoS with advanced override
 
 ```bash
-curl -X POST "$BASE/interface/$RES/qos/profile" \
+curl -X POST "$BASE/reservations/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -219,7 +219,7 @@ curl -X POST "$BASE/interface/$RES/qos/profile" \
 ### 4. Check active profile state
 
 ```bash
-curl "$BASE/interface/$RES/qos/profile" \
+curl "$BASE/reservations/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -262,7 +262,7 @@ Response when inactive:
 ### 5. Stop the active profile
 
 ```bash
-curl -X DELETE "$BASE/interface/$RES/qos/profile" \
+curl -X DELETE "$BASE/reservations/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -282,11 +282,11 @@ You must stop the current profile before starting a new one:
 
 ```bash
 # Stop current
-curl -X DELETE "$BASE/interface/$RES/qos/profile" \
+curl -X DELETE "$BASE/reservations/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN"
 
 # Start new
-curl -X POST "$BASE/interface/$RES/qos/profile" \
+curl -X POST "$BASE/reservations/$RES/qos/profile" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"profile_id": "satellite_link"}'

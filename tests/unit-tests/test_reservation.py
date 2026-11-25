@@ -423,7 +423,7 @@ def test_slow_lifecycle_operation_does_not_block_event_loop(operation, valid_tok
     with TestClient(create_app()) as client:
         headers = {"Authorization": valid_token}
         body = {"duration_seconds": 3600}
-        response = client.post("/api/v1/device-reservation", headers=headers, json=body)
+        response = client.post("/api/v1/reservations", headers=headers, json=body)
         assert response.status_code == 200
         reservation_id = response.json()["reservation_id"]
         manager = dependencies._manager
@@ -438,7 +438,7 @@ def test_slow_lifecycle_operation_does_not_block_event_loop(operation, valid_tok
                 assert finish.wait(timeout=10)
 
             monkeypatch.setattr(manager, "start_network", slow_start)
-            path = f"/api/v1/interface/{reservation_id}/network"
+            path = f"/api/v1/reservations/{reservation_id}/network"
             payload = network_body(
                 ssid="test", channel=1, password="testpassword",
                 encryption="wpa2", band="2.4ghz", tx_power_level=4,
@@ -457,7 +457,7 @@ def test_slow_lifecycle_operation_does_not_block_event_loop(operation, valid_tok
                 manager.active.pop(device_id)
 
             monkeypatch.setattr(manager, "stop_network", slow_stop)
-            path = "/api/v1/device-reservation"
+            path = "/api/v1/reservations"
             payload = body
 
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -479,7 +479,7 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
         *cfg.antennas, NetworkEntry(interface="wlan1", display_name="Second radio"),
     ])
     headers = {"Authorization": valid_token}
-    reserve = "/api/v1/device-reservation"
+    reserve = "/api/v1/reservations"
     payload = {
         "ssid": "test", "channel": 1, "encryption": "open", "band": "2.4ghz",
         "tx_power_level": 4, "internet_enabled": False,
@@ -500,7 +500,7 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
         first_id = first["reservation_id"]
 
         def create(rid: str):
-            return client.post(f"/api/v1/interface/{rid}/network", headers=headers, json=network_body(**payload))
+            return client.post(f"/api/v1/reservations/{rid}/network", headers=headers, json=network_body(**payload))
 
         slow = pool.submit(create, first_id)
         try:
@@ -523,12 +523,12 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
 
 
 class TestReservationAPICreate:
-    """Tests for POST /api/v1/device-reservation."""
+    """Tests for POST /api/v1/reservations."""
 
     def test_create_reservation_success(self, client, valid_token):
         started = time.time()
         resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
@@ -546,14 +546,14 @@ class TestReservationAPICreate:
 
     def test_create_reservation_requires_auth(self, client):
         resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             json={"duration_seconds": 3600},
         )
         assert resp.status_code == 401
 
     def test_create_reservation_invalid_duration(self, client, valid_token):
         resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 0},
         )
@@ -561,7 +561,7 @@ class TestReservationAPICreate:
 
     def test_create_reservation_negative_duration(self, client, valid_token):
         resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": -10},
         )
@@ -571,14 +571,14 @@ class TestReservationAPICreate:
         """All devices reserved returns 409 with next_available_at/in."""
         # Config has 1 device (wls16), reserve it
         first = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 120},
         )
         assert first.status_code == 200
         # Try again — should get 409
         resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
@@ -593,19 +593,19 @@ class TestReservationAPICreate:
 
 
 class TestReservationAPIGet:
-    """Tests for GET /api/v1/device-reservation/{reservation_id}."""
+    """Tests for GET /api/v1/reservations/{reservation_id}."""
 
     def test_get_reservation_success(self, client, valid_token):
         # Create first
         create_resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
         rid = create_resp.json()["reservation_id"]
 
         resp = client.get(
-            f"/api/v1/device-reservation/{rid}",
+            f"/api/v1/reservations/{rid}",
             headers={"Authorization": valid_token},
         )
         assert resp.status_code == 200
@@ -618,29 +618,29 @@ class TestReservationAPIGet:
 
     def test_get_reservation_not_found(self, client, valid_token):
         resp = client.get(
-            "/api/v1/device-reservation/nonexistent",
+            "/api/v1/reservations/nonexistent",
             headers={"Authorization": valid_token},
         )
         assert resp.status_code == 404
 
     def test_get_reservation_requires_auth(self, client):
-        resp = client.get("/api/v1/device-reservation/any-id")
+        resp = client.get("/api/v1/reservations/any-id")
         assert resp.status_code == 401
 
 
 class TestReservationAPIDelete:
-    """Tests for DELETE /api/v1/device-reservation/{reservation_id}."""
+    """Tests for DELETE /api/v1/reservations/{reservation_id}."""
 
     def test_delete_reservation_success(self, client, valid_token):
         create_resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
         rid = create_resp.json()["reservation_id"]
 
         resp = client.delete(
-            f"/api/v1/device-reservation/{rid}",
+            f"/api/v1/reservations/{rid}",
             headers={"Authorization": valid_token},
         )
         assert resp.status_code == 200
@@ -648,29 +648,29 @@ class TestReservationAPIDelete:
 
     def test_delete_reservation_not_found(self, client, valid_token):
         resp = client.delete(
-            "/api/v1/device-reservation/nonexistent",
+            "/api/v1/reservations/nonexistent",
             headers={"Authorization": valid_token},
         )
         assert resp.status_code == 404
 
     def test_delete_reservation_requires_auth(self, client):
-        resp = client.delete("/api/v1/device-reservation/any-id")
+        resp = client.delete("/api/v1/reservations/any-id")
         assert resp.status_code == 401
 
     def test_post_release_get_returns_404(self, client, valid_token):
         """After DELETE, GET on same token must return 404."""
         create_resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
         rid = create_resp.json()["reservation_id"]
         client.delete(
-            f"/api/v1/device-reservation/{rid}",
+            f"/api/v1/reservations/{rid}",
             headers={"Authorization": valid_token},
         )
         resp = client.get(
-            f"/api/v1/device-reservation/{rid}",
+            f"/api/v1/reservations/{rid}",
             headers={"Authorization": valid_token},
         )
         assert resp.status_code == 404
@@ -699,9 +699,9 @@ class TestReservationManagerDeleteAll:
 
 
 class TestReservationAPIDeleteAll:
-    """Tests for DELETE /api/v1/device-reservation/all (password-protected)."""
+    """Tests for DELETE /api/v1/reservations/all (password-protected)."""
 
-    URL = "/api/v1/device-reservation/all"
+    URL = "/api/v1/reservations/all"
 
     @pytest.fixture(autouse=True)
     def _password(self, client):
@@ -709,7 +709,7 @@ class TestReservationAPIDeleteAll:
 
     def _reserve(self, client, valid_token):
         resp = client.post(
-            "/api/v1/device-reservation", headers={"Authorization": valid_token},
+            "/api/v1/reservations", headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
         assert resp.status_code == 200
@@ -720,7 +720,7 @@ class TestReservationAPIDeleteAll:
         headers = {"Authorization": valid_token, "X-Confirm-Password": "qwerty-test"}
         resp = client.delete(self.URL, headers=headers)
         assert resp.status_code == 200 and resp.json()["released"] == 1
-        assert client.get(f"/api/v1/device-reservation/{rid}", headers={"Authorization": valid_token}).status_code == 404
+        assert client.get(f"/api/v1/reservations/{rid}", headers={"Authorization": valid_token}).status_code == 404
         assert client.delete(self.URL, headers=headers).json()["released"] == 0
         self._reserve(client, valid_token)
 
@@ -733,7 +733,7 @@ class TestReservationAPIDeleteAll:
         resp = client.delete(self.URL, headers=headers)
         assert resp.status_code == 403
         assert "X-Confirm-Password" in resp.json()["detail"]["message"]
-        assert client.get(f"/api/v1/device-reservation/{rid}", headers={"Authorization": valid_token}).status_code == 200
+        assert client.get(f"/api/v1/reservations/{rid}", headers={"Authorization": valid_token}).status_code == 200
 
     def test_disabled_without_a_configured_password(self, client, valid_token):
         from wilab.config import AppConfig
@@ -747,12 +747,12 @@ class TestReservationAPIDeleteAll:
     def test_requires_auth_before_the_password(self, client):
         assert client.delete(self.URL, headers={"X-Confirm-Password": "qwerty-test"}).status_code == 401
 
-    @pytest.mark.parametrize("path", ["/api/v1/device-reservation", "/api/v1/device-reservation/"])
+    @pytest.mark.parametrize("path", ["/api/v1/reservations", "/api/v1/reservations/"])
     def test_collection_delete_no_longer_releases_anything(self, client, valid_token, path):
         rid = self._reserve(client, valid_token)
         headers = {"Authorization": valid_token, "X-Confirm-Password": "qwerty-test"}
         assert client.delete(path, headers=headers).status_code == 405
-        assert client.get(f"/api/v1/device-reservation/{rid}", headers={"Authorization": valid_token}).status_code == 200
+        assert client.get(f"/api/v1/reservations/{rid}", headers={"Authorization": valid_token}).status_code == 200
 
 
 # ======================================================================
@@ -814,8 +814,8 @@ class TestUnlimitedReservation:
         config = dependencies.get_config()
         monkeypatch.setattr(config, "allow_unlimited_reservation", True)
         headers = {"Authorization": valid_token}
-        assert client.post("/api/v1/device-reservation", headers=headers, json={"duration_seconds": 0}).status_code == 200
-        response = client.post("/api/v1/device-reservation", headers=headers, json={"duration_seconds": 120})
+        assert client.post("/api/v1/reservations", headers=headers, json={"duration_seconds": 0}).status_code == 200
+        response = client.post("/api/v1/reservations", headers=headers, json={"duration_seconds": 120})
         assert response.status_code == 409
         detail = response.json()["detail"]
         assert detail["code"] == 1005
@@ -840,7 +840,7 @@ class TestReservationDeleteStopsNetwork:
         mgr = self._ensure_manager(client, valid_token)
         # Create reservation
         resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
@@ -861,7 +861,7 @@ class TestReservationDeleteStopsNetwork:
         monkeypatch.setattr(mgr, "stop_network", mock_stop)
 
         resp = client.delete(
-            f"/api/v1/device-reservation/{rid}",
+            f"/api/v1/reservations/{rid}",
             headers={"Authorization": valid_token},
         )
         assert resp.status_code == 200
@@ -870,7 +870,7 @@ class TestReservationDeleteStopsNetwork:
     def test_delete_reservation_no_network_active(self, client, valid_token, monkeypatch):
         """DELETE reservation succeeds even when no network is active (no stop_network call)."""
         resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
@@ -881,7 +881,7 @@ class TestReservationDeleteStopsNetwork:
         monkeypatch.setattr(mgr, "stop_network", lambda did: stopped.append(did))
 
         resp = client.delete(
-            f"/api/v1/device-reservation/{rid}",
+            f"/api/v1/reservations/{rid}",
             headers={"Authorization": valid_token},
         )
         assert resp.status_code == 200
@@ -891,7 +891,7 @@ class TestReservationDeleteStopsNetwork:
         from wilab.models import NetworkStatus
 
         resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
@@ -908,7 +908,7 @@ class TestReservationDeleteStopsNetwork:
 
         monkeypatch.setattr(mgr, "stop_network", stop)
         resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
@@ -921,7 +921,7 @@ class TestReservationDeleteStopsNetwork:
 
         headers = {"Authorization": valid_token}
         body = {"duration_seconds": 3600}
-        response = client.post("/api/v1/device-reservation", headers=headers, json=body)
+        response = client.post("/api/v1/reservations", headers=headers, json=body)
         reservation = dependencies._reservation_manager.get(response.json()["reservation_id"])
         manager = self._ensure_manager(client, valid_token)
         device_id = reservation.device_id
@@ -932,19 +932,19 @@ class TestReservationDeleteStopsNetwork:
             raise RuntimeError("cleanup failed")
 
         monkeypatch.setattr(manager, "stop_network", fail)
-        response = client.post("/api/v1/device-reservation", headers=headers, json=body)
+        response = client.post("/api/v1/reservations", headers=headers, json=body)
         assert response.status_code == 503
         assert response.json()["detail"]["code"] == 1004
 
         monkeypatch.setattr(manager, "stop_network", lambda did: manager.active.pop(did))
-        response = client.post("/api/v1/device-reservation", headers=headers, json=body)
+        response = client.post("/api/v1/reservations", headers=headers, json=body)
         assert response.status_code == 200
         assert response.json()["interface"] == device_id
 
     def test_delete_reservation_stop_network_error_keeps_reservation(self, client, valid_token, monkeypatch):
         """A failed teardown leaves the reservation held so it can be retried."""
         resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
@@ -961,17 +961,17 @@ class TestReservationDeleteStopsNetwork:
         monkeypatch.setattr(mgr, "stop_network", failing_stop)
 
         resp = client.delete(
-            f"/api/v1/device-reservation/{rid}",
+            f"/api/v1/reservations/{rid}",
             headers={"Authorization": valid_token},
         )
         assert resp.status_code == 503
         resp = client.get(
-            f"/api/v1/device-reservation/{rid}",
+            f"/api/v1/reservations/{rid}",
             headers={"Authorization": valid_token},
         )
         assert resp.status_code == 200
         resp = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
@@ -982,7 +982,7 @@ class TestReservationDeleteStopsNetwork:
 
         monkeypatch.setattr(mgr, "stop_network", successful_stop)
         resp = client.delete(
-            f"/api/v1/device-reservation/{rid}",
+            f"/api/v1/reservations/{rid}",
             headers={"Authorization": valid_token},
         )
         assert resp.status_code == 200
@@ -991,7 +991,7 @@ class TestReservationDeleteStopsNetwork:
         """DELETE all reservations stops active networks on released devices."""
         # Create reservation (test config has 1 device)
         r1 = client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         ).json()
@@ -1010,7 +1010,7 @@ class TestReservationDeleteStopsNetwork:
 
         dependencies.get_config().protected_commands_password = "qwerty-test"
         resp = client.delete(
-            "/api/v1/device-reservation/all",
+            "/api/v1/reservations/all",
             headers={"Authorization": valid_token, "X-Confirm-Password": "qwerty-test"},
         )
         assert resp.status_code == 200
@@ -1020,7 +1020,7 @@ class TestReservationDeleteStopsNetwork:
     def test_delete_all_no_networks_active(self, client, valid_token, monkeypatch):
         """DELETE all reservations succeeds when no networks are active."""
         client.post(
-            "/api/v1/device-reservation",
+            "/api/v1/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
@@ -1031,7 +1031,7 @@ class TestReservationDeleteStopsNetwork:
 
         dependencies.get_config().protected_commands_password = "qwerty-test"
         resp = client.delete(
-            "/api/v1/device-reservation/all",
+            "/api/v1/reservations/all",
             headers={"Authorization": valid_token, "X-Confirm-Password": "qwerty-test"},
         )
         assert resp.status_code == 200

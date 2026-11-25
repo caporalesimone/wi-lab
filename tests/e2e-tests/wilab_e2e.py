@@ -313,7 +313,7 @@ class WiLab:
         extra: list[str] = []
         try:
             for _ in range(8):
-                response = self.http.post("/device-reservation", json={"duration_seconds": duration})
+                response = self.http.post("/reservations", json={"duration_seconds": duration})
                 response.raise_for_status()
                 data = response.json()
                 if interface is None or data["interface"] == interface:
@@ -323,11 +323,11 @@ class WiLab:
             raise RuntimeError(f"Could not reserve {interface}")
         finally:
             for rid in extra:
-                self.http.delete(f"/device-reservation/{rid}")
+                self.http.delete(f"/reservations/{rid}")
 
     def release(self, antenna: Antenna) -> None:
-        self.http.delete(f"/interface/{antenna.reservation_id}/network")
-        self.http.delete(f"/device-reservation/{antenna.reservation_id}")
+        self.http.delete(f"/reservations/{antenna.reservation_id}/network")
+        self.http.delete(f"/reservations/{antenna.reservation_id}")
         if antenna.reservation_id in self.reserved:
             self.reserved.remove(antenna.reservation_id)
 
@@ -338,15 +338,15 @@ class WiLab:
         }
         body.update(overrides)
         body = {key: value for key, value in body.items() if value is not None}
-        return self.http.post(f"/interface/{antenna.reservation_id}/network", json=network_body(**body))
+        return self.http.post(f"/reservations/{antenna.reservation_id}/network", json=network_body(**body))
 
     def delete_network(self, antenna: Antenna) -> int:
-        return self.http.delete(f"/interface/{antenna.reservation_id}/network").status_code
+        return self.http.delete(f"/reservations/{antenna.reservation_id}/network").status_code
 
     def close(self) -> None:
         for rid in list(self.reserved):
-            self.http.delete(f"/interface/{rid}/network")
-            self.http.delete(f"/device-reservation/{rid}")
+            self.http.delete(f"/reservations/{rid}/network")
+            self.http.delete(f"/reservations/{rid}")
         self.reserved.clear()
         self.http.close()
 

@@ -98,7 +98,7 @@ internet_enabled_by_default: true
 # ==================================================================================================
 
 # Password required by every Maintenance endpoint (commands and diagnostics that clients must
-# not use): DELETE /api/v1/device-reservation/all (release ALL reservations) and GET /api/v1/debug.
+# not use): DELETE /api/v1/reservations/all (release ALL reservations) and GET /api/v1/debug.
 # Callers send it in the X-Confirm-Password header, together with the bearer token;
 # the web UI asks for it every time "Release All" is pressed.
 # It guards against accidental use, not against attackers: share it only with operators.

@@ -44,7 +44,7 @@ def reservation_id(client, valid_token, monkeypatch):
     monkeypatch.setattr(dependencies, '_channel_manager', None, raising=False)
 
     resp = client.post(
-        '/api/v1/device-reservation',
+        '/api/v1/reservations',
         headers={'Authorization': valid_token},
         json={'duration_seconds': 3600},
     )
@@ -475,7 +475,7 @@ class TestNetworkCreationChannelValidation:
         config = dependencies.get_config()
         start_network = Mock()
         monkeypatch.setattr(dependencies.get_manager(config), "start_network", start_network)
-        url = f"/api/v1/interface/{reservation_id}/network"
+        url = f"/api/v1/reservations/{reservation_id}/network"
         headers = {"Authorization": valid_token}
 
         listing = client.get("/api/v1/antennas/wls16", headers=headers)
@@ -502,7 +502,7 @@ class TestNetworkCreationChannelValidation:
 
     def test_disabled_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
-            f'/api/v1/interface/{reservation_id}/network',
+            f'/api/v1/reservations/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestNet', channel=14, password='testpass123', encryption='wpa2', band='2.4ghz', tx_power_level=4),
         )
@@ -511,7 +511,7 @@ class TestNetworkCreationChannelValidation:
 
     def test_unsupported_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
-            f'/api/v1/interface/{reservation_id}/network',
+            f'/api/v1/reservations/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestNet', channel=173, password='testpass123', encryption='wpa2', band='5ghz', tx_power_level=4),
         )
@@ -522,7 +522,7 @@ class TestNetworkCreationChannelValidation:
 
     def test_no_ir_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
-            f'/api/v1/interface/{reservation_id}/network',
+            f'/api/v1/reservations/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestNet', channel=12, password='testpass123', encryption='wpa2', band='2.4ghz', tx_power_level=4),
         )

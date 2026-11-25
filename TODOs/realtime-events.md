@@ -12,7 +12,7 @@ Real-time event streaming for network activities through Server-Sent Events (SSE
 
 ### Implementation Tasks
 
-- [ ] Create `GET /api/v1/interface/{net_id}/events` SSE endpoint
+- [ ] Create `GET /api/v1/reservations/{net_id}/events` SSE endpoint
 - [ ] Use FastAPI StreamingResponse for SSE
 - [ ] Implement event queue per network (max 100 events in memory)
 - [ ] Connection management:
@@ -85,7 +85,7 @@ Real-time event streaming for network activities through Server-Sent Events (SSE
 
 ### Integration with Client Info
 
-- [ ] Add to `GET /interface/{net_id}/clients` response:
+- [ ] Add to `GET /reservations/{net_id}/clients` response:
   - Last activity timestamp
   - Connection duration
   - Authentication state

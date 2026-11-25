@@ -53,6 +53,6 @@ def test_network_stays_up_for_15_minutes(wilab: WiLab, server: Server) -> None:
             anomalies.append((time.strftime("%H:%M:%S"), status["status"], entry))
         time.sleep(10)
     assert anomalies == []
-    assert wilab.http.get(f"/interface/{antenna.reservation_id}/network").status_code == 200
+    assert wilab.http.get(f"/reservations/{antenna.reservation_id}/network").status_code == 200
     assert server.iw_info(antenna.interface).get("type") == "AP"
     assert "AP restart" not in server.journal(start)

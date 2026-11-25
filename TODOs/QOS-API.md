@@ -99,9 +99,9 @@ Bearer token and active network required.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/v1/interface/{reservation_id}/qos/profile` | Start a profile on the reservation |
-| `GET` | `/api/v1/interface/{reservation_id}/qos/profile` | Get active profile state and current step info |
-| `DELETE` | `/api/v1/interface/{reservation_id}/qos/profile` | Stop the active profile and clear QoS |
+| `POST` | `/api/v1/reservations/{reservation_id}/qos/profile` | Start a profile on the reservation |
+| `GET` | `/api/v1/reservations/{reservation_id}/qos/profile` | Get active profile state and current step info |
+| `DELETE` | `/api/v1/reservations/{reservation_id}/qos/profile` | Stop the active profile and clear QoS |
 
 **`POST` request body — Option 1: profile from catalogue**
 ```json
