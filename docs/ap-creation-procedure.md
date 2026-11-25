@@ -78,7 +78,8 @@ Rules that matter for the AP:
   hostapd stuck in the kernel), it keeps the antenna out of the pool and
   repeats the cleanup by itself; the client does nothing.
 - `GET /api/v2/reservations/{reservation_id}` returns the remaining time.
-  `404` means the ID is no longer valid (expired, released or invalidated).
+  `404` means the ID is no longer valid; `detail.reason` says why
+  (see [3.1](#31-what-to-do-with-each-answer)).
 
 ## 2. Creating the AP
 
@@ -687,7 +688,8 @@ Every answer leads to exactly one of these actions:
 | Call | Answer | Action | Notes |
 |---|---|---|---|
 | any | `401` | FIX | Wrong or missing token. |
-| any call with an ID, except the release | `404` | RESERVE AGAIN | The ID expired, was released, or was **invalidated** because its antenna was quarantined (radio failures, also during a watchdog restart). Never release it. |
+| any call with an ID | `404` + `reason: reservation_invalidated` or `reservation_expired` | RESERVE AGAIN | The ID was invalidated (its antenna was quarantined: radio failures, also during a watchdog restart) or expired. Never release it. On a release: DONE. |
+| | `404` + `reason: reservation_released` or `reservation_not_found` | DONE | Released (by you or release-all), never existed, or ended more than an hour ago. Nothing to release. |
 | any call with an ID except the create | `503 / 1006` + `Retry-After: 2` | REPEAT | Another operation holds the antenna. Nothing was changed. |
 | `POST /reservations` | `200` | DONE | Keep `reservation_id` and `interface`. |
 | | `409 / 1005` | REPEAT | All antennas reserved (with `interface`: that one). Wait `next_available_in`, or a backoff of 10–60 s when it is `null`. |
@@ -716,7 +718,7 @@ Every answer leads to exactly one of these actions:
 | | `409 / 1007` | DONE | Already inactive. |
 | | `503 / 1012` + `Retry-After: 5` | REPEAT | The stop did not complete, even after the server repeated it for 15 s (hostapd stuck in the kernel). Rare. Repeat until `200`. |
 | `DELETE /reservations/{id}` | `200` | DONE | Always, even if the cleanup failed: the server then keeps the antenna out of the pool and repeats the cleanup by itself. |
-| | `404` | DONE | Already expired, released or invalidated: nothing left to release. |
+| | `404` (any reason) | DONE | Nothing left to release: the release is idempotent. |
 
 ### 3.2 Radio failures (such as a hostapd crash)
 

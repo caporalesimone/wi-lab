@@ -44,12 +44,14 @@ Errors without a domain meaning use the HTTP status as `code`.
 |---|---|---|---|
 | 401 | `unauthorized` | Missing or wrong `Authorization: Bearer` token. | FIX |
 | 403 | `forbidden` | A Maintenance call without the right `X-Confirm-Password`, or with protected commands disabled. | FIX |
-| 404 | `not_found` | **On a call with a reservation ID: the ID expired, was released or was invalidated** (its antenna was quarantined, also by a failed watchdog restart). On `GET /antennas/{interface}`: no managed antenna has that interface. On a release: nothing left to release. | RESERVE AGAIN (release: DONE) |
+| 404 | `reservation_released`, `reservation_expired`, `reservation_invalidated`, `reservation_not_found` | **Every call with a reservation ID** (reservation get and release, network create, get and stop, Internet, TX power, QoS): the ID is no longer valid, and `reason` says why: released (by its owner or release-all), expired (also when it would expire before the next AP start), invalidated (its antenna was quarantined), not found (never existed, or ended more than an hour ago). These four values are **stable**, like the codes. | `reservation_invalidated`, `reservation_expired`: RESERVE AGAIN. `reservation_released`, `reservation_not_found`: nothing to do (on a release: DONE) |
+| 404 | `not_found` | `GET /antennas/{interface}`: no managed antenna has that interface; any unknown path. | FIX |
 | 422 | `validation_error` | The request is invalid. The message starts with the path of the refused field, with dots: `radio.channel_width: ...`, `wifi.security.password: ...`, `profile_id: ...`, `interface: ...` (reserve: not a managed antenna). Also an antenna that cannot do what is asked (channel, width, generation, encryption, TX power not supported by the driver). | FIX |
 | 500 | `internal_server_error` | An unexpected server error. | STOP |
 | 503 | `service_unavailable` | `GET /antennas/{interface}`: the radio cannot be read now (unplugged or being reset). | REPEAT after a few seconds |
 
-`404` never means anything else on a call with a reservation ID: a missing QoS
+`404` never means anything else on a call with a reservation ID, and it always
+carries one of the four reasons above: a missing QoS
 profile in the catalogue is `422`, a missing running profile is `409 / 1011`,
 and an unsupported TX power is `422`.
 

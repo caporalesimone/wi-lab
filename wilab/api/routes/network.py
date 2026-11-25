@@ -15,7 +15,7 @@ from ...api.dependencies import (
 )
 from ...api.errors import ApiErrorCode, domain_error
 from ...models import NetworkCreateBody, NetworkResponse, ReservationInfo, body_error
-from ...reservation import Reservation
+from ...reservation import EXPIRED, Reservation
 from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager, FieldError
 from ...wifi.hostapd import AP_READY_TIMEOUT, DFS_READY_TIMEOUT
@@ -426,7 +426,7 @@ def start_network(
                         "AP start on %s failed and the reservation expires too soon to retry; "
                         "releasing it", device_id,
                     )
-                    reservation_mgr.delete(reservation.reservation_id)
+                    reservation_mgr.delete(reservation.reservation_id, EXPIRED)
                     raise recovery_error(RecoveryCode.DEVICE_UNAVAILABLE, invalidated=True) from e
                 manager.quarantine_radio(
                     reservation_mgr, reservation, radio_fault=e.radio, band=req.band, channel=req.channel,

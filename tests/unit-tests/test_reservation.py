@@ -1143,3 +1143,62 @@ class TestReservationDeleteStopsNetwork:
         )
         assert resp.status_code == 200
         assert stopped == []
+
+
+class TestGoneReasons:
+    """Every call with an ended ID answers 404 with a stable detail.reason (contract)."""
+
+    def test_manager_remembers_why_an_id_ended(self):
+        from wilab.reservation import EXPIRED, INVALIDATED, NOT_FOUND, RELEASED
+        mgr = ReservationManager(["dev0", "dev1", "dev2"])
+        released, expired, invalidated = mgr.create(60), mgr.create(60), mgr.create(60)
+        mgr.delete(released.reservation_id)
+        expired.expires_at = time.time() - 1
+        mgr.expire()
+        mgr.quarantine(invalidated, recovering=False)
+        assert mgr.ended_reason(released.reservation_id) == RELEASED
+        assert mgr.ended_reason(expired.reservation_id) == EXPIRED
+        assert mgr.ended_reason(invalidated.reservation_id) == INVALIDATED
+        assert mgr.ended_reason("deadbeef") == NOT_FOUND
+
+    def test_reasons_are_forgotten_after_an_hour(self, monkeypatch):
+        from wilab import reservation as module
+        mgr = ReservationManager(["dev0"])
+        rid = mgr.create(60).reservation_id
+        mgr.delete(rid)
+        monkeypatch.setattr(module, "ENDED_TTL", -1.0)
+        assert mgr.ended_reason(rid) == module.NOT_FOUND
+
+    def test_release_with_failed_cleanup_is_released_not_expired(self):
+        mgr = ReservationManager(["dev0"], cleanup=Mock(side_effect=RuntimeError("stuck")))
+        rid = mgr.create(60).reservation_id
+        assert mgr.delete(rid)
+        assert mgr.ended_reason(rid) == "reservation_released"
+
+    @pytest.mark.parametrize(("method", "suffix"), [
+        ("get", ""), ("delete", ""), ("get", "/network"), ("post", "/network"),
+        ("delete", "/network"), ("post", "/internet/enable"), ("get", "/txpower"),
+    ])
+    def test_every_endpoint_with_an_id_answers_the_reason(self, client, valid_token, method, suffix):
+        headers = {"Authorization": valid_token}
+        rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 60}).json()[
+            "reservation_id"]
+        assert client.delete(f"/api/v2/reservations/{rid}", headers=headers).status_code == 200
+        kwargs = {"json": network_body(ssid="x", channel=6, encryption="open", band="2.4ghz",
+                                       tx_power_level=4)} if (method, suffix) == ("post", "/network") else {}
+        resp = client.request(method, f"/api/v2/reservations/{rid}{suffix}", headers=headers, **kwargs)
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["reason"] == "reservation_released"
+        unknown = client.request(method, f"/api/v2/reservations/deadbeef{suffix}", headers=headers, **kwargs)
+        assert unknown.json()["detail"]["reason"] == "reservation_not_found"
+
+    def test_openapi_documents_the_reasons_on_every_id_path(self, client):
+        spec = client.get("/openapi.json").json()
+        for path, item in spec["paths"].items():
+            if "{reservation_id}" in path:
+                for operation in item.values():
+                    examples = operation["responses"]["404"]["content"]["application/json"]["examples"]
+                    assert set(examples) == {
+                        "reservation_released", "reservation_expired",
+                        "reservation_invalidated", "reservation_not_found",
+                    }, path

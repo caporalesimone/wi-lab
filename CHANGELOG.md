@@ -11,7 +11,7 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 54 |
-| ⚠️ Breaking changes | 22 |
+| ⚠️ Breaking changes | 23 |
 | 🔧 Maintenance changes | 12 |
 | ✨ New features | 23 |
 | 📦 Commits since 3.0.0 | 116 |
@@ -39,6 +39,7 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - Paths renamed (Fable API-6): `/api/v1/device-reservation` → `/api/v2/reservations`, and every `/api/v1/interface/{reservation_id}/...` → `/api/v2/reservations/{reservation_id}/...` (network, Internet, TX power, QoS profile). The old `interface` segment held a reservation ID, not an interface, which the new `/antennas/{interface}` would have made more confusing. The old paths answer `404`.
 - The create no longer answers `409 / 1001` (`retry_later`) after a radio failure (such as a hostapd crash): the server takes the same pauses (5 s, then 10 s) and starts the AP again inside the request, so the client sends one create and gets `200` or a terminal `503 / 1003`. `1003` also comes, without quarantine, when the reservation expires too soon for another start. The create can take up to about 80 s (several minutes on DFS channels): use a read timeout of at least 120 s (300 s on DFS).
 - The release (`DELETE /api/v2/reservations/{id}`, and release-all) always answers `200`: if the cleanup fails (for example hostapd stuck in the kernel) the ID is gone anyway, the antenna stays held and the server repeats the cleanup in the background (5 s, 15 s, 60 s, then every 5 min), shown in `GET /status` as `cleanup_failed`. A failed cleanup never makes reserve, get or release fail: a held antenna counts as reserved (`409 / 1005`, with `next_available_in` until the next cleanup attempt, also when reserved by `interface`) and the get of a released ID answers `404`.
+- `404` on every call with a reservation ID has a stable `detail.reason`: `reservation_released`, `reservation_expired`, `reservation_invalidated` (antenna quarantined) or `reservation_not_found` (never existed, or ended more than an hour ago); before it was always `not_found`. Clients reserve again after `invalidated` or `expired`, and treat a release answered `404` as done.
 - A successful create answers the network, the same body as `GET .../network`, instead of `{"detail": "Network ... created successfully"}`: the client no longer needs a second call (Fable API-5).
 - `GET /api/v2/status` lists the antennas in `antennas[]` (was `networks[]`), like the Antennas API: an entry is an antenna, reserved or not, not a network. Each entry has `reservation` (`null`, or `{expires_at, expires_in}` as in the reservation and network answers) instead of `reserved` and `reservation_remaining_seconds`, which could not tell a free antenna from an unlimited reservation, and `network_active` (Fable API-1).
 - `GET /api/v1/debug` is removed (`404`): `GET /api/v2/monitoring` gives the health checks, and no endpoint lists other clients' reservation IDs any more (Fable SEC-2, API-1).

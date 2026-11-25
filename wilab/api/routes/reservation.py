@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ...api.auth import maintenance_router as protected_router
 from ...api.auth import require_token
-from ...api.dependencies import get_config, get_reservation_manager
+from ...api.dependencies import get_config, get_reservation_manager, reservation_gone
 from ...api.errors import ApiErrorCode, domain_error
 from ...config import AppConfig
 from ...reservation import (
@@ -235,7 +235,7 @@ def get_reservation(
     """Get current reservation status by token."""
     r = mgr.get(reservation_id)
     if r is None:
-        raise HTTPException(status_code=404, detail="Reservation not found or expired")
+        raise reservation_gone(mgr, reservation_id)
 
     return _build_response(r, config)
 
@@ -264,7 +264,5 @@ def delete_reservation(
     """
     removed = mgr.delete(reservation_id)
     if not removed:
-        raise HTTPException(
-            status_code=404, detail="Reservation not found or already expired"
-        )
+        raise reservation_gone(mgr, reservation_id)
     return {"detail": "Reservation released"}

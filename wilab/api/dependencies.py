@@ -16,6 +16,7 @@ from ..reservation import Reservation, ReservationManager
 from ..wifi.channels import ChannelManager
 from ..wifi.interface import reset_interface
 from ..wifi.manager import NetworkManager
+from .errors import GONE_REASONS
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,16 @@ def get_qos_profile_manager() -> QosProfileManager:
         return _qos_profile_manager
 
 
+
+
+def reservation_gone(mgr: ReservationManager, reservation_id: str) -> HTTPException:
+    """404 whose stable `reason` says why the ID is no longer valid (contract)."""
+    reason = mgr.ended_reason(reservation_id)
+    return HTTPException(status_code=404, detail={
+        "code": 404, "reason": reason, "message": f"Reservation {GONE_REASONS[reason]}",
+    })
+
+
 def resolve_reservation(
     reservation_id: str = Path(..., description="Reservation token"),
     mgr: ReservationManager = Depends(get_reservation_manager),
@@ -179,7 +190,7 @@ def resolve_reservation(
     """
     r = mgr.get(reservation_id)
     if r is None:
-        raise HTTPException(status_code=404, detail="Reservation not found or expired")
+        raise reservation_gone(mgr, reservation_id)
     return r
 
 
@@ -200,5 +211,5 @@ def hold_reservation(
     timeout = None if wait else DEVICE_BUSY_TIMEOUT
     with mgr.hold(reservation.reservation_id, timeout=timeout) as current:
         if current is not reservation:
-            raise HTTPException(status_code=404, detail="Reservation not found or expired")
+            raise reservation_gone(mgr, reservation.reservation_id)
         yield

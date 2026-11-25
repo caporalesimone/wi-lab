@@ -18,6 +18,14 @@ logger = logging.getLogger(__name__)
 
 RESERVATION_TOKEN_BYTES = 4  # 8 hex chars
 
+# Why a reservation ID ended, kept ENDED_TTL seconds so that every call with the
+# ID answers 404 with this reason. The values are part of the API contract.
+RELEASED = "reservation_released"
+EXPIRED = "reservation_expired"
+INVALIDATED = "reservation_invalidated"
+NOT_FOUND = "reservation_not_found"   # never existed, or ended more than ENDED_TTL ago
+ENDED_TTL = 3600.0
+
 
 class NoDeviceAvailableError(Exception):
     """All devices are currently reserved."""
@@ -108,6 +116,7 @@ class ReservationManager:
         # Seconds until the next background cleanup of a device whose cleanup failed.
         self._cleanup_wait = cleanup_wait or (lambda _device: 0.0)
         self._failing_cleanup: set[str] = set()  # log the traceback once per failure series
+        self._ended: dict[str, tuple[str, float]] = {}  # reservation_id -> (reason, monotonic)
 
     # ------------------------------------------------------------------
     # Public API
@@ -168,7 +177,7 @@ class ReservationManager:
             if self._reservations.get(reservation.reservation_id) is not reservation:
                 raise RuntimeError("Cannot quarantine a stale reservation")
             self._blocked[reservation.device_id] = recovering
-            self._remove(reservation.reservation_id)
+            self._remove(reservation.reservation_id, INVALIDATED)
 
     def finish_recovery(self, device_id: str, *, recovered: bool) -> None:
         with self._lock:
@@ -236,13 +245,33 @@ class ReservationManager:
             pass  # logged by _release; the background sweep repeats it
         return None
 
-    def delete(self, reservation_id: str) -> bool:
+    def delete(self, reservation_id: str, reason: str = RELEASED) -> bool:
         """Release a reservation. Returns True if it existed."""
         with self._lock:
             reservation = self._reservations.get(reservation_id)
-        return self._delete(reservation) if reservation is not None else False
+        return self._delete(reservation, reason) if reservation is not None else False
 
-    def _delete(self, reservation: Reservation) -> bool:
+    def ended_reason(self, reservation_id: str) -> str:
+        """Why *reservation_id* is no longer valid: one of the reason constants."""
+        with self._lock:
+            self._prune_ended()
+            ended = self._ended.get(reservation_id)
+            if ended is not None:
+                return ended[0]
+            current = self._reservations.get(reservation_id)
+            return EXPIRED if current is not None and current.is_expired else NOT_FOUND
+
+    def _end(self, reservation_id: str, reason: str) -> None:
+        """Remember why the ID ended; the first reason wins. Call under self._lock."""
+        self._prune_ended()
+        self._ended.setdefault(reservation_id, (reason, time.monotonic()))
+
+    def _prune_ended(self) -> None:
+        limit = time.monotonic() - ENDED_TTL
+        for rid in [rid for rid, (_, at) in self._ended.items() if at < limit]:
+            del self._ended[rid]
+
+    def _delete(self, reservation: Reservation, reason: str = RELEASED) -> bool:
         reservation_id = reservation.reservation_id
         with self._lock:
             reservation.release_requests += 1
@@ -254,12 +283,14 @@ class ReservationManager:
                     return False
                 expired = reservation.is_expired
                 try:
-                    self._release(reservation)
+                    self._release(reservation, EXPIRED if expired else reason)
                 except ReservationCleanupError:
                     # The release never fails for the client: the ID is gone, the
                     # device stays held (not allocatable) and the background sweep
                     # repeats the cleanup with backoff (WD-6).
                     with self._lock:
+                        if not expired:
+                            self._end(reservation_id, reason)
                         reservation.expires_at = time.time()
                     logger.warning(
                         "Reservation %s released; cleanup of %s failed and is retried in the background",
@@ -342,12 +373,13 @@ class ReservationManager:
                 return did
         return None
 
-    def _remove(self, reservation_id: str) -> None:
+    def _remove(self, reservation_id: str, reason: str) -> None:
         r = self._reservations.pop(reservation_id, None)
         if r:
             self._device_to_rid.pop(r.device_id, None)
+            self._end(reservation_id, reason)
 
-    def _release(self, reservation: Reservation) -> None:
+    def _release(self, reservation: Reservation, reason: str) -> None:
         device = reservation.device_id
         if self._cleanup is not None:
             try:
@@ -363,7 +395,7 @@ class ReservationManager:
                 ) from exc
         self._failing_cleanup.discard(device)
         with self._lock:
-            self._remove(reservation.reservation_id)
+            self._remove(reservation.reservation_id, reason)
 
     def _cleanup_expired(self, reservation: Reservation, *, background: bool = False) -> None:
         if background and not self._cleanup_due(reservation.device_id):
@@ -376,7 +408,7 @@ class ReservationManager:
                 current = self._reservations.get(reservation.reservation_id)
             if current is reservation and reservation.is_expired:
                 logger.info("Purging expired reservation for %s", reservation.device_id)
-                self._release(reservation)
+                self._release(reservation, EXPIRED)
         finally:
             lock.release()
 

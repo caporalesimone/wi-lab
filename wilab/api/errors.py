@@ -1,5 +1,6 @@
 """Shared runtime and OpenAPI representation of API failures."""
 
+import copy
 import logging
 from collections.abc import Mapping
 from enum import IntEnum
@@ -73,6 +74,27 @@ def api_error_response(
     return JSONResponse(status_code=status_code, headers=headers, content={"detail": payload})
 
 
+GONE_REASONS = {
+    "reservation_released": "released (by its owner or by release-all)",
+    "reservation_expired": "expired, also when it would expire before the next AP start",
+    "reservation_invalidated": "invalidated: its antenna was quarantined",
+    "reservation_not_found": "never existed, or ended more than an hour ago",
+}
+
+_GONE_RESPONSE = {
+    "description": (
+        "The reservation ID is no longer valid. `detail.reason` is stable and says why: "
+        + "; ".join(f"`{reason}`: {text}" for reason, text in GONE_REASONS.items())
+        + ". After `reservation_invalidated` or `reservation_expired` reserve again; after "
+        "`reservation_released` or `reservation_not_found` there is nothing to release."
+    ),
+    "content": {"application/json": {"examples": {
+        reason: {"value": {"detail": {"code": 404, "reason": reason, "message": text}}}
+        for reason, text in GONE_REASONS.items()
+    }}},
+}
+
+
 def document_errors(paths: dict[str, Any]) -> None:
     """Document the same envelope for explicit and framework-generated errors."""
     for path, path_item in paths.items():
@@ -83,6 +105,9 @@ def document_errors(paths: dict[str, Any]) -> None:
                 continue
             responses = operation["responses"]
             responses.setdefault("500", {"description": "Internal server error"})
+            if "{reservation_id}" in path:
+                # Every call with an ID answers the same 404, with a stable reason.
+                responses["404"] = copy.deepcopy(_GONE_RESPONSE)
             for code, response in responses.items():
                 if not code.isdigit() or not 400 <= int(code) <= 599:
                     continue
