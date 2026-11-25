@@ -300,3 +300,42 @@ def test_a_half_stopped_network_is_not_repaired(monkeypatch):
     monkeypatch.setattr(manager.watchdog, "_restore_dhcp", restore)
     _run_ticks(monkeypatch, manager, reservations, device, [0.0, 5.0, 10.0, 15.0])
     restore.assert_not_called()
+
+
+def _only_reservation():
+    reservations = dependencies.get_reservation_manager(dependencies.get_config())
+    return next(iter(reservations.snapshot().values()))
+
+
+def test_ap_restarts_are_counted_for_the_whole_reservation(monkeypatch):
+    """restarts.ap grows with every AP restore, also across a recreated network."""
+    _setup(monkeypatch, [0.0, 10.0, 20.0], recreate_at=1)
+    reservation = _only_reservation()
+    assert (reservation.ap_restarts, reservation.dhcp_restarts) == (3, 0)
+    assert reservation.last_restart_reason == "hostapd_not_running"
+    assert reservation.last_restart_at is not None
+
+
+def test_dhcp_restarts_and_the_network_restart_after_them_are_counted(monkeypatch):
+    ticks = [
+        (0.0, False), (5.0, True), (10.0, False), (15.0, True), (20.0, False), (25.0, True),
+        (30.0, False), (35.0, False),
+    ]
+    assert _dhcp_setup(monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp", "ap"]
+    reservation = _only_reservation()
+    assert (reservation.ap_restarts, reservation.dhcp_restarts) == (1, 3)
+    assert reservation.last_restart_reason == "dhcp_failed"
+
+
+def test_get_network_has_the_restarts_section(monkeypatch):
+    config = dependencies.get_config()
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    with TestClient(create_app()) as client:
+        rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300}).json()[
+            "reservation_id"]
+        reservation = dependencies.get_reservation_manager(config).get(rid)
+        reservation.record_restart("ap", "hostapd_not_running")
+        body = client.get(f"/api/v2/reservations/{rid}/network", headers=headers).json()
+    assert body["restarts"]["ap"] == 1 and body["restarts"]["dhcp"] == 0
+    assert body["restarts"]["last_reason"] == "hostapd_not_running"
+    assert body["restarts"]["last_at"].endswith("Z")

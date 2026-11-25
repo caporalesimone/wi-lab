@@ -890,6 +890,12 @@ flowchart TD
   not count against the restore budget.
 - The restart keeps the reservation and its expiry. Clients must reconnect; QoS
   is cleared by the teardown and must be reapplied.
+- Every AP restore and DHCP-only restart is counted on the `Reservation`
+  (`ap_restarts`, `dhcp_restarts`, last time and reason) when it begins,
+  whether it succeeds or not. `GET .../network` shows them in `restarts`; the
+  counters never decrease during the reservation, so a client compares them
+  before and after a test. In-place repairs that do not interrupt the AP
+  (gateway address, rules) are not counted.
 - Release or expiry cancels a pending restart. If a restart already ran, its
   result is cleaned up under the device lock before the antenna can be reused.
 - `POST create` returns `409` while `restoring_ap` or `restoring_dhcp` is set.

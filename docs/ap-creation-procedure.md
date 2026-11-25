@@ -384,6 +384,22 @@ because of them. Further rules:
 
 - An AP restart clears traffic shaping and QoS profiles: reapply them after a
   `restoring_ap` phase.
+- **You do not need to poll `runtime_state` all the time.** A repair that
+  starts and ends between two reads leaves `runtime_state` at `null`, but
+  `GET .../network` always has a `restarts` section that counts the repairs
+  over the whole reservation (it never decreases, also when you recreate the
+  network):
+
+  ```json
+  "restarts": {"ap": 1, "dhcp": 0, "last_at": "2026-11-25T22:40:12Z", "last_reason": "hostapd_not_running"}
+  ```
+
+  Read it before and after a test: if `restarts.ap` grew, the AP was down for
+  a moment (devices disconnected, QoS profiles and captive portal sign-ins
+  lost) and the test may need to be repeated. `restarts.dhcp` counts DHCP-only
+  repairs, during which the AP stayed up. `last_reason` is
+  `hostapd_not_running`, `hostapd_not_enabled`, `dnsmasq_not_running`,
+  `dhcp_failed` or `network_check_failed`.
 - If the restart fails because of the radio (including a hostapd crash on
   every internal start), or the AP fails more than 3 times in an hour, the
   antenna is quarantined and the reservation is invalidated **at once**, with

@@ -66,6 +66,21 @@ class Reservation:
     created_at: float
     expires_at: float | None  # None = unlimited (no expiry)
     release_requests: int = 0
+    # Watchdog repairs over the whole reservation: they only grow, so a client
+    # compares them before and after a test even if it recreated the network.
+    ap_restarts: int = 0
+    dhcp_restarts: int = 0
+    last_restart_at: float | None = None
+    last_restart_reason: str | None = None
+
+    def record_restart(self, kind: str, reason: str) -> None:
+        """Count a watchdog repair: `ap` (clients disconnected) or `dhcp`."""
+        if kind == "ap":
+            self.ap_restarts += 1
+        else:
+            self.dhcp_restarts += 1
+        self.last_restart_at = time.time()
+        self.last_restart_reason = reason
 
     @property
     def expires_in(self) -> int | None:

@@ -384,6 +384,25 @@ class ReservationInfo(BaseModel):
     expires_in: int | None = Field(None, description="Seconds until the reservation, and the network, end")
 
 
+class RestartsInfo(BaseModel):
+    """Watchdog repairs over the whole reservation; the counters never decrease."""
+
+    ap: int = Field(0, description=(
+        "Restarts of the whole AP: the clients were disconnected, QoS profiles and captive "
+        "portal sign-ins were lost. Compare before and after a test."
+    ))
+    dhcp: int = Field(0, description="Restarts of DHCP only; the AP stayed up")
+    last_at: str | None = Field(
+        None, description="UTC time of the last restart (RFC 3339, Z suffix); null if none",
+        json_schema_extra={"format": "date-time", "examples": ["2026-11-25T22:40:12Z"]},
+    )
+    last_reason: str | None = Field(None, description=(
+        "Why: `hostapd_not_running`, `hostapd_not_enabled`, `dnsmasq_not_running`, "
+        "`dhcp_failed` (DHCP could not be repaired alone) or `network_check_failed` "
+        "(gateway, rule or captive portal check); null if none"
+    ))
+
+
 class NetworkResponse(BaseModel):
     """`GET .../network`. Sections are null while the network is not running."""
 
@@ -391,6 +410,7 @@ class NetworkResponse(BaseModel):
     active: bool
     runtime_state: str | None = Field(None, description=NetworkStatus.model_fields["runtime_state"].description)
     reservation: ReservationInfo
+    restarts: RestartsInfo = Field(default_factory=RestartsInfo)
     radio: RadioInfo | None = None
     wifi: WifiInfo | None = None
     ip: IpInfo | None = None

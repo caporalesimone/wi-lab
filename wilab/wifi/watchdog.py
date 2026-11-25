@@ -81,6 +81,7 @@ class NetworkWatchdog:
         restores: deque[float] = deque()
         dhcp_restores: deque[float] = deque()  # same, for DHCP-only restarts (WD-3)
         restart_network = ""  # why the whole network must be restored on the next tick (WD-3, WD-7)
+        restart_reason = ""  # the same, as the stable reason shown in GET .../network restarts
         healthy_ticks = 0  # since the last network check (WD-7)
         last_error = ""  # log a repeated failure's traceback once (WD-9)
         while not self.stopping.wait(5):
@@ -108,7 +109,7 @@ class NetworkWatchdog:
                 if status is not current:
                     self.states.pop(device, None)
                     current, misses = status, 0
-                    restart_network = ""
+                    restart_network = restart_reason = ""
                 if status is None or reservation is None or self._cancelled(reservation):
                     continue
                 if self.manager.stop_failed(device):
@@ -119,7 +120,11 @@ class NetworkWatchdog:
                 if not alive or misses >= 3 or restart_network:
                     if restart_network:
                         logger.warning("%s; restarting the network", restart_network)
-                    restart_network = ""
+                    reservation.record_restart("ap", (
+                        "hostapd_not_running" if not alive
+                        else restart_reason or ("hostapd_not_enabled" if misses >= 3 else "network_check_failed")
+                    ))
+                    restart_network = restart_reason = ""
                     self.states[device] = (reservation, "restoring_ap")
                     now = time.monotonic()
                     while restores and now - restores[0] > RESTORE_WINDOW:
@@ -153,6 +158,7 @@ class NetworkWatchdog:
                             "Restarting DHCP on %s (restart %d of %d in the last hour)",
                             device, len(dhcp_restores), DHCP_RESTORE_LIMIT,
                         )
+                        reservation.record_restart("dhcp", "dnsmasq_not_running")
                         self._restore_dhcp(reservations, reservation, status)
                         failed = self.state(reservation) == "dhcp_failed"
                     else:
@@ -162,6 +168,7 @@ class NetworkWatchdog:
                     # budget (WD-1); dhcp_failed stays visible until then.
                     if failed and reservations.snapshot().get(device) is reservation:
                         restart_network = f"DHCP on {device} cannot be repaired alone"
+                        restart_reason = "dhcp_failed"
                 elif misses == 0:
                     if self.state(reservation) == "dhcp_failed":
                         self.states.pop(device, None)
@@ -169,6 +176,7 @@ class NetworkWatchdog:
                     if healthy_ticks >= VERIFY_EVERY:
                         healthy_ticks = 0
                         restart_network = self._verify(device)
+                        restart_reason = "network_check_failed" if restart_network else ""
             except Exception as exc:  # this loop must survive anything (WD-9)
                 if repr(exc) != last_error:
                     logger.exception("Could not check or restore network on %s", device)

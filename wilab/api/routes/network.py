@@ -14,7 +14,7 @@ from ...api.dependencies import (
     resolve_reservation,
 )
 from ...api.errors import ApiErrorCode, domain_error
-from ...models import NetworkCreateBody, NetworkResponse, ReservationInfo, body_error
+from ...models import NetworkCreateBody, NetworkResponse, ReservationInfo, RestartsInfo, body_error
 from ...reservation import EXPIRED, Reservation
 from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager, FieldError
@@ -75,6 +75,7 @@ router = APIRouter(
 _ACTIVE_EXAMPLE = {
     "interface": "wlx7419f8176286", "active": True, "runtime_state": None,
     "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3471},
+    "restarts": {"ap": 0, "dhcp": 0, "last_at": None, "last_reason": None},
     "radio": {
         "band": "5ghz", "channel": 36,
         "channel_width": {"requested": 80, "reported": 80},
@@ -627,6 +628,7 @@ def get_network(
                 expires_at=format_utc_timestamp(reservation.expires_at),
                 expires_in=reservation.expires_in,
             ),
+            restarts=_restarts(reservation),
         )
     with hold_reservation(reservation_mgr, reservation):
         return _network_response(manager, reservation)
@@ -644,4 +646,14 @@ def _network_response(manager: NetworkManager, reservation: Reservation) -> Netw
         "stop_failed" if manager.stop_failed(device_id) else None
     )
     st = st.model_copy(update={"runtime_state": runtime_state})
-    return NetworkResponse.from_status(st, dns_server=manager.config.dns_server)
+    response = NetworkResponse.from_status(st, dns_server=manager.config.dns_server)
+    response.restarts = _restarts(reservation)
+    return response
+
+
+def _restarts(reservation: Reservation) -> RestartsInfo:
+    return RestartsInfo(
+        ap=reservation.ap_restarts, dhcp=reservation.dhcp_restarts,
+        last_at=format_utc_timestamp(reservation.last_restart_at),
+        last_reason=reservation.last_restart_reason,
+    )

@@ -13,7 +13,7 @@ All notable changes to Wi-Lab are documented in this file.
 | 🐛 Bug fixes | 54 |
 | ⚠️ Breaking changes | 23 |
 | 🔧 Maintenance changes | 12 |
-| ✨ New features | 23 |
+| ✨ New features | 24 |
 | 📦 Commits since 3.0.0 | 116 |
 
 Counts are the entries of the sections below and `git rev-list --count 3.0.0..HEAD` including the commit of this review (as of 2026-11-25).
@@ -69,6 +69,7 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - A create repeated with the same body on a network that already runs with exactly those settings answers `200` with the network instead of `409 / 1008`: after a lost answer the client just sends the same create again. A different body still answers `409 / 1008`.
 - New optional `captive_portal_port` setting (default 8081): the captive portal page listens there on each AP gateway, and clients' port-80 traffic is redirected to it. Wi-Lab itself can therefore listen on port 80; `captive_portal.url` includes the port. It must differ from `api_port`, 53 and 67.
 - Frontend: a banner lists why the service is `degraded` (`degraded_reasons` of `GET /status`, with the antenna names), for example an antenna held by a failed cleanup or a half-stopped network.
+- `GET .../network` has a `restarts` section (`ap`, `dhcp`, `last_at`, `last_reason`) counting the watchdog repairs over the whole reservation: a client reads it before and after a test to know whether the AP was interrupted, without polling `runtime_state`.
 
 ### 🐛 Bug Fixes
 
@@ -224,6 +225,7 @@ The rest of this chapter names each endpoint by its 3.x path.
   | — | `captive_portal.enabled`, `captive_portal.url` |
   | `clients_connected` | removed: use the length of `clients` |
   | `clients` | `clients` (new `captive_authorized` with a portal) |
+  | — | `restarts` (`ap`, `dhcp`, `last_at`, `last_reason`): watchdog repairs over the reservation, present even when the network is not running |
 
   `interface`, `active` and the new `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`, `stop_failed`) stay at the top level.
 - `DELETE /api/v1/interface/{id}/network`: also cancels a pending `restore_failed`, and returns `200`. New `503 / 1012` (`stop_incomplete`) + `Retry-After: 5` when the stop does not complete even after the server repeated it for 15 s (`runtime_state: stop_failed`): repeat the DELETE.
