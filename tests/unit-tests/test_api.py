@@ -67,7 +67,7 @@ class TestStatusEndpoint:
         assert data['status'] in ['ok', 'degraded', 'standby']
         assert 'version' in data
         assert 'networks' in data
-        assert 'checks' in data
+        assert 'checks' not in data and data['degraded_reasons'] == []
     
     def test_status_standby_mode(self, client, valid_token, monkeypatch):
         """Test status endpoint in standby mode (no active networks)."""
@@ -85,7 +85,7 @@ class TestStatusEndpoint:
         data = resp.json()
         assert data['status'] == 'standby'
         assert data['active_networks'] == 0
-        assert data['checks']['commands'] == {'stuck': 0}
+        assert client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['commands'] == {'stuck': 0}
 
     def test_status_degraded_when_a_command_is_stuck_in_the_kernel(self, client, valid_token, monkeypatch):
         """STAB-1: a child that survived SIGKILL makes the service degraded, even in standby."""
@@ -93,7 +93,7 @@ class TestStatusEndpoint:
         data = client.get('/api/v1/status', headers={'Authorization': valid_token}).json()
         assert data['active_networks'] == 0
         assert data['status'] == 'degraded'
-        assert data['checks']['commands'] == {'stuck': 2}
+        assert client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['commands'] == {'stuck': 2}
     
     def test_status_response_structure(self, client, valid_token):
         """Test status response contains all required fields."""
@@ -105,7 +105,7 @@ class TestStatusEndpoint:
         assert 'version' in data
         assert 'networks' in data
         assert 'active_networks' in data
-        assert 'checks' in data
+        assert 'degraded_reasons' in data and 'checks' not in data
         
         # Check version and networks
         assert data['version'] is not None
@@ -115,29 +115,29 @@ class TestStatusEndpoint:
     def test_status_health_checks(self, client, valid_token):
         """Test status includes all health checks."""
         resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
-        data = resp.json()
+        assert resp.status_code == 200
         
         # Check all required checks
-        assert 'dnsmasq' in data['checks']
-        assert 'iptables_nat' in data['checks']
-        assert 'upstream_interface' in data['checks']
+        assert 'dnsmasq' in client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']
+        assert 'iptables_nat' in client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']
+        assert 'upstream_interface' in client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']
         
         # Check dnsmasq structure
-        assert 'running' in data['checks']['dnsmasq']
-        assert 'instances' in data['checks']['dnsmasq']
-        assert isinstance(data['checks']['dnsmasq']['running'], bool)
-        assert isinstance(data['checks']['dnsmasq']['instances'], int)
+        assert 'running' in client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']
+        assert 'instances' in client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']
+        assert isinstance(client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['running'], bool)
+        assert isinstance(client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['instances'], int)
         
         # Check iptables_nat structure
-        assert 'configured' in data['checks']['iptables_nat']
-        assert 'errors' in data['checks']['iptables_nat']
-        assert isinstance(data['checks']['iptables_nat']['configured'], bool)
-        assert isinstance(data['checks']['iptables_nat']['errors'], list)
+        assert 'configured' in client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']
+        assert 'errors' in client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']
+        assert isinstance(client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']['configured'], bool)
+        assert isinstance(client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']['errors'], list)
         
         # Check upstream_interface structure
-        assert 'name' in data['checks']['upstream_interface']
-        assert 'reachable' in data['checks']['upstream_interface']
-        assert isinstance(data['checks']['upstream_interface']['reachable'], bool)
+        assert 'name' in client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']
+        assert 'reachable' in client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']
+        assert isinstance(client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']['reachable'], bool)
     
     def test_status_degraded_on_dhcp_down(self, client, valid_token, monkeypatch):
         """Test status returns degraded when DHCP is down but network is active."""
@@ -166,7 +166,7 @@ class TestStatusEndpoint:
         data = resp.json()
         assert data['status'] == 'degraded'
         assert data['active_networks'] == 1
-        assert data['checks']['dnsmasq']['running'] is False
+        assert client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['running'] is False
         
         # Cleanup
         real_mgr.active.clear()
@@ -191,10 +191,10 @@ class TestStatusEndpoint:
         
         resp = client.get('/api/v1/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200  # Should not crash
-        data = resp.json()
-        assert 'upstream_interface' in data['checks']
-        assert data['checks']['upstream_interface']['reachable'] is False
-        assert 'error' in data['checks']['upstream_interface']
+        assert resp.json()["status"] in ("standby", "ok", "degraded")
+        assert 'upstream_interface' in client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']
+        assert client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']['reachable'] is False
+        assert 'error' in client.get('/api/v1/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']
         
         # Cleanup
         monkeypatch.setattr(real_mgr.nat_manager, 'get_upstream_interface', original_get_upstream)

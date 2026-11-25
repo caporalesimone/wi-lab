@@ -39,7 +39,9 @@ def running(monkeypatch):
 
         def get():
             manager.active[device] = network()
-            return client.get("/api/v1/status", headers=headers).json()
+            data = client.get("/api/v1/status", headers=headers).json()
+            # The detail of the checks is in /monitoring.
+            return {**data, "checks": client.get("/api/v1/monitoring", headers=headers).json()["checks"]}
 
         yield get, state, manager, device
 
@@ -118,3 +120,26 @@ def test_a_late_loop_does_not_leave_status_stale(monkeypatch):
     assert manager.health.current() is first
     monkeypatch.setattr(health.time, "monotonic", lambda: first.taken + 61.0)
     assert manager.health.current() is not first
+
+
+def test_degraded_reasons_name_the_problem_and_the_antenna(monkeypatch):
+    """/status gives coded reasons; /monitoring the detail of the same checks."""
+    from wilab.api.routes import status as status_route
+
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    device = manager.config.antennas[0].device_id
+    monkeypatch.setitem(manager.active, device, NetworkStatus(interface=device, active=True))
+    monkeypatch.setattr(manager.hostapd_manager, "is_running", lambda _d: False)
+    monkeypatch.setattr(status_route, "stuck_commands", lambda: 1)
+    client = TestClient(create_app())
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    status = client.get("/api/v1/status", headers=headers).json()
+    assert status["status"] == "degraded" and "checks" not in status
+    codes = [(r["code"], r["interface"]) for r in status["degraded_reasons"]]
+    assert ("hostapd_not_running", device) in codes and ("command_stuck", None) in codes
+    monitoring = client.get("/api/v1/monitoring", headers=headers).json()
+    assert monitoring["status"] == "degraded"
+    assert monitoring["checks"]["hostapd"]["missing"] == [device]
+    assert monitoring["check_interval_seconds"] == 10 and monitoring["checked_at"].endswith("Z")
+    assert client.get("/api/v1/monitoring").status_code == 401

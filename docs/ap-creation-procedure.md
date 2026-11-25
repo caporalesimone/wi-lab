@@ -443,13 +443,19 @@ usable. Poll it (for example every 10–30 s) and show the result to the user.
 |---|---|
 | `standby` | No AP is active and no antenna is quarantined. |
 | `ok` | APs are active and every health check passes. |
-| `degraded` | At least one antenna is quarantined, a reserved AP is being repaired or has lost DHCP, a host command is stuck in the kernel, a background loop stalled, or a health check failed while APs are active. |
+| `degraded` | At least one entry in `degraded_reasons`. |
 
-Find the cause in `networks[]` and `checks`:
+`degraded_reasons` says why, with a stable `code` and the `interface` it
+concerns (`null` for the whole service); `networks[]` gives the state of each
+antenna:
 
 ```json
 {
   "status": "degraded",
+  "degraded_reasons": [
+    {"code": "antenna_quarantined", "interface": "wlx7419f8176286",
+     "message": "Antenna quarantined (unavailable)"}
+  ],
   "networks": [
     {"display_name": "antenna-1", "interface": "wlx7419f8176286", "reserved": false,
      "reservation_remaining_seconds": null, "recovery_state": "unavailable"},
@@ -459,18 +465,21 @@ Find the cause in `networks[]` and `checks`:
 }
 ```
 
-| Field | Value | Meaning | Client action |
-|---|---|---|---|
-| `recovery_state` | `recovering` | Antenna quarantined; Wi-Lab is resetting and probing it. | Do not count it as available. It may return by itself. |
-| `recovery_state` | `unavailable` | Antenna quarantined; no USB reset is running. Wi-Lab re-probes it periodically (after 30 s, backing off to every 15 min). | Do not count it as available. It may return by itself; report it to the operator if it persists. |
-| `runtime_state` | `restoring_ap` / `restoring_dhcp` | The owner's AP is being repaired (see [2.6](#26-after-the-ap-is-running)). | Owner: wait. Others: nothing to do. |
-| `runtime_state` | `dhcp_failed` | DHCP could not be repaired alone; the whole network is restarted within 5 s. | Owner: wait. |
-| `runtime_state` | `restore_failed` | AP down after a failed restart; the watchdog retries with backoff. | Owner: wait, or `DELETE .../network` to stop the retries. |
-| `checks.commands.stuck` | greater than 0 | A host command (`ip`, `iw`, `usbreset`, ...) did not exit even after SIGKILL: usually a hung Wi-Fi driver. Operations on the affected adapter fail instead of hanging. Set in standby too. | Report it to the operator: the adapter may need a reset or the host a reboot. |
-| `checks.loops.stale` | not empty | A Wi-Lab background loop has not run for 3 minutes. Wi-Lab restarts itself as soon as no reservation is active. | Report it; release reservations you no longer need. |
-| `checks.hostapd`, `checks.dnsmasq` | `running: false` | The hostapd or dnsmasq process of the networks in `missing` is not alive. | Report it; the watchdog normally repairs it within seconds. |
-| `checks.iptables_nat` | `configured: false` | A network with Internet lost its NAT rule (`missing`). | Report it; Internet access does not work on that network until the watchdog repairs it. |
-| `checks.upstream_interface` | `reachable: false` | The host uplink is down or has no IPv4 address. Counts only while a network has Internet enabled. | Report it; Internet access does not work. |
+| `degraded_reasons[].code` | Meaning | Client action |
+|---|---|---|
+| `antenna_quarantined` | The antenna has `recovery_state`: `recovering` (Wi-Lab is resetting and probing it) or `unavailable` (no USB reset running; re-probed after 30 s, backing off to every 15 min). | Do not count it as available. It may return by itself; report it if `unavailable` persists. |
+| `network_being_repaired` | A reserved AP has `runtime_state`: `restoring_ap`, `restoring_dhcp`, `dhcp_failed` (whole network restarted within 5 s) or `restore_failed` (AP down, retried with backoff). See [2.6](#26-after-the-ap-is-running). | Owner: wait (or `DELETE .../network` on `restore_failed`). Others: nothing to do. |
+| `hostapd_not_running`, `dnsmasq_not_running` | The AP or DHCP process of that network is not alive. | Report it; the watchdog normally repairs it within seconds. |
+| `nat_rule_missing` | That network has Internet enabled but lost its NAT rule. | Report it; Internet does not work there until the watchdog repairs it. |
+| `upstream_unreachable` | The host uplink is down or has no IPv4 address, while a network has Internet. | Report it; Internet access does not work. |
+| `command_stuck` | A host command (`ip`, `iw`, `usbreset`, ...) did not exit even after SIGKILL: usually a hung Wi-Fi driver. Set in standby too. | Report it: the adapter may need a reset or the host a reboot. |
+| `loop_stalled` | A Wi-Lab background loop has not run for 3 minutes. Wi-Lab restarts itself as soon as no reservation is active. | Report it; release reservations you no longer need. |
+
+The checks that run host commands are refreshed every 10 s in the background,
+so a problem can take up to 10 s to appear. The detail of every check
+(processes, NAT rules, upstream link, stuck commands, stalled loops, time of
+the last check) is in `GET /api/v1/monitoring`, for operators and monitoring
+views; clients only need `/status`.
 
 - `reserved: false` does **not** mean the antenna can be reserved: an entry
   with `recovery_state` is excluded from allocation.
@@ -627,7 +636,7 @@ sequenceDiagram
         end
     and Anyone polls the service (every 10 to 30 s)
         C->>W: GET /status
-        W-->>C: ok, degraded or standby, recovery_state, runtime_state, checks
+        W-->>C: ok, degraded or standby, degraded_reasons, recovery_state, runtime_state
         Note over C: Show degraded with the affected antenna
     end
     opt Change the running network

@@ -11,9 +11,9 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 55 |
-| ⚠️ Breaking changes | 12 |
+| ⚠️ Breaking changes | 13 |
 | 🔧 Maintenance changes | 12 |
-| ✨ New features | 18 |
+| ✨ New features | 19 |
 | 📦 Commits since 3.0.0 | 89 |
 
 Counts are the entries of the sections below (as of 2026-11-25) and `git rev-list --count 3.0.0..HEAD` (as of 2026-11-25).
@@ -31,6 +31,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - AP creation with `encryption: "wpa"` returns `422`: it silently created WPA2. Use `wpa2` for the same network, or the new `wpa1` for real legacy WPA/TKIP (Fable HAP-10).
 - Configuration: the `networks` section is renamed `antennas`, and every entry must set `show_dfs: true|false`; there is no fallback for the old name.
 - `GET /api/v1/interface/{id}/network/available-channels` is removed: use `GET /api/v1/antennas/{interface}`, which lists only the usable channels, grouped by band with the widths each can use, and needs no reservation.
+- `GET /api/v1/status` no longer returns `checks`: it gives `degraded_reasons`, one entry per cause of `degraded` with a stable `code` (`antenna_quarantined`, `network_being_repaired`, `hostapd_not_running`, `dnsmasq_not_running`, `nat_rule_missing`, `upstream_unreachable`, `command_stuck`, `loop_stalled`), the `interface` it concerns and a `message`. The detail of the checks moved to the new `GET /api/v1/monitoring`.
 - Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all: `GET /api/v1/debug` now returns `403` without it, or when `protected_commands_password` is not set.
 
 ### ✨ Features
@@ -50,6 +51,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - New `encryption: "wpa1"` (legacy WPA, PSK/TKIP, 802.11a/g only) to test old clients; accepted only on antennas whose driver supports TKIP (Fable HAP-10).
 - AP creation takes optional `channel_width` (20, 40, 80 MHz) and `wifi_generation` (4 = 802.11n, 5 = 802.11ac, 6 = 802.11ax); defaults 20 MHz / 802.11n keep the previous behaviour. `GET /antennas/{interface}` lists per band the generations, widths and channels an antenna accepts, and `GET .../network` reports the width the radio actually uses (Fable HAP-11).
 - Frontend: the start dialog reads the antenna (`GET /antennas/{interface}`) and offers in dropdowns only the encryptions, Wi-Fi generations, channel widths and channels it supports (DFS channels marked, `wpa` replaced by `wpa1` where available), and a running network shows its width and Wi-Fi generation.
+- New `GET /api/v1/monitoring` (System, token only): `status`, `degraded_reasons`, `checked_at`, `check_interval_seconds` and the detail of every health check (`commands`, `loops`, `hostapd`, `dnsmasq`, `iptables_nat`, `upstream_interface`), for operators and a future monitoring view.
 - Optional `hostapd_debug_dir` setting: every hostapd start that fails writes a report there (hostapd configuration without passwords and the last 400 lines of `hostapd -d`); only failures are written and the newest 100 reports are kept.
 - New **Antennas** API, listed in Swagger before Network and readable with the token only: `GET /api/v1/antennas` lists the managed antennas (`display_name`, `interface`); `GET /api/v1/antennas/{interface}` gives `device` (`bus`, `address`, `driver`), `encryptions` and per band the Wi-Fi generations with their widths and the usable channels with the widths each can use, to fill a form's dropdowns.
 - Frontend: a captive portal switch on each reserved antenna card chooses whether the next network starts with a portal page (it presets the start dialog, which has the same switch), and a running network shows the captive portal as On or Off with its URL and a header badge.
@@ -225,7 +227,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 
 - `GET /api/v1/status`:
   - `networks[]` gains `recovery_state` (`recovering`, `unavailable`) and `runtime_state`. What an antenna supports is in `GET /api/v1/antennas/{interface}`.
-  - `checks` gains `hostapd`, `commands`, `loops`, and `missing` lists in `dnsmasq` and `iptables_nat`.
+  - `checks` moved to `GET /api/v1/monitoring` (with `hostapd`, `commands`, `loops`, and `missing` lists in `dnsmasq` and `iptables_nat`); `/status` has `degraded_reasons` instead (`{code, interface, message}`).
   - `degraded` now also covers quarantined antennas, networks being repaired, stuck commands and stalled loops.
 - `GET /api/v1/debug`: send the `X-Confirm-Password` header too (`403` without it), as for every Maintenance endpoint.
 

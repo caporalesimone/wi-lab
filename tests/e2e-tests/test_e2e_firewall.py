@@ -86,7 +86,7 @@ def test_success_means_the_firewall_is_in_place(wilab: WiLab, server: Server, in
         assert len(accept) >= 2, forward
     else:
         assert not masquerade
-    assert wilab.status()["checks"]["iptables_nat"]["configured"] is True
+    assert wilab.http.get("/monitoring").json()["checks"]["iptables_nat"]["configured"] is True
     journal = server.journal(start)
     assert "Isolation rules applied" in journal
     assert "Isolation disabled for testing" not in journal  # NET-4

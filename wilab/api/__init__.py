@@ -86,9 +86,11 @@ Poll `GET /api/v1/status` to know whether the service is fully usable.
 Its `status` is `standby` (nothing active, all adapters healthy), `ok`
 (networks active and healthy) or `degraded`. `degraded` means an adapter is
 quarantined (`networks[].recovery_state`), a reserved network is being
-repaired or lost DHCP (`networks[].runtime_state`), or a health check in
-`checks` failed while networks are active. Show it to the user with the
-affected adapter: fewer adapters may be allocatable than are listed.
+repaired or lost DHCP (`networks[].runtime_state`), or a health check failed
+while networks are active: `degraded_reasons` lists each cause with a stable
+`code`, and `GET /api/v1/monitoring` gives the detail of every check. Show it
+to the user with the affected adapter: fewer adapters may be allocatable than
+are listed.
 
 | `networks[]` field | Value | Client action |
 |---|---|---|
@@ -106,7 +108,7 @@ create. `dhcp_failed` is brief: the watchdog then restarts the whole network.
 """
 
 OPENAPI_TAGS = [
-    {"name": "System", "description": "Service health, reservations and per-adapter recovery state. Poll status, not debug (Maintenance)."},
+    {"name": "System", "description": "Service health, reservations and per-adapter recovery state. Poll status; the detail of the health checks is in monitoring."},
     {"name": "Reservation", "description": "Allocate or release an adapter. Use the returned reservation ID for device operations."},
     {"name": "Antennas", "description": "The managed radios and what a network on each can use "
      "(encryptions, Wi-Fi generations, channel widths, channels): fill a create form from here. No reservation needed."},

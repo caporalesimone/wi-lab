@@ -50,11 +50,7 @@ export interface StatusResponse {
   networks: InterfaceInfo[];
   active_networks: number;
   reservation_policy: ReservationPolicy;
-  checks: {
-    dnsmasq: { running: boolean; instances: number };
-    iptables_nat: { configured: boolean; errors: string[] };
-    upstream_interface: { name: string; up: boolean; has_ip: boolean; reachable: boolean };
-  };
+  degraded_reasons: { code: string; interface: string | null; message: string }[];
 }
 
 export interface ReservationRequest {

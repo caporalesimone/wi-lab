@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
+from ... import health as health_module
 from ... import heartbeat
 from ...api.auth import maintenance_router as protected_router
 from ...api.auth import require_token
@@ -41,18 +42,16 @@ router = APIRouter(
         200: {
             "description": (
                 "Health and allocation snapshot. `status` is `standby`, `ok` or `degraded`; "
-                "`degraded` means at least one adapter is quarantined (`recovery_state`), a "
-                "reserved network is being repaired or has lost DHCP (`runtime_state`), a "
-                "host command is stuck in the kernel (`checks.commands.stuck`), a "
-                "background loop stalled (`checks.loops.stale`), or a "
-                "health check failed while networks are active. A reserved or quarantined "
-                "adapter is not allocatable."
+                "`degraded` lists why in `degraded_reasons` (quarantined antenna, network "
+                "being repaired, dead hostapd or dnsmasq, missing NAT rule, upstream down, "
+                "stuck host command, stalled loop). The detail is in `GET /monitoring`. A "
+                "reserved or quarantined adapter is not allocatable."
             ),
             "content": {"application/json": {"examples": {
                 "standby": {
                     "summary": "standby - no network active, every adapter healthy",
                     "value": {
-                        "version": "4.0.0", "status": "standby", "active_networks": 0,
+                        "version": "4.0.0", "status": "standby", "degraded_reasons": [], "active_networks": 0,
                         "networks": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
                              "reservation_remaining_seconds": None},
@@ -60,13 +59,12 @@ router = APIRouter(
                              "reservation_remaining_seconds": None},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
-                        "checks": _CHECKS_OK_EXAMPLE,
                     },
                 },
                 "ok": {
                     "summary": "ok - networks active and healthy",
                     "value": {
-                        "version": "4.0.0", "status": "ok", "active_networks": 1,
+                        "version": "4.0.0", "status": "ok", "degraded_reasons": [], "active_networks": 1,
                         "networks": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reserved": True,
                              "reservation_remaining_seconds": 540},
@@ -74,15 +72,18 @@ router = APIRouter(
                              "reservation_remaining_seconds": None},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
-                        "checks": {**_CHECKS_OK_EXAMPLE,
-                                   "hostapd": {"running": True, "instances": 1, "missing": []},
-                                   "dnsmasq": {"running": True, "instances": 1, "missing": []}},
                     },
                 },
                 "degraded_quarantine": {
                     "summary": "degraded - one adapter quarantined, another being repaired",
                     "value": {
                         "version": "4.0.0", "status": "degraded", "active_networks": 1,
+                        "degraded_reasons": [
+                            {"code": "antenna_quarantined", "interface": "wlan0",
+                             "message": "Antenna quarantined (unavailable)"},
+                            {"code": "network_being_repaired", "interface": "wlan1",
+                             "message": "Network being repaired by the watchdog (restoring_ap)"},
+                        ],
                         "networks": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
                              "reservation_remaining_seconds": None, "recovery_state": "unavailable"},
@@ -90,7 +91,6 @@ router = APIRouter(
                              "reservation_remaining_seconds": 54, "runtime_state": "restoring_ap"},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
-                        "checks": _CHECKS_OK_EXAMPLE,
                     },
                 },
             }}},
@@ -105,138 +105,183 @@ def system_status(
     _: bool = Depends(require_token)
 ):
     """
-    Comprehensive system status including interfaces and health check.
-
-    The checks that run host commands (processes, NAT rules, upstream link)
-    are refreshed in the background every 10 s: this call runs no command and
-    answers at once, so a change can take up to 10 s to show.
+    Service health, antennas and reservation policy: the call clients poll.
 
     Overall `status`:
 
     | Value | Meaning |
     |---|---|
-    | `standby` | No network is active and no adapter is quarantined. |
-    | `ok` | Networks are active and every health check passes. |
-    | `degraded` | At least one of the conditions below. |
+    | `standby` | No network is active and nothing is wrong. |
+    | `ok` | Networks are active and nothing is wrong. |
+    | `degraded` | At least one entry in `degraded_reasons`. |
 
-    `degraded` is set when:
+    Each `degraded_reasons` entry has a stable `code`, the `interface` it
+    concerns (or `null`) and a `message` for display:
 
-    - an adapter has `recovery_state` (quarantine): `recovering` means a USB
-      reset and probe are in progress; `unavailable` means no reset is running
-      and Wi-Lab re-probes it periodically (30 s, then backing off to every
-      15 min). Either may return to the pool by itself;
-    - a reserved network has `runtime_state`: `restoring_ap`, `restoring_dhcp`
-      (the watchdog is repairing it), `dhcp_failed` (DHCP could not be
-      repaired alone; the whole network is restarted on the next tick) or
-      `restore_failed` (AP down after a failed restart; the watchdog retries
-      with backoff);
-    - a host command (`ip`, `iw`, `tc`, ...) did not exit even after SIGKILL
-      (`checks.commands.stuck` > 0). It is stuck in the kernel, usually a hung
-      Wi-Fi driver; Wi-Lab no longer waits for it, but the adapter may need a
-      reset or the host a reboot. The count drops when the process exits;
-    - a background loop (`expiry`, `discovery`, `reprobe`, `watchdog:<if>`)
-      has not run for 3 minutes (`checks.loops.stale`). Wi-Lab restarts
-      itself through the systemd watchdog as soon as no reservation is
-      active and no USB recovery is running; until then it keeps serving;
-    - networks are active and a check in `checks` fails. A network with a
-      start, stop or restore in progress is not judged, so a create/delete
-      never makes the status flap to `degraded`. The checks look at
-      Wi-Lab's own processes and rules, per network:
-      `hostapd.running` / `dnsmasq.running` (every network has its process
-      alive; `missing` lists the others), `iptables_nat.configured` (every
-      network with Internet has its `wilab-nat-<interface>` rule; other
-      software's MASQUERADE rules do not count; `missing` lists the others)
-      and `upstream_interface.reachable` (state UP, or UNKNOWN with
-      LOWER_UP, and an IPv4 address; it counts only when a network has
-      Internet enabled).
+    | `code` | Meaning |
+    |---|---|
+    | `antenna_quarantined` | The antenna has `recovery_state`: `recovering` (USB reset and probe running) or `unavailable` (re-probed every 30 s, backing off to 15 min). It may return by itself. Not allocatable, even with `reserved: false`. |
+    | `network_being_repaired` | A reserved network has `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`). Its owner waits. |
+    | `hostapd_not_running`, `dnsmasq_not_running` | The AP or DHCP process of that network is dead; the watchdog normally repairs it within seconds. |
+    | `nat_rule_missing` | That network has Internet enabled but its NAT rule is missing. |
+    | `upstream_unreachable` | The host uplink is down or has no IPv4 address while a network has Internet. |
+    | `command_stuck` | A host command did not exit even after SIGKILL: usually a hung Wi-Fi driver; the adapter may need a reset. |
+    | `loop_stalled` | A background loop has not run for 3 minutes; Wi-Lab restarts itself when idle. |
 
-    A quarantined adapter is never allocatable, even with `reserved: false`.
-    Clients should poll this endpoint, show `degraded` to the user together
-    with the affected adapter, and not send creates for a network in
-    `restoring_ap`/`restoring_dhcp`. The former owner of a quarantined adapter
-    is told once, by `503 / 1003` on the create; its reservation ID then
-    returns `404`. A status response is not a reservation.
+    The detail of every check is in `GET /monitoring`. Checks that run host
+    commands are refreshed every 10 s in the background: this call runs no
+    command and answers at once. A network with a start, stop or restore in
+    progress is not judged, so a create or delete never makes the status flap.
 
-    Returns:
-        dict: Contains:
-            - version: Software version
-            - networks: List of managed interfaces
-              (`runtime_state` during AP/DHCP restoration or DHCP failure).
-              What a network on each antenna can use is in `GET /antennas/{interface}`
-            - status: Overall health (ok|degraded|standby)
-            - active_networks: Number of active networks
-            - checks: Component health details
+    The former owner of a quarantined antenna is told once, by `503 / 1003` on
+    the create (or `404` afterwards). What a network on each antenna can use is
+    in `GET /antennas/{interface}`.
     """
     return _system_status(manager, config, reservation_mgr)
 
 
-def _system_status(
-    manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager
+# Stable codes of `degraded_reasons`.
+REASON_MESSAGES = {
+    "antenna_quarantined": "Antenna quarantined ({state})",
+    "network_being_repaired": "Network being repaired by the watchdog ({state})",
+    "hostapd_not_running": "hostapd is not running",
+    "dnsmasq_not_running": "dnsmasq (DHCP) is not running",
+    "nat_rule_missing": "NAT rule missing: no Internet access",
+    "upstream_unreachable": "Upstream interface {name} is down or has no IPv4 address",
+    "command_stuck": "{count} host command(s) stuck in the kernel; the adapter may need a reset",
+    "loop_stalled": "Background loop stalled: {loops}",
+}
+
+
+def _reason(code: str, interface: str | None = None, **values: Any) -> dict[str, Any]:
+    return {"code": code, "interface": interface, "message": REASON_MESSAGES[code].format(**values)}
+
+
+def _assess(
+    manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager,
 ) -> dict[str, Any]:
-    status_data: dict[str, Any] = {
-        "version": __version__,
-        "status": "ok",
-    }
+    """Status, the reasons for `degraded`, the antennas and the detailed checks.
 
-    # === HEALTH CHECK ===
-    health_data: dict[str, Any] = {"checks": {}}
-    stuck = stuck_commands()
-    health_data["checks"]["commands"] = {"stuck": stuck}
-    stale_loops = heartbeat.stale_loops()
-    health_data["checks"]["loops"] = {"stale": stale_loops}
-
-    # Host-command checks come from the background loop (wilab.health): /status
-    # runs no command. Networks stopped since the check are ignored; networks
-    # started since then are judged at the next check (RACE-2).
+    Shared by /status (verdict and reasons), /monitoring (detail) and /debug, so
+    they never disagree (BUG-2). Host-command checks come from the background
+    loop (wilab.health); nothing here runs a command.
+    """
     health = manager.health.current()
     snapshot = manager.active.copy()
-    active_count = len(snapshot)
-    checks = health_data["checks"]
-    checks.update(health.for_active(set(snapshot)))
+    checks: dict[str, Any] = {
+        "commands": {"stuck": stuck_commands()},
+        "loops": {"stale": heartbeat.stale_loops()},
+        # Networks stopped since the check are ignored; networks started since
+        # then are judged at the next check (RACE-2).
+        **health.for_active(set(snapshot)),
+    }
     settled = [device for device in snapshot if device in health.settled]
     internet_needed = any(device in health.internet for device in settled)
 
-    if not active_count:
-        # Standby - service is healthy but no networks are active
-        status_data["status"] = "standby"
-        status_data["active_networks"] = 0
-    else:
-        # Normal operation - check component health
-        all_ok = (
-            checks["hostapd"]["running"]
-            and checks["dnsmasq"]["running"]
-            and checks["iptables_nat"]["configured"]
-            and (checks["upstream_interface"].get("reachable") is True or not internet_needed)
-        )
-        status_data["status"] = "ok" if all_ok or not settled else "degraded"
-        status_data["active_networks"] = active_count
-
-    # Add networks with reservation info, checks, and rest of data
-    networks_info = []
+    reasons: list[dict[str, Any]] = []
+    antennas = []
     reservations = reservation_mgr.snapshot()
     recovery = reservation_mgr.recovery_snapshot()
-    runtime_degraded = False
     for n in config.antennas:
-        entry: dict = {"display_name": n.display_name, "interface": n.interface}
+        entry: dict[str, Any] = {"display_name": n.display_name, "interface": n.interface}
         reservation = reservations.get(n.device_id)
         entry["reserved"] = reservation is not None
         entry["reservation_remaining_seconds"] = reservation.expires_in if reservation else None
         if reservation is not None and (runtime_state := manager.watchdog.state(reservation)):
             entry["runtime_state"] = runtime_state
-            runtime_degraded = True
+            reasons.append(_reason("network_being_repaired", n.interface, state=runtime_state))
         if n.device_id in recovery:
-            entry["recovery_state"] = "recovering" if recovery[n.device_id] else "unavailable"
-        networks_info.append(entry)
-    status_data["networks"] = networks_info
-    if recovery or runtime_degraded or stuck or stale_loops:
-        status_data["status"] = "degraded"
-    status_data["reservation_policy"] = {
-        "min_seconds": config.min_timeout,
-        "max_seconds": config.max_timeout,
-        "allow_unlimited": config.allow_unlimited_reservation,
+            state = "recovering" if recovery[n.device_id] else "unavailable"
+            entry["recovery_state"] = state
+            reasons.append(_reason("antenna_quarantined", n.interface, state=state))
+        antennas.append(entry)
+    for device in checks["hostapd"]["missing"]:
+        reasons.append(_reason("hostapd_not_running", device))
+    for device in checks["dnsmasq"]["missing"]:
+        reasons.append(_reason("dnsmasq_not_running", device))
+    for device in checks["iptables_nat"]["missing"]:
+        reasons.append(_reason("nat_rule_missing", device))
+    upstream = checks["upstream_interface"]
+    if internet_needed and upstream.get("reachable") is not True:
+        reasons.append(_reason("upstream_unreachable", name=upstream.get("name")))
+    if checks["commands"]["stuck"]:
+        reasons.append(_reason("command_stuck", count=checks["commands"]["stuck"]))
+    if checks["loops"]["stale"]:
+        reasons.append(_reason("loop_stalled", loops=", ".join(checks["loops"]["stale"])))
+
+    status = "degraded" if reasons else ("ok" if snapshot else "standby")
+    return {
+        "status": status, "degraded_reasons": reasons, "active_networks": len(snapshot),
+        "antennas": antennas, "checks": checks, "checked_at": health.checked_at,
     }
-    status_data.update(health_data)
-    return status_data
+
+
+def _system_status(
+    manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager
+) -> dict[str, Any]:
+    view = _assess(manager, config, reservation_mgr)
+    return {
+        "version": __version__,
+        "status": view["status"],
+        "degraded_reasons": view["degraded_reasons"],
+        "active_networks": view["active_networks"],
+        "networks": view["antennas"],
+        "reservation_policy": {
+            "min_seconds": config.min_timeout,
+            "max_seconds": config.max_timeout,
+            "allow_unlimited": config.allow_unlimited_reservation,
+        },
+    }
+
+
+@router.get(
+    "/monitoring",
+    summary="Read the detailed health checks",
+    responses={
+        200: {
+            "description": "The detail behind `status` and `degraded_reasons` of `GET /status`.",
+            "content": {"application/json": {"example": {
+                "status": "ok", "degraded_reasons": [],
+                "checked_at": "2026-11-25T18:30:00Z", "check_interval_seconds": 10,
+                "checks": {**_CHECKS_OK_EXAMPLE,
+                           "hostapd": {"running": True, "instances": 1, "missing": []},
+                           "dnsmasq": {"running": True, "instances": 1, "missing": []}},
+            }}},
+        },
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
+    },
+)
+def monitoring(
+    manager: NetworkManager = Depends(get_manager),
+    config=Depends(get_config),
+    reservation_mgr: ReservationManager = Depends(get_reservation_manager),
+    _: bool = Depends(require_token),
+):
+    """Detailed health checks, for operators and a monitoring view.
+
+    `GET /status` gives the verdict and its reasons; this call gives the detail
+    of every check. Checks that run host commands are refreshed every
+    `check_interval_seconds` in the background (`checked_at` is the last run);
+    `commands` and `loops` are read live.
+
+    | Check | Meaning |
+    |---|---|
+    | `commands.stuck` | Host commands that did not exit even after SIGKILL (hung driver). |
+    | `loops.stale` | Background loops that have not run for 3 minutes. |
+    | `hostapd`, `dnsmasq` | Every settled network has its process alive; `missing` lists the others. |
+    | `iptables_nat` | Every settled network with Internet has its `wilab-nat-<interface>` rule; `missing` lists the others, `errors` the failures reading the rules. |
+    | `upstream_interface` | Host uplink state UP (or UNKNOWN with LOWER_UP) and an IPv4 address; it counts only while a network has Internet. |
+
+    A network with a start, stop or restore in progress is not judged.
+    """
+    view = _assess(manager, config, reservation_mgr)
+    return {
+        "status": view["status"],
+        "degraded_reasons": view["degraded_reasons"],
+        "checked_at": view["checked_at"],
+        "check_interval_seconds": int(health_module.CHECK_INTERVAL),
+        "checks": view["checks"],
+    }
 
 
 @maintenance_router.get(
@@ -272,7 +317,7 @@ def _debug_info(
 ) -> dict[str, Any]:
     # === DETERMINE OVERALL STATUS ===
     # Same checks and status as /status (BUG-2): no second, diverging copy.
-    summary = _system_status(manager, config, reservation_mgr)
+    summary = _assess(manager, config, reservation_mgr)
     checks = summary["checks"]
     status = summary["status"]
     active_count = summary["active_networks"]
