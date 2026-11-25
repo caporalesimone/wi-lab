@@ -15,6 +15,12 @@ Every error body has the same envelope:
 Use the HTTP status and `detail.code` for control flow. `detail.message` is for
 display only and can change between versions.
 
+Every answer leads to **one of six actions** (done, wait, repeat, fix, reserve
+again, stop). The complete list, for every call, is in
+[3.1 What to do with each answer](#31-what-to-do-with-each-answer); radio
+failures such as a hostapd crash are explained in
+[3.2](#32-radio-failures-such-as-a-hostapd-crash).
+
 ## 1. Reservation
 
 An AP always runs on a reserved antenna. The reservation decides **which**
@@ -222,8 +228,9 @@ back. A start normally takes about 0.5 s. If the radio fails transiently,
 Wi-Lab starts it again inside the same request (up to 3 starts): about 3 s
 with one retry, 5–6 s with two, up to about 20 s in the worst case outside DFS
 channels. A retry starts only if at least 4 s of the 20 s budget are left, so
-every internal attempt is a real one. Configure the HTTP client with a long
-read timeout so that a slow start is not mistaken for a failure:
+every internal attempt is a real one. **The client does nothing during these
+internal starts**: it only waits for the answer. Configure the HTTP client with
+a long read timeout so that a slow start is not mistaken for a failure:
 
 | Channel | Suggested read timeout |
 |---|---|
@@ -236,6 +243,8 @@ These are client recommendations, not server guarantees.
 antenna, so parallel requests for the same reservation only queue up.
 
 ### 2.4 Handle the response
+
+The actions for every call, in one place, are in [3.1](#31-what-to-do-with-each-answer).
 
 | Response | Meaning | Client action |
 |---|---|---|
@@ -374,10 +383,14 @@ A success resets the counter. Further rules:
 
 - An AP restart clears traffic shaping and QoS profiles: reapply them after a
   `restoring_ap` phase.
-- If the restart fails because of the radio, or the AP fails more than 3 times
-  in an hour, the reservation is invalidated: `GET .../network` returns `404`.
-  Reserve again. If it fails for another reason, the reservation stays valid
-  and `runtime_state` is `restore_failed` until a retry succeeds.
+- If the restart fails because of the radio (including a hostapd crash on
+  every internal start), or the AP fails more than 3 times in an hour, the
+  antenna is quarantined and the reservation is invalidated **at once**: there
+  is no `409 / 1001` step as in a create, and no notification. The next call
+  with the ID returns `404`: reserve again (see
+  [3.2](#32-radio-failures-such-as-a-hostapd-crash)). If the restart fails for
+  another reason, the reservation stays valid and `runtime_state` is
+  `restore_failed` until a retry succeeds.
 - `GET /api/v1/status` reports `recovery_state` (`recovering` or `unavailable`)
   for quarantined antennas. They can show `reserved: false` but are **not**
   allocatable.
@@ -473,7 +486,8 @@ Find the cause in `networks[]` and `checks`:
 ## 3. Sequence diagram
 
 The whole client flow, from the reservation to the release, with every answer
-a client must handle. `id` is the `reservation_id`; every call carries
+a client must handle (the same answers, one action each, are listed in
+[3.1](#31-what-to-do-with-each-answer)). `id` is the `reservation_id`; every call carries
 `Authorization: Bearer <token>` (a `401` anywhere means a wrong token: fix it,
 never retry). Phases 4 and 5 are optional; the release (phase 6) also stops the
 AP.
@@ -668,20 +682,81 @@ sequenceDiagram
     end
 ```
 
-### 3.1 When a client may retry by itself
+### 3.1 What to do with each answer
 
-| Answer | Automatic retry | How |
-|---|---|---|
-| `409 / 1005` on reserve | yes | After `next_available_in`, or a backoff when it is `null`. |
-| `503 / 1002` on reserve | yes | After `Retry-After` (10 s). |
-| `409 / 1001` on create | yes, at most twice | After `Retry-After`, same ID and body, if the reservation lasts long enough. |
-| `503 / 1006` on any call with an ID except the create | yes | After `Retry-After` (2 s), the same request. |
-| `503 / 1004` on `DELETE .../network` | yes | After `Retry-After` (5 s), repeat the DELETE. |
-| `503 / 1004` on release | a few times | After a few seconds; then stop and check `/status`. |
-| Transport error on create | only after a GET | `GET .../network` first; create again only if `active: false` and no `runtime_state`. |
-| `503 / 1003` on reserve | only after discovery | Right after a service start; otherwise ask an operator. |
-| `503 / 1003` on create | no | Discard the ID (do not release it) and reserve again. |
-| `422`, `409` other, `404`, `500`, `503 / 1004` elsewhere, `401` | no | Fix the request, read the state, or ask an operator. |
+Every answer leads to exactly one of these actions:
+
+| Action | Meaning |
+|---|---|
+| **DONE** | Success. Go on. |
+| **WAIT** | The server is working on it. Send nothing that changes the network; read the state again (`GET .../network`) every few seconds. |
+| **REPEAT** | Send the **same** request again (same ID, same body) after `Retry-After`. Automatic retries are allowed only here. |
+| **FIX** | The request is wrong. Change it; never resend the same one. |
+| **RESERVE AGAIN** | The reservation ID is gone. Stop using it, **do not release it**, and reserve again (`POST /device-reservation`) if you still need an AP. You may get another antenna. |
+| **STOP** | A problem the client cannot solve. Show `detail.message`, check `GET /status`, and ask an operator. No automatic retry. |
+
+| Call | Answer | Action | Notes |
+|---|---|---|---|
+| any | `401` | FIX | Wrong or missing token. |
+| any call with an ID, except the release | `404` | RESERVE AGAIN | The ID expired, was released, or was **invalidated** because its antenna was quarantined (radio failures, also during a watchdog restart). Never release it. |
+| any call with an ID except the create | `503 / 1006` + `Retry-After: 2` | REPEAT | Another operation holds the antenna. Nothing was changed. |
+| `POST /device-reservation` | `200` | DONE | Keep `reservation_id` and `interface`. |
+| | `409 / 1005` | REPEAT | All antennas reserved. Wait `next_available_in`, or a backoff of 10–60 s when it is `null`. |
+| | `503 / 1002` + `Retry-After: 10` | REPEAT | An antenna is being recovered. |
+| | `503 / 1003` | STOP | No usable antenna. Right after a service start, wait up to 30 s for discovery and check `GET /status` first. |
+| | `503 / 1004` | STOP | Cleanup of an expired reservation failed. |
+| | `422` | FIX | `duration_seconds` out of limits, or `0` while unlimited reservations are off. |
+| `GET /antennas/{interface}` | `503` | REPEAT | After a few seconds; the radio is being reset. Or create with the defaults. |
+| | `404` | RESERVE AGAIN | The antenna is no longer managed. |
+| `POST .../network` (create) | `200` | DONE | Read it with `GET .../network`. |
+| | `409 / 1001` + `Retry-After` | REPEAT | Radio failure, reservation kept. Same ID, same body. At most twice; first check that `expires_in` is longer than `Retry-After` plus the startup time, otherwise release and RESERVE AGAIN. |
+| | `503 / 1003` | RESERVE AGAIN | Third radio failure, or the antenna disappeared: reservation invalidated. **Do not release it.** |
+| | `422` | FIX | The message starts with the field path, e.g. `radio.channel_width: ...`. |
+| | `409` "already active" | DONE | An AP already runs on this reservation (often a previous create whose answer was lost). Read it with `GET .../network`; to replace it, `DELETE .../network` first. |
+| | `409` "restoration in progress" | WAIT | Until `runtime_state` is `null`, then create only if `active` is `false`. |
+| | `500 / 500` | STOP | Startup failed for a non-radio reason and was rolled back; the reservation is still valid. Release it before reserving again. |
+| | `503 / 1004` | STOP | Cleanup of the previous startup failed. |
+| | no answer (timeout, connection lost) | WAIT | Never resend blindly: `GET .../network` with a long timeout. `active: true` → DONE. `runtime_state` set → WAIT. `active: false` and no `runtime_state` → send the create again (it counts as an attempt). `404` → RESERVE AGAIN. |
+| `GET .../network` | `200`, `runtime_state: null` | DONE | |
+| | `200`, `restoring_ap`, `restoring_dhcp`, `dhcp_failed` | WAIT | The watchdog is repairing the network. After `restoring_ap`, devices reconnect and QoS profiles must be reapplied. |
+| | `200`, `restore_failed` | WAIT | The AP is down and the watchdog retries. Or `DELETE .../network` to give up, or create again. |
+| | `200`, `stop_failed` | REPEAT | Repeat the `DELETE .../network` that answered `503 / 1004`. |
+| Internet, TX power, QoS | `409 / 1007` | FIX | No running network: create it first. |
+| `DELETE .../network` | `200` | DONE | The reservation stays. |
+| | `409` | DONE | Already inactive. |
+| | `503 / 1004` + `Retry-After: 5` | REPEAT | The stop did not complete (hostapd stuck for a few seconds). Repeat until `200`. |
+| `DELETE /device-reservation/{id}` | `200` | DONE | AP stopped, antenna free. |
+| | `404` | DONE | Already expired, released or invalidated: nothing left to release. |
+| | `503 / 1004` | REPEAT, then STOP | Cleanup failed, the antenna is still held. Repeat a few times a few seconds apart (usually transient), then STOP. After expiry Wi-Lab retries the cleanup by itself. |
+
+### 3.2 Radio failures (such as a hostapd crash)
+
+The client never needs to know **why** the radio failed (hostapd crash,
+driver firmware timeout, unplugged adapter): the answer code is enough. What
+happens, from the most to the least common case:
+
+1. **The server absorbs it: WAIT.** On the first create of a reservation,
+   Wi-Lab starts the AP again by itself, up to 3 times within 20 s. The create
+   just takes a few seconds longer and answers `200`. The same holds for a
+   watchdog restart of a running AP: `GET .../network` shows `restoring_ap`,
+   then `runtime_state: null`. Nearly every hostapd crash ends here.
+2. **The create answers `409 / 1001`: REPEAT.** All the internal starts
+   failed. The reservation is kept; send the same create after `Retry-After`
+   (5 s, then 10 s). Later creates of the same reservation do not retry
+   internally, so each failure is visible.
+3. **The reservation is invalidated: RESERVE AGAIN.** It happens when:
+   - the third create in a row fails with a radio failure: the create answers
+     `503 / 1003`;
+   - a watchdog restart of a running AP fails on every internal start, or the
+     AP fails for the fourth time in an hour: there is **no** answer to wait
+     for, the next call with the ID answers `404`.
+
+   In both cases the antenna is quarantined (`recovery_state` in
+   `GET /status`). Do not release the ID; a new reservation gets another
+   antenna.
+
+A client that maps the answers with the table in 3.1 handles all three cases
+without special code for crashes.
 
 ## 4. Reference client logic
 
