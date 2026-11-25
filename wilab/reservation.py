@@ -57,8 +57,6 @@ class Reservation:
     duration_seconds: int
     created_at: float
     expires_at: float | None  # None = unlimited (no expiry)
-    radio_failures: int = 0
-    retry_at: float = 0.0
     release_requests: int = 0
 
     @property

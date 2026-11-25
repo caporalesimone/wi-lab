@@ -22,9 +22,9 @@ release it), **STOP** (show the message, ask an operator).
 
 | Code | Reason | HTTP | `Retry-After` | Where | Meaning | Action |
 |---|---|---|---|---|---|---|
-| 1001 | `retry_later` | 409 | yes (5, then 10; or the remaining cooldown) | create | A classified radio failure was rolled back; the reservation is kept. Also answered, without using an attempt, when a create arrives during the cooldown. | REPEAT the same create (at most twice) |
+| 1001 | `retry_later` | 409 | — | — | **No longer answered** (4.0.0): radio failures are retried by the server inside the create. Kept reserved. | — |
 | 1002 | `device_recovering` | 503 | 10 | reserve | No antenna is allocatable while one is being recovered (USB reset); with `interface`, that antenna is being recovered. | REPEAT |
-| 1003 | `device_unavailable` | 503 | no | reserve; create | Reserve: no antenna discovered or usable and nothing recovering; with `interface`, that antenna is quarantined. Create: third radio failure, or the antenna disappeared; adds `reservation_invalidated: true`. | Reserve: STOP (after a service start, wait for discovery first). Create: RESERVE AGAIN |
+| 1003 | `device_unavailable` | 503 | no | reserve; create | Reserve: no antenna discovered or usable and nothing recovering; with `interface`, that antenna is quarantined. Create: every start failed after the server retries (antenna quarantined), an unsafe rollback, or the reservation expires too soon for another start; adds `reservation_invalidated: true`. | Reserve: STOP (after a service start, wait for discovery first). Create: RESERVE AGAIN |
 | 1004 | `cleanup_failed` | 503 | no | reserve, get and release of a reservation; create | A cleanup failed and the antenna is still held. | STOP (on release, REPEAT a few times first) |
 | 1005 | `no_device_available` | 409 | no | reserve | Every antenna is reserved, or the requested `interface` is. Adds `next_available_at` (UTC) and `next_available_in` (seconds), both `null` when no release is scheduled. | REPEAT after `next_available_in`, or a backoff |
 | 1006 | `device_busy` | 503 | 2 | every call with a reservation ID except the create | Another operation held the antenna for more than 5 s. Nothing was changed. | REPEAT |

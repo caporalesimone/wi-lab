@@ -1,8 +1,7 @@
 """WiFi network lifecycle endpoints (create, delete, query)."""
 
 import logging
-from math import ceil
-from time import monotonic, sleep
+from time import monotonic, sleep, time
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
@@ -19,6 +18,7 @@ from ...models import NetworkCreateBody, NetworkResponse, ReservationInfo, body_
 from ...reservation import Reservation
 from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager, FieldError
+from ...wifi.hostapd import AP_READY_TIMEOUT, DFS_READY_TIMEOUT
 from ...wifi.manager import (
     UNKNOWN_ANTENNA,
     NetworkManager,
@@ -27,13 +27,15 @@ from ...wifi.manager import (
 )
 from .recovery_responses import (
     DEVICE_BUSY_RESPONSE,
-    RETRY_AFTER_HEADER,
     RecoveryCode,
     recovery_error,
     recovery_example,
 )
 
+# After a radio failure the create starts the AP again after these pauses, inside
+# the same request (the client no longer gets 409 / 1001 to do it itself).
 CREATE_RETRY_DELAYS = (5, 10)
+START_MARGIN = 5.0   # seconds for gateway, DHCP, NAT and the rest after the AP is up
 
 # Seconds before repeating a stop that did not complete (hostapd stuck in the
 # kernel usually exits within a few seconds).
@@ -122,8 +124,7 @@ def _error(code: int, reason: str, message: str) -> dict:
             "application/json": {"example": {"detail": _error(404, "not_found", "Reservation not found or expired")}},
         }},
         409: {
-            "description": "Network already active, watchdog restoration, or radio cooldown (1001). Retry only for 1001.",
-            "headers": RETRY_AFTER_HEADER,
+            "description": "Network already active (1008) or watchdog restoration in progress (1009).",
             "content": {"application/json": {"examples": {
                 "active_network": {"value": {"detail": _error(
                     1008, "network_already_active",
@@ -132,7 +133,6 @@ def _error(code: int, reason: str, message: str) -> dict:
                 "restoration_in_progress": {
                     "value": {"detail": _error(1009, "restoration_in_progress", "Network restoration is in progress")},
                 },
-                "retry_later": recovery_example(RecoveryCode.RETRY_LATER),
             }}},
         },
         422: {
@@ -220,7 +220,8 @@ def _error(code: int, reason: str, message: str) -> dict:
         },
         503: {
             "description": (
-                "**`503 / 1003`:** the adapter is quarantined and the reservation is invalidated "
+                "**`503 / 1003`:** every start failed (the adapter is quarantined), or the "
+                "reservation expires too soon for the next start; the reservation is invalidated "
                 "(`reservation_invalidated: true`). Discard the ID; do not retry creation or release "
                 "it. Request a new reservation if needed. No `Retry-After`.\n\n"
                 "**`503 / 1004`:** a device cleanup failed while resolving an expired reservation."
@@ -328,24 +329,22 @@ def start_network(
     Requires a valid reservation token. The network lifetime is bounded
     by the reservation expiry.
 
-    If starting the AP fails because of the radio (hostapd crash, beacon setup
-    failure, radio or readiness timeout), the server starts it again in the same
-    request after successful cleanup, on either band: up to 3 starts, 1 s apart,
-    within 20 s, each retry with at least 4 s left. A normal start takes about
-    0.5 s; with retries the response can take up to about 20 s outside DFS
-    channels. Clients do not need to resubmit
-    the request to trigger these retries.
+    **Radio failures are retried by the server, never by the client.** If
+    starting the AP fails because of the radio (hostapd crash, beacon setup
+    failure, radio or readiness timeout), the server rolls it back and starts it
+    again in the same request: first up to 3 starts 1 s apart within 20 s, then,
+    if they all failed, one more start after 5 s and a last one after 10 s. A
+    normal start takes about 0.5 s; with every retry the answer can take about
+    80 s outside DFS channels (use a read timeout of at least 120 s) and several
+    minutes on DFS channels. Reservation expiry is not extended.
 
-    After the first and second requests whose internal starts all failed, **409 / 1001**
-    retains the reservation. Retry the same POST and ID only after the
-    `Retry-After` header (5 and 10 seconds, respectively). Calls during cooldown
-    do not consume a startup attempt. Reservation expiry is not extended.
-
-    A third classified failure, or unsafe cleanup during startup, returns **503 / 1003** and
-    invalidates the ID. Do not retry creation or release that ID. A new
-    reservation request can return **503 / 1002** while recovery is running.
-    No USB reset runs in the creation request.
-    A network being restored by the watchdog returns an ordinary HTTP 409.
+    If every start failed, or the rollback was unsafe, the answer is
+    **503 / 1003** and the ID is invalidated: the antenna is quarantined. The
+    same answer comes, without quarantine, when the reservation expires too soon
+    for the next start. Do not retry creation or release that ID: reserve again.
+    A new reservation request can return **503 / 1002** while recovery is
+    running. No USB reset runs in the creation request.
+    A network being restored by the watchdog returns **409 / 1009**.
 
     **Body:** settings are grouped in `radio`, `wifi` (with `security`),
     `internet` and `captive_portal`, the same sections as `GET .../network`.
@@ -380,9 +379,6 @@ def start_network(
     # time per reservation is the client contract, and the wait is bounded.
     with hold_reservation(reservation_mgr, reservation, wait=True):
         device_id = reservation.device_id
-        remaining = ceil(reservation.retry_at - monotonic())
-        if remaining > 0:
-            raise recovery_error(RecoveryCode.RETRY_LATER, retry_after=remaining)
         try:
             channel_mgr.validate_network(
                 device_id, req.band, req.channel, req.channel_width, req.wifi_generation,
@@ -395,42 +391,69 @@ def start_network(
 
         # A new network replaces one the watchdog failed to restore (WD-2).
         manager.watchdog.forget(device_id)
-        try:
-            manager.start_network(
-                device_id, req, expires_at_timestamp=reservation.expires_at,
-                allow_internal_retry=reservation.radio_failures == 0,
-            )
-            reservation.radio_failures = 0
-            reservation.retry_at = 0
-            # API-5: the network as GET .../network returns it, so the client saves a call.
-            return _network_response(manager, reservation)
-        except StartupFailure as e:
-            # The next attempt reads the channel list again (BUG-4).
-            channel_mgr.invalidate(device_id)
-            if not (e.radio or e.cleanup_failed):
-                # Rolled back, reservation kept: the stage tells the client what failed.
-                raise HTTPException(status_code=500, detail=domain_error(
-                    ApiErrorCode.STARTUP_FAILED, str(e), stage=e.stage,
-                )) from e
-            reservation.radio_failures += 1
-            if not e.cleanup_failed and reservation.radio_failures <= len(CREATE_RETRY_DELAYS):
-                delay = CREATE_RETRY_DELAYS[reservation.radio_failures - 1]
-                reservation.retry_at = monotonic() + delay
-                raise recovery_error(RecoveryCode.RETRY_LATER, retry_after=delay) from e
-            manager.quarantine_radio(
-                reservation_mgr, reservation, radio_fault=e.radio, band=req.band, channel=req.channel,
-            )
-            raise recovery_error(RecoveryCode.DEVICE_UNAVAILABLE, invalidated=True) from e
-        except ValueError as e:
-            error_msg = str(e)
-            error_msg_lower = error_msg.lower()
-            if "already active" in error_msg_lower:
-                raise HTTPException(
-                    status_code=409, detail=domain_error(ApiErrorCode.NETWORK_ALREADY_ACTIVE, error_msg),
+        failures = 0
+        while True:
+            try:
+                manager.start_network(
+                    device_id, req, expires_at_timestamp=reservation.expires_at,
+                    allow_internal_retry=failures == 0,
                 )
-            if error_msg == UNKNOWN_ANTENNA:
-                raise HTTPException(status_code=404, detail=error_msg)
-            raise HTTPException(status_code=500, detail=error_msg)
+                # API-5: the network as GET .../network returns it, so the client saves a call.
+                return _network_response(manager, reservation)
+            except StartupFailure as e:
+                # The next attempt reads the channel list again (BUG-4).
+                channel_mgr.invalidate(device_id)
+                if not (e.radio or e.cleanup_failed):
+                    # Rolled back, reservation kept: the stage tells the client what failed.
+                    raise HTTPException(status_code=500, detail=domain_error(
+                        ApiErrorCode.STARTUP_FAILED, str(e), stage=e.stage,
+                    )) from e
+                failures += 1
+                if not e.cleanup_failed and failures <= len(CREATE_RETRY_DELAYS):
+                    delay = CREATE_RETRY_DELAYS[failures - 1]
+                    if _time_left(reservation) >= delay + _start_time(req):
+                        # The pause the client used to take after 409 / 1001, taken here.
+                        logger.info(
+                            "AP start on %s failed (%d/%d); starting again in %d s: %s",
+                            device_id, failures, len(CREATE_RETRY_DELAYS) + 1, delay, e,
+                        )
+                        sleep(delay)
+                        continue
+                    # Too little reservation time for another start: free the antenna,
+                    # the client reserves again (same action as a quarantine).
+                    logger.warning(
+                        "AP start on %s failed and the reservation expires too soon to retry; "
+                        "releasing it", device_id,
+                    )
+                    reservation_mgr.delete(reservation.reservation_id)
+                    raise recovery_error(RecoveryCode.DEVICE_UNAVAILABLE, invalidated=True) from e
+                manager.quarantine_radio(
+                    reservation_mgr, reservation, radio_fault=e.radio, band=req.band, channel=req.channel,
+                )
+                raise recovery_error(RecoveryCode.DEVICE_UNAVAILABLE, invalidated=True) from e
+            except ValueError as e:
+                error_msg = str(e)
+                error_msg_lower = error_msg.lower()
+                if "already active" in error_msg_lower:
+                    raise HTTPException(
+                        status_code=409, detail=domain_error(ApiErrorCode.NETWORK_ALREADY_ACTIVE, error_msg),
+                    )
+                if error_msg == UNKNOWN_ANTENNA:
+                    raise HTTPException(status_code=404, detail=error_msg)
+                raise HTTPException(status_code=500, detail=error_msg)
+
+
+def _time_left(reservation: Reservation) -> float:
+    """Seconds until the reservation expires; infinite when unlimited."""
+    if reservation.expires_at is None:
+        return float("inf")
+    return reservation.expires_at - time()
+
+
+def _start_time(req) -> float:
+    """Longest wait for one AP start on this channel, plus a margin for the rest."""
+    dfs = req.band == "5ghz" and 52 <= req.channel <= 144
+    return (DFS_READY_TIMEOUT if dfs else AP_READY_TIMEOUT) + START_MARGIN
 
 
 @router.delete(

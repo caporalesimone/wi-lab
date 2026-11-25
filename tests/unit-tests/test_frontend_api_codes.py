@@ -23,6 +23,7 @@ def test_busy_answers_are_retried_on_every_reservation_call_but_the_create():
     assert "retryWhenBusy(4, [RecoveryCode.DeviceBusy, RecoveryCode.StopIncomplete])" in stop
     create = service.split("public startNetwork(", 1)[1].split("\n  public ", 1)[0]
     assert "retryWhenBusy" not in create  # the create waits on the server instead
+    assert "retry(" not in create  # radio failures are retried by the server (no 409 / 1001)
 
 
 def test_quarantine_is_detected_by_code_not_status():

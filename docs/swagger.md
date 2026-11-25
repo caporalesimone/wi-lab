@@ -98,9 +98,9 @@ unsupported Wi-Fi generation. What each antenna accepts is in
 ## Network creation failure
 
 In the **Network** group, open **Create a network on a reserved adapter**.
-Its `409` examples distinguish a recoverable radio failure (`detail.code:
-1001`), an existing AP (`1008`) and a watchdog restoration (`1009`). Only 1001
-permits retrying creation with the same ID after `Retry-After`. Every code is
+Its `409` examples distinguish an existing AP (`1008`) and a watchdog
+restoration (`1009`). Radio failures are retried by the server inside the
+request, so no create error asks the client to repeat it. Every code is
 listed in [Error codes](error-codes.md). Under **Responses → 500 → Example Value**, select
 **500 / 1013 - Startup failed; reservation still valid**: `detail.stage` names what failed. Under
 **Responses → 503**, **503 / 1003 - Adapter quarantined; discard the reservation
@@ -126,8 +126,8 @@ For a complete interactive example:
 
 1. In **Reservation**, execute the timed example for `POST /api/v2/reservations`.
 2. In **Network**, copy the returned `reservation_id` into the create endpoint
-   and choose a channel supported by the adapter. If you get `409 / 1001`,
-   wait for `Retry-After` before repeating the same body and ID.
+   and choose a channel supported by the adapter. The answer can take a while
+   if the radio fails and the server starts it again.
 3. Use **Read system and adapter status** to distinguish
    `recovery_state` (quarantine) from `runtime_state` (AP/DHCP restoration).
    During restoration, read status instead of sending another create.

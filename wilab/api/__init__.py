@@ -65,10 +65,9 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 
 | Operation and response | Client action |
 |---|---|
-| Create `409`, `detail.code: 1001` | Repeat the same POST with the same ID and body after `Retry-After` seconds (5 then 10). Early calls do not use up an attempt. Expiry is unchanged. |
 | Create `409`, `detail.code: 1008` | A network already runs on this reservation (often a create whose answer was lost): read it with `GET .../network`. |
 | Create `409`, `detail.code: 1009` | The watchdog is restarting this network: poll `GET .../network` until `runtime_state` is `null`. |
-| Create `503`, `detail.code: 1003`, `reservation_invalidated: true` | Discard the ID. Do not retry creation or release it. Request a new reservation if needed. |
+| Create `503`, `detail.code: 1003`, `reservation_invalidated: true` | Every start failed (the server already retried radio failures), or the reservation expires too soon for another start. Discard the ID. Do not retry creation or release it. Request a new reservation if needed. |
 | Create `500`, `detail.code: 1013` | Startup failed for a non-radio reason, named by `detail.stage`. No automatic retry. The reservation is still valid; release it if no longer needed. |
 | Reserve `409`, `detail.code: 1005` | Ordinary contention. Use `detail.next_available_in` as an estimate, not a guarantee. |
 | Reserve `503`, `detail.code: 1002` | Retry the **reservation** POST after `Retry-After` (10 seconds, a polling interval). |

@@ -56,7 +56,7 @@ def test_valid_create_starts_first_time_with_correct_ssid(
 ) -> None:
     antenna = wilab.reserve()
     response = wilab.create(antenna, **overrides)
-    # 200 on the first attempt: no 409/1001 from an SSID comparison (HAP-1).
+    # 200 on the first attempt: no radio failure from an SSID comparison (HAP-1).
     assert response.status_code == 200, response.text
     info = server.iw_info(antenna.interface)
     assert info.get("type") == "AP"

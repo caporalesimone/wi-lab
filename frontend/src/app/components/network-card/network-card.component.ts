@@ -275,9 +275,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
       if (result && this.reservationId === reservationId && !this.loading && !this.restoring) {
         this.loading = true;
         this.createMessage = 'Starting WiFi...';
-        this.creation = this.wilabApiService.startNetwork(reservationId, result, seconds => {
-          this.createMessage = `Radio startup failed. Retry scheduled after ${seconds}s with the same reservation.`;
-        }).subscribe({
+        this.creation = this.wilabApiService.startNetwork(reservationId, result).subscribe({
           next: () => {
             this.createMessage = null;
             this.loading = false;

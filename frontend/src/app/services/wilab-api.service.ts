@@ -1,10 +1,10 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
-import { Observable, throwError, timer } from 'rxjs';
-import { catchError, retry } from 'rxjs/operators';
+import { Observable, throwError } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
-import { ApiError, RecoveryCode, retryAfterSeconds, retryWhenBusy } from './recovery-response';
+import { ApiError, RecoveryCode, retryWhenBusy } from './recovery-response';
 import {
   AntennaDetails,
   StatusResponse,
@@ -100,25 +100,13 @@ export class WilabApiService {
     );
   }
 
-  public startNetwork(
-    reservationId: string, config: NetworkCreateRequest, onRetry: (seconds: number) => void
-  ): Observable<NetworkStatus> {
+  /** Radio failures are retried by the server inside this request: never repeat it. */
+  public startNetwork(reservationId: string, config: NetworkCreateRequest): Observable<NetworkStatus> {
     return this.http.post<NetworkStatus>(
       `${this.apiUrl}/reservations/${reservationId}/network`,
       config,
       { headers: this.getHeaders() }
-    ).pipe(
-      retry({
-        count: 2,
-        delay: (error: HttpErrorResponse) => {
-          const seconds = retryAfterSeconds(error, 409, RecoveryCode.RetryLater);
-          if (seconds === null) return throwError(() => error);
-          onRetry(seconds);
-          return timer(seconds * 1000);
-        }
-      }),
-      catchError(this.handleError)
-    );
+    ).pipe(catchError(this.handleError));
   }
 
   public stopNetwork(reservationId: string): Observable<object> {

@@ -6,6 +6,7 @@ The unplug is simulated by writing 0 and then 1 to the USB device's
 device from the VM: see docs/e2e-testing.md before enabling these tests.
 """
 
+import threading
 import time
 
 import pytest
@@ -18,29 +19,26 @@ RECOVERY_WINDOW = 11 * 60
 REPROBE_WINDOW = 16 * 60
 
 
-def _retry_after(response) -> int:
-    return int(response.headers["Retry-After"])
-
-
-def test_antenna_gone_at_create_is_a_retryable_radio_failure(
+def test_antenna_gone_at_create_is_waited_for_by_the_server(
     wilab: WiLab, server: Server, first_interface: str,
 ) -> None:
-    """WD-5 #1-#2: 409/1001 while gone, no quarantine, 200 after it is back."""
+    """WD-5 #1-#2: back during the server's 5 s pause -> one create answers 200, no quarantine."""
     antenna = wilab.reserve(first_interface)
     port = server.usb_port(antenna.interface)
     start = time.time()
     server.set_usb_authorized(port, 0)
     assert server.wait_interface(antenna.interface, present=False)
 
-    response = wilab.create(antenna)
-    assert (response.status_code, detail_code(response), _retry_after(response)) == (409, 1001, 5)
-    assert not wilab.device(antenna.interface).get("recovery_state")
-
+    result = {}
+    create = threading.Thread(target=lambda: result.update(response=wilab.create(antenna)))
+    create.start()
+    time.sleep(2)  # the first round has failed; the server is in its 5 s pause
     server.set_usb_authorized(port, 1)
     assert server.wait_interface(antenna.interface)
-    time.sleep(_retry_after(response))
-    response = wilab.create(antenna)
+    create.join(timeout=150)
+    response = result["response"]
     assert response.status_code == 200, response.text
+    assert not wilab.device(antenna.interface).get("recovery_state")
     assert "Startup rollback failed" not in server.journal(start)
 
 
@@ -58,18 +56,15 @@ def test_free_antenna_unplug_and_replug(wilab: WiLab, server: Server, first_inte
 
 
 def _quarantine_while_gone(wilab: WiLab, server: Server, interface: str) -> str:
-    """Unplug, then let three creates fail; return the USB port."""
+    """Unplug, then let one create fail on every round (pauses 5 s and 10 s); return the USB port."""
     antenna = wilab.reserve(interface)
     port = server.usb_port(interface)
     server.set_usb_authorized(port, 0)
     assert server.wait_interface(interface, present=False)
-    seen = []
-    for _ in range(3):
-        response = wilab.create(antenna)
-        seen.append((response.status_code, detail_code(response), response.headers.get("Retry-After")))
-        if response.status_code == 409:
-            time.sleep(_retry_after(response))
-    assert seen == [(409, 1001, "5"), (409, 1001, "10"), (503, 1003, None)]
+    started = time.monotonic()
+    response = wilab.create(antenna)
+    assert (response.status_code, detail_code(response)) == (503, 1003), response.text
+    assert time.monotonic() - started >= 15  # the server took both pauses itself
     wilab.reserved.remove(antenna.reservation_id)  # invalidated by the quarantine
     status = wilab.status()
     assert wilab.device(interface)["recovery_state"] == "recovering"

@@ -15,6 +15,7 @@ from conftest import network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
+from wilab.api.routes import network as network_routes
 from wilab.models import NetworkCreateRequest
 from wilab.network.commands import CommandError
 from wilab.reservation import ReservationManager
@@ -167,25 +168,35 @@ def test_missing_interface_at_validation(monkeypatch, present, expected):
         assert error.value.radio is True
 
 
-def test_api_vanished_interface_returns_retry_later_not_quarantine(monkeypatch):
-    """Client contract: 409/1001 with Retry-After; reservation and adapter are kept."""
+def test_api_vanished_interface_is_waited_for_not_quarantined(monkeypatch):
+    """A vanished netdev (re-enumerating) is a radio failure: the server pauses and starts again."""
     config = dependencies.get_config()
     mgr = dependencies.get_manager(config)
     present = {"value": True}
     monkeypatch.setattr(manager_module, "interface_present", lambda iface: present["value"])
+    starts = []
 
     def start(**kwargs):
-        present["value"] = False
-        raise hostapd.HostapdError("hostapd exited with code 1")
+        starts.append(1)
+        if len(starts) == 1:
+            present["value"] = False          # vanished during the first start
+            raise hostapd.HostapdError("hostapd exited with code 1")
+        raise hostapd.HostapdError("bad configuration")   # back, then a non-radio failure
 
+    def pause(seconds):
+        pauses.append(seconds)
+        present["value"] = True               # re-enumerated during the pause
+
+    pauses: list[float] = []
     monkeypatch.setattr(mgr.hostapd_manager, "start", start)
+    monkeypatch.setattr(network_routes, "sleep", pause)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     with TestClient(create_app()) as client:
-        rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).json()["reservation_id"]
+        rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
         result = client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=network_body(**PAYLOAD))
-        assert result.status_code == 409
-        assert result.json()["detail"]["code"] == 1001
-        assert result.headers["Retry-After"] == "5"
+        assert pauses == [5]
+        assert result.status_code == 500
+        assert result.json()["detail"]["code"] == 1013
         assert client.get(f"{RESERVE}/{rid}", headers=headers).status_code == 200
         assert dependencies.get_reservation_manager(config).recovery_snapshot() == {}
 

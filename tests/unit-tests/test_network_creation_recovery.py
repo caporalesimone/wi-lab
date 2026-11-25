@@ -22,7 +22,8 @@ PAYLOAD = {
 
 
 @pytest.mark.parametrize("authorized_port", [None, "2-1"])
-def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, authorized_port):
+def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog, authorized_port):
+    """A: the server pauses 5 s and 10 s and starts again itself; the client sends one create."""
     config = dependencies.get_config()
     radio = config.antennas[0]
     monkeypatch.setattr(radio, "usb_recovery_port", authorized_port)
@@ -31,30 +32,18 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
     schedule = Mock()
     monkeypatch.setattr(manager, "start_network", start)
     monkeypatch.setattr(manager.recovery, "schedule", schedule)
-    now = 100
-    monkeypatch.setattr(network, "monotonic", lambda: now)
+    pauses = []
+    monkeypatch.setattr(network, "sleep", pauses.append)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
 
     with TestClient(create_app()) as client:
-        reservation = client.post(RESERVE, headers=headers, json={"duration_seconds": 60})
+        reservation = client.post(RESERVE, headers=headers, json={"duration_seconds": 300})
         assert reservation.status_code == 200
         rid = reservation.json()["reservation_id"]
         create = f"/api/v2/reservations/{rid}/network"
 
-        for expected_attempt, delay in enumerate((5, 10), start=1):
-            result = client.post(create, headers=headers, json=network_body(**PAYLOAD))
-            assert (result.status_code, result.headers["Retry-After"]) == (409, str(delay))
-            assert result.json()["detail"] == {
-                "code": 1001, "reason": "retry_later", "reservation_invalidated": False,
-            }
-            assert client.get(f"{RESERVE}/{rid}", headers=headers).status_code == 200
-            now += 1
-            early = client.post(create, headers=headers, json=network_body(**PAYLOAD))
-            assert early.headers["Retry-After"] == str(delay - 1)
-            assert start.call_count == expected_attempt
-            now += delay - 1
-
         terminal = client.post(create, headers=headers, json=network_body(**PAYLOAD))
+        assert pauses == [5, 10]
         assert terminal.status_code == 503  # API-4: a client state, not a server error
         assert "Retry-After" not in terminal.headers
         assert terminal.json()["detail"]["code"] == 1003
@@ -62,7 +51,7 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
         assert client.post(create, headers=headers, json=network_body(**PAYLOAD)).status_code == 404
         assert [c.kwargs["allow_internal_retry"] for c in start.call_args_list] == [True, False, False]
 
-        blocked = client.post(RESERVE, headers=headers, json={"duration_seconds": 60})
+        blocked = client.post(RESERVE, headers=headers, json={"duration_seconds": 300})
         assert blocked.status_code == 503
         assert blocked.json()["detail"]["code"] == (1002 if authorized_port else 1003)
         assert blocked.json()["detail"]["reservation_invalidated"] is False
@@ -84,7 +73,54 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
             reservations = dependencies.get_reservation_manager(config)
             schedule.assert_called_once_with(reservations, radio.device_id, authorized_port, "2.4ghz", 1)
             reservations.finish_recovery(radio.device_id, recovered=True)
-            assert client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).status_code == 200
+            assert client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).status_code == 200
+
+
+def test_radio_failure_recovered_by_a_later_start_answers_200(monkeypatch):
+    """A: the second start succeeds after the 5 s pause; the client never sees an error."""
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    calls = []
+
+    def start(*args, **kwargs):
+        calls.append(kwargs["allow_internal_retry"])
+        if len(calls) == 1:
+            raise StartupFailure("radio timeout", radio=True)
+    monkeypatch.setattr(manager, "start_network", start)
+    monkeypatch.setattr(manager, "get_status", lambda device: NetworkStatus(interface=device, active=True))
+    pauses = []
+    monkeypatch.setattr(network, "sleep", pauses.append)
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    with TestClient(create_app()) as client:
+        rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
+        result = client.post(f"{RESERVE}/{rid}/network", headers=headers, json=network_body(**PAYLOAD))
+    assert result.status_code == 200 and result.json()["active"] is True
+    assert (calls, pauses) == ([True, False], [5])
+
+
+def test_reservation_too_short_for_another_start_is_released_without_quarantine(monkeypatch):
+    """A: no time left for the next start -> 503 / 1003, antenna free again, no quarantine."""
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    start = Mock(side_effect=StartupFailure("radio timeout", radio=True))
+    monkeypatch.setattr(manager, "start_network", start)
+    monkeypatch.setattr(manager.recovery, "schedule", Mock())
+    pauses = []
+    monkeypatch.setattr(network, "sleep", pauses.append)
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    with TestClient(create_app()) as client:
+        reserved = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()
+        monkeypatch.setattr(network, "START_MARGIN", 400)   # the next start would not fit
+        result = client.post(
+            f"{RESERVE}/{reserved['reservation_id']}/network", headers=headers, json=network_body(**PAYLOAD),
+        )
+        assert result.status_code == 503
+        assert result.json()["detail"]["code"] == 1003
+        assert result.json()["detail"]["reservation_invalidated"] is True
+        assert (start.call_count, pauses) == (1, [])
+        reservations = dependencies.get_reservation_manager(config)
+        assert reservations.recovery_snapshot() == {}
+        assert not reservations.is_device_reserved(reserved["interface"])
 
 
 @pytest.mark.parametrize("verified_after", [2, None])
@@ -194,13 +230,13 @@ def test_api_viewers_share_recovery_guidance_and_examples():
             assert viewer.status_code == 200 and "/openapi.json" in viewer.text
         schema = client.get("/openapi.json").json()
     overview = schema["info"]["description"]
-    assert "same ID and body after `Retry-After`" in overview
+    assert "1001" not in overview  # radio failures are retried by the server (A)
     assert "Do not retry creation or release it" in overview
     assert schema["tags"][0]["name"] == "System"
     paths = schema["paths"]
     create = paths["/api/v2/reservations/{reservation_id}/network"]["post"]["responses"]
     reserve = paths[RESERVE]["post"]["responses"]
-    assert "Retry-After" in create["409"]["headers"]
+    assert "headers" not in create["409"]
     assert "headers" not in create["500"]
     generic = create["500"]["content"]["application/json"]["examples"]
     assert generic["startup_failure"]["value"]["detail"]["code"] == 1013  # startup_failed
@@ -210,7 +246,9 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert failures["device_unavailable"]["value"]["detail"]["code"] == 1003
     assert failures["device_unavailable"]["value"]["detail"]["reservation_invalidated"] is True
     assert "discard the reservation ID" in failures["device_unavailable"]["summary"]
-    assert create["409"]["content"]["application/json"]["examples"]["retry_later"]["value"]["detail"]["code"] == 1001
+    assert {e["value"]["detail"]["code"] for e in create["409"]["content"]["application/json"]["examples"].values()} == {
+        1008, 1009,
+    }
     assert reserve["503"]["content"]["application/json"]["examples"]["device_recovering"]["value"]["detail"]["code"] == 1002
     status_examples = paths["/api/v2/status"]["get"]["responses"]["200"]["content"]["application/json"]["examples"]
     assert {name: e["value"]["status"] for name, e in status_examples.items()} == {
