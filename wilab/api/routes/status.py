@@ -123,6 +123,7 @@ def system_status(
     |---|---|
     | `antenna_quarantined` | The antenna has `recovery_state`: `recovering` (USB reset and probe running) or `unavailable` (re-probed every 30 s, backing off to 15 min). It may return by itself. Not allocatable, even with `reserved: false`. |
     | `network_being_repaired` | A reserved network has `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`). Its owner waits. |
+    | `network_stop_incomplete` | A `DELETE .../network` answered `503 / 1012`: the network is half stopped (`runtime_state: stop_failed`) until its owner repeats the DELETE. |
     | `hostapd_not_running`, `dnsmasq_not_running` | The AP or DHCP process of that network is dead; the watchdog normally repairs it within seconds. |
     | `nat_rule_missing` | That network has Internet enabled but its NAT rule is missing. |
     | `upstream_unreachable` | The host uplink is down or has no IPv4 address while a network has Internet. |
@@ -152,6 +153,7 @@ REASON_MESSAGES = {
     "upstream_unreachable": "Upstream interface {name} is down or has no IPv4 address",
     "command_stuck": "{count} host command(s) stuck in the kernel; the adapter may need a reset",
     "loop_stalled": "Background loop stalled: {loops}",
+    "network_stop_incomplete": "A stop did not complete (hostapd stuck in the kernel); the owner repeats DELETE .../network",
     "cleanup_failed": "Cleanup failed {count} time(s) in a row; the antenna stays held, next attempt in {wait} s",
 }
 
@@ -194,6 +196,11 @@ def _assess(
         if reservation is not None and (runtime_state := manager.watchdog.state(reservation)):
             entry["runtime_state"] = runtime_state
             reasons.append(_reason("network_being_repaired", n.interface, state=runtime_state))
+        elif manager.stop_failed(n.device_id):
+            # Same state as GET .../network; its half-stopped processes are not
+            # reported again as hostapd/dnsmasq/NAT problems below.
+            entry["runtime_state"] = "stop_failed"
+            reasons.append(_reason("network_stop_incomplete", n.interface))
         if n.device_id in recovery:
             state = "recovering" if recovery[n.device_id] else "unavailable"
             entry["recovery_state"] = state
@@ -204,12 +211,13 @@ def _assess(
                 "cleanup_failed", n.interface, count=count, wait=ceil(manager.cleanup_wait(n.device_id)),
             ))
         antennas.append(entry)
-    for device in checks["hostapd"]["missing"]:
-        reasons.append(_reason("hostapd_not_running", device))
-    for device in checks["dnsmasq"]["missing"]:
-        reasons.append(_reason("dnsmasq_not_running", device))
-    for device in checks["iptables_nat"]["missing"]:
-        reasons.append(_reason("nat_rule_missing", device))
+    for check, code in (
+        ("hostapd", "hostapd_not_running"), ("dnsmasq", "dnsmasq_not_running"),
+        ("iptables_nat", "nat_rule_missing"),
+    ):
+        for device in checks[check]["missing"]:
+            if not manager.stop_failed(device):
+                reasons.append(_reason(code, device))
     upstream = checks["upstream_interface"]
     if internet_needed and upstream.get("reachable") is not True:
         reasons.append(_reason("upstream_unreachable", name=upstream.get("name")))

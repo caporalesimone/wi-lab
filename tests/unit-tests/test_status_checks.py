@@ -143,3 +143,17 @@ def test_degraded_reasons_name_the_problem_and_the_antenna(monkeypatch):
     assert monitoring["checks"]["hostapd"]["missing"] == [device]
     assert monitoring["check_interval_seconds"] == 10 and monitoring["checked_at"].endswith("Z")
     assert client.get("/api/v2/monitoring").status_code == 401
+
+
+def test_half_stopped_network_is_reported_as_stop_incomplete_only(running, monkeypatch):
+    """API-1 #1: /status shows stop_failed like GET .../network, not as a dead dnsmasq."""
+    get, _state, manager, device = running
+    monkeypatch.setattr(manager.dhcp_server, "is_running", Mock(return_value=False))  # stopped by the stop
+    manager._stop_failed.add(device)
+    try:
+        data = get()
+    finally:
+        manager._stop_failed.discard(device)
+    entry = next(a for a in data["antennas"] if a["interface"] == device)
+    assert entry["runtime_state"] == "stop_failed"
+    assert [r["code"] for r in data["degraded_reasons"]] == ["network_stop_incomplete"]

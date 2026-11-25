@@ -63,6 +63,7 @@ service). The detail of each check is in `GET /monitoring`.
 |---|---|---|
 | `antenna_quarantined` | the antenna | `recovery_state` `recovering` (USB reset running) or `unavailable` (re-probed periodically). Not allocatable. |
 | `network_being_repaired` | the antenna | The reserved network has `runtime_state` `restoring_ap`, `restoring_dhcp`, `dhcp_failed` or `restore_failed`. |
+| `network_stop_incomplete` | the antenna | A `DELETE .../network` answered `503 / 1012`: the network is half stopped (`runtime_state: stop_failed`) until its owner repeats the DELETE. Its stopped processes are not reported as `hostapd_not_running` or `dnsmasq_not_running`. |
 | `hostapd_not_running` | the antenna | The AP process of that network is dead. |
 | `dnsmasq_not_running` | the antenna | The DHCP process of that network is dead. |
 | `nat_rule_missing` | the antenna | The network has Internet enabled but its NAT rule is missing. |
