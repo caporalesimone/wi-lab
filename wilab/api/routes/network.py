@@ -83,9 +83,12 @@ def _error(code: int, reason: str, message: str) -> dict:
             "description": "Network already active, watchdog restoration, or radio cooldown (1001). Retry only for 1001.",
             "headers": RETRY_AFTER_HEADER,
             "content": {"application/json": {"examples": {
-                "active_network": {"value": {"detail": _error(409, "conflict", "Network is already active")}},
+                "active_network": {"value": {"detail": _error(
+                    1008, "network_already_active",
+                    "Network wlan0 is already active. Stop it first before creating a new one.",
+                )}},
                 "restoration_in_progress": {
-                    "value": {"detail": _error(409, "conflict", "Network restoration is in progress")},
+                    "value": {"detail": _error(1009, "restoration_in_progress", "Network restoration is in progress")},
                 },
                 "retry_later": recovery_example(RecoveryCode.RETRY_LATER),
             }}},
@@ -324,7 +327,9 @@ def start_network(
     """
     req = body.to_request()
     if manager.watchdog.state(reservation) in ("restoring_ap", "restoring_dhcp"):
-        raise HTTPException(status_code=409, detail="Network restoration is in progress")
+        raise HTTPException(status_code=409, detail=domain_error(
+            ApiErrorCode.RESTORATION_IN_PROGRESS, "Network restoration is in progress",
+        ))
     # A create waits for the adapter instead of answering 1006: one create at a
     # time per reservation is the client contract, and the wait is bounded.
     with hold_reservation(reservation_mgr, reservation, wait=True):
@@ -370,7 +375,9 @@ def start_network(
             error_msg = str(e)
             error_msg_lower = error_msg.lower()
             if "already active" in error_msg_lower:
-                raise HTTPException(status_code=409, detail=error_msg)
+                raise HTTPException(
+                    status_code=409, detail=domain_error(ApiErrorCode.NETWORK_ALREADY_ACTIVE, error_msg),
+                )
             if "unknown device_id" in error_msg_lower:
                 raise HTTPException(status_code=404, detail=error_msg)
             raise HTTPException(status_code=500, detail=error_msg)
@@ -424,7 +431,9 @@ def stop_network(
             if manager.watchdog.forget(device_id):
                 # The client gives up a network the watchdog failed to restore (WD-2).
                 return {"detail": f"Network {device_id} stopped successfully"}
-            raise HTTPException(status_code=409, detail=f"Network {device_id} is already inactive")
+            raise HTTPException(status_code=409, detail=domain_error(
+                ApiErrorCode.NETWORK_NOT_ACTIVE, f"Network {device_id} is already inactive",
+            ))
 
         try:
             manager.stop_network(device_id)

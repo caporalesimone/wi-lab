@@ -684,6 +684,24 @@ class TestNetworkDeleteEndpoint:
         assert not manager.stop_failed('wls16')
         assert 'wls16' not in manager.active
 
+    def test_second_create_is_409_1008(self, client, valid_token, reservation_id, monkeypatch):
+        """API-3: an AP already running has its own code, not only a message."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
+        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
+        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
+        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        url = f'/api/v1/interface/{reservation_id}/network'
+        body = network_body(ssid='TestAP', channel=6, encryption='open', band='2.4ghz', tx_power_level=4)
+        headers = {'Authorization': valid_token}
+        assert client.post(url, headers=headers, json=body).status_code == 200
+        second = client.post(url, headers=headers, json=body)
+        assert second.status_code == 409
+        assert (second.json()['detail']['code'], second.json()['detail']['reason']) == (1008, 'network_already_active')
+
     def test_stop_network_inactive(self, client, valid_token, reservation_id, monkeypatch):
         """Test stopping an inactive network returns 409."""
         cfg = load_config()
@@ -696,7 +714,7 @@ class TestNetworkDeleteEndpoint:
         )
         assert resp.status_code == 409
         data = resp.json()
-        assert data['detail']['code'] == 409
+        assert data['detail']['code'] == 1007  # network_not_active
         assert data['detail']['message'] == 'Network wls16 is already inactive'
     
     def test_stop_network_invalid_reservation(self, client, valid_token):

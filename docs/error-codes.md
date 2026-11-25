@@ -1,0 +1,69 @@
+# Error codes
+
+Every error answered under `/api/v1` has the same body:
+
+```json
+{"detail": {"code": 1006, "reason": "device_busy", "message": "text for display"}}
+```
+
+- **`code`** (integer) and **`reason`** (string) are stable: use them, with the
+  HTTP status, for control flow.
+- **`message`** is for display and can change between versions.
+- Some codes add fields (listed below) and some answers carry a `Retry-After`
+  header (seconds).
+
+The **action** column uses the six actions of the
+[AP creation procedure, 3.1](ap-creation-procedure.md#31-what-to-do-with-each-answer):
+**DONE**, **WAIT**, **REPEAT** (same request after `Retry-After`; the only
+case for automatic retries), **FIX**, **RESERVE AGAIN** (the ID is gone: do not
+release it), **STOP** (show the message, ask an operator).
+
+## Domain codes (1001 and up)
+
+| Code | Reason | HTTP | `Retry-After` | Where | Meaning | Action |
+|---|---|---|---|---|---|---|
+| 1001 | `retry_later` | 409 | yes (5, then 10; or the remaining cooldown) | create | A classified radio failure was rolled back; the reservation is kept. Also answered, without using an attempt, when a create arrives during the cooldown. | REPEAT the same create (at most twice) |
+| 1002 | `device_recovering` | 503 | 10 | reserve | No antenna is allocatable while one is being recovered (USB reset). | REPEAT |
+| 1003 | `device_unavailable` | 503 | no | reserve; create | Reserve: no antenna discovered or usable and nothing recovering. Create: third radio failure, or the antenna disappeared; adds `reservation_invalidated: true`. | Reserve: STOP (after a service start, wait for discovery first). Create: RESERVE AGAIN |
+| 1004 | `cleanup_failed` | 503 | no | reserve, get and release of a reservation; create; stop | A cleanup failed and the antenna is still held. | STOP (on release, REPEAT a few times first) |
+| 1005 | `no_device_available` | 409 | no | reserve | Every antenna is reserved. Adds `next_available_at` (UTC) and `next_available_in` (seconds), both `null` when no release is scheduled. | REPEAT after `next_available_in`, or a backoff |
+| 1006 | `device_busy` | 503 | 2 | every call with a reservation ID except the create | Another operation held the antenna for more than 5 s. Nothing was changed. | REPEAT |
+| 1007 | `network_not_active` | 409 | no | Internet, TX power, QoS profile, `DELETE .../network` | The reservation is valid but no network is running. | FIX (create the network first); DONE for a stop |
+| 1008 | `network_already_active` | 409 | no | create | A network already runs on this reservation, often from a previous create whose answer was lost. | DONE: read it with `GET .../network`; `DELETE .../network` first to replace it |
+| 1009 | `restoration_in_progress` | 409 | no | create | The watchdog is restarting this network. | WAIT until `runtime_state` is `null`, then create only if `active` is `false` |
+| 1010 | `qos_profile_already_active` | 409 | no | start a QoS profile | A profile already runs on this network. | FIX: stop it first |
+| 1011 | `qos_profile_not_active` | 409 | no | stop a QoS profile | No profile runs on this network. | DONE |
+
+## Generic codes (the HTTP status)
+
+Errors without a domain meaning use the HTTP status as `code`.
+
+| Code | Reason | When | Action |
+|---|---|---|---|
+| 401 | `unauthorized` | Missing or wrong `Authorization: Bearer` token. | FIX |
+| 403 | `forbidden` | A Maintenance call without the right `X-Confirm-Password`, or with protected commands disabled. | FIX |
+| 404 | `not_found` | **On a call with a reservation ID: the ID expired, was released or was invalidated** (its antenna was quarantined, also by a failed watchdog restart). On `GET /antennas/{interface}`: no managed antenna has that interface. On a release: nothing left to release. | RESERVE AGAIN (release: DONE) |
+| 422 | `validation_error` | The request is invalid. The message starts with the path of the refused field, with dots: `radio.channel_width: ...`, `wifi.security.password: ...`, `profile_id: ...`. Also an antenna that cannot do what is asked (channel, width, generation, encryption, TX power not supported by the driver). | FIX |
+| 500 | `internal_server_error` | An unexpected server error, or a network startup that failed for a non-radio reason and was rolled back (the reservation is kept). | STOP |
+| 503 | `service_unavailable` | `GET /antennas/{interface}`: the radio cannot be read now (unplugged or being reset). | REPEAT after a few seconds |
+
+`404` never means anything else on a call with a reservation ID: a missing QoS
+profile in the catalogue is `422`, a missing running profile is `409 / 1011`,
+and an unsupported TX power is `422`.
+
+## `degraded_reasons` codes (`GET /status`)
+
+Not errors: `GET /status` lists why the service is `degraded`, one
+`{code, interface, message}` per cause (`interface` is `null` for the whole
+service). The detail of each check is in `GET /monitoring`.
+
+| Code | `interface` | Meaning |
+|---|---|---|
+| `antenna_quarantined` | the antenna | `recovery_state` `recovering` (USB reset running) or `unavailable` (re-probed periodically). Not allocatable. |
+| `network_being_repaired` | the antenna | The reserved network has `runtime_state` `restoring_ap`, `restoring_dhcp`, `dhcp_failed` or `restore_failed`. |
+| `hostapd_not_running` | the antenna | The AP process of that network is dead. |
+| `dnsmasq_not_running` | the antenna | The DHCP process of that network is dead. |
+| `nat_rule_missing` | the antenna | The network has Internet enabled but its NAT rule is missing. |
+| `upstream_unreachable` | `null` | The host uplink is down or has no IPv4 address while a network has Internet. |
+| `command_stuck` | `null` | A host command did not exit even after SIGKILL (hung driver). |
+| `loop_stalled` | `null` | A background loop has not run for 3 minutes. |

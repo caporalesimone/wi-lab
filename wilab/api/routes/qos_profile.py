@@ -13,6 +13,7 @@ from ...api.dependencies import (
     hold_reservation,
     resolve_reservation,
 )
+from ...api.errors import ApiErrorCode, domain_error
 from ...models import (
     QosProfile,
     QosProfileStartRequest,
@@ -139,16 +140,17 @@ def start_profile(
         interface = _require_active_network(device_id, manager)
 
         if pm.is_active(interface):
-            raise HTTPException(
-                status_code=409,
-                detail="A profile is already active on this interface. Stop it first.",
-            )
+            raise HTTPException(status_code=409, detail=domain_error(
+                ApiErrorCode.QOS_PROFILE_ALREADY_ACTIVE,
+                "A profile is already active on this interface. Stop it first.",
+            ))
 
         if body.profile_id is not None:
             profile = pm.get_profile(body.profile_id)
             if profile is None:
+                # A body error, not a missing reservation: 404 always means the ID is gone.
                 raise HTTPException(
-                    status_code=404, detail=f"Profile '{body.profile_id}' not found in catalogue"
+                    status_code=422, detail=f"profile_id: profile '{body.profile_id}' not found in catalogue",
                 )
         else:
             profile = QosProfileManager.build_inline_profile(
@@ -215,7 +217,9 @@ def stop_profile(
 
         ap = pm.get_state(interface)
         if ap is None or not ap.active:
-            raise HTTPException(status_code=404, detail="No active profile on this interface")
+            raise HTTPException(status_code=409, detail=domain_error(
+                ApiErrorCode.QOS_PROFILE_NOT_ACTIVE, "No active profile on this interface",
+            ))
 
         profile_id = ap.profile_id
         pm.stop_profile(interface, qos)

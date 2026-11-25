@@ -20,6 +20,8 @@ again, stop). The complete list, for every call, is in
 [3.1 What to do with each answer](#31-what-to-do-with-each-answer); radio
 failures such as a hostapd crash are explained in
 [3.2](#32-radio-failures-such-as-a-hostapd-crash).
+Every error code, with its HTTP status and action, is also listed in
+[Error codes](error-codes.md).
 
 ## 1. Reservation
 
@@ -250,8 +252,8 @@ The actions for every call, in one place, are in [3.1](#31-what-to-do-with-each-
 |---|---|---|
 | `200` | The AP is up and DHCP is running. | Done. Stop retrying. |
 | `409 / 1001` + `Retry-After` | A **classified radio failure** occurred and was rolled back. The reservation is still valid. | Wait `Retry-After` seconds, then repeat the **same** request with the **same** ID and body. |
-| `409` without code `1001`, "already active" | An AP is already running on this reservation. | Do not retry. Read it with `GET .../network`, or stop it first with `DELETE .../network`. |
-| `409` without code `1001`, "restoration in progress" | The watchdog is restarting this AP. | Do not create. Poll `GET .../network` until `runtime_state` is gone. |
+| `409 / 1008` (`network_already_active`) | An AP is already running on this reservation. | Do not retry. Read it with `GET .../network`, or stop it first with `DELETE .../network`. |
+| `409 / 1009` (`restoration_in_progress`) | The watchdog is restarting this AP. | Do not create. Poll `GET .../network` until `runtime_state` is gone. |
 | `422` | Invalid body (including `encryption: wpa`), channel unsupported/disabled on this antenna, or an encryption, channel width or Wi-Fi generation the antenna does not support. | Fix the request. Do not retry the same body. |
 | `404` | The reservation is unknown, expired or invalidated. | Stop using the ID. Reserve again if needed. |
 | `503 / 1003` | **Terminal failure.** The antenna was quarantined and the reservation **invalidated**. | Discard the ID. Do not retry creation and do not release it. Reserve again if needed. |
@@ -574,10 +576,10 @@ sequenceDiagram
         else 422
             W-->>C: message starts with the field path (radio.channel: ..., wifi.security.password: ...)
             Note over C: Fix that field. Never repeat the same body
-        else 409 "already active"
+        else 409 / 1008 network_already_active
             W-->>C: an AP already runs on this reservation
             Note over C: Usually a previous create that succeeded but whose answer was lost.<br/>Read it with GET .../network, or DELETE .../network first
-        else 409 "restoration in progress"
+        else 409 / 1009 restoration_in_progress
             W-->>C: the watchdog is restarting this AP
             Note over C: Do not create. Poll GET .../network until runtime_state is null
         else 404
@@ -657,11 +659,11 @@ sequenceDiagram
 
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 5 - stop the AP and keep the reservation (optional)
-    loop Until 200, 409 or 404
+    loop Until 200, 409 / 1007 or 404
         C->>W: DELETE /interface/{id}/network
         alt 200
             W-->>C: stopped (also cancels the retries of restore_failed)
-        else 409
+        else 409 / 1007
             W-->>C: already inactive
         else 503 / 1006 + Retry-After 2
             W-->>C: antenna busy, nothing changed
@@ -721,8 +723,8 @@ Every answer leads to exactly one of these actions:
 | | `409 / 1001` + `Retry-After` | REPEAT | Radio failure, reservation kept. Same ID, same body. At most twice; first check that `expires_in` is longer than `Retry-After` plus the startup time, otherwise release and RESERVE AGAIN. |
 | | `503 / 1003` | RESERVE AGAIN | Third radio failure, or the antenna disappeared: reservation invalidated. **Do not release it.** |
 | | `422` | FIX | The message starts with the field path, e.g. `radio.channel_width: ...`. |
-| | `409` "already active" | DONE | An AP already runs on this reservation (often a previous create whose answer was lost). Read it with `GET .../network`; to replace it, `DELETE .../network` first. |
-| | `409` "restoration in progress" | WAIT | Until `runtime_state` is `null`, then create only if `active` is `false`. |
+| | `409 / 1008` | DONE | An AP already runs on this reservation (often a previous create whose answer was lost). Read it with `GET .../network`; to replace it, `DELETE .../network` first. |
+| | `409 / 1009` | WAIT | Until `runtime_state` is `null`, then create only if `active` is `false`. |
 | | `500 / 500` | STOP | Startup failed for a non-radio reason and was rolled back; the reservation is still valid. Release it before reserving again. |
 | | `503 / 1004` | STOP | Cleanup of the previous startup failed. |
 | | no answer (timeout, connection lost) | WAIT | Never resend blindly: `GET .../network` with a long timeout. `active: true` → DONE. `runtime_state` set → WAIT. `active: false` and no `runtime_state` → send the create again (it counts as an attempt). `404` → RESERVE AGAIN. |
@@ -731,8 +733,11 @@ Every answer leads to exactly one of these actions:
 | | `200`, `restore_failed` | WAIT | The AP is down and the watchdog retries. Or `DELETE .../network` to give up, or create again. |
 | | `200`, `stop_failed` | REPEAT | Repeat the `DELETE .../network` that answered `503 / 1004`. |
 | Internet, TX power, QoS | `409 / 1007` | FIX | No running network: create it first. |
+| | `422` | FIX | Includes a TX power the driver does not support and an unknown QoS `profile_id`. |
+| QoS profile start | `409 / 1010` | FIX | A profile already runs: stop it first. |
+| QoS profile stop | `409 / 1011` | DONE | No profile runs. |
 | `DELETE .../network` | `200` | DONE | The reservation stays. |
-| | `409` | DONE | Already inactive. |
+| | `409 / 1007` | DONE | Already inactive. |
 | | `503 / 1004` + `Retry-After: 5` | REPEAT | The stop did not complete (hostapd stuck for a few seconds). Repeat until `200`. |
 | `DELETE /device-reservation/{id}` | `200` | DONE | AP stopped, antenna free. |
 | | `404` | DONE | Already expired, released or invalidated: nothing left to release. |

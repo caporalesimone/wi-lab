@@ -184,6 +184,7 @@ Detailed guides live in the `docs/` folder:
 | [ap-creation-procedure.md](docs/ap-creation-procedure.md) | Client guide: reservation, AP creation, retries |
 | [architecture.md](docs/architecture.md) | Backend architecture, threads, AP pipeline, recovery, manual adapter recovery |
 | [swagger.md](docs/swagger.md) | API exploration via Swagger UI |
+| [error-codes.md](docs/error-codes.md) | Every API error code (`detail.code`), its HTTP status and the client action |
 | [networking.md](docs/networking.md) | Subnet layout, iptables, NAT internals |
 | [unit-testing.md](docs/unit-testing.md) | Test suite structure and pytest usage |
 | [troubleshooting.md](docs/troubleshooting.md) | Common issues, diagnostics scripts, debugging |

@@ -11,8 +11,8 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 55 |
-| ⚠️ Breaking changes | 13 |
-| 🔧 Maintenance changes | 12 |
+| ⚠️ Breaking changes | 14 |
+| 🔧 Maintenance changes | 13 |
 | ✨ New features | 19 |
 | 📦 Commits since 3.0.0 | 89 |
 
@@ -32,6 +32,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Configuration: the `networks` section is renamed `antennas`, and every entry must set `show_dfs: true|false`; there is no fallback for the old name.
 - `GET /api/v1/interface/{id}/network/available-channels` is removed: use `GET /api/v1/antennas/{interface}`, which lists only the usable channels, grouped by band with the widths each can use, and needs no reservation.
 - `GET /api/v1/status` no longer returns `checks`: it gives `degraded_reasons`, one entry per cause of `degraded` with a stable `code` (`antenna_quarantined`, `network_being_repaired`, `hostapd_not_running`, `dnsmasq_not_running`, `nat_rule_missing`, `upstream_unreachable`, `command_stuck`, `loop_stalled`), the `interface` it concerns and a `message`. The detail of the checks moved to the new `GET /api/v1/monitoring`.
+- Every `409` has a `detail.code` (Fable API-3): `1008 network_already_active` and `1009 restoration_in_progress` on the create, `1007 network_not_active` on stopping a stopped network, `1010 qos_profile_already_active` and `1011 qos_profile_not_active` on QoS profiles; before they had none and the client had to read the message. `404` on a call with a reservation ID now only means the ID is gone: an unknown QoS `profile_id` and a TX power the driver does not support answer `422` (were `404`), stopping a QoS profile that is not running answers `409 / 1011` (was `404`).
 - Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all: `GET /api/v1/debug` now returns `403` without it, or when `protected_commands_password` is not set.
 
 ### ✨ Features
@@ -126,6 +127,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Include the API operation, HTTP status, and error code in journal entries for server errors, without request or response data.
 - Swagger lists release-all (`DELETE /api/v1/device-reservation/all`) and `GET /api/v1/debug` only under **Maintenance**; release-all also appeared under Reservation.
 - `GET /api/v1/debug` is deprecated and will be removed.
+- New [docs/error-codes.md](docs/error-codes.md): every `detail.code`, its HTTP status, `Retry-After`, where it is answered and the client action, plus the `degraded_reasons` codes; a test fails when a code is not documented.
 - Detailed sequence diagrams of the whole flow, reservation to release, with every error answer and when to retry: client view in the [AP creation procedure](docs/ap-creation-procedure.md#3-sequence-diagram), with one action (done, wait, repeat, fix, reserve again, stop) for every answer of every call and how radio failures such as a hostapd crash reach the client, server view in [Architecture 6.1](docs/architecture.md#61-end-to-end-sequence-server-view). The captive portal diagram in the architecture guide did not render (a `;` in a note).
 - Document `GET /api/v1/status` health values (`standby`, `ok`, `degraded`), what makes the service `degraded` (quarantined adapter, network being repaired, failed health check) and how clients learn about quarantined adapters, in Swagger (three response examples), the API overview, the AP creation procedure (2.8) and the Swagger guide.
 
@@ -213,6 +215,11 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 **Configuration**
 
 - `networks:` → `antennas:`; each entry needs `show_dfs: true|false` (DFS channels offered or not).
+
+**Error codes**
+
+- New domain codes on `409`: `1008` (create on an active network), `1009` (create during a watchdog restoration), `1010` / `1011` (QoS profile already / not running); stopping a stopped network answers `409 / 1007`. Full list: [docs/error-codes.md](docs/error-codes.md).
+- `404` with a reservation ID only means the ID is gone. Unknown QoS `profile_id` and unsupported TX power: `422` (were `404`). Stopping a QoS profile that is not running: `409 / 1011` (was `404`).
 
 **Internet, TX power, QoS profile**
 

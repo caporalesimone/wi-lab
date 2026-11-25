@@ -13,10 +13,19 @@ logger = logging.getLogger(__name__)
 
 
 class ApiErrorCode(IntEnum):
+    """Domain codes in `detail.code`; 1001-1003 are in recovery_responses.RecoveryCode.
+
+    Every code is listed, with its HTTP status and client action, in
+    docs/error-codes.md.
+    """
     CLEANUP_FAILED = 1004
     NO_DEVICE_AVAILABLE = 1005
     DEVICE_BUSY = 1006
     NETWORK_NOT_ACTIVE = 1007
+    NETWORK_ALREADY_ACTIVE = 1008
+    RESTORATION_IN_PROGRESS = 1009
+    QOS_PROFILE_ALREADY_ACTIVE = 1010
+    QOS_PROFILE_NOT_ACTIVE = 1011
 
 # Seconds a client should wait before repeating a request answered 503 / 1006.
 DEVICE_BUSY_RETRY_AFTER = 2

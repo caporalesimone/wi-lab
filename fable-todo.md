@@ -69,7 +69,7 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 33 | [API-9](Fable-Notes.md#L3328) | ✅ | Allineare gli esempi OpenAPI ai modelli correnti. |
 | 34 | [API-5](Fable-Notes.md#L3353) |  | Restituire dati strutturati sullo stato della rete insieme al messaggio. |
 | 35 | [API-10](Fable-Notes.md#L3388) |  | Rifiutare i campi sconosciuti nelle richieste. |
-| 36 | [API-3](Fable-Notes.md#L3409) |  | Chiarire e uniformare i significati dei conflitti HTTP 409. |
+| 36 | [API-3](Fable-Notes.md#L3409) | ✅ | Chiarire e uniformare i significati dei conflitti HTTP 409. Ogni 409 ha un `detail.code` (1007, 1008, 1009, 1010, 1011); 404 con un ID di reservation significa solo ID sparito; tutti i codici in `docs/error-codes.md`. |
 | 37 | [API-11](Fable-Notes.md#L3440) |  | Semplificare e documentare i retry tra server e client. |
 | 38 | [API-1](Fable-Notes.md#L3466) |  | Consolidare dati API duplicati e uniformare i nomi. |
 | 39 | [API-8](Fable-Notes.md#L3485) | ✅ | Rimuovere dettagli implementativi dai modelli di risposta pubblici. Fatto con la `GET .../network` a sezioni (`radio`, `wifi`, `ip`, ...): niente più `dhcp.*_file`, `network_addr`, `interface`/`subnet` ripetuti, `clients_connected`. |

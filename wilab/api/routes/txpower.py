@@ -122,4 +122,6 @@ def set_tx_power(
         except NetworkNotActive:
             raise  # 409 / 1007 (API-2)
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+            # The driver refused the setting (e.g. not supported): not a missing
+            # reservation, which is the only meaning of 404.
+            raise HTTPException(status_code=422, detail=str(e))

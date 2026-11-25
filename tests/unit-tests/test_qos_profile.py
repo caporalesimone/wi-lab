@@ -635,7 +635,8 @@ class TestQosProfileAPI:
             headers=auth_headers,
             json={"profile_id": "nonexistent_profile"},
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 422  # a body error; 404 only means the reservation is gone
+        assert resp.json()['detail']['message'].startswith('profile_id: ')
 
     def test_start_profile_already_active_409(self, client, auth_headers, reservation_id):
         client.post(
@@ -730,7 +731,8 @@ class TestQosProfileAPI:
             f"/api/v1/interface/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 409
+        assert resp.json()['detail']['code'] in (1007, 1011)  # no network, or no profile
 
     def test_start_requires_auth(self, client, reservation_id):
         resp = client.post(

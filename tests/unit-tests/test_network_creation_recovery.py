@@ -328,6 +328,7 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch):
         assert reserved.status_code == 200 and reserved.json()["expires_at"] == expiry
         create = client.post(path, headers=headers, json=network_body(**PAYLOAD))
         assert create.status_code == 409 and "Retry-After" not in create.headers
+        assert create.json()["detail"]["code"] == 1009  # restoration_in_progress
         system = client.get("/api/v1/status", headers=headers).json()
         assert system["status"] == "degraded"
         assert system["networks"][0]["runtime_state"] == "restoring_ap"
