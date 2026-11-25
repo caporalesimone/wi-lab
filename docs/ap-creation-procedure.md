@@ -40,6 +40,20 @@ when the server allows it: `GET /api/v2/status` reports
 `reservation_policy.allow_unlimited` (with `min_seconds` and `max_seconds`).
 When it is `false`, `0` returns `422`.
 
+To reserve a given antenna, add its `interface` (from `GET /api/v2/antennas`):
+
+```json
+{"duration_seconds": 600, "interface": "wlx7419f8176286"}
+```
+
+Without `interface` (or with `null`) the server picks the first free antenna.
+With it, the server reserves that antenna or answers an error; it never gives
+you another one. The answers below then concern that antenna only: `409 / 1005`
+means it is reserved (`next_available_*` is the expiry of its reservation,
+`null` if unlimited), `503 / 1002` and `503 / 1003` that it is being recovered
+or quarantined. Leave `interface` out unless you need that antenna: you wait
+less.
+
 | Response | Meaning | Client action |
 |---|---|---|
 | `200` | Antenna reserved. Body has `reservation_id`, `interface`, `display_name`, `expires_at`, `expires_in`. | Keep `reservation_id`: every following call uses it. |
@@ -47,7 +61,7 @@ When it is `false`, `0` returns `422`.
 | `503 / 1002` + `Retry-After: 10` | No antenna can be assigned while an antenna is being recovered. | Retry **the reservation** after `Retry-After`. This is a polling interval, not a promise. |
 | `503 / 1003` | No antenna has been discovered yet, or none is usable and recovery is not running. | If the pool is empty at startup, allow discovery time and check `/status` before reserving again. If antennas remain unavailable, ask an operator to investigate. |
 | `503 / 1004` | Cleanup of an expired reservation failed. | Do not retry automatically. |
-| `422` | `duration_seconds` is outside the server limits, or `0` while unlimited reservations are disabled. | Fix the request. |
+| `422` | `duration_seconds` is outside the server limits, or `0` while unlimited reservations are disabled; or `interface` is not a managed antenna. | Fix the request. |
 
 Rules that matter for the AP:
 
@@ -57,7 +71,7 @@ Rules that matter for the AP:
 - Reservation and network `expires_at` values use RFC 3339 UTC with a `Z`
   suffix (e.g. `2026-11-19T23:00:00Z`). They are `null` for unlimited
   reservations. `expires_in` is a countdown in seconds.
-- The server picks the antenna (the first free one). You cannot choose it.
+- Without `interface`, the server picks the antenna (the first free one).
 - Release the reservation when you are done:
   `DELETE /api/v2/reservations/{reservation_id}`. This also stops the AP;
   a separate network stop is not required. A `503 / 1004` on release means
@@ -519,11 +533,11 @@ sequenceDiagram
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 1 - reserve an antenna
     loop Until 200, or until the client gives up
-        C->>W: POST /reservations {duration_seconds}
+        C->>W: POST /reservations {duration_seconds, interface (optional)}
         alt 200
             W-->>C: reservation_id, interface, display_name, expires_at, expires_in
             Note over C: Keep id and interface. Leave the loop
-        else 409 / 1005 all antennas reserved
+        else 409 / 1005 all antennas reserved (with interface: that antenna)
             W-->>C: next_available_at, next_available_in (null if no release is scheduled)
             Note over C: Automatic retry allowed: wait next_available_in<br/>(or a backoff of 10 to 60 s when null), then repeat
         else 503 / 1002 + Retry-After 10
@@ -531,13 +545,13 @@ sequenceDiagram
             Note over C: Automatic retry allowed: wait Retry-After, then repeat
         else 503 / 1003
             W-->>C: no antenna discovered or usable, no recovery running
-            Note over C: Right after a service start: wait for discovery (up to 30 s),<br/>check GET /status, then retry. Otherwise stop and ask an operator
+            Note over C: Right after a service start: wait for discovery (up to 30 s),<br/>check GET /status, then retry. With interface: that antenna is quarantined,<br/>reserve without interface. Otherwise stop and ask an operator
         else 503 / 1004
             W-->>C: cleanup of an expired reservation failed
             Note over C: No automatic retry. Check GET /status, ask an operator
         else 422
-            W-->>C: duration outside min/max, or 0 while unlimited is off
-            Note over C: Fix duration_seconds. Never repeat the same body
+            W-->>C: duration outside min/max, 0 while unlimited is off, or unknown interface
+            Note over C: Fix the body. Never repeat the same body
         end
     end
     end
@@ -712,11 +726,11 @@ Every answer leads to exactly one of these actions:
 | any call with an ID, except the release | `404` | RESERVE AGAIN | The ID expired, was released, or was **invalidated** because its antenna was quarantined (radio failures, also during a watchdog restart). Never release it. |
 | any call with an ID except the create | `503 / 1006` + `Retry-After: 2` | REPEAT | Another operation holds the antenna. Nothing was changed. |
 | `POST /reservations` | `200` | DONE | Keep `reservation_id` and `interface`. |
-| | `409 / 1005` | REPEAT | All antennas reserved. Wait `next_available_in`, or a backoff of 10–60 s when it is `null`. |
+| | `409 / 1005` | REPEAT | All antennas reserved (with `interface`: that one). Wait `next_available_in`, or a backoff of 10–60 s when it is `null`. |
 | | `503 / 1002` + `Retry-After: 10` | REPEAT | An antenna is being recovered. |
-| | `503 / 1003` | STOP | No usable antenna. Right after a service start, wait up to 30 s for discovery and check `GET /status` first. |
+| | `503 / 1003` | STOP | No usable antenna. Right after a service start, wait up to 30 s for discovery and check `GET /status` first. With `interface`: that antenna is quarantined; reserve without it. |
 | | `503 / 1004` | STOP | Cleanup of an expired reservation failed. |
-| | `422` | FIX | `duration_seconds` out of limits, or `0` while unlimited reservations are off. |
+| | `422` | FIX | `duration_seconds` out of limits, `0` while unlimited reservations are off, or `interface: ...` not a managed antenna. |
 | `GET /antennas/{interface}` | `503` | REPEAT | After a few seconds; the radio is being reset. Or create with the defaults. |
 | | `404` | RESERVE AGAIN | The antenna is no longer managed. |
 | `POST .../network` (create) | `200` | DONE | The body is the network, as `GET .../network` returns it. |

@@ -14,6 +14,7 @@ from ...reservation import (
     DeviceRecoveryUnavailable,
     NoDeviceAvailableError,
     ReservationManager,
+    UnknownDeviceError,
 )
 from ...timestamps import format_utc_timestamp
 from .recovery_responses import (
@@ -42,6 +43,12 @@ class ReservationCreateRequest(BaseModel):
         ..., description="Reservation duration in seconds. 0 = unlimited, accepted only when "
         "`GET /status` reports `reservation_policy.allow_unlimited: true`; otherwise `422`.",
         json_schema_extra={"example": 3600}
+    )
+    interface: str | None = Field(
+        None, description="Optional: reserve this antenna (an `interface` from `GET /antennas`). "
+        "Omitted or null: the first free antenna. Taken: `409 / 1005` with its expiry; "
+        "quarantined: `503 / 1002` or `1003`; not a managed antenna: `422`.",
+        json_schema_extra={"example": "wlx7419f8176286"},
     )
 
     @field_validator("duration_seconds")
@@ -83,7 +90,10 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
         200: {"description": "Device reserved successfully"},
         401: {"description": "Unauthorized"},
         409: {
-            "description": "No adapter available. next_available_at is UTC, or null when no release is scheduled.",
+            "description": (
+                "No adapter available, or the requested `interface` is reserved. "
+                "next_available_at is UTC, or null when no release is scheduled."
+            ),
             "content": {"application/json": {"example": {"detail": domain_error(
                 ApiErrorCode.NO_DEVICE_AVAILABLE, "No device available",
                 next_available_at="2026-11-19T23:00:00Z", next_available_in=18,
@@ -106,6 +116,10 @@ def create_reservation(
     req: ReservationCreateRequest = Body(..., openapi_examples={
         "timed": {"summary": "Reserve for two minutes", "value": {"duration_seconds": 120}},
         "unlimited": {"summary": "Reserve until release (if allowed)", "value": {"duration_seconds": 0}},
+        "given_antenna": {
+            "summary": "Reserve a given antenna for one hour",
+            "value": {"duration_seconds": 3600, "interface": "wlx7419f8176286"},
+        },
     }),
     config: AppConfig = Depends(get_config),
     mgr: ReservationManager = Depends(get_reservation_manager),
@@ -118,6 +132,12 @@ def create_reservation(
     to retry this reservation request after `Retry-After`, not to reuse an old
     reservation ID. **503 / 1003** (every adapter quarantined, or no AP-capable
     adapter detected yet) has no automatic retry recommendation.
+
+    **Optional `interface`:** reserve that antenna only, never another one.
+    Taken by another reservation: **409 / 1005**, with `next_available_at` and
+    `next_available_in` of that reservation (`null` if unlimited). Being recovered:
+    **503 / 1002**; quarantined: **503 / 1003**. Not a managed antenna (see
+    `GET /antennas`): **422** `interface: ...`.
     """
     # Validate duration against config bounds
     duration = req.duration_seconds
@@ -140,7 +160,11 @@ def create_reservation(
             )
 
     try:
-        r = mgr.create(duration)
+        r = mgr.create(duration, req.interface)
+    except UnknownDeviceError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"interface: {exc} is not a managed antenna (see GET /antennas)",
+        ) from exc
     except DeviceRecoveryUnavailable as exc:
         if exc.recovering:
             raise recovery_error(RecoveryCode.DEVICE_RECOVERING, retry_after=10) from exc

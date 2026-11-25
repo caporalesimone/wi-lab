@@ -309,21 +309,15 @@ class WiLab:
         return [entry["interface"] for entry in self.status()["antennas"]]
 
     def reserve(self, interface: str | None = None, duration: int = 3600) -> Antenna:
-        """Reserve an antenna; with `interface`, keep reserving until that one is assigned."""
-        extra: list[str] = []
-        try:
-            for _ in range(8):
-                response = self.http.post("/reservations", json={"duration_seconds": duration})
-                response.raise_for_status()
-                data = response.json()
-                if interface is None or data["interface"] == interface:
-                    self.reserved.append(data["reservation_id"])
-                    return Antenna(data["reservation_id"], data["interface"], data["display_name"])
-                extra.append(data["reservation_id"])
-            raise RuntimeError(f"Could not reserve {interface}")
-        finally:
-            for rid in extra:
-                self.http.delete(f"/reservations/{rid}")
+        """Reserve an antenna: the given one, or the first free one."""
+        body: dict[str, Any] = {"duration_seconds": duration}
+        if interface is not None:
+            body["interface"] = interface
+        response = self.http.post("/reservations", json=body)
+        response.raise_for_status()
+        data = response.json()
+        self.reserved.append(data["reservation_id"])
+        return Antenna(data["reservation_id"], data["interface"], data["display_name"])
 
     def release(self, antenna: Antenna) -> None:
         self.http.delete(f"/reservations/{antenna.reservation_id}/network")

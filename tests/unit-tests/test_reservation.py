@@ -19,8 +19,10 @@ from wilab.models import NetworkStatus
 from wilab.reservation import (
     NoDeviceAvailableError,
     Reservation,
+    DeviceRecoveryUnavailable,
     ReservationCleanupError,
     ReservationManager,
+    UnknownDeviceError,
 )
 
 
@@ -174,6 +176,59 @@ class TestReservationManagerDelete:
         rid = r.reservation_id
         mgr.delete(rid)
         assert mgr.get(rid) is None
+
+
+class TestReservationManagerGivenDevice:
+    """create(duration, device_id): reserve one given antenna, never another."""
+
+    def test_reserves_the_given_device_even_if_not_first(self):
+        mgr = ReservationManager(["dev0", "dev1"])
+        assert mgr.create(3600, "dev1").device_id == "dev1"
+        assert mgr.create(3600).device_id == "dev0"
+
+    def test_unknown_device_is_refused(self):
+        mgr = ReservationManager(["dev0"])
+        with pytest.raises(UnknownDeviceError):
+            mgr.create(3600, "wlan9")
+
+    def test_taken_device_reports_its_expiry_and_never_falls_back(self):
+        mgr = ReservationManager(["dev0", "dev1"])
+        owner = mgr.create(3600, "dev0")
+        with pytest.raises(NoDeviceAvailableError) as exc:
+            mgr.create(3600, "dev0")
+        assert exc.value.next_available_at == owner.expires_at
+        assert not mgr.is_device_reserved("dev1")
+
+    def test_unlimited_owner_has_no_expiry(self):
+        mgr = ReservationManager(["dev0"])
+        mgr.create(0, "dev0")
+        with pytest.raises(NoDeviceAvailableError) as exc:
+            mgr.create(3600, "dev0")
+        assert exc.value.next_available_at is None
+
+    def test_expired_owner_is_cleaned_up_first(self):
+        cleanup = Mock()
+        mgr = ReservationManager(["dev0"], cleanup=cleanup)
+        owner = mgr.create(3600, "dev0")
+        owner.expires_at = time.time() - 1
+        again = mgr.create(3600, "dev0")
+        cleanup.assert_called_once_with("dev0")
+        assert again.reservation_id != owner.reservation_id
+        assert mgr.get(owner.reservation_id) is None
+
+    def test_failed_cleanup_of_the_expired_owner_is_raised(self):
+        mgr = ReservationManager(["dev0"], cleanup=Mock(side_effect=RuntimeError("stuck")))
+        mgr.create(3600, "dev0").expires_at = time.time() - 1
+        with pytest.raises(ReservationCleanupError):
+            mgr.create(3600, "dev0")
+
+    @pytest.mark.parametrize("recovering", [True, False])
+    def test_quarantined_device_is_refused(self, recovering):
+        mgr = ReservationManager(["dev0", "dev1"])
+        mgr.quarantine(mgr.create(3600, "dev0"), recovering=recovering)
+        with pytest.raises(DeviceRecoveryUnavailable) as exc:
+            mgr.create(3600, "dev0")
+        assert exc.value.recovering is recovering
 
 
 class TestReservationManagerHelpers:
@@ -590,6 +645,40 @@ class TestReservationAPICreate:
         assert data["next_available_at"] == first.json()["expires_at"]
         assert "next_available_in" in data
         assert data["next_available_in"] > 0
+
+
+class TestReservationAPIGivenInterface:
+    """POST /reservations with the optional `interface`."""
+
+    def _reserve(self, client, token, **body):
+        return client.post(
+            "/api/v2/reservations", headers={"Authorization": token},
+            json={"duration_seconds": 3600, **body},
+        )
+
+    def test_given_interface_is_reserved(self, client, valid_token):
+        interfaces = [n.interface for n in dependencies.get_config().antennas]
+        last = interfaces[-1]
+        resp = self._reserve(client, valid_token, interface=last)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["interface"] == last
+
+    def test_taken_interface_is_409_1005(self, client, valid_token):
+        first = self._reserve(client, valid_token).json()
+        resp = self._reserve(client, valid_token, interface=first["interface"])
+        assert resp.status_code == 409
+        detail = resp.json()["detail"]
+        assert detail["code"] == 1005
+        assert detail["next_available_at"] == first["expires_at"]
+
+    def test_unknown_interface_is_422_with_its_path(self, client, valid_token):
+        resp = self._reserve(client, valid_token, interface="wlan9")
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["message"].startswith("interface: wlan9 ")
+
+    def test_null_interface_reserves_the_first_free(self, client, valid_token):
+        resp = self._reserve(client, valid_token, interface=None)
+        assert resp.status_code == 200
 
 
 class TestReservationAPIGet:

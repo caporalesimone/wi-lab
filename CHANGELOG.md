@@ -13,7 +13,7 @@ All notable changes to Wi-Lab are documented in this file.
 | 🐛 Bug fixes | 55 |
 | ⚠️ Breaking changes | 20 |
 | 🔧 Maintenance changes | 13 |
-| ✨ New features | 19 |
+| ✨ New features | 20 |
 | 📦 Commits since 3.0.0 | 89 |
 
 Counts are the entries of the sections below (as of 2026-11-25) and `git rev-list --count 3.0.0..HEAD` (as of 2026-11-25).
@@ -62,6 +62,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Optional `hostapd_debug_dir` setting: every hostapd start that fails writes a report there (hostapd configuration without passwords and the last 400 lines of `hostapd -d`); only failures are written and the newest 100 reports are kept.
 - New **Antennas** API, listed in Swagger before Network and readable with the token only: `GET /api/v2/antennas` lists the managed antennas (`display_name`, `interface`); `GET /api/v2/antennas/{interface}` gives `device` (`bus`, `address`, `driver`), `encryptions` and per band the Wi-Fi generations with their widths and the usable channels with the widths each can use, to fill a form's dropdowns.
 - Frontend: a captive portal switch on each reserved antenna card chooses whether the next network starts with a portal page (it presets the start dialog, which has the same switch), and a running network shows the captive portal as On or Off with its URL and a header badge.
+- `POST /api/v2/reservations` takes an optional `interface` to reserve a given antenna (from `GET /api/v2/antennas`); without it the first free one is reserved, as before. A reserved antenna answers `409 / 1005` with the expiry of its reservation, a quarantined one `503 / 1002` or `1003`, an unknown one `422`.
 
 ### 🐛 Bug Fixes
 
@@ -174,6 +175,7 @@ The rest of this chapter names each endpoint by its 3.x path.
   - `409`: now `detail.code: 1005`; `next_available_at` / `next_available_in` are `null` when no release is scheduled.
   - new `503 / 1002`: an antenna is recovering; retry after `Retry-After` (10 s).
   - new `503 / 1003`: no usable antenna (all quarantined or none found).
+  - new optional `interface`: reserve that antenna only (see Features).
 - Reserve, get and release: new `503 / 1004` when the cleanup of an expired reservation fails.
 
 **Network**

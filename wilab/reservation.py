@@ -37,6 +37,10 @@ class ReservationCleanupError(Exception):
     """A device could not be safely released."""
 
 
+class UnknownDeviceError(ValueError):
+    """No managed device has the requested interface."""
+
+
 class DeviceRecoveryUnavailable(Exception):
     """No device can be allocated because of recovery or quarantine."""
 
@@ -108,18 +112,17 @@ class ReservationManager:
     # Public API
     # ------------------------------------------------------------------
 
-    def create(self, duration_seconds: int) -> Reservation:
-        """Reserve the first available device.
-
-        Args:
-            duration_seconds: How long to hold the reservation.
-
-        Returns:
-            The newly created Reservation.
+    def create(self, duration_seconds: int, device_id: str | None = None) -> Reservation:
+        """Reserve *device_id*, or the first available device when it is None.
 
         Raises:
-            ValueError: If no device is available.
+            UnknownDeviceError: *device_id* is not a managed device.
+            NoDeviceAvailableError: every device (or *device_id*) is reserved.
+            DeviceRecoveryUnavailable: the devices (or *device_id*) are quarantined.
+            ReservationCleanupError: an expired reservation could not be cleaned up.
         """
+        if device_id is not None:
+            return self._create_on(device_id, duration_seconds)
         with self._lock:
             device_id = self._first_available()
             if device_id is not None:
@@ -135,6 +138,25 @@ class ReservationManager:
             if any(self._blocked.values()) or len(self._blocked) == len(self._device_ids):
                 raise DeviceRecoveryUnavailable(any(self._blocked.values()))
             raise NoDeviceAvailableError(self._soonest_expiry())
+
+    def _create_on(self, device_id: str, duration_seconds: int) -> Reservation:
+        """Reserve one given device; an expired owner is cleaned up first."""
+        with self._lock:
+            if device_id not in self._device_ids:
+                raise UnknownDeviceError(device_id)
+        for _ in range(2):
+            with self._lock:
+                if device_id in self._blocked:
+                    raise DeviceRecoveryUnavailable(self._blocked[device_id])
+                owner_id = self._device_to_rid.get(device_id)
+                if owner_id is None:
+                    return self._reserve(device_id, duration_seconds)
+                owner = self._reservations[owner_id]
+                if not owner.is_expired:
+                    raise NoDeviceAvailableError(owner.expires_at)
+            # Raises ReservationCleanupError; returns at once if another call holds the device.
+            self._cleanup_expired(owner)
+        raise NoDeviceAvailableError(owner.expires_at)
 
     def quarantine(self, reservation: Reservation, *, recovering: bool) -> None:
         """Invalidate an owner and exclude its antenna in one store operation."""

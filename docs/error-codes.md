@@ -23,10 +23,10 @@ release it), **STOP** (show the message, ask an operator).
 | Code | Reason | HTTP | `Retry-After` | Where | Meaning | Action |
 |---|---|---|---|---|---|---|
 | 1001 | `retry_later` | 409 | yes (5, then 10; or the remaining cooldown) | create | A classified radio failure was rolled back; the reservation is kept. Also answered, without using an attempt, when a create arrives during the cooldown. | REPEAT the same create (at most twice) |
-| 1002 | `device_recovering` | 503 | 10 | reserve | No antenna is allocatable while one is being recovered (USB reset). | REPEAT |
-| 1003 | `device_unavailable` | 503 | no | reserve; create | Reserve: no antenna discovered or usable and nothing recovering. Create: third radio failure, or the antenna disappeared; adds `reservation_invalidated: true`. | Reserve: STOP (after a service start, wait for discovery first). Create: RESERVE AGAIN |
+| 1002 | `device_recovering` | 503 | 10 | reserve | No antenna is allocatable while one is being recovered (USB reset); with `interface`, that antenna is being recovered. | REPEAT |
+| 1003 | `device_unavailable` | 503 | no | reserve; create | Reserve: no antenna discovered or usable and nothing recovering; with `interface`, that antenna is quarantined. Create: third radio failure, or the antenna disappeared; adds `reservation_invalidated: true`. | Reserve: STOP (after a service start, wait for discovery first). Create: RESERVE AGAIN |
 | 1004 | `cleanup_failed` | 503 | no | reserve, get and release of a reservation; create | A cleanup failed and the antenna is still held. | STOP (on release, REPEAT a few times first) |
-| 1005 | `no_device_available` | 409 | no | reserve | Every antenna is reserved. Adds `next_available_at` (UTC) and `next_available_in` (seconds), both `null` when no release is scheduled. | REPEAT after `next_available_in`, or a backoff |
+| 1005 | `no_device_available` | 409 | no | reserve | Every antenna is reserved, or the requested `interface` is. Adds `next_available_at` (UTC) and `next_available_in` (seconds), both `null` when no release is scheduled. | REPEAT after `next_available_in`, or a backoff |
 | 1006 | `device_busy` | 503 | 2 | every call with a reservation ID except the create | Another operation held the antenna for more than 5 s. Nothing was changed. | REPEAT |
 | 1007 | `network_not_active` | 409 | no | Internet, TX power, QoS profile, `DELETE .../network` | The reservation is valid but no network is running. | FIX (create the network first); DONE for a stop |
 | 1008 | `network_already_active` | 409 | no | create | A network already runs on this reservation, often from a previous create whose answer was lost. | DONE: read it with `GET .../network`; `DELETE .../network` first to replace it |
@@ -45,7 +45,7 @@ Errors without a domain meaning use the HTTP status as `code`.
 | 401 | `unauthorized` | Missing or wrong `Authorization: Bearer` token. | FIX |
 | 403 | `forbidden` | A Maintenance call without the right `X-Confirm-Password`, or with protected commands disabled. | FIX |
 | 404 | `not_found` | **On a call with a reservation ID: the ID expired, was released or was invalidated** (its antenna was quarantined, also by a failed watchdog restart). On `GET /antennas/{interface}`: no managed antenna has that interface. On a release: nothing left to release. | RESERVE AGAIN (release: DONE) |
-| 422 | `validation_error` | The request is invalid. The message starts with the path of the refused field, with dots: `radio.channel_width: ...`, `wifi.security.password: ...`, `profile_id: ...`. Also an antenna that cannot do what is asked (channel, width, generation, encryption, TX power not supported by the driver). | FIX |
+| 422 | `validation_error` | The request is invalid. The message starts with the path of the refused field, with dots: `radio.channel_width: ...`, `wifi.security.password: ...`, `profile_id: ...`, `interface: ...` (reserve: not a managed antenna). Also an antenna that cannot do what is asked (channel, width, generation, encryption, TX power not supported by the driver). | FIX |
 | 500 | `internal_server_error` | An unexpected server error. | STOP |
 | 503 | `service_unavailable` | `GET /antennas/{interface}`: the radio cannot be read now (unplugged or being reset). | REPEAT after a few seconds |
 

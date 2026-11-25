@@ -17,9 +17,6 @@ implementing.
 
 ## Additions (not breaking)
 
-- **Reserve a given antenna:** optional `interface` in the reservation
-  request. Natural for the future control center, now that `/antennas` lists
-  them.
 - **Request id for the create (`Idempotency-Key` header).** Removes the
   ambiguity after a transport error: the same key returns the same result
   instead of a second create.

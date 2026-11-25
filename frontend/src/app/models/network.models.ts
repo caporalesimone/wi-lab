@@ -55,6 +55,8 @@ export interface StatusResponse {
 
 export interface ReservationRequest {
   duration_seconds: number;
+  /** Reserve this antenna only (from GET /antennas); omitted: the first free one. */
+  interface?: string | null;
 }
 
 export interface ReservationResponse {
