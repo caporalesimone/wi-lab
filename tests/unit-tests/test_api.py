@@ -202,95 +202,13 @@ class TestStatusEndpoint:
         monkeypatch.setattr(real_mgr.nat_manager, 'get_upstream_interface', original_get_upstream)
 
 
-class TestDebugEndpoint:
-    """Tests for debug endpoint (Maintenance: token and X-Confirm-Password)."""
-
-    @pytest.fixture(autouse=True)
-    def _password(self, client):
+class TestDebugRemoved:
+    def test_debug_is_gone(self, client, valid_token):
+        """API-1: /debug duplicated /monitoring and exposed every reservation ID (SEC-2)."""
         dependencies.get_config().protected_commands_password = "qwerty-test"
-
-    @pytest.mark.parametrize("password", [None, "wrong"])
-    def test_debug_requires_the_confirm_password(self, client, valid_token, password):
-        headers = {'Authorization': valid_token}
-        if password:
-            headers['X-Confirm-Password'] = password
-        resp = client.get('/api/v2/debug', headers=headers)
-        assert resp.status_code == 403
-        assert "X-Confirm-Password" in resp.json()["detail"]["message"]
-
-    def test_debug_is_disabled_without_a_configured_password(self, client, valid_token):
-        dependencies.get_config().protected_commands_password = None
-        resp = client.get('/api/v2/debug', headers={'Authorization': valid_token, 'X-Confirm-Password': 'x'})
-        assert resp.status_code == 403
-
-    def test_debug_requires_auth(self, client):
-        """Test debug endpoint requires authentication."""
-        resp = client.get('/api/v2/debug')
-        assert resp.status_code == 401
-
-    def test_debug_with_invalid_token(self, client, invalid_token):
-        """Test debug endpoint rejects invalid token."""
-        resp = client.get('/api/v2/debug', headers={'Authorization': invalid_token})
-        assert resp.status_code == 401
-
-    def test_debug_endpoint_basic(self, client, valid_token):
-        """Test debug endpoint returns valid response."""
         resp = client.get('/api/v2/debug', headers={'Authorization': valid_token, 'X-Confirm-Password': 'qwerty-test'})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert 'version' in data
-        assert 'status' in data
-        assert 'system' in data
-    
-    def test_debug_endpoint_structure(self, client, valid_token):
-        """Test debug endpoint response structure."""
-        resp = client.get('/api/v2/debug', headers={'Authorization': valid_token, 'X-Confirm-Password': 'qwerty-test'})
-        data = resp.json()
-        
-        # Check main sections
-        assert 'version' in data
-        assert 'status' in data
-        assert data['status'] in ['ok', 'degraded', 'standby']
-        
-        # Check system section
-        assert 'system' in data
-        assert 'active_networks' in data['system']
-        assert 'configured_networks' in data['system']
-        assert 'upstream_interface' in data['system']
-    
-    def test_debug_endpoint_services_section(self, client, valid_token):
-        """Test debug endpoint includes services info."""
-        resp = client.get('/api/v2/debug', headers={'Authorization': valid_token, 'X-Confirm-Password': 'qwerty-test'})
-        data = resp.json()
-        
-        assert 'services' in data
-        assert 'dnsmasq' in data['services']
-        assert 'hostapd' in data['services']
-        assert 'iptables_nat' in data['services']
-        
-        # Check service structure
-        assert 'running' in data['services']['dnsmasq']
-        assert 'instances' in data['services']['dnsmasq']
-        assert isinstance(data['services']['dnsmasq']['instances'], int)
-    
-    def test_debug_endpoint_interfaces_section(self, client, valid_token):
-        """Test debug endpoint includes interfaces info."""
-        resp = client.get('/api/v2/debug', headers={'Authorization': valid_token, 'X-Confirm-Password': 'qwerty-test'})
-        data = resp.json()
-        
-        assert 'interfaces' in data
-        assert 'upstream' in data['interfaces']
-        assert 'managed' in data['interfaces']
-        
-        # Check upstream interface structure
-        upstream = data['interfaces']['upstream']
-        assert 'name' in upstream
-        assert 'up' in upstream
-        assert 'has_ip' in upstream
-        assert 'reachable' in upstream
-        
-        # Check managed interfaces
-        assert isinstance(data['interfaces']['managed'], list)
+        assert resp.status_code == 404
+        assert "/api/v2/debug" not in client.get("/openapi.json").json()["paths"]
 
 
 class TestMaintenanceRule:
@@ -302,7 +220,7 @@ class TestMaintenanceRule:
             (method, path) for path, item in spec["paths"].items()
             for method, op in item.items() if "Maintenance" in op.get("tags", [])
         ]
-        assert set(operations) >= {("delete", "/api/v2/reservations/all"), ("get", "/api/v2/debug")}
+        assert set(operations) >= {("delete", "/api/v2/reservations/all")}
         for method, path in operations:
             assert client.request(method, path).status_code == 401, path
             for headers in ({}, {"X-Confirm-Password": "wrong"}):

@@ -135,12 +135,11 @@ class TestSwagger:
 
     @pytest.mark.parametrize(("method", "path"), [
         ("delete", "/api/v2/reservations/all"),
-        ("get", "/api/v2/debug"),
     ])
     def test_maintenance_operations_are_only_under_maintenance(self, spec, method, path):
         assert spec["paths"][path][method]["tags"] == ["Maintenance"]
 
-    @pytest.mark.parametrize("path", ["/api/v2/reservations/all", "/api/v2/debug"])
+    @pytest.mark.parametrize("path", ["/api/v2/reservations/all"])
     def test_maintenance_documents_the_password(self, spec, path):
         operation = next(iter(spec["paths"][path].values()))
         assert "403" in operation["responses"]

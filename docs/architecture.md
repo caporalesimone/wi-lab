@@ -1103,9 +1103,8 @@ is logged once as a warning. Set `upstream_interface` to force an interface.
 - Discovery logs every added antenna with its USB port (or `non-USB`) and
   subnet. The first scan also logs skipped interfaces with the reason.
 - `GET /api/v2/status` exposes `runtime_state` (watchdog) and `recovery_state`
-  (quarantine) per antenna. `GET /api/v2/debug` (deprecated) gives a detailed, slower
-  snapshot for troubleshooting (header `X-Confirm-Password`, like every
-  Maintenance endpoint).
+  (quarantine) per antenna; `GET /api/v2/monitoring` the detail of every
+  health check.
 
 ## 12. Known limitations
 

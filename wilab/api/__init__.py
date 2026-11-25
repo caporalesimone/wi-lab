@@ -56,7 +56,7 @@ Operations under **Maintenance** are not part of the client workflow. Each one
 requires the `X-Confirm-Password` header matching `protected_commands_password`
 in the server configuration, and is disabled when that setting is missing.
 `DELETE /api/v2/reservations/all` releases every reservation, including
-other clients'; `GET /api/v2/debug` shows internal state.
+other clients'.
 
 Every API error body has a `detail` object with an integer `code` and a
 stable `reason`. Generic errors use the HTTP status as their code and
@@ -118,10 +118,10 @@ OPENAPI_TAGS = [
     {"name": "Internet", "description": "Enable or disable Internet access for a reserved network."},
     {"name": "TX Power", "description": "Inspect or request transmit power. Hardware support is not guaranteed."},
     {"name": "QoS Profiles", "description": "Inspect and manage traffic shaping profiles for a reserved network."},
-    {"name": "Maintenance", "description": "Operator-only commands and diagnostics, not for clients; "
-     "they may be removed in the future. Every one requires the X-Confirm-Password header matching "
-     "protected_commands_password, besides the token. Debug is deprecated and will be removed: "
-     "it is expensive and shows internal state."},
+    {"name": "Maintenance", "description": "Operator-only commands, not for clients; they may be "
+     "removed in the future. Every one requires the X-Confirm-Password header matching "
+     "protected_commands_password, besides the token. The detailed health checks are in "
+     "GET /monitoring (System)."},
 ]
 
 

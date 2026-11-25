@@ -20,7 +20,6 @@ from .qos_profile import catalogue_router as qos_catalogue_router
 from .qos_profile import reservation_router as qos_reservation_router
 from .reservation import maintenance_router as reservation_maintenance_router
 from .reservation import router as reservation_router
-from .status import maintenance_router as debug_router
 from .status import router as health_router
 from .txpower import router as txpower_router
 
@@ -39,7 +38,6 @@ def is_api_path(path: str) -> bool:
 router.include_router(reservation_maintenance_router)
 router.include_router(reservation_router)
 router.include_router(health_router)
-router.include_router(debug_router)
 router.include_router(antennas_router)
 router.include_router(network_router)
 router.include_router(internet_router)

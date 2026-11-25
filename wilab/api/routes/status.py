@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends
 
 from ... import health as health_module
 from ... import heartbeat
-from ...api.auth import maintenance_router as protected_router
 from ...api.auth import require_token
 from ...api.dependencies import get_config, get_manager, get_reservation_manager
 from ...config import AppConfig
@@ -26,10 +25,6 @@ _CHECKS_OK_EXAMPLE = {
     "iptables_nat": {"configured": True, "missing": [], "errors": []},
     "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
 }
-
-# /debug is a diagnostic for operators: listed only under Maintenance in Swagger,
-# with token and X-Confirm-Password required by the router.
-maintenance_router = protected_router()
 
 router = APIRouter(
     tags=["System"],
@@ -168,7 +163,7 @@ def _assess(
 ) -> dict[str, Any]:
     """Status, the reasons for `degraded`, the antennas and the detailed checks.
 
-    Shared by /status (verdict and reasons), /monitoring (detail) and /debug, so
+    Shared by /status (verdict and reasons) and /monitoring (detail), so
     they never disagree (BUG-2). Host-command checks come from the background
     loop (wilab.health); nothing here runs a command.
     """
@@ -304,112 +299,3 @@ def monitoring(
         "check_interval_seconds": int(health_module.CHECK_INTERVAL),
         "checks": view["checks"],
     }
-
-
-@maintenance_router.get(
-    "/debug",
-    deprecated=True,
-    summary="Read internal debug information (deprecated, will be removed)",
-    responses={
-        200: {"description": "Debug information retrieved successfully"},
-    },
-)
-def debug_info(
-    manager: NetworkManager = Depends(get_manager),
-    config=Depends(get_config),
-    reservation_mgr: ReservationManager = Depends(get_reservation_manager),
-):
-    """
-    Comprehensive debug information for troubleshooting.
-    
-    ⚠️ DEBUG ENDPOINT - DO NOT USE IN FRONTEND WITH FREQUENT POLLING
-    
-    This endpoint is expensive (150-600ms) and should only be called manually for troubleshooting.
-    
-    Performance: 150-600ms depending on network count
-    
-    Returns:
-        dict: Complete system debug information.
-    """
-    return _debug_info(manager, config, reservation_mgr)
-
-
-def _debug_info(
-    manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager
-) -> dict[str, Any]:
-    # === DETERMINE OVERALL STATUS ===
-    # Same checks and status as /status (BUG-2): no second, diverging copy.
-    summary = _assess(manager, config, reservation_mgr)
-    checks = summary["checks"]
-    status = summary["status"]
-    active_count = summary["active_networks"]
-    dhcp_status = manager.dhcp_server.status()
-    dhcp_running = checks["dnsmasq"]["running"]
-    nat_configured = checks["iptables_nat"]["configured"]
-    nat_errors = checks["iptables_nat"].get("errors", [])
-    upstream = checks["upstream_interface"]
-    upstream_name = upstream.get("name")
-    upstream_up = upstream.get("up", False)
-    upstream_has_ip = upstream.get("has_ip", False)
-    upstream_reachable = upstream.get("reachable", False)
-    try:
-        nat_status = manager.firewall_status()
-    except Exception as exc:  # noqa: BLE001 - debug output must not fail on a firewall read
-        nat_status = {"errors": [str(exc)]}
-
-    # === GET DETAILED SERVICES INFO ===
-    services = manager.services_status()
-    reservations = reservation_mgr.snapshot()
-    
-    debug_data = {
-        "version": __version__,
-        "status": status,
-        
-        "system": {
-            "active_networks": active_count,
-            "configured_networks": len(config.antennas),
-            "upstream_interface": config.upstream_interface,
-        },
-        
-        "services": {
-            "dnsmasq": {
-                "running": dhcp_running,
-                "instances": len(dhcp_status.get("instances", [])),
-            },
-            "hostapd": {
-                "running": services.get("hostapd", {}).get("running", False),
-                "instances": len(services.get("hostapd", {}).get("instances", [])),
-            },
-            "iptables_nat": {
-                "configured": nat_configured,
-                "errors": nat_errors,
-            },
-        },
-        
-        "interfaces": {
-            "upstream": {
-                "name": upstream_name,
-                "up": upstream_up,
-                "has_ip": upstream_has_ip,
-                "reachable": upstream_reachable,
-            },
-            "managed": [
-                {
-                    "display_name": n.display_name,
-                    "interface": n.interface,
-                    "reservation_id": (
-                        reservations[n.device_id].reservation_id
-                        if n.device_id in reservations else None
-                    ),
-                }
-                for n in config.antennas
-            ],
-        },
-        
-        "raw_diagnostics": {
-            "iptables_nat_rules": nat_status.get("nat", ""),
-            "iptables_forward_rules": nat_status.get("forward", ""),
-        },
-    }
-
-    return debug_data

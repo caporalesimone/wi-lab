@@ -50,11 +50,9 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
   `X-Confirm-Password` header** with `protected_commands_password` from the
   server configuration, besides the token, and is disabled (`403`) when that
   setting is missing. `DELETE /api/v2/reservations/all` releases
-  **every** reservation and may be removed in a future version.
-  `GET /api/v2/debug` shows internal state for troubleshooting; it is
-  **deprecated** (struck through in Swagger) and will be removed.
-
-⚠️ **Note:** `GET /api/v2/debug` is expensive (150-600ms). Use it only for manual troubleshooting, not for frontend polling.
+  **every** reservation and may be removed in a future version. The detail
+  of the health checks is in **System → Read the detailed health checks**
+  (`GET /api/v2/monitoring`).
 
 - **Antennas** comes before **Network**: `GET /api/v2/antennas` lists the
   managed antennas, `GET /api/v2/antennas/{interface}` gives what a network on

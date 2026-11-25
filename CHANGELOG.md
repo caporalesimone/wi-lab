@@ -41,7 +41,8 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - The release (`DELETE /api/v2/reservations/{id}`, and release-all) always answers `200`: if the cleanup fails (for example hostapd stuck in the kernel) the ID is gone anyway, the antenna stays held and the server repeats the cleanup in the background (5 s, 15 s, 60 s, then every 5 min), shown in `GET /status` as `cleanup_failed`. Reserve, get and release no longer answer `503 / 1004`: a held antenna counts as reserved (`409 / 1005`, with `next_available_in` until the next cleanup attempt, also when reserved by `interface`) and the get of a released ID answers `404`.
 - A successful create answers the network, the same body as `GET .../network`, instead of `{"detail": "Network ... created successfully"}`: the client no longer needs a second call (Fable API-5).
 - `GET /api/v2/status` lists the antennas in `antennas[]` (was `networks[]`), like the Antennas API: an entry is an antenna, reserved or not, not a network. Each entry has `reservation` (`null`, or `{expires_at, expires_in}` as in the reservation and network answers) instead of `reserved` and `reservation_remaining_seconds`, which could not tell a free antenna from an unlimited reservation, and `network_active` (Fable API-1).
-- Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all: `GET /api/v2/debug` now returns `403` without it, or when `protected_commands_password` is not set.
+- Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all.
+- `GET /api/v1/debug` is removed (`404`): `GET /api/v2/monitoring` gives the health checks, and no endpoint lists other clients' reservation IDs any more (Fable SEC-2, API-1).
 
 ### ✨ Features
 
@@ -136,8 +137,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Added an [AP creation procedure](docs/ap-creation-procedure.md) for client developers and a backend [architecture](docs/architecture.md) guide with startup, threading, creation, retry, watchdog and recovery diagrams.
 - Explain the reservation and recovery lifecycle in Swagger and ReDoc, including retry, quarantine and watchdog response examples.
 - Include the API operation, HTTP status, and error code in journal entries for server errors, without request or response data.
-- Swagger lists release-all (`DELETE /api/v2/reservations/all`) and `GET /api/v2/debug` only under **Maintenance**; release-all also appeared under Reservation.
-- `GET /api/v2/debug` is deprecated and will be removed.
+- Swagger lists release-all (`DELETE /api/v2/reservations/all`) only under **Maintenance**; it also appeared under Reservation.
 - New [docs/error-codes.md](docs/error-codes.md): every `detail.code`, its HTTP status, `Retry-After`, where it is answered and the client action, plus the `degraded_reasons` codes; a test fails when a code is not documented.
 - Detailed sequence diagrams of the whole flow, reservation to release, with every error answer and when to retry: client view in the [AP creation procedure](docs/ap-creation-procedure.md#3-sequence-diagram), with one action (done, wait, repeat, fix, reserve again, stop) for every answer of every call and how radio failures such as a hostapd crash reach the client, server view in [Architecture 6.1](docs/architecture.md#61-end-to-end-sequence-server-view). The captive portal diagram in the architecture guide did not render (a `;` in a note).
 - Document `GET /api/v2/status` health values (`standby`, `ok`, `degraded`), what makes the service `degraded` (quarantined adapter, network being repaired, failed health check) and how clients learn about quarantined adapters, in Swagger (three response examples), the API overview, the AP creation procedure (2.8) and the Swagger guide.
@@ -267,7 +267,7 @@ The rest of this chapter names each endpoint by its 3.x path.
   - `networks[]` is renamed `antennas[]`, and its entries gain `recovery_state` (`recovering`, `unavailable`) and `runtime_state`. What an antenna supports is in `GET /api/v2/antennas/{interface}`.
   - `checks` moved to `GET /api/v2/monitoring` (with `hostapd`, `commands`, `loops`, and `missing` lists in `dnsmasq` and `iptables_nat`); `/status` has `degraded_reasons` instead (`{code, interface, message}`).
   - `degraded` now also covers quarantined antennas, networks being repaired, stuck commands and stalled loops.
-- `GET /api/v1/debug`: send the `X-Confirm-Password` header too (`403` without it), as for every Maintenance endpoint.
+- `GET /api/v1/debug`: removed; use `GET /api/v2/monitoring`.
 
 **Access**
 

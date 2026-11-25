@@ -41,12 +41,12 @@ def test_static_files_never_leave_the_frontend(wilab: WiLab, path: str) -> None:
     assert _raw_get(path) == 404
 
 
-@pending("SEC-2")
-def test_debug_does_not_expose_other_clients_reservation_ids(wilab: WiLab) -> None:
+def test_debug_is_removed(wilab: WiLab) -> None:
+    """SEC-2 / API-1: no endpoint lists other clients' reservation IDs."""
     antenna = wilab.reserve()
-    debug = wilab.http.get("/debug")
-    assert debug.status_code in (200, 403, 404)
-    assert antenna.reservation_id not in debug.text
+    assert wilab.http.get("/debug").status_code == 404
+    assert antenna.reservation_id not in wilab.http.get("/status").text
+    assert antenna.reservation_id not in wilab.http.get("/monitoring").text
 
 
 # --------------------------------------------------------------------------- request contract
