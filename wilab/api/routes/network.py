@@ -1,7 +1,8 @@
 """WiFi network lifecycle endpoints (create, delete, query)."""
 
+import logging
 from math import ceil
-from time import monotonic
+from time import monotonic, sleep
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
@@ -37,15 +38,20 @@ CREATE_RETRY_DELAYS = (5, 10)
 # Seconds before repeating a stop that did not complete (hostapd stuck in the
 # kernel usually exits within a few seconds).
 STOP_RETRY_AFTER = 5
+# A stop that did not complete is repeated inside the request: hostapd stuck in
+# the kernel after a driver firmware timeout is usually released within seconds.
+STOP_RETRY_BUDGET = 15.0
+STOP_RETRY_PAUSE = 2.0
 
 _STOP_RESPONSE_503 = {
     **DEVICE_BUSY_RESPONSE,
     "description": (
         "`detail.code: 1006` (`device_busy`): the adapter is busy, nothing was changed; repeat "
         "after `Retry-After` (2 s). `detail.code: 1012` (`stop_incomplete`): the stop did not "
-        "complete, usually hostapd stuck in the kernel for a few seconds after a driver firmware "
-        "timeout. The network is half stopped: `GET .../network` reports `runtime_state: "
-        "stop_failed` and the watchdog leaves it alone. Repeat the DELETE after `Retry-After` (5 s)."
+        "complete even after the server repeated it for 15 s (hostapd stuck in the kernel after "
+        "a driver firmware timeout). The network is half stopped: `GET .../network` reports "
+        "`runtime_state: stop_failed` and the watchdog leaves it alone. Repeat the DELETE after "
+        "`Retry-After` (5 s)."
     ),
     "content": {"application/json": {"examples": {
         **DEVICE_BUSY_RESPONSE["content"]["application/json"]["examples"],  # type: ignore[index]
@@ -56,6 +62,8 @@ _STOP_RESPONSE_503 = {
         }}},
     }}},
 }
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/reservations", tags=["Network"],
@@ -457,9 +465,11 @@ def stop_network(
     reservation stays valid.
 
     If the stop does not complete (usually hostapd stuck in the kernel for a
-    few seconds after a driver firmware timeout) the answer is `503 / 1012`
-    with `Retry-After`: the network is half stopped, reported as
-    `runtime_state: stop_failed`, and repeating the DELETE finishes it.
+    few seconds after a driver firmware timeout) the server repeats it every
+    2 s for up to 15 s, so the answer can take that long. Only if it still
+    fails the answer is `503 / 1012` with `Retry-After`: the network is half
+    stopped, reported as `runtime_state: stop_failed`, and repeating the
+    DELETE finishes it.
 
     Returns:
         dict: Confirmation with stopped device_id.
@@ -477,16 +487,22 @@ def stop_network(
                 ApiErrorCode.NETWORK_NOT_ACTIVE, f"Network {device_id} is already inactive",
             ))
 
-        try:
-            manager.stop_network(device_id)
-        except NetworkStopError as exc:
-            # Usually hostapd stuck in the kernel for a few seconds (driver firmware
-            # timeout): repeating the stop finishes it.
-            raise HTTPException(
-                status_code=503,
-                detail=domain_error(ApiErrorCode.STOP_INCOMPLETE, str(exc)),
-                headers={"Retry-After": str(STOP_RETRY_AFTER)},
-            ) from exc
+        deadline = monotonic() + STOP_RETRY_BUDGET
+        while True:
+            try:
+                manager.stop_network(device_id)
+                break
+            except NetworkStopError as exc:
+                # Usually hostapd stuck in the kernel for a few seconds (driver
+                # firmware timeout): repeating the stop finishes it.
+                if monotonic() + STOP_RETRY_PAUSE >= deadline:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=domain_error(ApiErrorCode.STOP_INCOMPLETE, str(exc)),
+                        headers={"Retry-After": str(STOP_RETRY_AFTER)},
+                    ) from exc
+                logger.info("Stop of %s did not complete; repeating it: %s", device_id, exc)
+                sleep(STOP_RETRY_PAUSE)
         return {"detail": f"Network {device_id} stopped successfully"}
 
 

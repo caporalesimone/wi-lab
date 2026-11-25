@@ -33,7 +33,7 @@ release it), **STOP** (show the message, ask an operator).
 | 1009 | `restoration_in_progress` | 409 | no | create | The watchdog is restarting this network. | WAIT until `runtime_state` is `null`, then create only if `active` is `false` |
 | 1010 | `qos_profile_already_active` | 409 | no | start a QoS profile | A profile already runs on this network. | FIX: stop it first |
 | 1011 | `qos_profile_not_active` | 409 | no | stop a QoS profile | No profile runs on this network. | DONE |
-| 1012 | `stop_incomplete` | 503 | 5 | `DELETE .../network` | The stop did not complete, usually hostapd stuck in the kernel for a few seconds after a driver firmware timeout. The network is half stopped (`runtime_state: stop_failed`) and the watchdog leaves it alone. | REPEAT the DELETE until `200` |
+| 1012 | `stop_incomplete` | 503 | 5 | `DELETE .../network` | The stop did not complete even after the server repeated it every 2 s for 15 s, usually hostapd stuck in the kernel after a driver firmware timeout. The network is half stopped (`runtime_state: stop_failed`) and the watchdog leaves it alone. | REPEAT the DELETE until `200` |
 | 1013 | `startup_failed` | 500 | no | create | The network could not start for a non-radio reason and was rolled back; the reservation is kept. Adds `stage`: `hostapd`, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation` or `host_guard`. | STOP (release the ID before reserving again) |
 
 ## Generic codes (the HTTP status)

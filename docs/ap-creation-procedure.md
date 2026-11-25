@@ -683,7 +683,7 @@ sequenceDiagram
             W-->>C: antenna busy, nothing changed
             Note over C: Automatic retry allowed after Retry-After
         else 503 / 1012 + Retry-After 5
-            W-->>C: stop not completed (hostapd stuck in the kernel), runtime_state stop_failed
+            W-->>C: stop not completed even after 15 s of server retries, runtime_state stop_failed
             Note over C: Automatic retry allowed: repeat the DELETE after Retry-After.<br/>The watchdog leaves the half-stopped network alone
         else 404
             W-->>C: reservation gone (the AP was stopped with it)
@@ -753,7 +753,7 @@ Every answer leads to exactly one of these actions:
 | QoS profile stop | `409 / 1011` | DONE | No profile runs. |
 | `DELETE .../network` | `200` | DONE | The reservation stays. |
 | | `409 / 1007` | DONE | Already inactive. |
-| | `503 / 1012` + `Retry-After: 5` | REPEAT | The stop did not complete (hostapd stuck for a few seconds). Repeat until `200`. |
+| | `503 / 1012` + `Retry-After: 5` | REPEAT | The stop did not complete, even after the server repeated it for 15 s (hostapd stuck in the kernel). Rare. Repeat until `200`. |
 | `DELETE /reservations/{id}` | `200` | DONE | AP stopped, antenna free. |
 | | `404` | DONE | Already expired, released or invalidated: nothing left to release. |
 | | `503 / 1004` | REPEAT, then STOP | Cleanup failed, the antenna is still held. Repeat a few times a few seconds apart (usually transient), then STOP. After expiry Wi-Lab retries the cleanup by itself. |

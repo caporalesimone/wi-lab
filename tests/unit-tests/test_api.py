@@ -665,7 +665,10 @@ class TestNetworkDeleteEndpoint:
     def test_stop_stuck_in_the_kernel_is_503_and_a_repeat_finishes_it(
         self, client, valid_token, reservation_id, monkeypatch,
     ):
-        """hostapd stuck after SIGKILL: coded 503 with Retry-After, not a bare 500."""
+        """hostapd stuck after SIGKILL: repeated for STOP_RETRY_BUDGET, then a coded 503."""
+        from wilab.api.routes import network as network_routes
+        monkeypatch.setattr(network_routes, 'STOP_RETRY_BUDGET', 0.05)
+        monkeypatch.setattr(network_routes, 'STOP_RETRY_PAUSE', 0.01)
         cfg = load_config()
         manager = NetworkManager(cfg)
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
@@ -697,6 +700,22 @@ class TestNetworkDeleteEndpoint:
         assert client.delete(url, headers=headers).status_code == 200
         assert not manager.stop_failed('wls16')
         assert 'wls16' not in manager.active
+
+        # B: stuck for a moment only -> the server repeats the stop itself, the client sees 200.
+        assert client.post(url, headers=headers, json=network_body(
+            ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz',
+            tx_power_level=4)).status_code == 200
+        monkeypatch.setattr(network_routes, 'STOP_RETRY_BUDGET', 5.0)
+        calls = []
+
+        def stuck_once(*a, **k):
+            calls.append(1)
+            if len(calls) == 1:
+                stuck()
+        monkeypatch.setattr(manager.hostapd_manager, 'stop', stuck_once)
+        assert client.delete(url, headers=headers).status_code == 200
+        assert len(calls) == 2
+        assert not manager.stop_failed('wls16')
 
     def test_second_create_is_409_1008(self, client, valid_token, reservation_id, monkeypatch):
         """API-3: an AP already running has its own code, not only a message."""
