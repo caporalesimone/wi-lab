@@ -251,6 +251,30 @@ class NetworkManager:
             logger.warning("Cleanup of %s succeeded after earlier failures", device_id)
         self._cleanup_retry_at.pop(device_id, None)
 
+    def runs(self, device_id: str, req: NetworkCreateRequest) -> bool:
+        """True if the active network of *device_id* has exactly the settings of *req*.
+
+        A create repeated after a lost answer then gets the network instead of
+        409 / 1008. Internet and TX power changed since the create make it differ.
+        """
+        st = self.active.get(device_id)
+        if st is None or device_id in self._stop_failed:
+            return False
+        internet = (
+            req.internet_enabled if req.internet_enabled is not None
+            else self.config.internet_enabled_by_default
+        )
+        running = (
+            st.ssid, st.password or None, st.encryption, st.band, st.channel, bool(st.hidden),
+            st.channel_width or 20, st.wifi_generation or 4, st.internet_enabled,
+            st.captive_portal, st.tx_power_level,
+        )
+        asked = (
+            req.ssid, req.password or None, req.encryption, req.band, req.channel, req.hidden,
+            req.channel_width, req.wifi_generation, internet, req.captive_portal, req.tx_power_level,
+        )
+        return running == asked
+
     def stop_failed(self, device_id: str) -> bool:
         """True after a stop that did not complete, until a stop completes."""
         return device_id in self._stop_failed

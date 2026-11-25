@@ -272,7 +272,7 @@ The actions for every call, in one place, are in [3.1](#31-what-to-do-with-each-
 | Response | Meaning | Client action |
 |---|---|---|
 | `200` | The AP is up and DHCP is running. The body is the network, as `GET .../network` returns it. | Done. Stop retrying. |
-| `409 / 1008` (`network_already_active`) | An AP is already running on this reservation. | Do not retry. Read it with `GET .../network`, or stop it first with `DELETE .../network`. |
+| `409 / 1008` (`network_already_active`) | An AP with **different** settings is already running on this reservation (the same create again answers `200`). | Do not retry. Read it with `GET .../network`, or stop it first with `DELETE .../network`. |
 | `409 / 1009` (`restoration_in_progress`) | The watchdog is restarting this AP. | Do not create. Poll `GET .../network` until `runtime_state` is gone. |
 | `422` | Invalid body (including `encryption: wpa`), channel unsupported/disabled on this antenna, or an encryption, channel width or Wi-Fi generation the antenna does not support. | Fix the request. Do not retry the same body. |
 | `404` | The reservation is unknown, expired or invalidated. | Stop using the ID. Reserve again if needed. |
@@ -300,18 +300,13 @@ because of them. Further rules:
   antenna held until it expires.
 - **Do not count your own retries on top of the server's.** The answer is
   already the final result of every start the server tried.
-- **Transport errors are ambiguous.** If the connection drops or the client
-  times out, the server may have finished the AP or still be working on it. Do
-  not resend the create blindly; first read the state:
-
-  ```http
-  GET /api/v2/reservations/{reservation_id}/network
-  ```
-
-  The status call can wait for an in-progress create, so use a long timeout.
-  During `restoring_ap` or `restoring_dhcp`, wait and read status again.
-  Otherwise: `active: true` → the AP is up; `active: false` → you may send the
-  create again; `404` → the ID is gone.
+- **After a transport error, send the same create again.** If the connection
+  drops or the client times out, the server may have finished the AP or still
+  be working on it. Repeating the **same** create (same ID, same body) is safe:
+  it waits for a create still in progress, and if the AP already runs with
+  exactly those settings it answers `200` with the network instead of starting
+  it twice. Then handle the answer as usual (`404`: the ID is gone, the
+  previous create invalidated it).
 
 ### 2.6 After the AP is running
 
@@ -573,8 +568,8 @@ sequenceDiagram
             W-->>C: message starts with the field path (radio.channel: ..., wifi.security.password: ...)
             Note over C: Fix that field. Never repeat the same body
         else 409 / 1008 network_already_active
-            W-->>C: an AP already runs on this reservation
-            Note over C: Usually a previous create that succeeded but whose answer was lost.<br/>Read it with GET .../network, or DELETE .../network first
+            W-->>C: an AP with different settings already runs on this reservation
+            Note over C: The same body would have answered 200.<br/>Read it with GET .../network, or DELETE .../network first
         else 409 / 1009 restoration_in_progress
             W-->>C: the watchdog is restarting this AP
             Note over C: Do not create. Poll GET .../network until runtime_state is null
@@ -585,21 +580,7 @@ sequenceDiagram
             W-->>C: detail.stage (hostapd, interface, gateway, dhcp, nat, isolation, ...) and message
             Note over C: Rolled back, reservation still valid. No automatic retry.<br/>Show the message. Release the id before reserving again
         else transport error or client timeout (no answer)
-            Note over C: Ambiguous: the server may have finished, or still be working
-            C->>W: GET /reservations/{id}/network (long timeout: it waits for the create)
-            alt active true and runtime_state null
-                W-->>C: the AP is up
-                Note over C: Done. Do not create again
-            else runtime_state restoring_ap or restoring_dhcp
-                W-->>C: being repaired
-                Note over C: Wait and read again
-            else active false and runtime_state null
-                W-->>C: no AP
-                Note over C: Repeat the create
-            else 404
-                W-->>C: id gone
-                Note over C: Reserve again
-            end
+            Note over C: The server may have finished, or still be working.<br/>Send the SAME create again (same id, same body): it waits for a create<br/>in progress, and an AP already running with that body answers 200
         end
     end
     end
@@ -711,11 +692,11 @@ Every answer leads to exactly one of these actions:
 | `POST .../network` (create) | `200` | DONE | The body is the network, as `GET .../network` returns it. |
 | | `503 / 1003` | RESERVE AGAIN | Every start failed (the server already retried), or the reservation expires too soon for another start: reservation invalidated. **Do not release it.** |
 | | `422` | FIX | The message starts with the field path, e.g. `radio.channel_width: ...`. |
-| | `409 / 1008` | DONE | An AP already runs on this reservation (often a previous create whose answer was lost). Read it with `GET .../network`; to replace it, `DELETE .../network` first. |
+| | `409 / 1008` | FIX | An AP with **different** settings already runs on this reservation (the same body answers `200`). Read it with `GET .../network`; to replace it, `DELETE .../network` first. |
 | | `409 / 1009` | WAIT | Until `runtime_state` is `null`, then create only if `active` is `false`. |
 | | `500 / 1013` | STOP | Startup failed for a non-radio reason (`detail.stage`) and was rolled back; the reservation is still valid. Release it before reserving again. |
 | | `500 / 500` | STOP | An unexpected server error. |
-| | no answer (timeout, connection lost) | WAIT | Never resend blindly: `GET .../network` with a long timeout. `active: true` → DONE. `runtime_state` set → WAIT. `active: false` and no `runtime_state` → send the create again. `404` → RESERVE AGAIN. |
+| | no answer (timeout, connection lost) | REPEAT | Send the **same** create again (same ID, same body), at once: it waits for a create still in progress, and an AP already running with that body answers `200`. Then handle the new answer. |
 | `GET .../network` | `200`, `runtime_state: null` | DONE | |
 | | `200`, `restoring_ap`, `restoring_dhcp`, `dhcp_failed` | WAIT | The watchdog is repairing the network. After `restoring_ap`, devices reconnect and QoS profiles must be reapplied. |
 | | `200`, `restore_failed` | WAIT | The AP is down and the watchdog retries. Or `DELETE .../network` to give up, or create again. |
@@ -759,28 +740,19 @@ without special code for crashes.
 
 ```python
 def create_ap(api, reservation_id, body):
-    for _ in range(2):  # a second create only after a lost answer
+    for _ in range(3):  # the same create again only after a lost answer
         try:
             r = api.post(f"/reservations/{reservation_id}/network", json=body, timeout=300)
         except TransportError:
-            state = api.get(f"/reservations/{reservation_id}/network", timeout=120)
-            if state.status_code == 404:
-                raise ReservationLost()
-            state.raise_for_status()
-            network = state.json()
-            if network.get("runtime_state") in ("restoring_ap", "restoring_dhcp"):
-                network = wait_for_restoration(api, reservation_id)  # Bounded GET polling.
-            if network["active"]:
-                return network
-            continue  # The previous create did not leave an AP: try again.
+            continue  # Safe: the same body answers 200 if the AP already runs.
 
         code = r.json().get("detail", {}).get("code") if r.status_code >= 400 else None
         if r.status_code == 200:
             return r.json()  # the network, as GET .../network returns it
-        if r.status_code == 503 and code == 1003:
-            raise ReservationInvalidated()  # Do not release this ID.
+        if r.status_code == 503 and code == 1003 or r.status_code == 404:
+            raise ReservationInvalidated()  # Do not release this ID: reserve again.
         raise CreateFailed(r.status_code, r.json())  # No automatic retry.
-    raise CreateFailed("retries exhausted")
+    raise CreateFailed("no answer after 3 tries")
 ```
 
 ## 5. What happens on the server

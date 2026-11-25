@@ -65,7 +65,7 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 
 | Operation and response | Client action |
 |---|---|
-| Create `409`, `detail.code: 1008` | A network already runs on this reservation (often a create whose answer was lost): read it with `GET .../network`. |
+| Create `409`, `detail.code: 1008` | A network with different settings already runs on this reservation; read it with `GET .../network`. The same create again (same body, e.g. after a lost answer) answers `200` with the network. |
 | Create `409`, `detail.code: 1009` | The watchdog is restarting this network: poll `GET .../network` until `runtime_state` is `null`. |
 | Create `503`, `detail.code: 1003`, `reservation_invalidated: true` | Every start failed (the server already retried radio failures), or the reservation expires too soon for another start. Discard the ID. Do not retry creation or release it. Request a new reservation if needed. |
 | Create `500`, `detail.code: 1013` | Startup failed for a non-radio reason, named by `detail.stage`. No automatic retry. The reservation is still valid; release it if no longer needed. |
@@ -77,9 +77,9 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 | `409`, `detail.code: 1010` / `1011` | A QoS profile is already running / no QoS profile is running. |
 | `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Every reservation endpoint except the create, which waits instead. |
 
-A transport timeout is not a recovery code. For a lost create response, check
-`GET /api/v2/reservations/{reservation_id}/network` before attempting another
-create. A lost reservation response may already have allocated an adapter:
+A transport timeout is not a recovery code. For a lost create response, send
+the same create again (same ID and body): it waits for a create in progress and
+answers `200` if the AP already runs with that body. A lost reservation response may already have allocated an adapter:
 do not blindly repeat it. A `404` for a reservation ID means stop using it.
 
 ### Service health and quarantined adapters

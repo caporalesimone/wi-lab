@@ -29,7 +29,7 @@ release it), **STOP** (show the message, ask an operator).
 | 1005 | `no_device_available` | 409 | no | reserve | Every antenna is reserved, or the requested `interface` is. Adds `next_available_at` (UTC) and `next_available_in` (seconds), both `null` when no release is scheduled. | REPEAT after `next_available_in`, or a backoff |
 | 1006 | `device_busy` | 503 | 2 | every call with a reservation ID except the create | Another operation held the antenna for more than 5 s. Nothing was changed. | REPEAT |
 | 1007 | `network_not_active` | 409 | no | Internet, TX power, QoS profile, `DELETE .../network` | The reservation is valid but no network is running. | FIX (create the network first); DONE for a stop |
-| 1008 | `network_already_active` | 409 | no | create | A network already runs on this reservation, often from a previous create whose answer was lost. | DONE: read it with `GET .../network`; `DELETE .../network` first to replace it |
+| 1008 | `network_already_active` | 409 | no | create | A network with **different** settings already runs on this reservation. The same create again (same body) answers `200` with the network instead. | FIX: read it with `GET .../network`; `DELETE .../network` first to replace it |
 | 1009 | `restoration_in_progress` | 409 | no | create | The watchdog is restarting this network. | WAIT until `runtime_state` is `null`, then create only if `active` is `false` |
 | 1010 | `qos_profile_already_active` | 409 | no | start a QoS profile | A profile already runs on this network. | FIX: stop it first |
 | 1011 | `qos_profile_not_active` | 409 | no | stop a QoS profile | No profile runs on this network. | DONE |

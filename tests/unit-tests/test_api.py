@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 import pytest
 from conftest import network_body
 from fastapi.testclient import TestClient
@@ -662,6 +664,41 @@ class TestNetworkDeleteEndpoint:
         assert stop_resp.status_code == 200
         assert stop_resp.json() == {'detail': 'Network wls16 stopped successfully'}
     
+    def test_same_create_again_answers_the_network_a_different_one_1008(
+        self, client, valid_token, reservation_id, monkeypatch,
+    ):
+        """A create repeated after a lost answer is safe: same body -> 200, different -> 409 / 1008."""
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
+        start = Mock(return_value={})
+        monkeypatch.setattr(manager.hostapd_manager, 'start', start)
+        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
+        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
+        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        headers = {'Authorization': valid_token}
+        url = f'/api/v2/reservations/{reservation_id}/network'
+        body = network_body(
+            ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz',
+            tx_power_level=4,
+        )
+        first = client.post(url, headers=headers, json=body)
+        assert first.status_code == 200
+
+        again = client.post(url, headers=headers, json=body)
+        assert again.status_code == 200
+        assert again.json()['wifi'] == first.json()['wifi']
+        assert start.call_count == 1  # nothing started twice
+
+        other = network_body(
+            ssid='OtherAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz',
+            tx_power_level=4,
+        )
+        resp = client.post(url, headers=headers, json=other)
+        assert resp.status_code == 409
+        assert resp.json()['detail']['code'] == 1008
+
     def test_stop_stuck_in_the_kernel_is_503_and_a_repeat_finishes_it(
         self, client, valid_token, reservation_id, monkeypatch,
     ):
@@ -717,7 +754,7 @@ class TestNetworkDeleteEndpoint:
         assert len(calls) == 2
         assert not manager.stop_failed('wls16')
 
-    def test_second_create_is_409_1008(self, client, valid_token, reservation_id, monkeypatch):
+    def test_second_create_with_another_body_is_409_1008(self, client, valid_token, reservation_id, monkeypatch):
         """API-3: an AP already running has its own code, not only a message."""
         cfg = load_config()
         manager = NetworkManager(cfg)
@@ -731,7 +768,8 @@ class TestNetworkDeleteEndpoint:
         body = network_body(ssid='TestAP', channel=6, encryption='open', band='2.4ghz', tx_power_level=4)
         headers = {'Authorization': valid_token}
         assert client.post(url, headers=headers, json=body).status_code == 200
-        second = client.post(url, headers=headers, json=body)
+        different = network_body(ssid='TestAP', channel=11, encryption='open', band='2.4ghz', tx_power_level=4)
+        second = client.post(url, headers=headers, json=different)
         assert second.status_code == 409
         assert (second.json()['detail']['code'], second.json()['detail']['reason']) == (1008, 'network_already_active')
 

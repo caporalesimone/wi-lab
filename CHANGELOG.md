@@ -13,7 +13,7 @@ All notable changes to Wi-Lab are documented in this file.
 | 🐛 Bug fixes | 55 |
 | ⚠️ Breaking changes | 22 |
 | 🔧 Maintenance changes | 13 |
-| ✨ New features | 20 |
+| ✨ New features | 21 |
 | 📦 Commits since 3.0.0 | 89 |
 
 Counts are the entries of the sections below (as of 2026-11-25) and `git rev-list --count 3.0.0..HEAD` (as of 2026-11-25).
@@ -65,6 +65,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - New **Antennas** API, listed in Swagger before Network and readable with the token only: `GET /api/v2/antennas` lists the managed antennas (`display_name`, `interface`); `GET /api/v2/antennas/{interface}` gives `device` (`bus`, `address`, `driver`), `encryptions` and per band the Wi-Fi generations with their widths and the usable channels with the widths each can use, to fill a form's dropdowns.
 - Frontend: a captive portal switch on each reserved antenna card chooses whether the next network starts with a portal page (it presets the start dialog, which has the same switch), and a running network shows the captive portal as On or Off with its URL and a header badge.
 - `POST /api/v2/reservations` takes an optional `interface` to reserve a given antenna (from `GET /api/v2/antennas`); without it the first free one is reserved, as before. A reserved antenna answers `409 / 1005` with the expiry of its reservation, a quarantined one `503 / 1002` or `1003`, an unknown one `422`.
+- A create repeated with the same body on a network that already runs with exactly those settings answers `200` with the network instead of `409 / 1008`: after a lost answer the client just sends the same create again. A different body still answers `409 / 1008`.
 
 ### 🐛 Bug Fixes
 
@@ -203,7 +204,7 @@ The rest of this chapter names each endpoint by its 3.x path.
   - radio failures are retried by the server inside the request; `409 / 1001` is no longer answered.
   - new `503 / 1003` with `reservation_invalidated: true`: discard the ID and reserve again.
   - `500 / 1013` with `detail.stage`: startup failed for a non-radio reason, reservation still valid.
-  - `409 / 1008`: network already active; `409 / 1009`: a watchdog restore in progress (both had no code).
+  - `409 / 1008`: a network with different settings already active (the same body answers `200`); `409 / 1009`: a watchdog restore in progress (both had no code).
   - `200`: the body is the network, as `GET .../network` returns it (was `{"detail": "Network ... created successfully"}`).
   - can take up to about 80 s (several minutes on DFS channels): use a read timeout of at least 120 s (300 s on DFS).
 - `GET /api/v1/interface/{id}/network`: the answer is grouped in sections, which are `null` while the network is not running:

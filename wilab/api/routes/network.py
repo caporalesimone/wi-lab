@@ -123,7 +123,10 @@ def _error(code: int, reason: str, message: str) -> dict:
             "application/json": {"example": {"detail": _error(404, "not_found", "Reservation not found or expired")}},
         }},
         409: {
-            "description": "Network already active (1008) or watchdog restoration in progress (1009).",
+            "description": (
+                "A network with different settings already active (1008; the same body answers "
+                "200) or watchdog restoration in progress (1009)."
+            ),
             "content": {"application/json": {"examples": {
                 "active_network": {"value": {"detail": _error(
                     1008, "network_already_active",
@@ -373,6 +376,9 @@ def start_network(
     # time per reservation is the client contract, and the wait is bounded.
     with hold_reservation(reservation_mgr, reservation, wait=True):
         device_id = reservation.device_id
+        if manager.runs(device_id, req):
+            # The same create again, usually after a lost answer: it already succeeded.
+            return _network_response(manager, reservation)
         try:
             channel_mgr.validate_network(
                 device_id, req.band, req.channel, req.channel_width, req.wifi_generation,
