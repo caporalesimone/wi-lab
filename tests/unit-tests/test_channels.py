@@ -3,6 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
+from conftest import network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -490,12 +491,12 @@ class TestNetworkCreationChannelValidation:
             "ssid": "TestNet", "channel": 52, "encryption": "open",
             "band": "5ghz", "tx_power_level": 4,
         }
-        response = client.post(url, headers=headers, json=request)
+        response = client.post(url, headers=headers, json=network_body(**request))
         if allow_dfs is None:
             assert response.status_code == 422
             assert "allow_dfs_channels=false" in response.json()["detail"]["message"]
             start_network.assert_not_called()
-            response = client.post(url, headers=headers, json={**request, "channel": 36})
+            response = client.post(url, headers=headers, json=network_body(**{**request, "channel": 36}))
         assert response.status_code == 200
         start_network.assert_called_once()
 
@@ -503,14 +504,7 @@ class TestNetworkCreationChannelValidation:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestNet',
-                'channel': 14,
-                'password': 'testpass123',
-                'encryption': 'wpa2',
-                'band': '2.4ghz',
-                'tx_power_level': 4,
-            },
+            json=network_body(ssid='TestNet', channel=14, password='testpass123', encryption='wpa2', band='2.4ghz', tx_power_level=4),
         )
         assert resp.status_code == 422
         assert "disabled" in resp.json()['detail']['message'].lower()
@@ -519,14 +513,7 @@ class TestNetworkCreationChannelValidation:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestNet',
-                'channel': 173,
-                'password': 'testpass123',
-                'encryption': 'wpa2',
-                'band': '5ghz',
-                'tx_power_level': 4,
-            },
+            json=network_body(ssid='TestNet', channel=173, password='testpass123', encryption='wpa2', band='5ghz', tx_power_level=4),
         )
         # 173 passes static validation (it's in VALID_CHANNELS_5GHZ)
         # but is not in the mock hardware data → 422
@@ -537,14 +524,7 @@ class TestNetworkCreationChannelValidation:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestNet',
-                'channel': 12,
-                'password': 'testpass123',
-                'encryption': 'wpa2',
-                'band': '2.4ghz',
-                'tx_power_level': 4,
-            },
+            json=network_body(ssid='TestNet', channel=12, password='testpass123', encryption='wpa2', band='2.4ghz', tx_power_level=4),
         )
         # Channel 12 has No IR in mock data — treated as disabled
         assert resp.status_code == 422

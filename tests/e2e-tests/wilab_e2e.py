@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import time
 from collections.abc import Iterator
@@ -190,6 +191,25 @@ class Server:
         ).stdout
 
     @staticmethod
+    def iw_channel_width(interface: str) -> int | None:
+        """Channel width in MHz the radio reports (HAP-11)."""
+        out = subprocess.run(
+            ["iw", "dev", interface, "info"], check=False, capture_output=True, text=True,
+        ).stdout
+        match = re.search(r"width:\s+(\d+)\s+MHz", out)
+        return int(match[1]) if match else None
+
+    def hostapd_config(self, interface: str) -> dict[str, str]:
+        """`hostapd_cli get_config` of the AP on `interface` (HAP-10)."""
+        socket = self.sudo_output(
+            ["find", "/tmp/wilab-hostapd", "-type", "s", "-name", interface],
+        ).split()[0]
+        out = self.sudo_output(
+            ["hostapd_cli", "-p", str(Path(socket).parent), "-i", interface, "get_config"],
+        )
+        return dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+
+    @staticmethod
     def iw_txpower_dbm(interface: str) -> float | None:
         out = subprocess.run(
             ["iw", "dev", interface, "info"], check=False, capture_output=True, text=True,
@@ -212,6 +232,33 @@ class Server:
 
 
 # --------------------------------------------------------------------------- API
+
+_RADIO_FIELDS = ("band", "channel", "channel_width", "wifi_generation", "tx_power_level")
+
+
+def network_body(**flat: Any) -> dict[str, Any]:
+    """The sectioned create body (radio, wifi, internet, captive_portal) from flat fields.
+
+    Tests pass flat overrides; unknown keys stay at the top level so invalid
+    bodies can still be sent.
+    """
+    body: dict[str, Any] = {}
+    radio = {key: flat.pop(key) for key in _RADIO_FIELDS if key in flat}
+    security = {key: flat.pop(key) for key in ("encryption", "password") if key in flat}
+    wifi: dict[str, Any] = {key: flat.pop(key) for key in ("ssid", "hidden") if key in flat}
+    if security:
+        wifi["security"] = security
+    if radio:
+        body["radio"] = radio
+    if wifi:
+        body["wifi"] = wifi
+    if "internet_enabled" in flat:
+        body["internet"] = {"enabled": flat.pop("internet_enabled")}
+    if "captive_portal" in flat:
+        body["captive_portal"] = {"enabled": flat.pop("captive_portal")}
+    body.update(flat)
+    return body
+
 
 @dataclass
 class Antenna:
@@ -274,7 +321,7 @@ class WiLab:
         }
         body.update(overrides)
         body = {key: value for key, value in body.items() if value is not None}
-        return self.http.post(f"/interface/{antenna.reservation_id}/network", json=body)
+        return self.http.post(f"/interface/{antenna.reservation_id}/network", json=network_body(**body))
 
     def delete_network(self, antenna: Antenna) -> int:
         return self.http.delete(f"/interface/{antenna.reservation_id}/network").status_code

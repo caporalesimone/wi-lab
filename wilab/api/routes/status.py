@@ -24,6 +24,15 @@ _CHECKS_OK_EXAMPLE = {
     "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
 }
 
+_CAPABILITIES_EXAMPLE = {
+    "encryptions": ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"],
+    "channel_widths": {"2.4ghz": [20, 40], "5ghz": [20, 40, 80]},
+    "wifi_generations": {"2.4ghz": [4, 6], "5ghz": [4, 5, 6]},
+}
+
+# /debug is a diagnostic for operators: listed only under Maintenance in Swagger.
+maintenance_router = APIRouter(tags=["Maintenance"])
+
 router = APIRouter(
     tags=["System"],
     responses={503: {"description": "An expired device could not be cleaned up"}},
@@ -51,9 +60,9 @@ router = APIRouter(
                         "version": "4.0.0", "status": "standby", "active_networks": 0,
                         "networks": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reserved": False,
-                             "reservation_remaining_seconds": None},
+                             "reservation_remaining_seconds": None, "capabilities": _CAPABILITIES_EXAMPLE},
                             {"display_name": "Antenna B", "interface": "wlan1", "reserved": False,
-                             "reservation_remaining_seconds": None},
+                             "reservation_remaining_seconds": None, "capabilities": _CAPABILITIES_EXAMPLE},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
                         "checks": _CHECKS_OK_EXAMPLE,
@@ -153,7 +162,10 @@ def system_status(
         dict: Contains:
             - version: Software version
             - networks: List of managed interfaces
-              (`runtime_state` during AP/DHCP restoration or DHCP failure)
+              (`runtime_state` during AP/DHCP restoration or DHCP failure;
+              `capabilities`: the `encryptions`, `channel_widths` and
+              `wifi_generations` per band the antenna accepts on a create,
+              absent until the antenna's capabilities have been read)
             - status: Overall health (ok|degraded|standby)
             - active_networks: Number of active networks
             - checks: Component health details
@@ -273,6 +285,11 @@ def _system_status(
             runtime_degraded = True
         if n.device_id in recovery:
             entry["recovery_state"] = "recovering" if recovery[n.device_id] else "unavailable"
+        # HAP-10/HAP-11: what this antenna accepts on a create; read when discovery
+        # added it, never here (a status call does not wait for a radio).
+        capabilities = manager.channel_manager.cached_capabilities(n.device_id)
+        if capabilities is not None:
+            entry["capabilities"] = capabilities.summary()
         networks_info.append(entry)
     status_data["networks"] = networks_info
     if recovery or runtime_degraded or stuck or stale_loops:
@@ -286,8 +303,9 @@ def _system_status(
     return status_data
 
 
-@router.get(
+@maintenance_router.get(
     "/debug",
+    summary="Read internal debug information (operators only)",
     responses={
         200: {"description": "Debug information retrieved successfully"},
         401: {"description": "Unauthorized (missing or invalid auth token)"},

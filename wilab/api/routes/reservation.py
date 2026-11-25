@@ -25,6 +25,10 @@ from .recovery_responses import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/device-reservation", tags=["Reservation"])
+# Route tags add to the router's: a separate router keeps release-all only under
+# Maintenance in Swagger. It is included before `router`, so `/all` is matched
+# before `/{reservation_id}`.
+maintenance_router = APIRouter(prefix="/device-reservation", tags=["Maintenance"])
 
 
 # ---- Request / Response models ----
@@ -160,9 +164,8 @@ def _build_response(r, config: AppConfig) -> ReservationResponse:
     )
 
 
-@router.delete(
+@maintenance_router.delete(
     "/all",
-    tags=["Maintenance"],
     summary="Release ALL reservations (maintenance only)",
     responses={
         200: {"description": "All reservations released"},

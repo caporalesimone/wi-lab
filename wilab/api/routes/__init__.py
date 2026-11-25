@@ -16,16 +16,21 @@ from .internet import router as internet_router
 from .network import router as network_router
 from .qos_profile import catalogue_router as qos_catalogue_router
 from .qos_profile import reservation_router as qos_reservation_router
+from .reservation import maintenance_router as reservation_maintenance_router
 from .reservation import router as reservation_router
+from .status import maintenance_router as debug_router
 from .status import router as health_router
 from .txpower import router as txpower_router
 
 # Root router at /api/v1 prefix
 router = APIRouter(prefix="/api/v1")
 
-# Include all domain routers
+# Include all domain routers. Release-all comes before the reservation routes so
+# that DELETE /device-reservation/all is not read as a reservation ID.
+router.include_router(reservation_maintenance_router)
 router.include_router(reservation_router)
 router.include_router(health_router)
+router.include_router(debug_router)
 router.include_router(network_router)
 router.include_router(internet_router)
 router.include_router(txpower_router)

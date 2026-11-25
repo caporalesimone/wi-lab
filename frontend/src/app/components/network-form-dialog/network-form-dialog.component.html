@@ -28,8 +28,28 @@
     <mat-form-field appearance="outline">
       <mat-label>Encryption</mat-label>
       <mat-select formControlName="encryption" required>
-        <mat-option *ngFor="let enc of encryptionTypes" [value]="enc">{{ enc.toUpperCase() }}</mat-option>
+        <mat-option *ngFor="let enc of encryptionTypes" [value]="enc">{{ encryptionLabels[enc] }}</mat-option>
       </mat-select>
+      <mat-hint *ngIf="form.get('encryption')?.value === 'wpa1'">
+        Only for testing legacy clients: 802.11a/g, 20 MHz, at most 54 Mbit/s.
+      </mat-hint>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Wi-Fi generation</mat-label>
+      <mat-select formControlName="wifi_generation" required>
+        <mat-option *ngFor="let gen of wifiGenerations" [value]="gen">{{ generationLabels[gen] }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Channel width</mat-label>
+      <mat-select formControlName="channel_width" required>
+        <mat-option *ngFor="let width of channelWidths" [value]="width">{{ width }} MHz</mat-option>
+      </mat-select>
+      <mat-hint *ngIf="mayFallBackTo20">
+        On 2.4 GHz the radio falls back to 20 MHz when it sees neighbouring networks.
+      </mat-hint>
     </mat-form-field>
 
     <mat-form-field appearance="outline" *ngIf="form.get('encryption')?.value !== 'open'">

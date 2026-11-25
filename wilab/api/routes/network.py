@@ -14,7 +14,7 @@ from ...api.dependencies import (
     hold_reservation,
     resolve_reservation,
 )
-from ...models import NetworkCreateRequest, NetworkStatus
+from ...models import NetworkCreateBody, NetworkResponse, ReservationInfo
 from ...reservation import Reservation
 from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager
@@ -68,12 +68,46 @@ def _error(code: int, reason: str, message: str) -> dict:
             }}},
         },
         422: {
-            "description": "Validation failed (body, unsupported channel, or disabled channel)",
+            "description": (
+                "Validation failed: body, unsupported or disabled channel, `encryption: wpa` "
+                "(no longer accepted), or an encryption, channel width or Wi-Fi generation the "
+                "antenna does not support"
+            ),
             "content": {"application/json": {"examples": {
+                "wpa_removed": {
+                    "summary": "encryption wpa is no longer accepted",
+                    "value": {"detail": _error(
+                        422, "validation_error",
+                        "Value error, wifi.security.encryption: 'wpa' is no longer accepted: use "
+                        "'wpa2' (what 'wpa' used to create) or 'wpa1' for legacy WPA/TKIP",
+                    )},
+                },
+                "wpa1_unsupported": {
+                    "summary": "wpa1 on an antenna without TKIP",
+                    "value": {"detail": _error(
+                        422, "validation_error", "wpa1 is not supported on this antenna",
+                    )},
+                },
+                "width_unavailable": {
+                    "summary": "Channel cannot be used at the requested width",
+                    "value": {"detail": _error(
+                        422, "validation_error",
+                        "80 MHz on channel 165 is not available: Channel 169 is disabled on wlan0 "
+                        "for band 5ghz (regulatory domain restriction)",
+                    )},
+                },
+                "generation_unsupported": {
+                    "summary": "Wi-Fi generation not supported by the antenna",
+                    "value": {"detail": _error(
+                        422, "validation_error",
+                        "wifi_generation 6 is not supported on this antenna for band 5ghz",
+                    )},
+                },
                 "body_validation": {
                     "summary": "Invalid request body",
                     "value": {"detail": _error(
-                        422, "validation_error", "Channel 99 is not a valid WiFi channel for band 5ghz",
+                        422, "validation_error",
+                        "Value error, Channel 99 is not a valid WiFi channel for band 5ghz",
                     )},
                 },
                 "unsupported_channel": {
@@ -130,34 +164,80 @@ def start_network(
     reservation_mgr: ReservationManagerDep,
     _auth: bool = Depends(require_token),
     reservation: Reservation = Depends(resolve_reservation),
-    req: NetworkCreateRequest = Body(
+    body: NetworkCreateBody = Body(
         ...,
         openapi_examples={
-            "wpa2_network": {"summary": "2.4 GHz WPA2 network", "value": {
-                "ssid": "TestNetwork",
-                "channel": 5,
-                "password": "testpass123",
-                "encryption": "wpa2",
-                "band": "2.4ghz",
-                "internet_enabled": True,
-                "captive_portal": False,
-                "tx_power_level": 4,
-            }},
+            "wpa2_network": {
+                "summary": "2.4 GHz WPA2 network, every optional field at its default",
+                "description": "Required: radio.band, radio.channel, radio.tx_power_level, "
+                "wifi.ssid, wifi.security.encryption, and wifi.security.password unless the "
+                "encryption is open. Optional, shown with their defaults: radio.channel_width, "
+                "radio.wifi_generation, wifi.hidden, internet.enabled (default from the server "
+                "configuration), captive_portal.enabled.",
+                "value": {
+                "radio": {
+                    "band": "2.4ghz", "channel": 5, "channel_width": 20,
+                    "wifi_generation": 4, "tx_power_level": 4,
+                },
+                "wifi": {
+                    "ssid": "TestNetwork", "hidden": False,
+                    "security": {"encryption": "wpa2", "password": "testpass123"},
+                },
+                "internet": {"enabled": True},
+                "captive_portal": {"enabled": False},
+            },
+            },
+            "wifi5_80mhz": {
+                "summary": "5 GHz Wi-Fi 5 network at 80 MHz",
+                "description": "Channels 36-48 as one 80 MHz channel, 802.11ac. Needs an antenna "
+                "that lists 80 and 5 for 5ghz in GET /status (networks[].capabilities).",
+                "value": {
+                "radio": {
+                    "band": "5ghz", "channel": 36, "channel_width": 80,
+                    "wifi_generation": 5, "tx_power_level": 4,
+                },
+                "wifi": {
+                    "ssid": "Wifi5Test", "hidden": False,
+                    "security": {"encryption": "wpa2-wpa3", "password": "testpass123"},
+                },
+                "internet": {"enabled": True},
+                "captive_portal": {"enabled": False},
+            },
+            },
+            "wpa1_legacy": {
+                "summary": "Legacy WPA (TKIP) network for old clients",
+                "description": "Insecure, 802.11a/g only (20 MHz, at most 54 Mbit/s). Accepted "
+                "only on antennas that list wpa1 in GET /status (networks[].capabilities.encryptions).",
+                "value": {
+                "radio": {
+                    "band": "2.4ghz", "channel": 6, "channel_width": 20,
+                    "wifi_generation": 4, "tx_power_level": 4,
+                },
+                "wifi": {
+                    "ssid": "LegacyWpa", "hidden": False,
+                    "security": {"encryption": "wpa1", "password": "testpass123"},
+                },
+                "internet": {"enabled": True},
+                "captive_portal": {"enabled": False},
+            },
+            },
             "captive_portal_network": {
                 "summary": "Network behind a simulated captive portal",
                 "description": "Clients are redirected to the portal page until they press Sign in. "
-                "Only the client that signs in is released; with internet_enabled it then reaches "
+                "Only the client that signs in is released; with internet.enabled it then reaches "
                 "the Internet.",
                 "value": {
-                    "ssid": "CaptiveTest",
-                    "channel": 6,
-                    "password": "testpass123",
-                    "encryption": "wpa2",
-                    "band": "2.4ghz",
-                    "internet_enabled": True,
-                    "captive_portal": True,
-                    "tx_power_level": 4,
+                "radio": {
+                    "band": "2.4ghz", "channel": 6, "channel_width": 20,
+                    "wifi_generation": 4, "tx_power_level": 4,
                 },
+                "wifi": {
+                    "ssid": "CaptiveTest", "hidden": False,
+                    "security": {"encryption": "wpa2", "password": "testpass123"},
+                },
+                "internet": {"enabled": True},
+                "captive_portal": {"enabled": True},
+            },
             },
         },
     ),
@@ -189,16 +269,31 @@ def start_network(
     No USB reset runs in the creation request.
     A network being restored by the watchdog returns an ordinary HTTP 409.
 
-    **Captive portal** (optional `captive_portal`, default `false`; omitted means
+    **Body:** settings are grouped in `radio`, `wifi` (with `security`),
+    `internet` and `captive_portal`, the same sections as `GET .../network`.
+    Only `radio` and `wifi` are required.
+
+    **Captive portal** (optional `captive_portal.enabled`, default `false`; omitted means
     no portal): each client that joins is held behind a simple portal page on the
     gateway (`http://<gateway>/`, reported as `captive_portal_url`). Until it
     presses **Sign in**, its DNS queries resolve to the gateway, its HTTP requests
     are redirected to the portal and other forwarded traffic, including HTTPS, is
     rejected. Sign-in releases only that client (MAC and IP); there is no API to
-    sign a client in. Afterwards the network's `internet_enabled` setting applies.
+    sign a client in. Afterwards the network's `internet.enabled` setting applies.
     Sign-ins are cleared when the AP stops or is restored by the watchdog. A
     portal startup failure is rolled back like any other startup error (`500`).
+
+    **Encryption, channel width and Wi-Fi generation:** `wifi.security.encryption` is one of
+    `open`, `wpa2`, `wpa3`, `wpa2-wpa3` or `wpa1` (legacy WPA/TKIP, only on antennas
+    that support it). `wpa` is no longer accepted and returns `422`: use `wpa2`.
+    Optional `radio.channel_width` (20, 40, 80 MHz; default 20) and `radio.wifi_generation`
+    (4 = 802.11n, 5 = 802.11ac, 6 = 802.11ax; default 4) select the radio mode;
+    the defaults keep the previous behaviour. `GET /status` lists, per antenna,
+    what it supports (`networks[].capabilities`); anything else returns `422`.
+    40 MHz on 2.4 GHz may fall back to 20 MHz when neighbouring networks are
+    present: `GET .../network` reports the actual `radio.channel_width.reported`.
     """
+    req = body.to_request()
     if manager.watchdog.state(reservation) in ("restoring_ap", "restoring_dhcp"):
         raise HTTPException(status_code=409, detail="Network restoration is in progress")
     # A create waits for the adapter instead of answering 1006: one create at a
@@ -209,7 +304,10 @@ def start_network(
         if remaining > 0:
             raise recovery_error(RecoveryCode.RETRY_LATER, retry_after=remaining)
         try:
-            channel_mgr.validate_channel(device_id, req.channel, req.band)
+            channel_mgr.validate_network(
+                device_id, req.band, req.channel, req.channel_width, req.wifi_generation,
+                req.encryption,
+            )
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
 
@@ -298,30 +396,39 @@ def stop_network(
 
 @router.get(
     "/{reservation_id}/network",
-    response_model=NetworkStatus,
+    response_model=NetworkResponse,
     responses={
         503: DEVICE_BUSY_RESPONSE,
         200: {
-            "description": "Network status, or a watchdog snapshot while restoration is in progress.",
+            "description": (
+                "Network status in sections: `reservation`, `radio`, `wifi`, `ip`, `internet`, "
+                "`captive_portal` and `clients`. While the network is not running, or while the "
+                "watchdog restores it, only `interface`, `active`, `runtime_state` and "
+                "`reservation` are set and the sections are null."
+            ),
             "content": {"application/json": {"examples": {
                 "active": {
-                    "summary": "Active network with Internet and two clients",
+                    "summary": "Active 5 GHz network at 80 MHz with Internet and two clients",
                     "value": {
-                        "interface": "wlx7419f8176286", "active": True, "ssid": "test-network-ap-01",
-                        "channel": 6, "password": "12345678", "encryption": "wpa2", "band": "2.4ghz",
-                        "hidden": False, "subnet": "192.168.120.0/24", "internet_enabled": True,
-                        "captive_portal": False, "captive_portal_url": None,
-                        "tx_power": {"requested_level": 4, "reported_level": 4, "reported_dbm": 20.0},
-                        "expires_at": "2026-11-19T23:00:00Z", "expires_in": 3471,
-                        "dhcp": {
-                            "interface": "wlx7419f8176286", "subnet": "192.168.120.0/24",
-                            "gateway": "192.168.120.1",
-                            "config_file": "/tmp/wilab-dnsmasq/dnsmasq-wlx7419f8176286.conf",
-                            "pid_file": "/tmp/wilab-dnsmasq/pids/dnsmasq-wlx7419f8176286.pid",
-                            "lease_file": "/tmp/wilab-dnsmasq/leases-wlx7419f8176286.db",
-                            "network_addr": "192.168.120.0", "dhcp_range": "192.168.120.10,192.168.120.250",
+                        "interface": "wlx7419f8176286", "active": True, "runtime_state": None,
+                        "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3471},
+                        "radio": {
+                            "band": "5ghz", "channel": 36,
+                            "channel_width": {"requested": 80, "reported": 80},
+                            "wifi_generation": 5,
+                            "tx_power": {"requested_level": 4, "reported_level": 4, "reported_dbm": 20.0},
                         },
-                        "clients_connected": 2,
+                        "wifi": {
+                            "ssid": "test-network-ap-01", "hidden": False,
+                            "security": {"encryption": "wpa2", "password": "12345678"},
+                        },
+                        "ip": {
+                            "subnet": "192.168.120.0/24", "gateway": "192.168.120.1",
+                            "dhcp_range": {"start": "192.168.120.10", "end": "192.168.120.250"},
+                            "dns_server": "192.168.10.21",
+                        },
+                        "internet": {"enabled": True},
+                        "captive_portal": {"enabled": False, "url": None},
                         "clients": [
                             {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.120.10"},
                             {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.120.11"},
@@ -330,31 +437,45 @@ def stop_network(
                 },
                 "restoring_ap": {"value": {
                     "interface": "wlan0", "active": False, "runtime_state": "restoring_ap",
-                    "expires_in": 54,
+                    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 54},
                 }},
                 "restoring_dhcp": {"value": {
                     "interface": "wlan0", "active": True, "runtime_state": "restoring_dhcp",
-                    "expires_in": 53,
+                    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 53},
                 }},
                 "dhcp_failed": {"value": {
                     "interface": "wlan0", "active": True, "runtime_state": "dhcp_failed",
-                    "expires_in": 51,
+                    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 51},
                 }},
                 "restore_failed": {
                     "summary": "AP restart failed; the watchdog retries with backoff",
                     "value": {
-                        "interface": "wlan0", "active": False, "runtime_state": "restore_failed",
-                        "expires_in": 3300,
-                    },
+                    "interface": "wlan0", "active": False, "runtime_state": "restore_failed",
+                    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3300},
+                },
                 },
                 "captive_portal": {
                     "summary": "Active network with a captive portal",
                     "value": {
-                        "interface": "wlan0", "active": True, "ssid": "CaptiveTest", "channel": 6,
-                        "band": "2.4ghz", "encryption": "wpa2", "subnet": "192.168.120.0/24",
-                        "internet_enabled": True, "captive_portal": True,
-                        "captive_portal_url": "http://192.168.120.1/", "expires_in": 3540,
-                        "clients_connected": 2,
+                        "interface": "wlan0", "active": True, "runtime_state": None,
+                        "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3540},
+                        "radio": {
+                            "band": "2.4ghz", "channel": 6,
+                            "channel_width": {"requested": 20, "reported": 20},
+                            "wifi_generation": 4,
+                            "tx_power": {"requested_level": 4, "reported_level": 4, "reported_dbm": 20.0},
+                        },
+                        "wifi": {
+                            "ssid": "CaptiveTest", "hidden": False,
+                            "security": {"encryption": "wpa2", "password": "testpass123"},
+                        },
+                        "ip": {
+                            "subnet": "192.168.120.0/24", "gateway": "192.168.120.1",
+                            "dhcp_range": {"start": "192.168.120.10", "end": "192.168.120.250"},
+                            "dns_server": "192.168.10.21",
+                        },
+                        "internet": {"enabled": True},
+                        "captive_portal": {"enabled": True, "url": "http://192.168.120.1/"},
                         "clients": [
                             {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.120.23", "captive_authorized": True},
                             {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.120.57", "captive_authorized": False},
@@ -380,16 +501,20 @@ def get_network(
     During runtime restoration, returns the current `runtime_state` without
     waiting for the radio. A quarantined network's former ID returns 404.
 
-    Returns:
-        NetworkStatus: Full details including SSID, channel, password, expiration time,
-            DHCP configuration, and list of connected clients.
+    The answer is grouped in sections (`reservation`, `radio`, `wifi`, `ip`,
+    `internet`, `captive_portal`, `clients`); they are null while the network
+    is not running. `wifi.security.password` is returned so that test devices
+    can be connected.
     """
     runtime_state = manager.watchdog.state(reservation)
     if runtime_state in ("restoring_ap", "restoring_dhcp"):
-        return NetworkStatus(
+        return NetworkResponse(
             interface=reservation.device_id, active=runtime_state == "restoring_dhcp",
-            runtime_state=runtime_state, expires_in=reservation.expires_in,
-            expires_at=format_utc_timestamp(reservation.expires_at),
+            runtime_state=runtime_state,
+            reservation=ReservationInfo(
+                expires_at=format_utc_timestamp(reservation.expires_at),
+                expires_in=reservation.expires_in,
+            ),
         )
     with hold_reservation(reservation_mgr, reservation):
         device_id = reservation.device_id
@@ -398,7 +523,8 @@ def get_network(
             raise HTTPException(status_code=404, detail="Unknown device_id")
         st.expires_at = format_utc_timestamp(reservation.expires_at)
         st.expires_in = reservation.expires_in
-        return st.model_copy(update={"runtime_state": manager.watchdog.state(reservation)})
+        st = st.model_copy(update={"runtime_state": manager.watchdog.state(reservation)})
+        return NetworkResponse.from_status(st, dns_server=manager.config.dns_server)
 
 
 # ---- Response models for available channels ----

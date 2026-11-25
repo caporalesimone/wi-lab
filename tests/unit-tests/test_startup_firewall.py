@@ -7,6 +7,7 @@ import logging
 from unittest.mock import Mock
 
 import pytest
+from conftest import network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -104,7 +105,7 @@ def test_api_returns_500_and_keeps_the_reservation(monkeypatch):
         rid = client.post("/api/v1/device-reservation", headers=headers, json={"duration_seconds": 60}).json()[
             "reservation_id"
         ]
-        response = client.post(f"/api/v1/interface/{rid}/network", headers=headers, json=body)
+        response = client.post(f"/api/v1/interface/{rid}/network", headers=headers, json=network_body(**body))
         assert response.status_code == 500
         assert "enable Internet" in response.json()["detail"]["message"]
         assert "Retry-After" not in response.headers

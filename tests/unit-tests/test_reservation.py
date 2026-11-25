@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from conftest import network_body
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -438,10 +439,10 @@ def test_slow_lifecycle_operation_does_not_block_event_loop(operation, valid_tok
 
             monkeypatch.setattr(manager, "start_network", slow_start)
             path = f"/api/v1/interface/{reservation_id}/network"
-            payload = {
-                "ssid": "test", "channel": 1, "password": "testpassword",
-                "encryption": "wpa2", "band": "2.4ghz", "tx_power_level": 4,
-            }
+            payload = network_body(
+                ssid="test", channel=1, password="testpassword",
+                encryption="wpa2", band="2.4ghz", tx_power_level=4,
+            )
         else:
             reservation = reservation_manager.get(reservation_id)
             assert reservation is not None
@@ -499,7 +500,7 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
         first_id = first["reservation_id"]
 
         def create(rid: str):
-            return client.post(f"/api/v1/interface/{rid}/network", headers=headers, json=payload)
+            return client.post(f"/api/v1/interface/{rid}/network", headers=headers, json=network_body(**payload))
 
         slow = pool.submit(create, first_id)
         try:

@@ -2,6 +2,7 @@ import json
 from unittest.mock import Mock
 
 import pytest
+from conftest import network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -41,24 +42,24 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
         create = f"/api/v1/interface/{rid}/network"
 
         for expected_attempt, delay in enumerate((5, 10), start=1):
-            result = client.post(create, headers=headers, json=PAYLOAD)
+            result = client.post(create, headers=headers, json=network_body(**PAYLOAD))
             assert (result.status_code, result.headers["Retry-After"]) == (409, str(delay))
             assert result.json()["detail"] == {
                 "code": 1001, "reason": "retry_later", "reservation_invalidated": False,
             }
             assert client.get(f"{RESERVE}/{rid}", headers=headers).status_code == 200
             now += 1
-            early = client.post(create, headers=headers, json=PAYLOAD)
+            early = client.post(create, headers=headers, json=network_body(**PAYLOAD))
             assert early.headers["Retry-After"] == str(delay - 1)
             assert start.call_count == expected_attempt
             now += delay - 1
 
-        terminal = client.post(create, headers=headers, json=PAYLOAD)
+        terminal = client.post(create, headers=headers, json=network_body(**PAYLOAD))
         assert terminal.status_code == 503  # API-4: a client state, not a server error
         assert "Retry-After" not in terminal.headers
         assert terminal.json()["detail"]["code"] == 1003
         assert terminal.json()["detail"]["reservation_invalidated"] is True
-        assert client.post(create, headers=headers, json=PAYLOAD).status_code == 404
+        assert client.post(create, headers=headers, json=network_body(**PAYLOAD)).status_code == 404
         assert [c.kwargs["allow_internal_retry"] for c in start.call_args_list] == [True, False, False]
 
         blocked = client.post(RESERVE, headers=headers, json={"duration_seconds": 60})
@@ -321,11 +322,11 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch):
         response = client.get(path, headers=headers)
         assert response.status_code == 200 and not response.json()["active"]
         assert response.json()["runtime_state"] == "restoring_ap"
-        expiry = response.json()["expires_at"]
+        expiry = response.json()["reservation"]["expires_at"]
         assert expiry.endswith("Z")
         reserved = client.get(f"/api/v1/device-reservation/{reservation.reservation_id}", headers=headers)
         assert reserved.status_code == 200 and reserved.json()["expires_at"] == expiry
-        create = client.post(path, headers=headers, json=PAYLOAD)
+        create = client.post(path, headers=headers, json=network_body(**PAYLOAD))
         assert create.status_code == 409 and "Retry-After" not in create.headers
         system = client.get("/api/v1/status", headers=headers).json()
         assert system["status"] == "degraded"

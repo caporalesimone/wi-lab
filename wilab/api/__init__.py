@@ -106,14 +106,16 @@ create. `dhcp_failed` is brief: the watchdog then restarts the whole network.
 """
 
 OPENAPI_TAGS = [
-    {"name": "System", "description": "Service health, reservations and per-adapter recovery state. Poll status, not debug."},
+    {"name": "System", "description": "Service health, reservations and per-adapter recovery state. Poll status, not debug (Maintenance)."},
     {"name": "Reservation", "description": "Allocate or release an adapter. Use the returned reservation ID for device operations."},
     {"name": "Network", "description": "Create, stop and inspect an AP. The creation response describes when to retry with the same reservation."},
     {"name": "Internet", "description": "Enable or disable Internet access for a reserved network."},
     {"name": "TX Power", "description": "Inspect or request transmit power. Hardware support is not guaranteed."},
     {"name": "QoS Profiles", "description": "Inspect and manage traffic shaping profiles for a reserved network."},
-    {"name": "Maintenance", "description": "Operator-only commands, not for clients. They require the "
-     "X-Confirm-Password header matching protected_commands_password and may be removed in the future."},
+    {"name": "Maintenance", "description": "Operator-only commands and diagnostics, not for clients; "
+     "they may be removed in the future. Releasing all reservations requires the X-Confirm-Password "
+     "header matching protected_commands_password. Debug is expensive and shows internal state: "
+     "use it only for manual troubleshooting, never for polling."},
 ]
 
 

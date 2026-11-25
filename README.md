@@ -161,10 +161,11 @@ curl -X POST http://localhost:8080/api/v1/device-reservation \
 # }
 
 # 2. Create a WiFi network on the reserved device
-curl -X POST http://localhost:8080/api/v1/network/a1b2c3d4 \
+curl -X POST http://localhost:8080/api/v1/interface/a1b2c3d4/network \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
-  -d '{"ssid": "TestNetwork", "channel": 6, "band": "2.4ghz", "encryption": "wpa2", "password": "mypassword"}'
+  -d '{"radio": {"band": "2.4ghz", "channel": 6, "tx_power_level": 4},
+       "wifi": {"ssid": "TestNetwork", "security": {"encryption": "wpa2", "password": "mypassword"}}}'
 ```
 
 For the full endpoint reference, open **Swagger UI** at `http://<host>:8080/docs` or **ReDoc** at `http://<host>:8080/redoc`.

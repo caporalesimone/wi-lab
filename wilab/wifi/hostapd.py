@@ -17,6 +17,7 @@ from ..network.commands import (
     execute_iw,
     start_foreground,
 )
+from .channels import ChannelLayout, channel_layouts
 from .interface import interface_present
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,44 @@ _OUTPUT_EVENTS = (
 )
 _INTERFACE_EVENT = re.compile(rb"^[\w.-]+: (AP-ENABLED|AP-DISABLED|DFS-CAC-START|DFS-CAC-COMPLETED)(?: |$)")
 _STATE_TRANSITION = re.compile(rb"^[\w.-]+: interface state [A-Z_]+->([A-Z_]+)$")
+
+
+# hostapd security lines per encryption, one line per key (HAP-10).
+# wpa1 is legacy WPA/TKIP: TKIP is not allowed with HT, so it runs 802.11a/g only.
+SECURITY_LINES: dict[str, list[str]] = {
+    "open": [],
+    "wpa1": ["wpa=1", "wpa_key_mgmt=WPA-PSK", "wpa_pairwise=TKIP"],
+    "wpa2": ["wpa=2", "wpa_key_mgmt=WPA-PSK", "rsn_pairwise=CCMP"],
+    "wpa3": ["wpa=2", "wpa_key_mgmt=SAE", "rsn_pairwise=CCMP", "ieee80211w=2", "sae_pwe=2"],
+    "wpa2-wpa3": [
+        "wpa=2", "wpa_key_mgmt=WPA-PSK SAE", "rsn_pairwise=CCMP", "ieee80211w=1",
+        "sae_require_mfp=1", "sae_pwe=2",
+    ],
+}
+
+
+def mode_lines(band: str, width: int, generation: int, layout: ChannelLayout, encryption: str) -> list[str]:
+    """hostapd lines for the Wi-Fi generation and channel width (HAP-11).
+
+    generation 4 = 802.11n, 5 = 802.11ac (5 GHz only), 6 = 802.11ax. On 5 GHz
+    802.11ax is announced together with 802.11ac, as clients expect. wpa1 turns
+    HT off: the network is 802.11a/g at 20 MHz.
+    """
+    if encryption == "wpa1":
+        return ["ieee80211n=0"]
+    lines = ["ieee80211n=1"]
+    if width >= 40:
+        lines.append("ht_capab=[HT40+]" if layout.secondary_above else "ht_capab=[HT40-]")
+    vht_width = 1 if width == 80 else 0
+    if band == "5ghz" and generation >= 5:
+        lines += ["ieee80211ac=1", f"vht_oper_chwidth={vht_width}"]
+        if width == 80:
+            lines.append(f"vht_oper_centr_freq_seg0_idx={layout.center}")
+    if generation == 6:
+        lines += ["ieee80211ax=1", f"he_oper_chwidth={vht_width}"]
+        if width == 80:
+            lines.append(f"he_oper_centr_freq_seg0_idx={layout.center}")
+    return lines
 
 
 def _classify_output(line: bytes) -> str | None:
@@ -115,6 +154,9 @@ class HostapdManager:
         hidden: bool,
         band: str,
         country_code: str = "IT",
+        channel_width: int = 20,
+        wifi_generation: int = 4,
+        layout: ChannelLayout | None = None,
     ) -> str:
         """
         Generate hostapd.conf content.
@@ -123,12 +165,16 @@ class HostapdManager:
             interface: WiFi interface name
             ssid: Network SSID
             channel: WiFi channel
-            encryption: Encryption type (open, wpa, wpa2, wpa3, wpa2-wpa3)
+            encryption: Encryption type (open, wpa1, wpa2, wpa3, wpa2-wpa3)
             password: WPA password (None for open networks)
             hidden: Whether to hide SSID broadcast
             band: WiFi band (2.4ghz, 5ghz)
             country_code: ISO 3166-1 alpha-2 country code for regulatory domain
-            
+            channel_width: 20, 40 or 80 MHz
+            wifi_generation: 4 (802.11n), 5 (802.11ac) or 6 (802.11ax)
+            layout: channel block chosen by the channel manager; the first
+                possible one when omitted
+
         Returns:
             hostapd configuration as string
         """
@@ -156,34 +202,23 @@ class HostapdManager:
         if hidden:
             config_lines.append("ignore_broadcast_ssid=1")
         
-        # Encryption configuration
-        if encryption == "open":
-            # No encryption
-            pass
-        elif encryption in ["wpa", "wpa2", "wpa3", "wpa2-wpa3"]:
-            if not password:
-                raise HostapdError(f"Password required for {encryption} encryption")
-            
-            config_lines.append("wpa=2")  # WPA2
+        if encryption not in SECURITY_LINES:
+            raise HostapdError(f"Unsupported encryption: {encryption}")
+        if encryption != "open" and not password:
+            raise HostapdError(f"Password required for {encryption} encryption")
+        config_lines.extend(SECURITY_LINES[encryption])
+        if encryption != "open":
             config_lines.append(f"wpa_passphrase={password}")
-            config_lines.append("wpa_key_mgmt=WPA-PSK")
-            config_lines.append("rsn_pairwise=CCMP")
-            
-            # WPA3-specific settings
-            if encryption in ["wpa3", "wpa2-wpa3"]:
-                config_lines.append("ieee80211w=2")  # Management frame protection required
-                config_lines.append("wpa_key_mgmt=SAE")
-                
-                if encryption == "wpa2-wpa3":
-                    # Mixed mode
-                    config_lines.append("wpa_key_mgmt=WPA-PSK SAE")
-                    config_lines.append("ieee80211w=1")  # MFP optional for mixed
-        
-        # Additional recommended settings
+
+        if layout is None:
+            try:
+                layout = channel_layouts(band, channel, channel_width)[0]
+            except ValueError as e:
+                raise HostapdError(str(e)) from e
         config_lines.extend([
             f"country_code={country_code}",
             "ieee80211d=1",  # Advertise country code and apply regulatory domain
-            "ieee80211n=1",  # 802.11n support
+            *mode_lines(band, channel_width, wifi_generation, layout, encryption),
             "wmm_enabled=1",  # WMM/QoS
         ])
 
@@ -204,6 +239,9 @@ class HostapdManager:
         hidden: bool,
         band: str,
         country_code: str = "IT",
+        channel_width: int = 20,
+        wifi_generation: int = 4,
+        layout: ChannelLayout | None = None,
     ) -> HostapdInstance:
         """
         Start hostapd for an AP network.
@@ -218,7 +256,8 @@ class HostapdManager:
             hidden: Hide SSID broadcast
             band: WiFi band (2.4ghz/5ghz)
             country_code: ISO 3166-1 alpha-2 country code
-            
+            channel_width, wifi_generation, layout: see :meth:`_generate_config`
+
         Returns:
             Dictionary with hostapd instance info
             
@@ -230,7 +269,8 @@ class HostapdManager:
 
         try:
             config_content = self._generate_config(
-                interface, ssid, channel, encryption, password, hidden, band, country_code
+                interface, ssid, channel, encryption, password, hidden, band, country_code,
+                channel_width, wifi_generation, layout,
             )
             instance_dir = tempfile.mkdtemp(prefix="ap-", dir=HOSTAPD_CONFIG_DIR)
             control_dir = os.path.join(instance_dir, "ctrl")
@@ -256,7 +296,9 @@ class HostapdManager:
 
             process = start_foreground(["hostapd", "-d", config_file], classify_output=_classify_output)
             instance["process"] = process
-            timeout = DFS_READY_TIMEOUT if band == "5ghz" and 52 <= channel <= 144 else AP_READY_TIMEOUT
+            sub_channels = layout.channels if layout is not None else (channel,)
+            dfs = band == "5ghz" and any(52 <= c <= 144 for c in sub_channels)
+            timeout = DFS_READY_TIMEOUT if dfs else AP_READY_TIMEOUT
             self._wait_until_ready(process, interface, control_dir, timeout)
             logger.info(f"hostapd started for {net_id} on {interface}")
             return instance

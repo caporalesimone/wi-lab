@@ -10,13 +10,13 @@ All notable changes to Wi-Lab are documented in this file.
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 45 |
-| ⚠️ Breaking changes | 7 |
-| 🔧 Maintenance changes | 9 |
-| ✨ New features | 13 |
+| 🐛 Bug fixes | 46 |
+| ⚠️ Breaking changes | 9 |
+| 🔧 Maintenance changes | 10 |
+| ✨ New features | 16 |
 | 📦 Commits since 3.0.0 | 86 |
 
-Counts are the entries of the sections below and `git rev-list --count 3.0.0..HEAD`, as of 2026-11-24.
+Counts are the entries of the sections below (as of 2026-11-25) and `git rev-list --count 3.0.0..HEAD` (as of 2026-11-24).
 
 ### ⚠️ Breaking Changes
 
@@ -27,6 +27,8 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - API timestamps (`expires_at`, `detail.next_available_at`) now use RFC 3339 UTC with a `Z` suffix. Durations and countdowns remain in seconds.
 - Internet, TX power and QoS profile requests on a valid reservation without a running network return `409` with `detail.code: 1007` (`network_not_active`); Internet and TX power returned `404`, which clients could not tell apart from an expired reservation (Fable API-2).
 - A create that quarantines the adapter and invalidates the reservation (`detail.code: 1003`, `reservation_invalidated: true`) now returns `503` instead of `500`, so clients and proxies no longer treat it as a retryable server error; the code and body are unchanged (Fable API-4).
+- The create body and `GET .../network` are grouped in sections: `radio`, `wifi` (with `security`), `internet`, `captive_portal`, plus `reservation` and `ip` in the answer. Duplicated and internal fields (`dhcp.*` paths and files, `clients_connected`, the second `interface` and `subnet`) are gone, and `ip.dns_server` is new. Flat bodies return `422` (Fable API-8; first step of ARCH-3).
+- AP creation with `encryption: "wpa"` returns `422`: it silently created WPA2. Use `wpa2` for the same network, or the new `wpa1` for real legacy WPA/TKIP (Fable HAP-10).
 
 ### ✨ Features
 
@@ -42,6 +44,9 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - Discover AP-capable Wi-Fi interfaces (USB or built-in) automatically instead of requiring each one in `networks`. The section now only assigns display names, and `disable: true` keeps a radio out of Wi-Lab; unlisted interfaces use their interface name. A missing configured interface no longer prevents startup; with no usable adapter, reservations return `503 / 1003`. USB ports are detected automatically for recovery resets; `usb_recovery_port` is ignored.
 - Add a device discovery service: Wi-Lab starts without antennas and scans as soon as the API starts, then every 5 seconds while none is available and every 30 seconds afterwards. Antennas plugged in later are added without a restart. Each scan re-reads `networks` (display names and `disable`) and only adds devices; existing antennas, subnets and reservations are unchanged. Interfaces still being renamed by udev are skipped until they have their final name.
 - Frontend: requests answered `503 / 1006` (antenna busy) are repeated automatically after `Retry-After`, and `1006`/`1007` errors show a readable explanation instead of the raw body.
+- New `encryption: "wpa1"` (legacy WPA, PSK/TKIP, 802.11a/g only) to test old clients; accepted only on antennas whose driver supports TKIP (Fable HAP-10).
+- AP creation takes optional `channel_width` (20, 40, 80 MHz) and `wifi_generation` (4 = 802.11n, 5 = 802.11ac, 6 = 802.11ax); defaults 20 MHz / 802.11n keep the previous behaviour. `GET /status` lists per antenna the encryptions, widths and generations it accepts (`networks[].capabilities`), and `GET .../network` reports the width the radio actually uses (Fable HAP-11).
+- Frontend: the start dialog offers only the encryptions, channel widths and Wi-Fi generations the antenna supports (`wpa` replaced by `wpa1` where available), and a running network shows its width and Wi-Fi generation.
 - Frontend: a captive portal switch on each reserved antenna card chooses whether the next network starts with a portal page (it presets the start dialog, which has the same switch), and a running network shows the captive portal as On or Off with its URL and a header badge.
 
 ### 🐛 Bug Fixes
@@ -90,6 +95,7 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - Quarantined adapters with no USB recovery running are re-probed periodically and return to the pool without a service restart (Fable WD-4).
 - Stopping a network on a disconnected adapter completes its cleanup, and an interface lost during startup returns `409 / 1001` instead of `500` (Fable WD-5).
 - The create request is validated before touching the antenna: SSID, password and channel rules, and no line injection into `hostapd.conf` (Fable BUG-1).
+- `wpa3` and `wpa2-wpa3` networks no longer write `wpa_key_mgmt` and `ieee80211w` several times in `hostapd.conf` (they worked only because hostapd keeps the last one); the mixed mode now requires PMF for WPA3 clients only, and SAE accepts H2E (Fable HAP-10).
 - APs with SSIDs that hostapd reports with escapes (non-ASCII, quotes, backslashes) become ready instead of ending in quarantine (Fable HAP-1).
 
 ### 🔧 Maintenance
@@ -102,6 +108,7 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 - Added an [AP creation procedure](docs/ap-creation-procedure.md) for client developers and a backend [architecture](docs/architecture.md) guide with startup, threading, creation, retry, watchdog and recovery diagrams.
 - Explain the reservation and recovery lifecycle in Swagger and ReDoc, including retry, quarantine and watchdog response examples.
 - Include the API operation, HTTP status, and error code in journal entries for server errors, without request or response data.
+- Swagger lists release-all (`DELETE /api/v1/device-reservation/all`) and `GET /api/v1/debug` only under **Maintenance**; release-all also appeared under Reservation.
 - Document `GET /api/v1/status` health values (`standby`, `ok`, `degraded`), what makes the service `degraded` (quarantined adapter, network being repaired, failed health check) and how clients learn about quarantined adapters, in Swagger (three response examples), the API overview, the AP creation procedure (2.8) and the Swagger guide.
 
 ### ✅ Tests
@@ -130,15 +137,45 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 **Network**
 
 - `POST /api/v1/interface/{id}/network`:
-  - `band: "dual"` removed (`422`).
-  - new optional field `captive_portal` (default `false`).
+  - the body is grouped in sections; flat bodies return `422`. Field by field:
+
+    | 3.x | 4.0.0 |
+    |---|---|
+    | `band`, `channel`, `tx_power_level` | `radio.band`, `radio.channel`, `radio.tx_power_level` |
+    | — | `radio.channel_width` (`20`, `40`, `80`; default `20`), `radio.wifi_generation` (`4`, `5`, `6`; default `4`) |
+    | `ssid`, `hidden` | `wifi.ssid`, `wifi.hidden` |
+    | `encryption`, `password` | `wifi.security.encryption`, `wifi.security.password` |
+    | `internet_enabled` | `internet.enabled` |
+    | — | `captive_portal.enabled` (default `false`) |
+
+    Only `radio` and `wifi` are required.
+  - `radio.band: "dual"` removed (`422`).
+  - `encryption: "wpa"` removed (`422`): use `wpa2` (same network as before). New `wpa1` for legacy WPA/TKIP, only on antennas that list it.
+  - widths and generations the antenna does not support return `422`.
   - stricter validation, `422`: `ssid` 1–32 bytes, `password` 8–63 bytes, no control characters, channel must match the band, DFS channels refused unless the server allows them.
   - new `409 / 1001` + `Retry-After` (5 s, then 10 s): repeat the same request with the same ID.
   - new `503 / 1003` with `reservation_invalidated: true`: discard the ID.
   - `500`: startup failed, reservation still valid.
   - `409` without code: network already active, or a watchdog restore in progress.
   - can take up to about 20 s: use a read timeout of at least 60 s.
-- `GET /api/v1/interface/{id}/network`: new fields `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`), `captive_portal`, `captive_portal_url`, `clients[].captive_authorized`.
+- `GET /api/v1/interface/{id}/network`: the answer is grouped in sections, which are `null` while the network is not running:
+
+  | 3.x | 4.0.0 |
+  |---|---|
+  | `expires_at`, `expires_in` | `reservation.expires_at`, `reservation.expires_in` |
+  | `band`, `channel`, `tx_power` | `radio.band`, `radio.channel`, `radio.tx_power` |
+  | — | `radio.channel_width.requested` / `.reported`, `radio.wifi_generation` |
+  | `ssid`, `hidden` | `wifi.ssid`, `wifi.hidden` |
+  | `encryption`, `password` | `wifi.security.encryption`, `wifi.security.password` |
+  | `subnet`, `dhcp.gateway`, `dhcp.dhcp_range` (`"a,b"`) | `ip.subnet`, `ip.gateway`, `ip.dhcp_range` (`{start, end}`) |
+  | — | `ip.dns_server` |
+  | `dhcp.interface`, `dhcp.subnet`, `dhcp.network_addr`, `dhcp.config_file`, `dhcp.pid_file`, `dhcp.lease_file` | removed |
+  | `internet_enabled` | `internet.enabled` |
+  | — | `captive_portal.enabled`, `captive_portal.url` |
+  | `clients_connected` | removed: use the length of `clients` |
+  | `clients` | `clients` (new `captive_authorized` with a portal) |
+
+  `interface`, `active` and the new `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`) stay at the top level.
 - `DELETE /api/v1/interface/{id}/network`: also cancels a pending `restore_failed`, and returns `200`.
 - `GET /api/v1/interface/{id}/network/available-channels`: DFS channels are `disabled: true` unless the server allows them.
 
@@ -154,7 +191,7 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..HE
 **Status**
 
 - `GET /api/v1/status`:
-  - `networks[]` gains `recovery_state` (`recovering`, `unavailable`) and `runtime_state`.
+  - `networks[]` gains `recovery_state` (`recovering`, `unavailable`), `runtime_state` and `capabilities` (`encryptions`, `channel_widths`, `wifi_generations` per band).
   - `checks` gains `hostapd`, `commands`, `loops`, and `missing` lists in `dnsmasq` and `iptables_nat`.
   - `degraded` now also covers quarantined antennas, networks being repaired, stuck commands and stalled loops.
 

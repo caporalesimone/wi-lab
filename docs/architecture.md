@@ -436,7 +436,11 @@ the AP. The watchdog probe (`is_enabled`) uses the same rule. The timeout is 10 
 5 GHz DFS channels 52–144 because of the radar check. The configuration enables
 `ieee80211d` on all bands and `ieee80211h` on 5 GHz.
 
-The request body is validated before any antenna is touched: `ssid` must be
+The request body (sections `radio`, `wifi`, `internet`, `captive_portal`, model
+`NetworkCreateBody`) is converted to the flat `NetworkCreateRequest` the
+manager works with, and `GET .../network` builds the sectioned
+`NetworkResponse` from the internal `NetworkStatus` (Fable API-8, first step of ARCH-3). The body
+is validated before any antenna is touched: `ssid` must be
 1–32 bytes in UTF-8, `password` 8–63 bytes for WPA modes, neither may contain
 control characters (including CR/LF), and `channel` must be a standard channel
 for `band`. Cross-field rules run in a Pydantic `model_validator`, because a
@@ -490,7 +494,7 @@ until a restart (incident of 2026-11-23 12:23).
 
 ### 5.4 Captive portal
 
-`captive_portal` is optional in the create request; omitted or `false`, none of
+`captive_portal.enabled` is optional in the create request; omitted or `false`, none of
 the following happens. When `true`, after DHCP starts Wi-Lab builds a
 `CaptivePortal` for the AP. A failure here is an unclassified startup failure:
 the start is rolled back and the client gets a generic `500`.

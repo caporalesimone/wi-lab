@@ -81,32 +81,91 @@ POST /api/v1/interface/{reservation_id}/network
 Content-Type: application/json
 
 {
-  "ssid": "lab-test-01",
-  "channel": 6,
-  "band": "2.4ghz",
-  "encryption": "wpa2",
-  "password": "testpass123",
-  "hidden": false,
-  "internet_enabled": true,
-  "captive_portal": false,
-  "tx_power_level": 4
+  "radio": {
+    "band": "2.4ghz",
+    "channel": 6,
+    "channel_width": 20,
+    "wifi_generation": 4,
+    "tx_power_level": 4
+  },
+  "wifi": {
+    "ssid": "lab-test-01",
+    "hidden": false,
+    "security": {"encryption": "wpa2", "password": "testpass123"}
+  },
+  "internet": {"enabled": true},
+  "captive_portal": {"enabled": false}
 }
 ```
 
+The body has the same sections as `GET .../network`. Only `radio` and `wifi`
+are required; `internet` and `captive_portal` can be omitted.
+
 | Field | Required | Rules |
 |---|---|---|
-| `ssid` | yes | Network name: 1–32 bytes in UTF-8 (non-ASCII characters count as more than one byte), no control characters such as line breaks or tabs. |
-| `channel` | yes | Must be valid for `band` and supported and enabled on the antenna. |
-| `band` | yes | `2.4ghz` or `5ghz`. An AP uses one band. |
-| `encryption` | yes | `open`, `wpa`, `wpa2`, `wpa3` or `wpa2-wpa3`. |
-| `password` | unless `open` | 8–63 bytes in UTF-8 for any WPA mode, no control characters. |
-| `tx_power_level` | yes | `1` (low) to `4` (maximum). |
-| `hidden` | no | Default `false`. |
-| `internet_enabled` | no | Default from the server configuration. Enables NAT to the upstream network. |
-| `captive_portal` | no | Default `false`; omitting it keeps the previous behavior. Puts clients behind a simulated captive portal; see [2.7](#27-captive-portal). |
+| `radio.band` | yes | `2.4ghz` or `5ghz`. An AP uses one band. |
+| `radio.channel` | yes | Must be valid for `band` and supported and enabled on the antenna. |
+| `radio.channel_width` | no | `20`, `40` or `80` MHz. Default `20`, the previous behavior. See [2.2.1](#221-encryption-channel-width-and-wi-fi-generation). |
+| `radio.wifi_generation` | no | `4` (802.11n), `5` (802.11ac, 5 GHz only) or `6` (802.11ax). Default `4`, the previous behavior. |
+| `radio.tx_power_level` | yes | `1` (low) to `4` (maximum). |
+| `wifi.ssid` | yes | Network name: 1–32 bytes in UTF-8 (non-ASCII characters count as more than one byte), no control characters such as line breaks or tabs. |
+| `wifi.hidden` | no | Default `false`. |
+| `wifi.security.encryption` | yes | `open`, `wpa1`, `wpa2`, `wpa3` or `wpa2-wpa3`; see [2.2.1](#221-encryption-channel-width-and-wi-fi-generation). `wpa` is no longer accepted (`422`): use `wpa2`. |
+| `wifi.security.password` | unless `open` | 8–63 bytes in UTF-8 for any WPA mode, no control characters. |
+| `internet.enabled` | no | Default from the server configuration. Enables NAT to the upstream network. |
+| `captive_portal.enabled` | no | Default `false`. Puts clients behind a simulated captive portal; see [2.7](#27-captive-portal). |
 
 Validate the body on the client side when possible: an invalid body returns
-`422` without touching the antenna.
+`422` without touching the antenna. The message names the field by its path,
+for example `wifi.security.password: ...`.
+
+#### 2.2.1 Encryption, channel width and Wi-Fi generation
+
+Each antenna reports what it supports in `GET /api/v1/status`, under
+`networks[].capabilities`. The list is read from the radio (`iw phy`) when
+discovery adds the antenna; it is absent until then. A create that asks for
+anything else returns `422` without touching the antenna.
+
+```json
+"capabilities": {
+  "encryptions": ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"],
+  "channel_widths": {"2.4ghz": [20, 40], "5ghz": [20, 40, 80]},
+  "wifi_generations": {"2.4ghz": [4, 6], "5ghz": [4, 5, 6]}
+}
+```
+
+| `wifi.security.encryption` | What hostapd runs | Notes |
+|---|---|---|
+| `open` | No encryption. | |
+| `wpa2` | WPA2-Personal: PSK, CCMP. | What `wpa` used to create. |
+| `wpa3` | WPA3-Personal: SAE, PMF required. | SAE accepts both hunting-and-pecking and H2E. |
+| `wpa2-wpa3` | Mixed mode: PSK and SAE, CCMP. | WPA3 clients must use PMF, WPA2 clients do not. |
+| `wpa1` | Legacy WPA: PSK, TKIP. | Only to test legacy clients. Insecure; TKIP forbids 802.11n, so the network is 802.11a/g at 20 MHz, at most 54 Mbit/s. Some recent clients warn or refuse to connect. Accepted only on antennas that list it (the driver must support TKIP). |
+
+`wpa` is no longer accepted: it silently created WPA2, so a client that wanted
+to test WPA1 was actually testing WPA2. It returns `422` with a message that
+points to `wpa2` (same network as before) or `wpa1` (real legacy WPA).
+
+**Channel width and Wi-Fi generation** are optional; the defaults (20 MHz,
+802.11n) are the behaviour before 4.0.0, so existing clients do not change.
+
+- `radio.wifi_generation: 5` (802.11ac) exists only on 5 GHz.
+  `radio.channel_width: 80` exists only on 5 GHz and needs `wifi_generation` 5
+  or 6. With `wpa1` only
+  20 MHz and generation 4 are accepted.
+- On 5 GHz a wide channel is a fixed block of 20 MHz channels: at 40 MHz
+  36+40, 44+48, 52+56, ..., at 80 MHz 36–48, 52–64, 100–112, 116–128,
+  132–144, 149–161, 165–177. `channel` is the primary channel inside the block.
+  **Every channel of the block** must be enabled on the antenna: 165 at 80 MHz
+  usually returns `422` because 169–177 are not allowed, and a block with DFS
+  channels follows `allow_dfs_channels`.
+- On 2.4 GHz `channel_width: 40` is accepted: the second channel is 4 above
+  (or 4 below when above is not available). It occupies most of the band, and
+  hostapd falls back to 20 MHz when it sees neighbouring networks (20/40
+  coexistence), which is common with several APs on. `GET .../network` reports
+  the width the radio actually uses in `radio.channel_width.reported`.
+- `wifi_generation: 6` (802.11ax) is accepted where the antenna supports
+  802.11ax in AP mode. On 5 GHz it is announced together with 802.11ac.
 
 ### 2.3 Send it with the right timeout
 
@@ -137,7 +196,7 @@ antenna, so parallel requests for the same reservation only queue up.
 | `409 / 1001` + `Retry-After` | A **classified radio failure** occurred and was rolled back. The reservation is still valid. | Wait `Retry-After` seconds, then repeat the **same** request with the **same** ID and body. |
 | `409` without code `1001`, "already active" | An AP is already running on this reservation. | Do not retry. Read it with `GET .../network`, or stop it first with `DELETE .../network`. |
 | `409` without code `1001`, "restoration in progress" | The watchdog is restarting this AP. | Do not create. Poll `GET .../network` until `runtime_state` is gone. |
-| `422` | Invalid body, or channel unsupported/disabled on this antenna. | Fix the request. Do not retry the same body. |
+| `422` | Invalid body (including `encryption: wpa`), channel unsupported/disabled on this antenna, or an encryption, channel width or Wi-Fi generation the antenna does not support. | Fix the request. Do not retry the same body. |
 | `404` | The reservation is unknown, expired or invalidated. | Stop using the ID. Reserve again if needed. |
 | `503 / 1003` | **Terminal failure.** The antenna was quarantined and the reservation **invalidated**. | Discard the ID. Do not retry creation and do not release it. Reserve again if needed. |
 | `500 / 500` (generic startup error) | An unclassified startup error (e.g. `hostapd` exited with code 1, gateway or DHCP failure, or the NAT rules for `internet_enabled: true`, the isolation rules or the host guard rules could not be installed). The rollback succeeded and the reservation is **still valid**. | Do not retry automatically. Show `detail.message`. Release the ID if abandoning this attempt; release it before asking for a fresh reservation. |
@@ -217,8 +276,42 @@ A success resets the counter. Further rules:
               "message": "Another operation on this adapter is still running; retry after Retry-After"}}
   ```
 
-- `GET /api/v1/interface/{reservation_id}/network` returns SSID, channel,
-  subnet, DHCP details, connected clients and remaining time.
+- `GET /api/v1/interface/{reservation_id}/network` returns the network in
+  sections:
+
+  ```json
+  {
+    "interface": "wlx7419f8176286", "active": true, "runtime_state": null,
+    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3471},
+    "radio": {
+      "band": "5ghz", "channel": 36,
+      "channel_width": {"requested": 80, "reported": 80},
+      "wifi_generation": 5,
+      "tx_power": {"requested_level": 4, "reported_level": 4, "reported_dbm": 20.0}
+    },
+    "wifi": {"ssid": "lab-test-01", "hidden": false,
+             "security": {"encryption": "wpa2", "password": "testpass123"}},
+    "ip": {"subnet": "192.168.120.0/24", "gateway": "192.168.120.1",
+           "dhcp_range": {"start": "192.168.120.10", "end": "192.168.120.250"},
+           "dns_server": "192.168.10.21"},
+    "internet": {"enabled": true},
+    "captive_portal": {"enabled": false, "url": null},
+    "clients": [{"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.120.10"}]
+  }
+  ```
+
+  | Section | Content |
+  |---|---|
+  | `reservation` | `expires_at` (UTC) and `expires_in` (seconds); always present. |
+  | `radio` | Band, channel, channel width (`requested`, and `reported` by the radio: lower when hostapd fell back to 20 MHz on 2.4 GHz), Wi-Fi generation, TX power. |
+  | `wifi` | SSID, hidden flag, `security` (encryption and password, returned so test devices can be connected). |
+  | `ip` | Subnet, gateway, DHCP range and the DNS server announced to clients. |
+  | `internet`, `captive_portal` | Whether NAT is enabled; whether the portal is on, and its URL. |
+  | `clients` | Connected clients (`mac`, `ip`, and `captive_authorized` with a portal). The count is the list length. |
+
+  While the network is not running, or while the watchdog restores it, only
+  `interface`, `active`, `runtime_state` and `reservation` are set; the other
+  sections are `null`.
 - Wi-Lab's watchdog checks every running AP about every 5 seconds and restarts
   it with the same settings and reservation, up to 3 times per hour per
   antenna; a fourth failure within the hour quarantines the antenna. While this
@@ -245,14 +338,14 @@ A success resets the counter. Further rules:
 
 ### 2.7 Captive portal
 
-With `"captive_portal": true`, each client that joins the AP is held behind a
+With `"captive_portal": {"enabled": true}`, each client that joins the AP is held behind a
 simple portal until it signs in. Use it to check how a device detects a
 captive network. Without the flag, nothing changes.
 
 Until the client signs in:
 
 - DNS queries are answered by the AP with the gateway address, so connectivity
-  checks resolve and reach the portal even when `internet_enabled` is `false`.
+  checks resolve and reach the portal even when `internet.enabled` is `false`.
 - HTTP requests on port 80, to any host, are redirected (`302`) to the portal
   page, `http://<gateway>/`.
 - Any other forwarded traffic, including HTTPS, is rejected.
@@ -265,9 +358,9 @@ address. Other clients stay on the portal. There is no API to sign a client
 in.
 
 After sign-in, the client uses the DNS server from the configuration and the
-network's normal Internet setting: with `internet_enabled: false` it stays
-offline. `GET .../network` reports `captive_portal`, `captive_portal_url` and,
-for each client, `captive_authorized`.
+network's normal Internet setting: with `internet.enabled: false` it stays
+offline. `GET .../network` reports `captive_portal.enabled`, `captive_portal.url`
+and, for each client, `captive_authorized`.
 
 Notes:
 

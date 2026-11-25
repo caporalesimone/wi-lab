@@ -1,6 +1,7 @@
 # pytest configuration and shared fixtures
 import os
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 # Add project root to path
@@ -11,6 +12,9 @@ import pytest
 from wilab.config import load_config
 
 TEST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'test.config.yaml')
+
+# `iw phy phy1 info` read on the lab machine (MediaTek mt7921u, 2026-11-25).
+MOCK_PHY_INFO = (Path(__file__).parent / "data" / "iw_phy_info_mt7921u.txt").read_text()
 
 
 def _configured_networks_only(labels):
@@ -196,6 +200,10 @@ Band 2:
             # Return wiphy info for interface
             return f"Interface {args[0]}\nwiphy 0\ntxpower 20.00 dBm"
         
+        # Handle: execute_iw(["phy0", "info"]): a real mt7921u reading (HAP-10, HAP-11)
+        elif args[0].startswith("phy") and args[1:] == ["info"]:
+            return MOCK_PHY_INFO
+
         # Handle: execute_iw(["phy0", "channels"])
         elif args[0].startswith("phy"):
             return _MOCK_PHY_CHANNELS
@@ -288,3 +296,29 @@ def clean_manager(config, monkeypatch):
     monkeypatch.setattr(mgr.dhcp_server, 'stop', mock_dhcp_stop)
     
     return mgr
+
+
+_RADIO_FIELDS = ("band", "channel", "channel_width", "wifi_generation", "tx_power_level")
+
+
+def network_body(**flat):
+    """The sectioned create body (radio, wifi, internet, captive_portal) from flat fields.
+
+    Unknown keys stay at the top level, so invalid bodies can still be built.
+    """
+    body: dict = {}
+    radio = {key: flat.pop(key) for key in _RADIO_FIELDS if key in flat}
+    security = {key: flat.pop(key) for key in ("encryption", "password") if key in flat}
+    wifi = {key: flat.pop(key) for key in ("ssid", "hidden") if key in flat}
+    if security:
+        wifi["security"] = security
+    if radio:
+        body["radio"] = radio
+    if wifi:
+        body["wifi"] = wifi
+    if "internet_enabled" in flat:
+        body["internet"] = {"enabled": flat.pop("internet_enabled")}
+    if "captive_portal" in flat:
+        body["captive_portal"] = {"enabled": flat.pop("captive_portal")}
+    body.update(flat)
+    return body

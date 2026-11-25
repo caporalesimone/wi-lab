@@ -5,6 +5,7 @@ import os
 import time
 
 import pytest
+from conftest import network_body
 
 from wilab.models import (
     QosProfile,
@@ -567,13 +568,7 @@ class TestQosProfileAPI:
         resp = client.post(
             f"/api/v1/interface/{rid}/network",
             headers=auth_headers,
-            json={
-                "ssid": "QoSProfileTest",
-                "channel": 6,
-                "encryption": "open",
-                "band": "2.4ghz",
-                "tx_power_level": 4,
-            },
+            json=network_body(ssid="QoSProfileTest", channel=6, encryption="open", band="2.4ghz", tx_power_level=4),
         )
         assert resp.status_code == 200, resp.text
         return rid

@@ -121,6 +121,11 @@ class NetworkManager:
         self._expiry_thread.start()
         logger.info("NetworkManager initialized")
 
+    @property
+    def channel_manager(self) -> ChannelManager:
+        """The service-wide channel and capability cache."""
+        return self._channel_manager
+
     def _configure_networkmanager_unmanaged(self, interface: str) -> None:
         """Best-effort: ask NetworkManager to stop managing AP interface."""
         if not _nmcli_available():
@@ -330,6 +335,13 @@ class NetworkManager:
             else self.config.internet_enabled_by_default
         )
 
+        # The route checked the same before (422); this picks the channel block
+        # and covers starts that do not come from the API (watchdog restore).
+        layout = self._channel_manager.validate_network(
+            cfg_net.interface, req.band, req.channel, req.channel_width, req.wifi_generation,
+            req.encryption,
+        )
+
         # Best-effort: prevent NetworkManager/wpa_supplicant from contending AP interface.
         self._configure_networkmanager_unmanaged(cfg_net.interface)
         
@@ -359,6 +371,9 @@ class NetworkManager:
                         hidden=req.hidden,
                         band=req.band,
                         country_code=self.config.country_code,
+                        channel_width=req.channel_width,
+                        wifi_generation=req.wifi_generation,
+                        layout=layout,
                     )
                     stage = "assign gateway IP"
                     execute_ip(["addr", "add", gateway, "dev", cfg_net.interface])
@@ -481,6 +496,8 @@ class NetworkManager:
             encryption=req.encryption,
             band=req.band,
             hidden=req.hidden,
+            channel_width=req.channel_width,
+            wifi_generation=req.wifi_generation,
             subnet=subnet,
             internet_enabled=internet_enabled,
             captive_portal=req.captive_portal,
@@ -631,6 +648,7 @@ class NetworkManager:
             st.dhcp = dhcp_info if dhcp_info else {}
             st.clients = clients
             st.clients_connected = len(clients)
+            st.reported_channel_width = self._read_channel_width(st.interface)
 
             if st.tx_power_level is not None:
                 reported_level: int | None = None
@@ -923,6 +941,16 @@ class NetworkManager:
         except Exception as e:
             logger.warning(f"Failed to read current txpower for {interface}: {e}")
         return None
+
+    @staticmethod
+    def _read_channel_width(interface: str) -> int | None:
+        """Channel width in MHz from `iw dev <if> info` (HAP-11); None if unavailable."""
+        try:
+            match = re.search(r"width:\s+(\d+)\s+MHz", execute_iw(["dev", interface, "info"]))
+        except CommandError as e:
+            logger.warning("Failed to read channel width for %s: %s", interface, e)
+            return None
+        return int(match[1]) if match else None
 
     def _get_channel_capabilities(self, interface: str, channel: int) -> dict:
         info = self._channel_manager.get_channels(interface)

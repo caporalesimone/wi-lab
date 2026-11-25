@@ -14,7 +14,7 @@ import { WilabApiService } from '../../services/wilab-api.service';
 import { ClientInfo, NetworkCreateRequest, NetworkStatus } from '../../models/network.models';
 import { ApiError, RecoveryCode, apiErrorToast } from '../../services/recovery-response';
 import { environment } from '../../../environments/environment';
-import { NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
+import { GENERATION_LABELS, NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
 import { InterfaceSlot } from '../../app.component';
 
 @Component({
@@ -35,6 +35,7 @@ import { InterfaceSlot } from '../../app.component';
   styleUrl: './network-card.component.scss'
 })
 export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
+  generationLabels = GENERATION_LABELS;
   @Input() slot!: InterfaceSlot;
   @Output() released = new EventEmitter<string>();
 
@@ -226,9 +227,9 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
       next: (networkStatus) => {
         if (this.reservationId !== reservationId || this.createMessage !== null) return;
         this.status = networkStatus;
-        this.clientsCount = networkStatus.clients_connected || 0;
-        if (networkStatus.expires_in !== undefined && networkStatus.expires_in !== null) {
-          this.remainingSeconds = networkStatus.expires_in;
+        this.clientsCount = networkStatus.clients?.length ?? 0;
+        if (networkStatus.reservation?.expires_in !== undefined && networkStatus.reservation?.expires_in !== null) {
+          this.remainingSeconds = networkStatus.reservation.expires_in;
         }
         if (showNotification) {
           this.loading = false;
@@ -255,7 +256,9 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     const reservationId = this.reservationId;
     const dialogRef = this.dialog.open(NetworkFormDialogComponent, {
       width: '500px',
-      data: { netId: reservationId, captivePortal: this.captivePortalChoice }
+      data: {
+        netId: reservationId, captivePortal: this.captivePortalChoice, capabilities: this.slot.capabilities,
+      }
     });
 
     dialogRef.afterClosed().subscribe((result: NetworkCreateRequest | undefined) => {
@@ -296,7 +299,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   public stopWiFi(): void {
-    if (!confirm(`Are you sure you want to stop the WiFi network "${this.status?.ssid}"?`)) return;
+    if (!confirm(`Are you sure you want to stop the WiFi network "${this.status?.wifi?.ssid}"?`)) return;
     this.loading = true;
     this.wilabApiService.stopNetwork(this.reservationId).subscribe({
       next: () => {

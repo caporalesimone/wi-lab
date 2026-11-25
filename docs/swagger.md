@@ -45,13 +45,14 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
   If the reservation ID is unknown, the device may remain occupied until expiry;
   an unlimited reservation requires operator intervention.
 
-- **Maintenance** groups operations that clients must not use.
-  `DELETE /api/v1/device-reservation/all` releases **every** reservation; it
-  requires the `X-Confirm-Password` header with `protected_commands_password`
-  from the server configuration, and is disabled (`403`) when that setting is
-  missing. It may be removed in a future version.
+- **Maintenance** groups operations that clients must not use; they appear
+  only in this group. `DELETE /api/v1/device-reservation/all` releases
+  **every** reservation; it requires the `X-Confirm-Password` header with
+  `protected_commands_password` from the server configuration, and is disabled
+  (`403`) when that setting is missing. It may be removed in a future version.
+  `GET /api/v1/debug` shows internal state for troubleshooting.
 
-⚠️ **Note:** debug operations are expensive (150-600ms). Use them only for manual troubleshooting, not for frontend polling.
+⚠️ **Note:** `GET /api/v1/debug` is expensive (150-600ms). Use it only for manual troubleshooting, not for frontend polling.
 
 ## Service health (`degraded`)
 
@@ -69,6 +70,22 @@ this endpoint to learn about quarantined adapters: a quarantined adapter can
 show `reserved: false` but is not allocatable, and only its former owner is
 told directly (`503 / 1003` on the create). See
 [AP creation procedure, 2.8](ap-creation-procedure.md#28-service-health-degraded-and-quarantined-antennas).
+
+## Encryption, channel width and Wi-Fi generation
+
+In **Create a network on a reserved adapter**, the body is grouped in
+`radio`, `wifi` (with `security`), `internet` and `captive_portal`, like the
+answer of **GET .../network**; every example shows all the optional fields
+with their defaults. The schema describes each `wifi.security.encryption`
+value, `radio.channel_width` and `radio.wifi_generation`; the
+examples **5 GHz Wi-Fi 5 network at 80 MHz** and **Legacy WPA (TKIP) network
+for old clients** show the new fields. `encryption: "wpa"` is no longer
+accepted: the `422` example **encryption wpa is no longer accepted** shows the
+message, which points to `wpa2`. The other `422` examples show an antenna that
+lacks `wpa1`, a channel that cannot be used at the requested width, and an
+unsupported Wi-Fi generation. What each antenna accepts is in
+**System → Read system and adapter status**, `networks[].capabilities`. See
+[AP creation procedure, 2.2.1](ap-creation-procedure.md#221-encryption-channel-width-and-wi-fi-generation).
 
 ## Network creation failure
 

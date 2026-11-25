@@ -135,8 +135,8 @@ protetto è quello che interessa di più: una rete che funzionava e deve continu
 | 40 | [STAB-8](#stab-8) | Bassa | L'arresto ordinato può superare `TimeoutStopSec=30s`. |
 | 41 | [WD-10](#wd-10) | Bassa | Tre probe lenti consecutivi riavviano un AP forse sano. |
 | 42 | [HAP-9](#hap-9) | Bassa | Canali DFS con controllo radar di 10 minuti: il timeout di 75 s non basta mai. |
-| 43 | [HAP-10](#hap-10) | Bassa | La configurazione generata ha chiavi duplicate; `encryption: "wpa"` è in realtà WPA2. |
-| 44 | [HAP-11](#hap-11) | Media | Ogni rete usa 20 MHz e 802.11n su entrambe le bande, anche se gli adattatori supportano 40/80 MHz, 802.11ac e 802.11ax. Serve una conferma umana su come procedere. |
+| 43 | [HAP-10](#hap-10) ✅ | Bassa | La configurazione generata ha chiavi duplicate; `encryption: "wpa"` è in realtà WPA2. |
+| 44 | [HAP-11](#hap-11) ✅ | Media | Ogni rete usa 20 MHz e 802.11n su entrambe le bande, anche se gli adattatori supportano 40/80 MHz, 802.11ac e 802.11ax. |
 | 45 | [NET-8](#net-8) | Bassa | `dns_server` ha come default `192.168.10.21`, un indirizzo di laboratorio. |
 | 46 | [NET-12](#net-12) | Bassa | QoS: gara alla fine di un profilo `once`. |
 | 47 | [NET-13](#net-13) | Bassa | QoS: lo stop del profilo può far fallire lo stop della rete. |
@@ -165,13 +165,13 @@ protetto è quello che interessa di più: una rete che funzionava e deve continu
 | 70 | [API-3](#api-3) | Bassa | `409` significa sette cose diverse. |
 | 71 | [API-11](#api-11) | Bassa | Il contratto di retry ha tre livelli; quello lato client è ormai ridondante. |
 | 72 | [API-1](#api-1) | Bassa | Lo stesso dato è esposto in più punti con nomi diversi. |
-| 73 | [API-8](#api-8) | Bassa | La risposta espone dettagli interni (`pid_file`, `process_stopped`). |
+| 73 | [API-8](#api-8) ✅ | Bassa | La risposta espone dettagli interni (`pid_file`, `process_stopped`). |
 | 74 | [API-6](#api-6) | Bassa | Nomi incoerenti (`/interface/{reservation_id}`, `tx_power_level` contro `level`). |
 | 75 | [API-7](#api-7) | Bassa | Azioni modellate come percorsi (`/internet/enable`, `/internet/disable`). |
 | 76 | [ARCH-2](#arch-2) | Media | La classificazione dei guasti è sparsa in quattro posti. |
 | 77 | [ARCH-1](#arch-1) | Media | `NetworkManager` fa troppe cose (970 righe). |
 | 78 | [ARCH-4](#arch-4) | Media | Il registro dei dispositivi esiste in quattro copie. |
-| 79 | [ARCH-3](#arch-3) | Bassa | Il modello dell'API è anche lo stato interno. |
+| 79 | [ARCH-3](#arch-3) ✅ parz. | Bassa | Il modello dell'API è anche lo stato interno. |
 | 80 | [ARCH-5](#arch-5) | Bassa | I singleton sono collegati per effetto collaterale. |
 | 81 | [ARCH-6](#arch-6) | Bassa | Tre modi diversi di gestire un processo figlio. |
 | 82 | [ARCH-7](#arch-7) | Bassa | Tre implementazioni di "rilascia da NetworkManager". |
@@ -2664,6 +2664,17 @@ class NetworkCreateRequest(BaseModel):
 3. 802.11ax: attivabile da subito o solo dopo la prova su hardware.
 4. Default: restare a 20 MHz / 802.11n (nessun cambiamento per i client esistenti) oppure alzarlo
    dopo le prove.
+
+**Decisioni prese (2026-11-25).**
+
+1. Forma dell'API: due campi opzionali, `channel_width` (20, 40, 80) e `wifi_generation` (4, 5, 6).
+2. 2,4 GHz a 40 MHz: permesso. `GET .../network` riporta in `reported_channel_width` la larghezza
+   letta da `iw dev <if> info`, che può essere 20 MHz per la coesistenza 20/40.
+3. 802.11ax: attivabile subito, ma solo sulle antenne in cui la discovery vede HE in modalità AP.
+4. Default: 20 MHz / 802.11n, nessun cambiamento per i client esistenti.
+
+`GET /status` elenca per antenna cifrature, larghezze e generazioni ammesse in
+`networks[].capabilities`; la lista viene da `iw phy <phy> info`, letta insieme ai canali.
 
 **Test.** Unit: righe generate per ogni combinazione banda/canale/larghezza/generazione e `422` per
 quelle impossibili. E2E (con conferma, a sistema libero): create a 20/40/80 MHz e con ogni

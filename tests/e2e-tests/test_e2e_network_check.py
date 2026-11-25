@@ -14,7 +14,7 @@ from wilab_e2e import Server, WiLab, wait_for
 
 
 def _gateway(wilab: WiLab, reservation_id: str) -> str:
-    subnet = ipaddress.ip_network(wilab.http.get(f"/interface/{reservation_id}/network").json()["subnet"])
+    subnet = ipaddress.ip_network(wilab.http.get(f"/interface/{reservation_id}/network").json()["ip"]["subnet"])
     return f"{subnet[1]}/{subnet.prefixlen}"
 
 

@@ -321,6 +321,8 @@ class NetworkWatchdog:
                 encryption=status.encryption, band=band, hidden=bool(status.hidden),
                 internet_enabled=status.internet_enabled, captive_portal=status.captive_portal,
                 tx_power_level=status.tx_power_level,
+                channel_width=status.channel_width or 20,
+                wifi_generation=status.wifi_generation or 4,
             )
             # Same internal retries as a create request (WD-2).
             self.manager.start_network(

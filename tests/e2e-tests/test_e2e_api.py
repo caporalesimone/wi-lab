@@ -84,12 +84,79 @@ def test_actions_without_a_network_share_one_status_code(wilab: WiLab) -> None:
 
 # --------------------------------------------------------------------------- network behaviour
 
-@pending("HAP-10")
-@pytest.mark.parametrize("encryption", ["wpa2-wpa3", "wpa"])
-def test_mixed_and_legacy_wpa_modes_start(wilab: WiLab, encryption: str) -> None:
+# hostapd_cli get_config: key_mgmt, and the cipher field that matters for each mode.
+_EXPECTED_SECURITY: dict[str, dict[str, str | None]] = {
+    "open": {"key_mgmt": None},
+    "wpa1": {"wpa": "1", "key_mgmt": "WPA-PSK", "wpa_pairwise_cipher": "TKIP"},
+    "wpa2": {"wpa": "2", "key_mgmt": "WPA-PSK", "rsn_pairwise_cipher": "CCMP"},
+    "wpa3": {"wpa": "2", "key_mgmt": "SAE", "rsn_pairwise_cipher": "CCMP"},
+    "wpa2-wpa3": {"wpa": "2", "key_mgmt": "WPA-PSK SAE", "rsn_pairwise_cipher": "CCMP"},
+}
+
+
+@pytest.mark.parametrize("encryption", list(_EXPECTED_SECURITY))
+def test_every_encryption_starts_as_announced(wilab: WiLab, server: Server, encryption: str) -> None:
+    """HAP-10: each encryption starts and hostapd runs exactly that security mode."""
     antenna = wilab.reserve()
-    response = wilab.create(antenna, encryption=encryption)
+    capabilities = wilab.device(antenna.interface).get("capabilities", {})
+    if encryption not in capabilities.get("encryptions", []):
+        pytest.skip(f"{encryption} not supported on {antenna.interface}")
+    password = None if encryption == "open" else "e2e-pass-123"
+    response = wilab.create(antenna, encryption=encryption, password=password)
     assert response.status_code == 200, response.text
+    config = server.hostapd_config(antenna.interface)
+    for key, value in _EXPECTED_SECURITY[encryption].items():
+        assert config.get(key) == value, (key, config)
+
+
+def test_wpa_is_refused(wilab: WiLab) -> None:
+    """HAP-10: `wpa` used to create WPA2 silently; now 422 with the way out."""
+    antenna = wilab.reserve()
+    response = wilab.create(antenna, encryption="wpa")
+    assert response.status_code == 422
+    assert "wpa2" in response.json()["detail"]["message"]
+
+
+@pytest.mark.parametrize(
+    ("band", "channel", "width", "generation"),
+    [
+        ("5ghz", 36, 20, 4),
+        ("5ghz", 36, 40, 4),
+        ("5ghz", 36, 80, 5),
+        ("5ghz", 36, 80, 6),
+        ("2.4ghz", 6, 20, 6),
+    ],
+)
+def test_channel_width_and_generation_reach_the_radio(
+    wilab: WiLab, server: Server, band: str, channel: int, width: int, generation: int,
+) -> None:
+    """HAP-11: the radio runs at the requested width; GET network reports it."""
+    antenna = wilab.reserve()
+    capabilities = wilab.device(antenna.interface).get("capabilities", {})
+    if width not in capabilities.get("channel_widths", {}).get(band, []) or (
+        generation not in capabilities.get("wifi_generations", {}).get(band, [])
+    ):
+        pytest.skip(f"{width} MHz / Wi-Fi {generation} not supported on {antenna.interface} {band}")
+    response = wilab.create(
+        antenna, band=band, channel=channel, channel_width=width, wifi_generation=generation,
+    )
+    assert response.status_code == 200, response.text
+    assert server.iw_channel_width(antenna.interface) == width
+    network = wilab.http.get(f"/interface/{antenna.reservation_id}/network").json()
+    assert network["radio"]["channel_width"] == {"requested": width, "reported": width}
+    assert network["radio"]["wifi_generation"] == generation
+
+
+def test_24ghz_40mhz_reports_the_width_it_got(wilab: WiLab, server: Server) -> None:
+    """HAP-11: 40 MHz on 2.4 GHz is accepted; hostapd may fall back to 20 MHz (20/40 coexistence)."""
+    antenna = wilab.reserve()
+    response = wilab.create(antenna, channel=1, channel_width=40)
+    assert response.status_code == 200, response.text
+    network = wilab.http.get(f"/interface/{antenna.reservation_id}/network").json()
+    width = network["radio"]["channel_width"]
+    assert width["requested"] == 40
+    assert width["reported"] in (20, 40)
+    assert width["reported"] == server.iw_channel_width(antenna.interface)
 
 
 def test_network_without_internet_is_not_degraded(wilab: WiLab) -> None:

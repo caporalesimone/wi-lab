@@ -26,8 +26,8 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 1 | [HAP-4](Fable-Notes.md#L1528) | ✅ | Distinguere l'esaurimento del budget da un guasto radio reale. |
 | 1 | [STAB-6](Fable-Notes.md#L1564) | ✅ | Aggiornare l'interfaccia upstream quando cambiano le route. |
 | 1 | [NET-6](Fable-Notes.md#L1709) | ✅ | Ripulire i processi dnsmasq anche dopo un timeout di avvio. |
-| 1 | [HAP-10](Fable-Notes.md#L2499) |  | Correggere chiavi hostapd duplicate e mappatura della cifratura; `wpa` diventa `422` (breaking, documentato); aggiungere `wpa1` (WPA/TKIP) solo sulle antenne in cui la discovery lo conferma utilizzabile. Dettagli nel capitolo 43. |
-| 1 | [HAP-11](Fable-Notes.md#L2587) |  | **Successore obbligatorio di HAP-10: farlo subito dopo.** Larghezza di canale (20/40/80 MHz) e generazione Wi-Fi (802.11n/ac/ax) su entrambe le bande, oggi fisse a 20 MHz e 802.11n. **Serve una conferma umana su come procedere prima di implementare** (forma dell'API, 40 MHz sui 2,4 GHz, 802.11ax, default): vedi "Decisioni da confermare" nel capitolo 44. |
+| 1 | [HAP-10](Fable-Notes.md#L2499) | ✅ | Correggere chiavi hostapd duplicate e mappatura della cifratura; `wpa` diventa `422` (breaking, documentato); aggiungere `wpa1` (WPA/TKIP) solo sulle antenne in cui la discovery lo conferma utilizzabile. Dettagli nel capitolo 43. La discovery controlla il cifrario TKIP del driver (`iw phy`); la prova reale di `wpa1` è nell'e2e, da eseguire. |
+| 1 | [HAP-11](Fable-Notes.md#L2587) | ✅ | Larghezza di canale (20/40/80 MHz) e generazione Wi-Fi (802.11n/ac/ax) su entrambe le bande. Decisioni (2026-11-25): due campi `channel_width` e `wifi_generation`; 40 MHz sui 2,4 GHz permesso, con la larghezza effettiva in `reported_channel_width`; 802.11ax subito, dove la discovery vede HE in modalità AP; default 20 MHz / 802.11n. Prove su hardware e telefono da fare. |
 | 1 | [BUG-3](Fable-Notes.md#L1849) |  | Allineare la validazione offline a quella eseguita all'avvio. |
 | 1 | [NET-3](Fable-Notes.md#L1950) |  | Applicare l'isolamento anche a subnet diverse da `192.168.*`. |
 | 1 | [BUG-5](Fable-Notes.md#L2244) |  | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
@@ -72,13 +72,13 @@ Le ipotesi da verificare, i refactoring e le ottimizzazioni restano tra le altre
 | 36 | [API-3](Fable-Notes.md#L3409) |  | Chiarire e uniformare i significati dei conflitti HTTP 409. |
 | 37 | [API-11](Fable-Notes.md#L3440) |  | Semplificare e documentare i retry tra server e client. |
 | 38 | [API-1](Fable-Notes.md#L3466) |  | Consolidare dati API duplicati e uniformare i nomi. |
-| 39 | [API-8](Fable-Notes.md#L3485) |  | Rimuovere dettagli implementativi dai modelli di risposta pubblici. |
+| 39 | [API-8](Fable-Notes.md#L3485) | ✅ | Rimuovere dettagli implementativi dai modelli di risposta pubblici. Fatto con la `GET .../network` a sezioni (`radio`, `wifi`, `ip`, ...): niente più `dhcp.*_file`, `network_addr`, `interface`/`subnet` ripetuti, `clients_connected`. |
 | 40 | [API-6](Fable-Notes.md#L3514) |  | Uniformare i nomi di endpoint e campi. |
 | 41 | [API-7](Fable-Notes.md#L3537) |  | Valutare un modello API a risorse per le azioni enable/disable. |
 | 42 | [ARCH-2](Fable-Notes.md#L3564) |  | Centralizzare la classificazione dei guasti. |
 | 43 | [ARCH-1](Fable-Notes.md#L3601) |  | Separare le responsabilità di `NetworkManager`. |
 | 44 | [ARCH-4](Fable-Notes.md#L3639) |  | Consolidare lo stato dei dispositivi in un registro unico. |
-| 45 | [ARCH-3](Fable-Notes.md#L3684) |  | Separare il modello interno della rete dai modelli API. |
+| 45 | [ARCH-3](Fable-Notes.md#L3684) | ✅ parz. | Separare il modello interno della rete dai modelli API. Fatto: la create usa `NetworkCreateBody` e la `GET` `NetworkResponse`, separati dai modelli interni. Manca la dataclass interna al posto di `NetworkStatus` in `manager.active` (con `_expires_at_timestamp`). |
 | 46 | [ARCH-5](Fable-Notes.md#L3718) |  | Costruire e avviare i manager esplicitamente tramite un contesto applicativo. |
 | 47 | [ARCH-6](Fable-Notes.md#L3754) |  | Gestire dnsmasq come processo figlio in foreground. |
 | 48 | [ARCH-7](Fable-Notes.md#L3782) |  | Consolidare in un helper il rilascio delle interfacce da NetworkManager. |
@@ -164,7 +164,8 @@ in corso deve dare `409/1001`, non `500/1003`, e l'antenna deve tornare da sola 
 | RACE-1 | Create su canale DFS (es. 100) e, nello stesso momento, 45 `GET .../network` più `/status`. | `/status` risponde subito; le altre richieste ottengono `200` o `503 / 1006` con `Retry-After: 2` entro circa 5 s, non un timeout. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) (senza DFS) |
 | RACE-2 | `/status` in ciclo stretto durante create/delete ripetuti. | Nessun `degraded` spurio. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | HAP-9 | Con DFS abilitato, create sul canale 124. | Risposta coerente (attesa gestita o rifiuto esplicito), non un timeout del client a 75 s. |  |
-| HAP-10 | Create con `wpa2`, `wpa3`, `wpa2-wpa3`, `wpa1` e `wpa`. | `200` per le prime quattro (`wpa1` solo se l'antenna lo supporta, altrimenti `422`); `422` per `wpa`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| HAP-10 | Create con `open`, `wpa2`, `wpa3`, `wpa2-wpa3`, `wpa1` e `wpa`; `hostapd_cli get_config`. | `200` per le prime cinque (`wpa1` solo se l'antenna lo supporta, altrimenti `422`) con `key_mgmt` e cifrario coerenti; `422` per `wpa`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
+| HAP-11 | Create a 5 GHz canale 36 con 20/40/80 MHz e Wi-Fi 4/5/6; 2,4 GHz canale 1 a 40 MHz; serie di create a 80 MHz. | `iw dev <if> info` riporta la larghezza chiesta e `GET .../network` la stessa in `reported_channel_width`; sui 2,4 GHz 20 o 40 MHz, coerente con `iw`; nessun aumento dei guasti all'avvio. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | NET-11 | QoS con `download_quality: 40`, `upload_quality: 90`. | Rifiuto esplicito, oppure applicazione accettata con valori diversi nelle due direzioni (`GET .../qos`). |  |
 | BUG-2 | Una sola rete con `internet_enabled: false`. | `/status` non è `degraded`. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | BUG-7 | `POST .../txpower` con ogni livello, poi `GET .../txpower`. | Il `GET` riporta il valore reale, non quello richiesto. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
@@ -206,4 +207,4 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 | WD-9 | `config.yaml` malformato per 1 minuto, poi ripristinato. | La discovery continua dopo il ripristino. |  |
 | NET-2, WD-6, NET-10 | Far fallire l'inserimento NAT o il cleanup; occupare la porta 80. | NET-2: mai `200` con NAT assente. WD-6: tentativi di cleanup in backoff. NET-10: errore chiaro alla create. | ✅ NET-2 (percorso positivo): [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
 | NET-1, PERF-1…5, BUG-1 | Ispezioni di root: `iptables -V`, `strace`/`perf` sui processi del servizio, `hostapd.conf` nella directory privata. | Come descritto in Fable-Notes. | ✅ NET-1: [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
-| Telefono | Connessione reale: SSID `Caffè ☕` e `my"net\` visibili; rete nascosta non ASCII; password di 8 e 63 caratteri; `wpa2-wpa3` (HAP-10); `nslookup` (NET-8); `/docs` dal gateway rifiutato (SEC-3), anche `ssh` al gateway; isolamento tra reti (NET-3). | Connessione e DHCP funzionanti; per SEC-3 connessione rifiutata. | ✅ SEC-3 (solo regole): [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
+| Telefono | Connessione reale: SSID `Caffè ☕` e `my"net\` visibili; rete nascosta non ASCII; password di 8 e 63 caratteri; `wpa2-wpa3` con client WPA3 e WPA2 e `wpa1` annotando avvisi o rifiuti dei client recenti (HAP-10); velocità a 20, 40 e 80 MHz sui 5 GHz con un client Wi-Fi 5 e uno Wi-Fi 6 (HAP-11); `nslookup` (NET-8); `/docs` dal gateway rifiutato (SEC-3), anche `ssh` al gateway; isolamento tra reti (NET-3). | Connessione e DHCP funzionanti; per SEC-3 connessione rifiutata. | ✅ SEC-3 (solo regole): [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |

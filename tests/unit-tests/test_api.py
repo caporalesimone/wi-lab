@@ -1,4 +1,5 @@
 import pytest
+from conftest import network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -303,7 +304,7 @@ class TestAuthentication:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={'ssid': 'TestAP', 'channel': 6, 'encryption': 'open', 'band': 'dual', 'tx_power_level': 4},
+            json=network_body(ssid='TestAP', channel=6, encryption='open', band='dual', tx_power_level=4),
         )
         assert resp.status_code == 422
         assert resp.json()['detail']['code'] == 422
@@ -322,13 +323,7 @@ class TestAuthentication:
         """Test that network creation without auth is rejected."""
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'band': '2.4ghz', 'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 401  # Unauthorized (no token)
     
     def test_start_network_with_invalid_token(self, client, invalid_token, reservation_id):
@@ -336,13 +331,7 @@ class TestAuthentication:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': invalid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'band': '2.4ghz', 'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 401  # Unauthorized
     
     def test_start_network_with_valid_token(self, client, valid_token, reservation_id, monkeypatch):
@@ -357,14 +346,7 @@ class TestAuthentication:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'password': 'testpass123',
-                'band': '2.4ghz', 'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         # Should succeed with mocked DHCP
         assert resp.status_code in [200, 500]  # 500 if DHCP not fully mocked
 
@@ -377,8 +359,7 @@ class TestNetworkCreateEndpoint:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={'invalid': 'payload'}
-        )
+            json=network_body(invalid='payload'))
         assert resp.status_code == 422  # Validation error
     
     def test_start_network_invalid_reservation(self, client, valid_token):
@@ -386,14 +367,7 @@ class TestNetworkCreateEndpoint:
         resp = client.post(
             '/api/v1/interface/invalid-token/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'password': 'testpass123',
-                'band': '2.4ghz', 'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 404  # Reservation not found
     
     def test_start_network_invalid_encryption(self, client, valid_token, reservation_id):
@@ -401,13 +375,7 @@ class TestNetworkCreateEndpoint:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'invalid-encryption',
-                'band': '2.4ghz', 'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='invalid-encryption', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 422  # Validation error
     
     def test_start_network_invalid_band(self, client, valid_token, reservation_id):
@@ -415,13 +383,7 @@ class TestNetworkCreateEndpoint:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'band': 'invalid-band'
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', band='invalid-band'))
         assert resp.status_code == 422  # Validation error
 
     @pytest.mark.parametrize("body", [
@@ -437,7 +399,7 @@ class TestNetworkCreateEndpoint:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={**body, 'band': '2.4ghz', 'tx_power_level': 4},
+            json=network_body(**{**body, 'band': '2.4ghz', 'tx_power_level': 4}),
         )
         assert resp.status_code == 422
         assert resp.json()['detail']['code'] == 422
@@ -457,15 +419,7 @@ class TestNetworkCreateEndpoint:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'password': 'testpass123',
-                'band': '2.4ghz',
-                'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 500
     
     def test_network_response_structure(self, client, valid_token, reservation_id, monkeypatch):
@@ -479,13 +433,7 @@ class TestNetworkCreateEndpoint:
             resp = client.post(
                 f'/api/v1/interface/{reservation_id}/network',
                 headers={'Authorization': valid_token},
-                json={
-                    'ssid': 'TestAP',
-                    'channel': 6,
-                    'encryption': 'wpa2',
-                    'band': '2.4ghz', 'tx_power_level': 4
-                }
-            )
+                json=network_body(ssid='TestAP', channel=6, encryption='wpa2', band='2.4ghz', tx_power_level=4))
             
             if resp.status_code == 200:
                 data = resp.json()
@@ -496,8 +444,7 @@ class TestNetworkCreateEndpoint:
         resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={'invalid': 'payload'}
-        )
+            json=network_body(invalid='payload'))
         assert resp.status_code == 422
         data = resp.json()
         assert 'detail' in data
@@ -552,15 +499,7 @@ class TestNetworkGetEndpoint:
         start_resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'password': 'testpass123',
-                'band': '2.4ghz',
-                'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert start_resp.status_code == 200
 
         # Get network status
@@ -574,20 +513,22 @@ class TestNetworkGetEndpoint:
         # Validate complete response structure
         assert data['interface'] == 'wls16'
         assert data['active'] is True
-        assert data['ssid'] == 'TestAP'
-        assert 'dhcp' in data
-        assert data['dhcp']['gateway'] == '192.168.10.1'
-        assert 'clients_connected' in data
-        assert data['clients_connected'] == 0
-        assert 'clients' in data
-        assert isinstance(data['clients'], list)
-        assert 'tx_power' in data
-        assert data['tx_power'] == {
+        assert data['wifi'] == {
+            'ssid': 'TestAP', 'hidden': False,
+            'security': {'encryption': 'wpa2', 'password': 'testpass123'},
+        }
+        assert data['ip']['gateway'] == '192.168.10.1'
+        assert data['ip']['dns_server'] == load_config().dns_server
+        assert data['clients'] == []
+        assert data['radio']['band'] == '2.4ghz' and data['radio']['channel'] == 6
+        assert data['radio']['tx_power'] == {
             'requested_level': 4,
             'reported_level': 4,
             'reported_dbm': 20.0,
         }
-        assert 'tx_power_level' not in data
+        # API-8: no duplicated or internal fields.
+        for gone in ('dhcp', 'clients_connected', 'tx_power_level', 'ssid', 'subnet', 'expires_at'):
+            assert gone not in data
 
     def test_get_network_status_returns_client_entries_with_ip_and_mac(self, client, valid_token, reservation_id, monkeypatch):
         """Test active network status returns stable clients[] entries with ip and mac."""
@@ -620,15 +561,7 @@ class TestNetworkGetEndpoint:
         start_resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'password': 'testpass123',
-                'band': '2.4ghz',
-                'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert start_resp.status_code == 200
 
         resp = client.get(
@@ -638,7 +571,7 @@ class TestNetworkGetEndpoint:
         assert resp.status_code == 200
 
         data = resp.json()
-        assert data['clients_connected'] == 2
+        assert data['ip']['dhcp_range'] == {'start': '192.168.10.10', 'end': '192.168.10.250'}
         assert data['clients'] == [
             {'mac': 'aa:bb:cc:dd:ee:01', 'ip': '192.168.10.10'},
             {'mac': 'aa:bb:cc:dd:ee:02', 'ip': '192.168.10.11'},
@@ -670,15 +603,7 @@ class TestNetworkDeleteEndpoint:
         start_resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'password': 'testpass123',
-                'band': '2.4ghz',
-                'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert start_resp.status_code == 200
 
         stop_resp = client.delete(
@@ -729,15 +654,7 @@ class TestTxPowerGetEndpoint:
         start_resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'password': 'testpass123',
-                'band': '2.4ghz',
-                'tx_power_level': 2
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=2))
         assert start_resp.status_code == 200
 
         resp = client.get(f'/api/v1/interface/{reservation_id}/txpower', headers={'Authorization': valid_token})
@@ -766,15 +683,7 @@ class TestTxPowerGetEndpoint:
         start_resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'password': 'testpass123',
-                'band': '2.4ghz',
-                'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert start_resp.status_code == 200
 
         resp = client.get(f'/api/v1/interface/{reservation_id}/txpower', headers={'Authorization': valid_token})
@@ -928,15 +837,7 @@ class TestInternetControlEndpoints:
         start_resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'password': 'testpass123',
-                'band': '2.4ghz',
-                'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert start_resp.status_code == 200
 
         # Enable internet
@@ -965,15 +866,7 @@ class TestInternetControlEndpoints:
         start_resp = client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP',
-                'channel': 6,
-                'encryption': 'wpa2',
-                'password': 'testpass123',
-                'band': '2.4ghz',
-                'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert start_resp.status_code == 200
 
         # Enable internet first
@@ -1085,12 +978,7 @@ class TestReservationRequiredForOperations:
         resp = client.post(
             f'/api/v1/interface/{rid}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP', 'channel': 6,
-                'encryption': 'wpa2', 'password': 'testpass123',
-                'band': '2.4ghz', 'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 404
 
 
@@ -1139,17 +1027,17 @@ class TestGetNetworkExpiryAlwaysPresent:
         assert resp.status_code == 200
         data = resp.json()
         assert data['active'] is False
-        assert data['expires_at'] is not None
-        assert isinstance(data['expires_at'], str)
-        assert data['expires_at'].endswith('Z')
+        assert data['reservation']['expires_at'] is not None
+        assert isinstance(data['reservation']['expires_at'], str)
+        assert data['reservation']['expires_at'].endswith('Z')
         reservation = client.get(
             f'/api/v1/device-reservation/{reservation_id}',
             headers={'Authorization': valid_token}
         )
         assert reservation.status_code == 200
-        assert data['expires_at'] == reservation.json()['expires_at']
-        assert data['expires_in'] is not None
-        assert data['expires_in'] > 3500
+        assert data['reservation']['expires_at'] == reservation.json()['expires_at']
+        assert data['reservation']['expires_in'] is not None
+        assert data['reservation']['expires_in'] > 3500
 
     def test_get_network_active_has_expiry(self, client, valid_token, reservation_id, monkeypatch):
         """When network is active, expires_at and expires_in are present."""
@@ -1166,12 +1054,7 @@ class TestGetNetworkExpiryAlwaysPresent:
         client.post(
             f'/api/v1/interface/{reservation_id}/network',
             headers={'Authorization': valid_token},
-            json={
-                'ssid': 'TestAP', 'channel': 6,
-                'encryption': 'wpa2', 'password': 'testpass123',
-                'band': '2.4ghz', 'tx_power_level': 4
-            }
-        )
+            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
 
         resp = client.get(
             f'/api/v1/interface/{reservation_id}/network',
@@ -1180,9 +1063,9 @@ class TestGetNetworkExpiryAlwaysPresent:
         assert resp.status_code == 200
         data = resp.json()
         assert data['active'] is True
-        assert data['expires_at'].endswith('Z')
-        assert data['expires_in'] is not None
-        assert data['expires_in'] > 3500
+        assert data['reservation']['expires_at'].endswith('Z')
+        assert data['reservation']['expires_in'] is not None
+        assert data['reservation']['expires_in'] > 3500
 
 
 class TestNamingCleanup:
@@ -1296,8 +1179,8 @@ class TestUnlimitedReservationAPI:
         assert get_resp.status_code == 200
         data = get_resp.json()
         assert data['active'] is False
-        assert data['expires_at'] is None
-        assert data['expires_in'] is None
+        assert data['reservation']['expires_at'] is None
+        assert data['reservation']['expires_in'] is None
 
     def test_create_duration_below_min_timeout(self, client, valid_token, monkeypatch):
         """POST with duration_seconds < min_timeout (and != 0) → 422."""

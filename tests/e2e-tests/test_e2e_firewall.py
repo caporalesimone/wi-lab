@@ -76,13 +76,13 @@ def test_success_means_the_firewall_is_in_place(wilab: WiLab, server: Server, in
     response = wilab.create(antenna, internet_enabled=internet)
     assert response.status_code == 200, response.text
     network = wilab.http.get(f"/interface/{antenna.reservation_id}/network").json()
-    assert network["internet_enabled"] is internet
+    assert network["internet"]["enabled"] is internet
     nat = server.iptables_rules("nat")
     forward = server.iptables_rules("filter")
     masquerade = [line for line in nat.splitlines() if f"wilab-nat-{antenna.interface}" in line]
     accept = [line for line in forward.splitlines() if f"wilab-forward-{antenna.interface}" in line]
     if internet:
-        assert any(network["subnet"] in line and "MASQUERADE" in line for line in masquerade), nat
+        assert any(network["ip"]["subnet"] in line and "MASQUERADE" in line for line in masquerade), nat
         assert len(accept) >= 2, forward
     else:
         assert not masquerade

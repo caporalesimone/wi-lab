@@ -1,6 +1,16 @@
 export type RecoveryState = 'recovering' | 'unavailable';
 export type RuntimeState = 'restoring_ap' | 'restoring_dhcp' | 'dhcp_failed';
 
+export type ChannelWidth = 20 | 40 | 80;
+export type WifiGeneration = 4 | 5 | 6;
+
+/** What an antenna accepts on a create (GET /status, networks[].capabilities). */
+export interface AntennaCapabilities {
+  encryptions: string[];
+  channel_widths: Record<string, ChannelWidth[]>;
+  wifi_generations: Record<string, WifiGeneration[]>;
+}
+
 export interface InterfaceInfo {
   display_name: string;
   interface: string;
@@ -8,6 +18,7 @@ export interface InterfaceInfo {
   reservation_remaining_seconds: number | null;
   recovery_state?: RecoveryState;
   runtime_state?: RuntimeState;
+  capabilities?: AntennaCapabilities;
 }
 
 export interface ReservationPolicy {
@@ -41,51 +52,58 @@ export interface ReservationResponse {
   expires_in: number | null;
 }
 
+/** GET .../network: sections are null while the network is not running. */
 export interface NetworkStatus {
   interface: string;
   active: boolean;
   runtime_state?: RuntimeState | null;
-  ssid?: string;
-  channel?: number;
-  password?: string;
-  encryption?: string;
-  band?: string;
-  hidden?: boolean;
-  subnet?: string;
-  internet_enabled: boolean;
-  captive_portal?: boolean;
-  captive_portal_url?: string | null;
-  tx_power?: {
-    requested_level: number;
-    reported_level?: number;
-    reported_dbm?: number;
+  reservation: {
+    expires_at: string | null;
+    expires_in: number | null;
   };
-  expires_at?: string | null;
-  expires_in?: number | null;
-  dhcp?: {
-    interface: string;
+  radio: {
+    band: string;
+    channel: number;
+    channel_width: { requested: ChannelWidth; reported: number | null };
+    wifi_generation: WifiGeneration;
+    tx_power?: {
+      requested_level: number;
+      reported_level?: number | null;
+      reported_dbm?: number | null;
+    } | null;
+  } | null;
+  wifi: {
+    ssid: string;
+    hidden: boolean;
+    security: { encryption: string; password: string | null };
+  } | null;
+  ip: {
     subnet: string;
-    gateway: string;
-    config_file: string;
-    pid_file: string;
-    lease_file: string;
-    network_addr: string;
-    dhcp_range: string;
-  };
-  clients_connected?: number;
-  clients?: ClientInfo[];
+    gateway: string | null;
+    dhcp_range: { start: string; end: string } | null;
+    dns_server: string | null;
+  } | null;
+  internet: { enabled: boolean } | null;
+  captive_portal: { enabled: boolean; url: string | null } | null;
+  clients: ClientInfo[] | null;
 }
 
+/** POST .../network body: only radio and wifi are required. */
 export interface NetworkCreateRequest {
-  ssid: string;
-  channel: number;
-  password?: string;
-  encryption: string;
-  band: string;
-  hidden?: boolean;
-  internet_enabled?: boolean;
-  captive_portal?: boolean;
-  tx_power_level: number;
+  radio: {
+    band: string;
+    channel: number;
+    channel_width?: ChannelWidth;
+    wifi_generation?: WifiGeneration;
+    tx_power_level: number;
+  };
+  wifi: {
+    ssid: string;
+    hidden?: boolean;
+    security: { encryption: string; password?: string };
+  };
+  internet?: { enabled?: boolean };
+  captive_portal?: { enabled?: boolean };
 }
 
 export interface ClientInfo {

@@ -1,7 +1,7 @@
 <mat-card
   class="network-card"
-  [class.active-online]="isMine && status?.active && status?.internet_enabled"
-  [class.active-offline]="isMine && status?.active && !status?.internet_enabled"
+  [class.active-online]="isMine && status?.active && status?.internet?.enabled"
+  [class.active-offline]="isMine && status?.active && !status?.internet?.enabled"
   [class.card-occupied]="isOccupied"
   [class.card-available]="isAvailable">
   <mat-card-header>
@@ -17,15 +17,15 @@
     </div>
     <div *ngIf="isMine && status?.active"
       class="internet-status-badge"
-      [class.online]="status?.internet_enabled"
-      [class.offline]="!status?.internet_enabled"
-      [matTooltip]="status?.internet_enabled ? 'Internet available' : 'Internet disabled'"
+      [class.online]="status?.internet?.enabled"
+      [class.offline]="!status?.internet?.enabled"
+      [matTooltip]="status?.internet?.enabled ? 'Internet available' : 'Internet disabled'"
       matTooltipPosition="above">
-      <mat-icon>{{ status?.internet_enabled ? 'cloud_done' : 'cloud_off' }}</mat-icon>
+      <mat-icon>{{ status?.internet?.enabled ? 'cloud_done' : 'cloud_off' }}</mat-icon>
     </div>
-    <div *ngIf="isMine && status?.active && status?.captive_portal"
+    <div *ngIf="isMine && status?.active && status?.captive_portal?.enabled"
       class="internet-status-badge captive"
-      [matTooltip]="'Captive portal on: clients sign in at ' + (status?.captive_portal_url ?? 'the portal page')"
+      [matTooltip]="'Captive portal on: clients sign in at ' + (status?.captive_portal?.url ?? 'the portal page')"
       matTooltipPosition="above">
       <mat-icon>login</mat-icon>
     </div>
@@ -62,36 +62,48 @@
       <div *ngIf="status?.active" class="network-info">
         <div class="info-row">
           <span class="label">SSID:</span>
-          <span class="value">{{ status?.ssid }}</span>
+          <span class="value">{{ status?.wifi?.ssid }}</span>
         </div>
-        <div class="info-row" *ngIf="status?.password">
+        <div class="info-row" *ngIf="status?.wifi?.security?.password">
           <span class="label">Password:</span>
-          <span class="value">{{ status?.password }}</span>
+          <span class="value">{{ status?.wifi?.security?.password }}</span>
         </div>
-        <div class="info-row" *ngIf="status?.channel">
+        <div class="info-row" *ngIf="status?.radio?.channel">
           <span class="label">Channel:</span>
-          <span class="value">{{ status?.channel }}</span>
+          <span class="value">{{ status?.radio?.channel }}</span>
         </div>
-        <div class="info-row" *ngIf="status?.band">
+        <div class="info-row" *ngIf="status?.radio?.band">
           <span class="label">Band:</span>
-          <span class="value">{{ status?.band }}</span>
+          <span class="value">{{ status?.radio?.band }}</span>
+        </div>
+        <div class="info-row" *ngIf="status?.radio?.channel_width as width">
+          <span class="label">Channel width:</span>
+          <span class="value">{{ width.requested }} MHz
+            <ng-container *ngIf="width.reported && width.reported !== width.requested">
+              (radio: {{ width.reported }} MHz)
+            </ng-container>
+          </span>
+        </div>
+        <div class="info-row" *ngIf="status?.radio?.wifi_generation">
+          <span class="label">Wi-Fi:</span>
+          <span class="value">{{ generationLabels[status!.radio!.wifi_generation] }}</span>
         </div>
         <div class="info-row">
           <span class="label">Captive portal:</span>
           <span class="value captive-value">
-            <span class="state-pill" [class.on]="status?.captive_portal">
-              <mat-icon>{{ status?.captive_portal ? 'login' : 'public' }}</mat-icon>
-              {{ status?.captive_portal ? 'On' : 'Off' }}
+            <span class="state-pill" [class.on]="status?.captive_portal?.enabled">
+              <mat-icon>{{ status?.captive_portal?.enabled ? 'login' : 'public' }}</mat-icon>
+              {{ status?.captive_portal?.enabled ? 'On' : 'Off' }}
             </span>
-            <span *ngIf="status?.captive_portal && status?.captive_portal_url" class="portal-url">
-              {{ status?.captive_portal_url }}
+            <span *ngIf="status?.captive_portal?.enabled && status?.captive_portal?.url" class="portal-url">
+              {{ status?.captive_portal?.url }}
             </span>
           </span>
         </div>
-        <div class="info-row" *ngIf="status?.tx_power?.requested_level !== undefined && status?.tx_power?.requested_level !== null"
+        <div class="info-row" *ngIf="status?.radio?.tx_power?.requested_level !== undefined && status?.radio?.tx_power?.requested_level !== null"
           matTooltip="The reported level comes from the driver and does not guarantee actual transmitted power.">
           <span class="label">TX Power requested/reported:</span>
-          <span class="value">{{ status?.tx_power?.requested_level }}/{{ status?.tx_power?.reported_level ?? '-' }}</span>
+          <span class="value">{{ status?.radio?.tx_power?.requested_level }}/{{ status?.radio?.tx_power?.reported_level ?? '-' }}</span>
         </div>
         <div class="clients-section">
           <div class="clients-header">
@@ -104,14 +116,14 @@
                 <tr>
                   <th>IP Address</th>
                   <th>MAC Address</th>
-                  <th *ngIf="status?.captive_portal">Portal</th>
+                  <th *ngIf="status?.captive_portal?.enabled">Portal</th>
                 </tr>
               </thead>
               <tbody>
                 <tr *ngFor="let client of clients">
                   <td>{{ client.ip }}</td>
                   <td>{{ client.mac }}</td>
-                  <td *ngIf="status?.captive_portal">{{ client.captive_authorized ? 'Signed in' : 'Not signed in' }}</td>
+                  <td *ngIf="status?.captive_portal?.enabled">{{ client.captive_authorized ? 'Signed in' : 'Not signed in' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -166,10 +178,10 @@
           </button>
         </div>
         <div class="button-row">
-          <button mat-raised-button color="accent" (click)="enableInternet()" [disabled]="loading || restoring || !status?.active || status?.internet_enabled">
+          <button mat-raised-button color="accent" (click)="enableInternet()" [disabled]="loading || restoring || !status?.active || status?.internet?.enabled">
             <mat-icon>cloud_done</mat-icon> Enable Internet
           </button>
-          <button mat-raised-button color="accent" (click)="disableInternet()" [disabled]="loading || restoring || !status?.active || !status?.internet_enabled">
+          <button mat-raised-button color="accent" (click)="disableInternet()" [disabled]="loading || restoring || !status?.active || !status?.internet?.enabled">
             <mat-icon>cloud_off</mat-icon> Disable Internet
           </button>
         </div>
