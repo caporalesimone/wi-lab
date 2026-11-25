@@ -674,7 +674,7 @@ class TestNetworkDeleteEndpoint:
         resp = client.delete(url, headers=headers)
         assert resp.status_code == 503
         assert resp.headers['Retry-After'] == '5'
-        assert resp.json()['detail']['code'] == 1004
+        assert (resp.json()['detail']['code'], resp.json()['detail']['reason']) == (1012, 'stop_incomplete')
         assert 'stuck in the kernel' in resp.json()['detail']['message']
         assert manager.stop_failed('wls16')
         assert client.get(url, headers=headers).json()['runtime_state'] == 'stop_failed'

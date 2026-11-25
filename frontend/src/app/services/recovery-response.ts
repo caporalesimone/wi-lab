@@ -9,13 +9,19 @@ export enum RecoveryCode {
   DeviceUnavailable = 1003,
   NoDeviceAvailable = 1005,
   DeviceBusy = 1006,
-  NetworkNotActive = 1007
+  NetworkNotActive = 1007,
+  NetworkAlreadyActive = 1008,
+  RestorationInProgress = 1009,
+  StopIncomplete = 1012
 }
 
 /** Readable explanation of domain codes that the raw body does not make obvious. */
 const CODE_HINTS: Partial<Record<number, string>> = {
   [RecoveryCode.DeviceBusy]: 'The antenna is busy with another operation. Try again in a few seconds.',
   [RecoveryCode.NetworkNotActive]: 'The network is not running on this antenna. Start WiFi first.',
+  [RecoveryCode.NetworkAlreadyActive]: 'A network is already running on this antenna.',
+  [RecoveryCode.RestorationInProgress]: 'The network is being restarted by the watchdog. Wait a few seconds.',
+  [RecoveryCode.StopIncomplete]: 'The radio did not stop in time. Try stopping again in a few seconds.',
 };
 
 export interface ApiError extends Error {
@@ -48,11 +54,11 @@ export function retryAfterSeconds(error: HttpErrorResponse, status: number, code
  * Repeat a request answered 503 / 1006 (adapter busy) after its Retry-After,
  * at most `count` times. Every endpoint except the create can return it.
  */
-export function retryWhenBusy<T>(count = 3): MonoTypeOperatorFunction<T> {
+export function retryWhenBusy<T>(count = 3, codes: RecoveryCode[] = [RecoveryCode.DeviceBusy]): MonoTypeOperatorFunction<T> {
   return retry<T>({
     count,
     delay: (error: HttpErrorResponse) => {
-      const seconds = retryAfterSeconds(error, 503, RecoveryCode.DeviceBusy);
+      const seconds = codes.map(code => retryAfterSeconds(error, 503, code)).find(s => s !== null) ?? null;
       return seconds === null ? throwError(() => error) : timer(seconds * 1000);
     },
   });

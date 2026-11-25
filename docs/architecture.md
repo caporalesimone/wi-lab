@@ -782,7 +782,7 @@ sequenceDiagram
     alt hostapd stuck in the kernel (driver firmware timeout)
         NM->>FW: remove the rest (QoS, captive portal, host guard, isolation, DHCP)
         NM->>NM: keep the network in active, mark stop_failed
-        A-->>C: 503 / 1004 Retry-After 5
+        A-->>C: 503 / 1012 stop_incomplete, Retry-After 5
         C->>A: DELETE .../network again after Retry-After
         A->>NM: stop_network: hostapd has exited, NAT released
         A-->>C: 200

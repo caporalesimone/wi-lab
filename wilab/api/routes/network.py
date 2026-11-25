@@ -37,15 +37,15 @@ _STOP_RESPONSE_503 = {
     **DEVICE_BUSY_RESPONSE,
     "description": (
         "`detail.code: 1006` (`device_busy`): the adapter is busy, nothing was changed; repeat "
-        "after `Retry-After` (2 s). `detail.code: 1004` (`cleanup_failed`): the stop did not "
+        "after `Retry-After` (2 s). `detail.code: 1012` (`stop_incomplete`): the stop did not "
         "complete, usually hostapd stuck in the kernel for a few seconds after a driver firmware "
         "timeout. The network is half stopped: `GET .../network` reports `runtime_state: "
         "stop_failed` and the watchdog leaves it alone. Repeat the DELETE after `Retry-After` (5 s)."
     ),
     "content": {"application/json": {"examples": {
         **DEVICE_BUSY_RESPONSE["content"]["application/json"]["examples"],  # type: ignore[index]
-        "cleanup_failed": {"summary": "1004 - stop not completed, repeat after Retry-After", "value": {"detail": {
-            "code": 1004, "reason": "cleanup_failed",
+        "stop_incomplete": {"summary": "1012 - stop not completed, repeat after Retry-After", "value": {"detail": {
+            "code": 1012, "reason": "stop_incomplete",
             "message": "Failed to stop network wlan0: hostapd: Failed to stop hostapd for wlan0: "
                        "Process 101153 stuck in the kernel",
         }}},
@@ -415,7 +415,7 @@ def stop_network(
     reservation stays valid.
 
     If the stop does not complete (usually hostapd stuck in the kernel for a
-    few seconds after a driver firmware timeout) the answer is `503 / 1004`
+    few seconds after a driver firmware timeout) the answer is `503 / 1012`
     with `Retry-After`: the network is half stopped, reported as
     `runtime_state: stop_failed`, and repeating the DELETE finishes it.
 
@@ -442,7 +442,7 @@ def stop_network(
             # timeout): repeating the stop finishes it.
             raise HTTPException(
                 status_code=503,
-                detail=domain_error(ApiErrorCode.CLEANUP_FAILED, str(exc)),
+                detail=domain_error(ApiErrorCode.STOP_INCOMPLETE, str(exc)),
                 headers={"Retry-After": str(STOP_RETRY_AFTER)},
             ) from exc
         return {"detail": f"Network {device_id} stopped successfully"}

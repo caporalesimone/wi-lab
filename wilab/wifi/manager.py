@@ -84,7 +84,8 @@ class TxPowerMismatchError(Exception):
 class NetworkStopError(RuntimeError):
     """A stop did not complete (e.g. hostapd stuck in the kernel after SIGKILL).
 
-    The network stays in `active` so that repeating the stop finishes it; until
+    Answered `503 / 1012` (stop_incomplete) with `Retry-After`. The network
+    stays in `active` so that repeating the stop finishes it; until
     then the watchdog leaves it alone and `GET .../network` reports
     `runtime_state: stop_failed`.
     """

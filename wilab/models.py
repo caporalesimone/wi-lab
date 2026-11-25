@@ -180,7 +180,7 @@ class NetworkStatus(BaseModel):
         None, description=(
             "Watchdog state: restoring_ap, restoring_dhcp, dhcp_failed, or restore_failed "
             "(AP restart failed; the watchdog retries with backoff while the reservation is valid); "
-            "stop_failed: a stop did not complete, repeat DELETE .../network."
+            "stop_failed: a stop did not complete (503 / 1012), repeat DELETE .../network."
         ),
     )
     ssid: str | None = None

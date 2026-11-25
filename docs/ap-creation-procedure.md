@@ -381,7 +381,7 @@ A success resets the counter. Further rules:
   | `restoring_dhcp` | Only DHCP is being restarted. The AP stays up. | Wait. |
   | `dhcp_failed` | DHCP could not be repaired alone (a restart failed, or dnsmasq died more than 3 times in an hour). Within 5 s the watchdog restarts the whole network (`restoring_ap`). | Wait. |
   | `restore_failed` | The AP restart failed for a non-radio reason. The AP is down (`active: false`); the watchdog retries after 15 s, 30 s, 60 s, 120 s, then every 5 minutes while the reservation is valid. | Wait for `runtime_state` to clear, or `DELETE .../network` to stop the retries (the reservation stays valid), or create a new network. |
-  | `stop_failed` | Only in `GET .../network`, after a `DELETE .../network` answered `503 / 1004`: the stop did not complete, usually because hostapd stayed stuck in the kernel for a few seconds after a driver firmware timeout. The network is half stopped and the watchdog leaves it alone. | Repeat `DELETE .../network` after `Retry-After` (5 s). |
+  | `stop_failed` | Only in `GET .../network`, after a `DELETE .../network` answered `503 / 1012`: the stop did not complete, usually because hostapd stayed stuck in the kernel for a few seconds after a driver firmware timeout. The network is half stopped and the watchdog leaves it alone. | Repeat `DELETE .../network` after `Retry-After` (5 s). |
 
 - An AP restart clears traffic shaping and QoS profiles: reapply them after a
   `restoring_ap` phase.
@@ -668,7 +668,7 @@ sequenceDiagram
         else 503 / 1006 + Retry-After 2
             W-->>C: antenna busy, nothing changed
             Note over C: Automatic retry allowed after Retry-After
-        else 503 / 1004 + Retry-After 5
+        else 503 / 1012 + Retry-After 5
             W-->>C: stop not completed (hostapd stuck in the kernel), runtime_state stop_failed
             Note over C: Automatic retry allowed: repeat the DELETE after Retry-After.<br/>The watchdog leaves the half-stopped network alone
         else 404
@@ -731,14 +731,14 @@ Every answer leads to exactly one of these actions:
 | `GET .../network` | `200`, `runtime_state: null` | DONE | |
 | | `200`, `restoring_ap`, `restoring_dhcp`, `dhcp_failed` | WAIT | The watchdog is repairing the network. After `restoring_ap`, devices reconnect and QoS profiles must be reapplied. |
 | | `200`, `restore_failed` | WAIT | The AP is down and the watchdog retries. Or `DELETE .../network` to give up, or create again. |
-| | `200`, `stop_failed` | REPEAT | Repeat the `DELETE .../network` that answered `503 / 1004`. |
+| | `200`, `stop_failed` | REPEAT | Repeat the `DELETE .../network` that answered `503 / 1012`. |
 | Internet, TX power, QoS | `409 / 1007` | FIX | No running network: create it first. |
 | | `422` | FIX | Includes a TX power the driver does not support and an unknown QoS `profile_id`. |
 | QoS profile start | `409 / 1010` | FIX | A profile already runs: stop it first. |
 | QoS profile stop | `409 / 1011` | DONE | No profile runs. |
 | `DELETE .../network` | `200` | DONE | The reservation stays. |
 | | `409 / 1007` | DONE | Already inactive. |
-| | `503 / 1004` + `Retry-After: 5` | REPEAT | The stop did not complete (hostapd stuck for a few seconds). Repeat until `200`. |
+| | `503 / 1012` + `Retry-After: 5` | REPEAT | The stop did not complete (hostapd stuck for a few seconds). Repeat until `200`. |
 | `DELETE /device-reservation/{id}` | `200` | DONE | AP stopped, antenna free. |
 | | `404` | DONE | Already expired, released or invalidated: nothing left to release. |
 | | `503 / 1004` | REPEAT, then STOP | Cleanup failed, the antenna is still held. Repeat a few times a few seconds apart (usually transient), then STOP. After expiry Wi-Lab retries the cleanup by itself. |

@@ -9,14 +9,18 @@ def test_codes_and_hints_are_defined():
     recovery = (APP / "services/recovery-response.ts").read_text()
     assert "DeviceBusy = 1006" in recovery and "NetworkNotActive = 1007" in recovery
     assert "[RecoveryCode.DeviceBusy]:" in recovery and "[RecoveryCode.NetworkNotActive]:" in recovery
-    assert "retryAfterSeconds(error, 503, RecoveryCode.DeviceBusy)" in recovery
+    assert "codes: RecoveryCode[] = [RecoveryCode.DeviceBusy]" in recovery
+    assert "retryAfterSeconds(error, 503, code)" in recovery
 
 
 def test_busy_answers_are_retried_on_every_reservation_call_but_the_create():
     service = (APP / "services/wilab-api.service.ts").read_text()
-    for method in ("getNetworkStatus", "stopNetwork", "enableInternet", "disableInternet"):
+    for method in ("getNetworkStatus", "enableInternet", "disableInternet"):
         body = service.split(f"public {method}(", 1)[1].split("\n  public ", 1)[0]
         assert "retryWhenBusy()" in body, method
+    stop = service.split("public stopNetwork(", 1)[1].split("\n  public ", 1)[0]
+    # The stop also repeats 503 / 1012 (stop_incomplete) after Retry-After.
+    assert "retryWhenBusy(4, [RecoveryCode.DeviceBusy, RecoveryCode.StopIncomplete])" in stop
     create = service.split("public startNetwork(", 1)[1].split("\n  public ", 1)[0]
     assert "retryWhenBusy" not in create  # the create waits on the server instead
 

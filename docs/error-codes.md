@@ -25,7 +25,7 @@ release it), **STOP** (show the message, ask an operator).
 | 1001 | `retry_later` | 409 | yes (5, then 10; or the remaining cooldown) | create | A classified radio failure was rolled back; the reservation is kept. Also answered, without using an attempt, when a create arrives during the cooldown. | REPEAT the same create (at most twice) |
 | 1002 | `device_recovering` | 503 | 10 | reserve | No antenna is allocatable while one is being recovered (USB reset). | REPEAT |
 | 1003 | `device_unavailable` | 503 | no | reserve; create | Reserve: no antenna discovered or usable and nothing recovering. Create: third radio failure, or the antenna disappeared; adds `reservation_invalidated: true`. | Reserve: STOP (after a service start, wait for discovery first). Create: RESERVE AGAIN |
-| 1004 | `cleanup_failed` | 503 | no | reserve, get and release of a reservation; create; stop | A cleanup failed and the antenna is still held. | STOP (on release, REPEAT a few times first) |
+| 1004 | `cleanup_failed` | 503 | no | reserve, get and release of a reservation; create | A cleanup failed and the antenna is still held. | STOP (on release, REPEAT a few times first) |
 | 1005 | `no_device_available` | 409 | no | reserve | Every antenna is reserved. Adds `next_available_at` (UTC) and `next_available_in` (seconds), both `null` when no release is scheduled. | REPEAT after `next_available_in`, or a backoff |
 | 1006 | `device_busy` | 503 | 2 | every call with a reservation ID except the create | Another operation held the antenna for more than 5 s. Nothing was changed. | REPEAT |
 | 1007 | `network_not_active` | 409 | no | Internet, TX power, QoS profile, `DELETE .../network` | The reservation is valid but no network is running. | FIX (create the network first); DONE for a stop |
@@ -33,6 +33,7 @@ release it), **STOP** (show the message, ask an operator).
 | 1009 | `restoration_in_progress` | 409 | no | create | The watchdog is restarting this network. | WAIT until `runtime_state` is `null`, then create only if `active` is `false` |
 | 1010 | `qos_profile_already_active` | 409 | no | start a QoS profile | A profile already runs on this network. | FIX: stop it first |
 | 1011 | `qos_profile_not_active` | 409 | no | stop a QoS profile | No profile runs on this network. | DONE |
+| 1012 | `stop_incomplete` | 503 | 5 | `DELETE .../network` | The stop did not complete, usually hostapd stuck in the kernel for a few seconds after a driver firmware timeout. The network is half stopped (`runtime_state: stop_failed`) and the watchdog leaves it alone. | REPEAT the DELETE until `200` |
 
 ## Generic codes (the HTTP status)
 

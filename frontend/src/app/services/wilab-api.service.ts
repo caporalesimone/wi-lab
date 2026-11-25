@@ -126,7 +126,8 @@ export class WilabApiService {
       `${this.apiUrl}/interface/${reservationId}/network`,
       { headers: this.getHeaders() }
     ).pipe(
-      retryWhenBusy(),
+      // 1012: the stop did not complete (hostapd stuck a few seconds); repeating it finishes it.
+      retryWhenBusy(4, [RecoveryCode.DeviceBusy, RecoveryCode.StopIncomplete]),
       catchError(this.handleError)
     );
   }
