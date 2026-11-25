@@ -14,7 +14,7 @@ from wilab.reservation import ReservationManager
 from wilab.wifi import recovery
 from wilab.wifi.manager import StartupFailure
 
-RESERVE = "/api/v1/reservations"
+RESERVE = "/api/v2/reservations"
 PAYLOAD = {
     "ssid": "recovery-test", "channel": 1, "band": "2.4ghz",
     "encryption": "open", "tx_power_level": 4,
@@ -39,7 +39,7 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
         reservation = client.post(RESERVE, headers=headers, json={"duration_seconds": 60})
         assert reservation.status_code == 200
         rid = reservation.json()["reservation_id"]
-        create = f"/api/v1/reservations/{rid}/network"
+        create = f"/api/v2/reservations/{rid}/network"
 
         for expected_attempt, delay in enumerate((5, 10), start=1):
             result = client.post(create, headers=headers, json=network_body(**PAYLOAD))
@@ -72,7 +72,7 @@ def test_three_attempts_keep_id_until_terminal_failure(monkeypatch, caplog, auth
             "API failure operation=start_network http_status=503 detail_code=1003",
             f"API failure operation=create_reservation http_status=503 detail_code={1002 if authorized_port else 1003}",
         ]
-        overall = client.get("/api/v1/status", headers=headers).json()
+        overall = client.get("/api/v2/status", headers=headers).json()
         # A quarantined adapter makes the service degraded even with no active network.
         assert (overall["status"], overall["active_networks"]) == ("degraded", 0)
         state = overall["antennas"][0]
@@ -198,7 +198,7 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert "Do not retry creation or release it" in overview
     assert schema["tags"][0]["name"] == "System"
     paths = schema["paths"]
-    create = paths["/api/v1/reservations/{reservation_id}/network"]["post"]["responses"]
+    create = paths["/api/v2/reservations/{reservation_id}/network"]["post"]["responses"]
     reserve = paths[RESERVE]["post"]["responses"]
     assert "Retry-After" in create["409"]["headers"]
     assert "headers" not in create["500"]
@@ -212,7 +212,7 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert "discard the reservation ID" in failures["device_unavailable"]["summary"]
     assert create["409"]["content"]["application/json"]["examples"]["retry_later"]["value"]["detail"]["code"] == 1001
     assert reserve["503"]["content"]["application/json"]["examples"]["device_recovering"]["value"]["detail"]["code"] == 1002
-    status_examples = paths["/api/v1/status"]["get"]["responses"]["200"]["content"]["application/json"]["examples"]
+    status_examples = paths["/api/v2/status"]["get"]["responses"]["200"]["content"]["application/json"]["examples"]
     assert {name: e["value"]["status"] for name, e in status_examples.items()} == {
         "standby": "standby", "ok": "ok", "degraded_quarantine": "degraded",
     }
@@ -220,7 +220,7 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert status["antennas"][0]["recovery_state"] == "unavailable"
     assert not status["antennas"][0]["reserved"]
     assert status["antennas"][1]["runtime_state"] == "restoring_ap"
-    content = paths["/api/v1/reservations/{reservation_id}/network"]["get"]["responses"]["200"]["content"]["application/json"]
+    content = paths["/api/v2/reservations/{reservation_id}/network"]["get"]["responses"]["200"]["content"]["application/json"]
     assert "example" not in content
     assert content["examples"]["restoring_dhcp"]["value"]["runtime_state"] == "restoring_dhcp"
 
@@ -232,9 +232,9 @@ def test_framework_and_unexpected_api_errors_have_codes(monkeypatch, caplog):
 
     with TestClient(app, raise_server_exceptions=False) as client:
         for method, path, status in (
-            ("GET", "/api/v1/status", 401),
-            ("GET", "/api/v1/unknown-path", 404),
-            ("PUT", "/api/v1/status", 405),
+            ("GET", "/api/v2/status", 401),
+            ("GET", "/api/v2/unknown-path", 404),
+            ("PUT", "/api/v2/status", 405),
         ):
             response = client.request(method, path)
             assert response.status_code == status
@@ -243,7 +243,7 @@ def test_framework_and_unexpected_api_errors_have_codes(monkeypatch, caplog):
             dependencies.get_reservation_manager(config), "snapshot",
             Mock(side_effect=RuntimeError("internal detail must not be sent")),
         )
-        response = client.get("/api/v1/status", headers=headers)
+        response = client.get("/api/v2/status", headers=headers)
         assert response.status_code == 500
         assert response.json()["detail"]["code"] == 500
         assert "internal detail must not be sent" not in response.text
@@ -317,7 +317,7 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch):
     radio_status = Mock(side_effect=AssertionError("Should not query the recovering radio"))
     monkeypatch.setattr(manager, "get_status", radio_status)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    path = f"/api/v1/reservations/{reservation.reservation_id}/network"
+    path = f"/api/v2/reservations/{reservation.reservation_id}/network"
 
     with TestClient(create_app()) as client:
         response = client.get(path, headers=headers)
@@ -325,12 +325,12 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch):
         assert response.json()["runtime_state"] == "restoring_ap"
         expiry = response.json()["reservation"]["expires_at"]
         assert expiry.endswith("Z")
-        reserved = client.get(f"/api/v1/reservations/{reservation.reservation_id}", headers=headers)
+        reserved = client.get(f"/api/v2/reservations/{reservation.reservation_id}", headers=headers)
         assert reserved.status_code == 200 and reserved.json()["expires_at"] == expiry
         create = client.post(path, headers=headers, json=network_body(**PAYLOAD))
         assert create.status_code == 409 and "Retry-After" not in create.headers
         assert create.json()["detail"]["code"] == 1009  # restoration_in_progress
-        system = client.get("/api/v1/status", headers=headers).json()
+        system = client.get("/api/v2/status", headers=headers).json()
         assert system["status"] == "degraded"
         assert system["antennas"][0]["runtime_state"] == "restoring_ap"
     radio_status.assert_not_called()

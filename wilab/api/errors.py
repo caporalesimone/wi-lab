@@ -76,7 +76,7 @@ def api_error_response(
 def document_errors(paths: dict[str, Any]) -> None:
     """Document the same envelope for explicit and framework-generated errors."""
     for path, path_item in paths.items():
-        if not path.startswith("/api/v1/"):
+        if not path.startswith("/api/v2/"):
             continue
         for operation in path_item.values():
             if not isinstance(operation, dict) or "responses" not in operation:

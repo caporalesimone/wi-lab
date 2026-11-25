@@ -32,7 +32,7 @@ def test_bundle_contains_current_schema_and_safe_embedded_docs(tmp_path, monkeyp
         assert json.loads(bundle.read("openapi.json")) == schema
         swagger = bundle.read("swagger.html").decode()
         redoc = bundle.read("redoc.html").decode()
-    assert '"/api/v1/status"' in swagger
+    assert '"/api/v2/status"' in swagger
     assert '"$ref"' not in swagger
     assert "<\\/script>" in swagger
     assert "supportedSubmitMethods:[]" in swagger

@@ -272,7 +272,7 @@ class WiLab:
 
     def __init__(self, base_url: str, token: str) -> None:
         self.http = httpx.Client(
-            base_url=base_url.rstrip("/") + "/api/v1",
+            base_url=base_url.rstrip("/") + "/api/v2",
             headers={"Authorization": f"Bearer {token}"}, timeout=120,
         )
         self.reserved: list[str] = []

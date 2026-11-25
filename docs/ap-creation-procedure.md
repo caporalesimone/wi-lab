@@ -5,7 +5,7 @@ an antenna and start an access point (AP) on it, which responses to expect, and
 exactly when a request may be repeated. For the server internals behind each
 step, see [Architecture](architecture.md).
 
-All endpoints are under `/api/v1` and require `Authorization: Bearer <token>`.
+All endpoints are under `/api/v2` and require `Authorization: Bearer <token>`.
 Every error body has the same envelope:
 
 ```json
@@ -29,14 +29,14 @@ An AP always runs on a reserved antenna. The reservation decides **which**
 antenna you get and **how long** you may use it.
 
 ```http
-POST /api/v1/reservations
+POST /api/v2/reservations
 Content-Type: application/json
 
 {"duration_seconds": 600}
 ```
 
 `duration_seconds: 0` asks for an unlimited reservation. It is accepted only
-when the server allows it: `GET /api/v1/status` reports
+when the server allows it: `GET /api/v2/status` reports
 `reservation_policy.allow_unlimited` (with `min_seconds` and `max_seconds`).
 When it is `false`, `0` returns `422`.
 
@@ -59,10 +59,10 @@ Rules that matter for the AP:
   reservations. `expires_in` is a countdown in seconds.
 - The server picks the antenna (the first free one). You cannot choose it.
 - Release the reservation when you are done:
-  `DELETE /api/v1/reservations/{reservation_id}`. This also stops the AP;
+  `DELETE /api/v2/reservations/{reservation_id}`. This also stops the AP;
   a separate network stop is not required. A `503 / 1004` on release means
   cleanup failed and the antenna is still held.
-- `GET /api/v1/reservations/{reservation_id}` returns the remaining time.
+- `GET /api/v2/reservations/{reservation_id}` returns the remaining time.
   `404` means the ID is no longer valid (expired, released or invalidated).
 
 ## 2. Creating the AP
@@ -73,8 +73,8 @@ The reservation answer names the antenna (`interface`). Ask what a network on
 it can use; no reservation is needed, so a GUI can also show free antennas:
 
 ```http
-GET /api/v1/antennas                 → every antenna: display_name, interface
-GET /api/v1/antennas/{interface}     → device, encryptions, and per band the
+GET /api/v2/antennas                 → every antenna: display_name, interface
+GET /api/v2/antennas/{interface}     → device, encryptions, and per band the
                                        Wi-Fi generations, widths and channels
 ```
 
@@ -135,7 +135,7 @@ extra rule is `wpa1`: 802.11n (`wifi_generation` 4) at 20 MHz only.
 ### 2.2 Build the request
 
 ```http
-POST /api/v1/reservations/{reservation_id}/network
+POST /api/v2/reservations/{reservation_id}/network
 Content-Type: application/json
 
 {
@@ -184,7 +184,7 @@ so do the antenna checks made before starting the AP.
 
 #### 2.2.1 Encryption, channel width and Wi-Fi generation
 
-Each antenna reports what it supports in `GET /api/v1/antennas/{interface}`
+Each antenna reports what it supports in `GET /api/v2/antennas/{interface}`
 (see [2.1](#21-read-what-the-antenna-can-use)), read from the radio (`iw phy`).
 A create that asks for anything else returns `422` without touching the
 antenna.
@@ -265,7 +265,7 @@ The create waits for the adapter if another request on it is running, so it
 never returns `503 / 1006`; the other reservation endpoints do (see
 [2.6](#26-after-the-ap-is-running)).
 
-After `500 / 1013`, `DELETE /api/v1/reservations/{id}`
+After `500 / 1013`, `DELETE /api/v2/reservations/{id}`
 releases the still-held antenna on `200`. The next reservation may get the same
 antenna or a different one. Do not implement release → reserve → create as an
 automatic recovery loop: that bypasses the retry budget. In contrast, after
@@ -302,7 +302,7 @@ A success resets the counter. Further rules:
   not resend the create blindly; first read the state:
 
   ```http
-  GET /api/v1/reservations/{reservation_id}/network
+  GET /api/v2/reservations/{reservation_id}/network
   ```
 
   The status call can wait for an in-progress create, so use a long timeout.
@@ -334,7 +334,7 @@ A success resets the counter. Further rules:
               "message": "Another operation on this adapter is still running; retry after Retry-After"}}
   ```
 
-- `GET /api/v1/reservations/{reservation_id}/network` returns the network in
+- `GET /api/v2/reservations/{reservation_id}/network` returns the network in
   sections:
 
   ```json
@@ -373,7 +373,7 @@ A success resets the counter. Further rules:
 - Wi-Lab's watchdog checks every running AP about every 5 seconds and restarts
   it with the same settings and reservation, up to 3 times per hour per
   antenna; a fourth failure within the hour quarantines the antenna. While this
-  happens, `GET .../network` and `GET /api/v1/status` report `runtime_state`:
+  happens, `GET .../network` and `GET /api/v2/status` report `runtime_state`:
 
   | `runtime_state` | Meaning | Client action |
   |---|---|---|
@@ -393,7 +393,7 @@ A success resets the counter. Further rules:
   [3.2](#32-radio-failures-such-as-a-hostapd-crash)). If the restart fails for
   another reason, the reservation stays valid and `runtime_state` is
   `restore_failed` until a retry succeeds.
-- `GET /api/v1/status` reports `recovery_state` (`recovering` or `unavailable`)
+- `GET /api/v2/status` reports `recovery_state` (`recovering` or `unavailable`)
   for quarantined antennas. They can show `reserved: false` but are **not**
   allocatable.
 - To stop the AP but keep the antenna: `DELETE .../network`. To finish: release
@@ -438,7 +438,7 @@ Notes:
 
 ### 2.8 Service health: `degraded` and quarantined antennas
 
-The client must check `GET /api/v1/status` to know whether every antenna is
+The client must check `GET /api/v2/status` to know whether every antenna is
 usable. Poll it (for example every 10–30 s) and show the result to the user.
 
 | `status` | Meaning |
@@ -480,7 +480,7 @@ antenna:
 The checks that run host commands are refreshed every 10 s in the background,
 so a problem can take up to 10 s to appear. The detail of every check
 (processes, NAT rules, upstream link, stuck commands, stalled loops, time of
-the last check) is in `GET /api/v1/monitoring`, for operators and monitoring
+the last check) is in `GET /api/v2/monitoring`, for operators and monitoring
 views; clients only need `/status`.
 
 - `reserved: false` does **not** mean the antenna can be reserved: an entry

@@ -12,7 +12,7 @@ from wilab.models import (
     NetworkTxPower,
 )
 
-CREATE = "/api/v1/reservations/{reservation_id}/network"
+CREATE = "/api/v2/reservations/{reservation_id}/network"
 
 
 @pytest.fixture(scope="module")
@@ -117,7 +117,7 @@ class TestResponse:
 
 class TestSwagger:
     def test_create_examples_are_valid_bodies_with_every_optional_field(self, spec):
-        examples = spec["paths"]["/api/v1/reservations/{reservation_id}/network"]["post"]["requestBody"][
+        examples = spec["paths"]["/api/v2/reservations/{reservation_id}/network"]["post"]["requestBody"][
             "content"]["application/json"]["examples"]
         assert examples
         for name, example in examples.items():
@@ -128,19 +128,19 @@ class TestSwagger:
             assert "hidden" in value["wifi"], name
 
     def test_get_examples_match_the_response_model(self, spec):
-        examples = spec["paths"]["/api/v1/reservations/{reservation_id}/network"]["get"]["responses"]["200"][
+        examples = spec["paths"]["/api/v2/reservations/{reservation_id}/network"]["get"]["responses"]["200"][
             "content"]["application/json"]["examples"]
         for example in examples.values():
             NetworkResponse(**example["value"])
 
     @pytest.mark.parametrize(("method", "path"), [
-        ("delete", "/api/v1/reservations/all"),
-        ("get", "/api/v1/debug"),
+        ("delete", "/api/v2/reservations/all"),
+        ("get", "/api/v2/debug"),
     ])
     def test_maintenance_operations_are_only_under_maintenance(self, spec, method, path):
         assert spec["paths"][path][method]["tags"] == ["Maintenance"]
 
-    @pytest.mark.parametrize("path", ["/api/v1/reservations/all", "/api/v1/debug"])
+    @pytest.mark.parametrize("path", ["/api/v2/reservations/all", "/api/v2/debug"])
     def test_maintenance_documents_the_password(self, spec, path):
         operation = next(iter(spec["paths"][path].values()))
         assert "403" in operation["responses"]
@@ -148,7 +148,7 @@ class TestSwagger:
 
     def test_release_all_still_wins_over_a_reservation_id(self, spec):
         paths = list(spec["paths"])
-        assert paths.index("/api/v1/reservations/all") < paths.index("/api/v1/reservations/{reservation_id}")
+        assert paths.index("/api/v2/reservations/all") < paths.index("/api/v2/reservations/{reservation_id}")
 
 
 class TestUnknownFields:

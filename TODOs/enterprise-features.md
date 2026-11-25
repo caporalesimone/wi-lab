@@ -109,9 +109,9 @@ volumes:
 
 ### API Integration
 
-- [ ] `GET /api/v1/admin/regulatory-domains` - List supported domains
-- [ ] `GET /api/v1/admin/regulatory-domain` - Get current domain
-- [ ] `PUT /api/v1/admin/regulatory-domain` - Set domain (admin only)
+- [ ] `GET /api/v2/admin/regulatory-domains` - List supported domains
+- [ ] `GET /api/v2/admin/regulatory-domain` - Get current domain
+- [ ] `PUT /api/v2/admin/regulatory-domain` - Set domain (admin only)
 - [ ] Response includes available channels per band
 
 ### Health Check

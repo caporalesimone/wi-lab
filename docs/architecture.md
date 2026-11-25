@@ -21,7 +21,7 @@ flowchart LR
     end
 
     subgraph Process["Wi-Lab process (Uvicorn + FastAPI)"]
-        R["Routes /api/v1<br/>reservation, network, internet,<br/>txpower, qos, status"]
+        R["Routes /api/v2<br/>reservation, network, internet,<br/>txpower, qos, status"]
         D["dependencies.py<br/>singletons and discovery service"]
         RM["ReservationManager<br/>reservations, quarantine"]
         NM["NetworkManager<br/>AP lifecycle, device locks"]
@@ -292,7 +292,7 @@ Rules:
   and the start that holds the lock is itself bounded.
 - Background loops (expiry, watchdog) use non-blocking acquisition: a busy
   antenna is skipped until the next tick instead of blocking the loop.
-- `GET /api/v1/status` reads snapshots and never waits for a device lock or
+- `GET /api/v2/status` reads snapshots and never waits for a device lock or
   runs cleanup, so it stays responsive while an antenna is slow. It still runs
   host health commands and is not a latency guarantee.
 
@@ -984,8 +984,8 @@ hardware.
 **Before starting**
 
 - Stopping Wi-Lab affects every adapter. Agree a maintenance window and check
-  `GET /api/v1/status`: no reservations and no active networks. Ask owners to
-  release theirs; do not use `DELETE /api/v1/reservations/all`.
+  `GET /api/v2/status`: no reservations and no active networks. Ask owners to
+  release theirs; do not use `DELETE /api/v2/reservations/all`.
 - Check that nothing outside Wi-Lab uses the adapter, and that it is neither the
   management nor the upstream interface (`ip -br link`, `ip route show default`,
   `iw dev`). Keep console access (for example KVM) in case the management
@@ -1099,8 +1099,8 @@ is logged once as a warning. Set `upstream_interface` to force an interface.
   `journalctl -u wi-lab.service -g 'API failure operation='`.
 - Discovery logs every added antenna with its USB port (or `non-USB`) and
   subnet. The first scan also logs skipped interfaces with the reason.
-- `GET /api/v1/status` exposes `runtime_state` (watchdog) and `recovery_state`
-  (quarantine) per antenna. `GET /api/v1/debug` (deprecated) gives a detailed, slower
+- `GET /api/v2/status` exposes `runtime_state` (watchdog) and `recovery_state`
+  (quarantine) per antenna. `GET /api/v2/debug` (deprecated) gives a detailed, slower
   snapshot for troubleshooting (header `X-Confirm-Password`, like every
   Maintenance endpoint).
 
@@ -1113,7 +1113,7 @@ is logged once as a warning. Set `upstream_interface` to force an interface.
   caller gets `CommandStuck` (a `CommandTimeout`), so the operation fails and
   releases the device lock instead of blocking the thread, the lock and the API
   forever. The process is logged at `CRITICAL`, counted in
-  `GET /api/v1/monitoring` → `checks.commands.stuck`, and makes the service
+  `GET /api/v2/monitoring` → `checks.commands.stuck`, and makes the service
   `degraded` until it exits. The process, and any kernel lock it holds, stays;
   other commands may then time out too. Recovering the adapter can require
   unplugging it or rebooting the VM or host, which is the maintainer's call:

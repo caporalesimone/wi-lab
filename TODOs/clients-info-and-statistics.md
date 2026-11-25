@@ -7,7 +7,7 @@
 
 Unify client visibility and traffic telemetry into a single roadmap:
 - extend client-level insights (identity, signal, traffic),
-- define whether to keep everything in `GET /api/v1/reservations/{net_id}/network` or introduce dedicated client stats APIs.
+- define whether to keep everything in `GET /api/v2/reservations/{net_id}/network` or introduce dedicated client stats APIs.
 
 ## Scope Summary
 
@@ -84,7 +84,7 @@ Unify client visibility and traffic telemetry into a single roadmap:
 - [ ] Prototype data collection commands in isolation and capture failure modes
 - [ ] Define API contract options:
 - [ ] Option A: enrich `GET /network`
-- [ ] Option B: new endpoint `GET /api/v1/reservations/{net_id}/clients/{mac}/stats`
+- [ ] Option B: new endpoint `GET /api/v2/reservations/{net_id}/clients/{mac}/stats`
 - [ ] Option C: hybrid (recommended candidate)
 
 ### Frontend actions

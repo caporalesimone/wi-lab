@@ -89,7 +89,7 @@ This profile is never stored in the catalogue and exists only in memory for the 
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/v1/qos/profiles` | List all available profiles (full detail including steps and source_file) |
+| `GET` | `/api/v2/qos/profiles` | List all available profiles (full detail including steps and source_file) |
 
 No auth required for catalogue endpoints (read-only, no sensitive data).
 
@@ -99,9 +99,9 @@ Bearer token and active network required.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/v1/reservations/{reservation_id}/qos/profile` | Start a profile on the reservation |
-| `GET` | `/api/v1/reservations/{reservation_id}/qos/profile` | Get active profile state and current step info |
-| `DELETE` | `/api/v1/reservations/{reservation_id}/qos/profile` | Stop the active profile and clear QoS |
+| `POST` | `/api/v2/reservations/{reservation_id}/qos/profile` | Start a profile on the reservation |
+| `GET` | `/api/v2/reservations/{reservation_id}/qos/profile` | Get active profile state and current step info |
+| `DELETE` | `/api/v2/reservations/{reservation_id}/qos/profile` | Stop the active profile and clear QoS |
 
 **`POST` request body — Option 1: profile from catalogue**
 ```json

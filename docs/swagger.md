@@ -20,7 +20,7 @@ Access interactive API testing and documentation at:
 
 ## Usage Guidance
 
-Every `/api/v1` application error has a JSON `detail` object with an integer
+Every `/api/v2` application error has a JSON `detail` object with an integer
 `code`, a stable `reason` and, for generic errors, a human-readable `message`.
 Generic codes match the HTTP status (for example `401`, `404`, `422`, `500`).
 Use `detail.message` for display, not for control flow. This replaces the old
@@ -49,15 +49,15 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
   only in this group. **Every Maintenance operation requires the
   `X-Confirm-Password` header** with `protected_commands_password` from the
   server configuration, besides the token, and is disabled (`403`) when that
-  setting is missing. `DELETE /api/v1/reservations/all` releases
+  setting is missing. `DELETE /api/v2/reservations/all` releases
   **every** reservation and may be removed in a future version.
-  `GET /api/v1/debug` shows internal state for troubleshooting; it is
+  `GET /api/v2/debug` shows internal state for troubleshooting; it is
   **deprecated** (struck through in Swagger) and will be removed.
 
-⚠️ **Note:** `GET /api/v1/debug` is expensive (150-600ms). Use it only for manual troubleshooting, not for frontend polling.
+⚠️ **Note:** `GET /api/v2/debug` is expensive (150-600ms). Use it only for manual troubleshooting, not for frontend polling.
 
-- **Antennas** comes before **Network**: `GET /api/v1/antennas` lists the
-  managed antennas, `GET /api/v1/antennas/{interface}` gives what a network on
+- **Antennas** comes before **Network**: `GET /api/v2/antennas` lists the
+  managed antennas, `GET /api/v2/antennas/{interface}` gives what a network on
   one can use (encryptions, and per band the Wi-Fi generations, widths and
   usable channels). Only the token is needed, no reservation.
 
@@ -72,7 +72,7 @@ network is being repaired, lost DHCP or could not be restarted
 `restore_failed`), a host command is stuck in the kernel, a background loop
 stalled, or a health check failed while networks are active: each cause is an
 entry of `degraded_reasons` with a stable `code`. **System → Read the detailed
-health checks** (`GET /api/v1/monitoring`) gives the detail of every check.
+health checks** (`GET /api/v2/monitoring`) gives the detail of every check.
 Clients must poll
 this endpoint to learn about quarantined adapters: a quarantined adapter can
 show `reserved: false` but is not allocatable, and only its former owner is
@@ -124,7 +124,7 @@ waits for the adapter instead.
 
 For a complete interactive example:
 
-1. In **Reservation**, execute the timed example for `POST /api/v1/reservations`.
+1. In **Reservation**, execute the timed example for `POST /api/v2/reservations`.
 2. In **Network**, copy the returned `reservation_id` into the create endpoint
    and choose a channel supported by the adapter. If you get `409 / 1001`,
    wait for `Retry-After` before repeating the same body and ID.

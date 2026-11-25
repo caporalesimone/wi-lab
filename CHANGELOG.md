@@ -11,7 +11,7 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 55 |
-| ⚠️ Breaking changes | 18 |
+| ⚠️ Breaking changes | 19 |
 | 🔧 Maintenance changes | 13 |
 | ✨ New features | 19 |
 | 📦 Commits since 3.0.0 | 89 |
@@ -22,22 +22,23 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 
 - Reservation contention returns null availability estimates when no release is scheduled.
 - AP creation requires a single 2.4 GHz or 5 GHz band; `dual` returns 422.
-- Release all reservations moved from `DELETE /api/v1/device-reservation` to `DELETE /api/v1/reservations/all`, and now requires the `X-Confirm-Password` header matching the new `protected_commands_password` setting (disabled when unset). A malformed single-release URL can no longer release everything.
-- All `/api/v1` error bodies now use an object with `detail.code` and `detail.reason`. Clients displaying a former string `detail` should read `detail.message`. Recovery codes 1001–1003 are unchanged.
+- Release all reservations moved from `DELETE /api/v1/device-reservation` to `DELETE /api/v2/reservations/all`, and now requires the `X-Confirm-Password` header matching the new `protected_commands_password` setting (disabled when unset). A malformed single-release URL can no longer release everything.
+- All `/api/v2` error bodies now use an object with `detail.code` and `detail.reason`. Clients displaying a former string `detail` should read `detail.message`. Recovery codes 1001–1003 are unchanged.
 - API timestamps (`expires_at`, `detail.next_available_at`) now use RFC 3339 UTC with a `Z` suffix. Durations and countdowns remain in seconds.
 - Internet, TX power and QoS profile requests on a valid reservation without a running network return `409` with `detail.code: 1007` (`network_not_active`); Internet and TX power returned `404`, which clients could not tell apart from an expired reservation (Fable API-2).
 - A create that quarantines the adapter and invalidates the reservation (`detail.code: 1003`, `reservation_invalidated: true`) now returns `503` instead of `500`, so clients and proxies no longer treat it as a retryable server error; the code and body are unchanged (Fable API-4).
 - The create body and `GET .../network` are grouped in sections: `radio`, `wifi` (with `security`), `internet`, `captive_portal`, plus `reservation` and `ip` in the answer. Duplicated and internal fields (`dhcp.*` paths and files, `clients_connected`, the second `interface` and `subnet`) are gone, and `ip.dns_server` is new. Flat bodies return `422` (Fable API-8; first step of ARCH-3).
 - AP creation with `encryption: "wpa"` returns `422`: it silently created WPA2. Use `wpa2` for the same network, or the new `wpa1` for real legacy WPA/TKIP (Fable HAP-10).
 - Configuration: the `networks` section is renamed `antennas`, and every entry must set `show_dfs: true|false`; there is no fallback for the old name.
-- `GET /api/v1/interface/{id}/network/available-channels` is removed: use `GET /api/v1/antennas/{interface}`, which lists only the usable channels, grouped by band with the widths each can use, and needs no reservation.
-- `GET /api/v1/status` no longer returns `checks`: it gives `degraded_reasons`, one entry per cause of `degraded` with a stable `code` (`antenna_quarantined`, `network_being_repaired`, `hostapd_not_running`, `dnsmasq_not_running`, `nat_rule_missing`, `upstream_unreachable`, `command_stuck`, `loop_stalled`), the `interface` it concerns and a `message`. The detail of the checks moved to the new `GET /api/v1/monitoring`.
+- `GET /api/v1/interface/{id}/network/available-channels` is removed: use `GET /api/v2/antennas/{interface}`, which lists only the usable channels, grouped by band with the widths each can use, and needs no reservation.
+- `GET /api/v2/status` no longer returns `checks`: it gives `degraded_reasons`, one entry per cause of `degraded` with a stable `code` (`antenna_quarantined`, `network_being_repaired`, `hostapd_not_running`, `dnsmasq_not_running`, `nat_rule_missing`, `upstream_unreachable`, `command_stuck`, `loop_stalled`), the `interface` it concerns and a `message`. The detail of the checks moved to the new `GET /api/v2/monitoring`.
 - Every `409` has a `detail.code` (Fable API-3): `1008 network_already_active` and `1009 restoration_in_progress` on the create, `1007 network_not_active` on stopping a stopped network, `1010 qos_profile_already_active` and `1011 qos_profile_not_active` on QoS profiles; before they had none and the client had to read the message. `404` on a call with a reservation ID now only means the ID is gone: an unknown QoS `profile_id` and a TX power the driver does not support answer `422` (were `404`), stopping a QoS profile that is not running answers `409 / 1011` (was `404`).
 - A create that fails for a non-radio reason answers `500 / 1013` (`startup_failed`) with `detail.stage` (`hostapd`, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation`, `host_guard`) instead of a generic `500 / 500` with only a message.
 - Unknown fields in a request body are refused with `422` and the field path (`captive-portal: Extra inputs are not permitted`, `radio.chanel: ...`) instead of being ignored: a typo no longer creates a network without the intended setting (Fable API-10). Applies to the reservation, the create (every section), TX power and QoS profile bodies.
-- Paths renamed (Fable API-6): `/api/v1/device-reservation` → `/api/v1/reservations`, and every `/api/v1/interface/{reservation_id}/...` → `/api/v1/reservations/{reservation_id}/...` (network, Internet, TX power, QoS profile). The old `interface` segment held a reservation ID, not an interface, which the new `/antennas/{interface}` would have made more confusing. The old paths answer `404`.
-- `GET /api/v1/status` lists the antennas in `antennas[]` (was `networks[]`), like the Antennas API: an entry is an antenna, reserved or not, not a network.
-- Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all: `GET /api/v1/debug` now returns `403` without it, or when `protected_commands_password` is not set.
+- The API prefix is `/api/v2` (was `/api/v1`): the contract changed, so the version in the URL changes too. `/api/v1` is not kept: every path under it answers `404`, with any method.
+- Paths renamed (Fable API-6): `/api/v1/device-reservation` → `/api/v2/reservations`, and every `/api/v1/interface/{reservation_id}/...` → `/api/v2/reservations/{reservation_id}/...` (network, Internet, TX power, QoS profile). The old `interface` segment held a reservation ID, not an interface, which the new `/antennas/{interface}` would have made more confusing. The old paths answer `404`.
+- `GET /api/v2/status` lists the antennas in `antennas[]` (was `networks[]`), like the Antennas API: an entry is an antenna, reserved or not, not a network.
+- Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all: `GET /api/v2/debug` now returns `403` without it, or when `protected_commands_password` is not set.
 
 ### ✨ Features
 
@@ -56,9 +57,9 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - New `encryption: "wpa1"` (legacy WPA, PSK/TKIP, 802.11a/g only) to test old clients; accepted only on antennas whose driver supports TKIP (Fable HAP-10).
 - AP creation takes optional `channel_width` (20, 40, 80 MHz) and `wifi_generation` (4 = 802.11n, 5 = 802.11ac, 6 = 802.11ax); defaults 20 MHz / 802.11n keep the previous behaviour. `GET /antennas/{interface}` lists per band the generations, widths and channels an antenna accepts, and `GET .../network` reports the width the radio actually uses (Fable HAP-11).
 - Frontend: the start dialog reads the antenna (`GET /antennas/{interface}`) and offers in dropdowns only the encryptions, Wi-Fi generations, channel widths and channels it supports (DFS channels marked, `wpa` replaced by `wpa1` where available), and a running network shows its width and Wi-Fi generation.
-- New `GET /api/v1/monitoring` (System, token only): `status`, `degraded_reasons`, `checked_at`, `check_interval_seconds` and the detail of every health check (`commands`, `loops`, `hostapd`, `dnsmasq`, `iptables_nat`, `upstream_interface`), for operators and a future monitoring view.
+- New `GET /api/v2/monitoring` (System, token only): `status`, `degraded_reasons`, `checked_at`, `check_interval_seconds` and the detail of every health check (`commands`, `loops`, `hostapd`, `dnsmasq`, `iptables_nat`, `upstream_interface`), for operators and a future monitoring view.
 - Optional `hostapd_debug_dir` setting: every hostapd start that fails writes a report there (hostapd configuration without passwords and the last 400 lines of `hostapd -d`); only failures are written and the newest 100 reports are kept.
-- New **Antennas** API, listed in Swagger before Network and readable with the token only: `GET /api/v1/antennas` lists the managed antennas (`display_name`, `interface`); `GET /api/v1/antennas/{interface}` gives `device` (`bus`, `address`, `driver`), `encryptions` and per band the Wi-Fi generations with their widths and the usable channels with the widths each can use, to fill a form's dropdowns.
+- New **Antennas** API, listed in Swagger before Network and readable with the token only: `GET /api/v2/antennas` lists the managed antennas (`display_name`, `interface`); `GET /api/v2/antennas/{interface}` gives `device` (`bus`, `address`, `driver`), `encryptions` and per band the Wi-Fi generations with their widths and the usable channels with the widths each can use, to fill a form's dropdowns.
 - Frontend: a captive portal switch on each reserved antenna card chooses whether the next network starts with a portal page (it presets the start dialog, which has the same switch), and a running network shows the captive portal as On or Off with its URL and a header badge.
 
 ### 🐛 Bug Fixes
@@ -129,11 +130,11 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Added an [AP creation procedure](docs/ap-creation-procedure.md) for client developers and a backend [architecture](docs/architecture.md) guide with startup, threading, creation, retry, watchdog and recovery diagrams.
 - Explain the reservation and recovery lifecycle in Swagger and ReDoc, including retry, quarantine and watchdog response examples.
 - Include the API operation, HTTP status, and error code in journal entries for server errors, without request or response data.
-- Swagger lists release-all (`DELETE /api/v1/reservations/all`) and `GET /api/v1/debug` only under **Maintenance**; release-all also appeared under Reservation.
-- `GET /api/v1/debug` is deprecated and will be removed.
+- Swagger lists release-all (`DELETE /api/v2/reservations/all`) and `GET /api/v2/debug` only under **Maintenance**; release-all also appeared under Reservation.
+- `GET /api/v2/debug` is deprecated and will be removed.
 - New [docs/error-codes.md](docs/error-codes.md): every `detail.code`, its HTTP status, `Retry-After`, where it is answered and the client action, plus the `degraded_reasons` codes; a test fails when a code is not documented.
 - Detailed sequence diagrams of the whole flow, reservation to release, with every error answer and when to retry: client view in the [AP creation procedure](docs/ap-creation-procedure.md#3-sequence-diagram), with one action (done, wait, repeat, fix, reserve again, stop) for every answer of every call and how radio failures such as a hostapd crash reach the client, server view in [Architecture 6.1](docs/architecture.md#61-end-to-end-sequence-server-view). The captive portal diagram in the architecture guide did not render (a `;` in a note).
-- Document `GET /api/v1/status` health values (`standby`, `ok`, `degraded`), what makes the service `degraded` (quarantined adapter, network being repaired, failed health check) and how clients learn about quarantined adapters, in Swagger (three response examples), the API overview, the AP creation procedure (2.8) and the Swagger guide.
+- Document `GET /api/v2/status` health values (`standby`, `ok`, `degraded`), what makes the service `degraded` (quarantined adapter, network being repaired, failed health check) and how clients learn about quarantined adapters, in Swagger (three response examples), the API overview, the AP creation procedure (2.8) and the Swagger guide.
 
 ### ✅ Tests
 
@@ -148,14 +149,15 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 
 | 3.x | 4.0.0 |
 |---|---|
-| `POST /api/v1/device-reservation` | `POST /api/v1/reservations` |
-| `GET`, `DELETE /api/v1/device-reservation/{reservation_id}` | `GET`, `DELETE /api/v1/reservations/{reservation_id}` |
-| `DELETE /api/v1/device-reservation` (release all) | `DELETE /api/v1/reservations/all` (Maintenance, `X-Confirm-Password`) |
-| `/api/v1/interface/{reservation_id}/network` | `/api/v1/reservations/{reservation_id}/network` |
-| `/api/v1/interface/{reservation_id}/internet/enable`, `/disable` | `/api/v1/reservations/{reservation_id}/internet/enable`, `/disable` |
-| `/api/v1/interface/{reservation_id}/txpower` | `/api/v1/reservations/{reservation_id}/txpower` |
-| `/api/v1/interface/{reservation_id}/qos/profile` | `/api/v1/reservations/{reservation_id}/qos/profile` |
-| `/api/v1/interface/{reservation_id}/network/available-channels` | removed: `GET /api/v1/antennas/{interface}` |
+| prefix `/api/v1` | prefix `/api/v2`: every path below; `/api/v1` answers `404` |
+| `POST /api/v1/device-reservation` | `POST /api/v2/reservations` |
+| `GET`, `DELETE /api/v1/device-reservation/{reservation_id}` | `GET`, `DELETE /api/v2/reservations/{reservation_id}` |
+| `DELETE /api/v1/device-reservation` (release all) | `DELETE /api/v2/reservations/all` (Maintenance, `X-Confirm-Password`) |
+| `/api/v1/interface/{reservation_id}/network` | `/api/v2/reservations/{reservation_id}/network` |
+| `/api/v1/interface/{reservation_id}/internet/enable`, `/disable` | `/api/v2/reservations/{reservation_id}/internet/enable`, `/disable` |
+| `/api/v1/interface/{reservation_id}/txpower` | `/api/v2/reservations/{reservation_id}/txpower` |
+| `/api/v1/interface/{reservation_id}/qos/profile` | `/api/v2/reservations/{reservation_id}/qos/profile` |
+| `/api/v1/interface/{reservation_id}/network/available-channels` | removed: `GET /api/v2/antennas/{interface}` |
 
 The rest of this chapter names each endpoint by its 3.x path.
 
@@ -166,7 +168,7 @@ The rest of this chapter names each endpoint by its 3.x path.
 
 **Reservation**
 
-- `DELETE /api/v1/device-reservation` (release all): removed. Use `DELETE /api/v1/device-reservation/all` with header `X-Confirm-Password`.
+- `DELETE /api/v1/device-reservation` (release all): removed. Use `DELETE /api/v2/reservations/all` with header `X-Confirm-Password`.
 - `POST /api/v1/device-reservation`:
   - `409`: now `detail.code: 1005`; `next_available_at` / `next_available_in` are `null` when no release is scheduled.
   - new `503 / 1002`: an antenna is recovering; retry after `Retry-After` (10 s).
@@ -220,8 +222,8 @@ The rest of this chapter names each endpoint by its 3.x path.
 
 **Antennas** (new, token only, no reservation)
 
-- `GET /api/v1/antennas` → `{"antennas": [{display_name, interface}]}`.
-- `GET /api/v1/antennas/{interface}` replaces `available-channels`:
+- `GET /api/v2/antennas` → `{"antennas": [{display_name, interface}]}`.
+- `GET /api/v2/antennas/{interface}` replaces `available-channels`:
 
   | 3.x `available-channels` | 4.0.0 `GET /antennas/{interface}` |
   |---|---|
@@ -254,8 +256,8 @@ The rest of this chapter names each endpoint by its 3.x path.
 **Status**
 
 - `GET /api/v1/status`:
-  - `networks[]` is renamed `antennas[]`, and its entries gain `recovery_state` (`recovering`, `unavailable`) and `runtime_state`. What an antenna supports is in `GET /api/v1/antennas/{interface}`.
-  - `checks` moved to `GET /api/v1/monitoring` (with `hostapd`, `commands`, `loops`, and `missing` lists in `dnsmasq` and `iptables_nat`); `/status` has `degraded_reasons` instead (`{code, interface, message}`).
+  - `networks[]` is renamed `antennas[]`, and its entries gain `recovery_state` (`recovering`, `unavailable`) and `runtime_state`. What an antenna supports is in `GET /api/v2/antennas/{interface}`.
+  - `checks` moved to `GET /api/v2/monitoring` (with `hostapd`, `commands`, `loops`, and `missing` lists in `dnsmasq` and `iptables_nat`); `/status` has `degraded_reasons` instead (`{code, interface, message}`).
   - `degraded` now also covers quarantined antennas, networks being repaired, stuck commands and stalled loops.
 - `GET /api/v1/debug`: send the `X-Confirm-Password` header too (`403` without it), as for every Maintenance endpoint.
 

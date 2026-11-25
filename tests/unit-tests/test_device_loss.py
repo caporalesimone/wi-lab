@@ -23,7 +23,7 @@ from wilab.wifi import manager as manager_module
 from wilab.wifi.interface import InterfaceError
 from wilab.wifi.manager import StartupFailure
 
-RESERVE = "/api/v1/reservations"
+RESERVE = "/api/v2/reservations"
 PAYLOAD = {
     "ssid": "loss-test", "channel": 36, "band": "5ghz",
     "encryption": "open", "tx_power_level": 4,
@@ -182,7 +182,7 @@ def test_api_vanished_interface_returns_retry_later_not_quarantine(monkeypatch):
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     with TestClient(create_app()) as client:
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).json()["reservation_id"]
-        result = client.post(f"/api/v1/reservations/{rid}/network", headers=headers, json=network_body(**PAYLOAD))
+        result = client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=network_body(**PAYLOAD))
         assert result.status_code == 409
         assert result.json()["detail"]["code"] == 1001
         assert result.headers["Retry-After"] == "5"
@@ -310,10 +310,10 @@ def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch):
         assert reservations.get(rid).device_id == device
         for _ in config.antennas[1:]:
             assert client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).status_code == 200
-        result = client.post(f"/api/v1/reservations/{rid}/network", headers=headers, json=network_body(**PAYLOAD))
+        result = client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=network_body(**PAYLOAD))
         assert (result.status_code, result.json()["detail"]["code"]) == (503, 1003)
         schedule.assert_not_called()
-        status = client.get("/api/v1/status", headers=headers).json()
+        status = client.get("/api/v2/status", headers=headers).json()
         assert status["status"] == "degraded"
         assert status["antennas"][0]["recovery_state"] == "unavailable"
         assert client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).status_code == 503
@@ -321,6 +321,6 @@ def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch):
         mgr.recovery.reprobe_unavailable(reservations, now=0.0)
         mgr.recovery.reprobe_unavailable(reservations, now=recovery.REPROBE_DELAYS[0])
 
-        status = client.get("/api/v1/status", headers=headers).json()
+        status = client.get("/api/v2/status", headers=headers).json()
         assert "recovery_state" not in status["antennas"][0]
         assert client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).status_code == 200

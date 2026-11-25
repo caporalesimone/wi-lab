@@ -1,6 +1,6 @@
 # Error codes
 
-Every error answered under `/api/v1` has the same body:
+Every error answered under `/api/v2` has the same body:
 
 ```json
 {"detail": {"code": 1006, "reason": "device_busy", "message": "text for display"}}

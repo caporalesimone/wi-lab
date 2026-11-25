@@ -241,7 +241,7 @@ def reservation_id(client, token, monkeypatch):
         raising=False,
     )
     monkeypatch.setattr(dependencies, "_channel_manager", None, raising=False)
-    resp = client.post("/api/v1/reservations", headers={"Authorization": token}, json={"duration_seconds": 3600})
+    resp = client.post("/api/v2/reservations", headers={"Authorization": token}, json={"duration_seconds": 3600})
     assert resp.status_code == 200
     return resp.json()["reservation_id"]
 
@@ -252,7 +252,7 @@ class TestApi:
         start = Mock()
         monkeypatch.setattr(manager, "start_network", start)
         resp = client.post(
-            f"/api/v1/reservations/{reservation_id}/network",
+            f"/api/v2/reservations/{reservation_id}/network",
             headers={"Authorization": token}, json=network_body(**{"encryption": "wpa2", **BASE, **body}),
         )
         return resp, start
@@ -279,9 +279,9 @@ class TestApi:
     def test_capabilities_are_in_antennas_not_in_status(self, client, token, reservation_id, monkeypatch):
         self._create(client, token, reservation_id, monkeypatch)
         headers = {"Authorization": token}
-        networks = client.get("/api/v1/status", headers=headers).json()["antennas"]
+        networks = client.get("/api/v2/status", headers=headers).json()["antennas"]
         assert all("capabilities" not in n for n in networks)
-        antenna = client.get(f"/api/v1/antennas/{networks[0]['interface']}", headers=headers).json()
+        antenna = client.get(f"/api/v2/antennas/{networks[0]['interface']}", headers=headers).json()
         widths = {g["wifi_generation"]: g["channel_widths"] for g in antenna["bands"]["5ghz"]["wifi_generations"]}
         assert widths[5] == [20, 40, 80]
         assert "wpa1" in antenna["encryptions"]

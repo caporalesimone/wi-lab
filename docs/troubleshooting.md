@@ -89,7 +89,7 @@ Script:
 ### Issue 6: Antenna Stays `unavailable` (status `degraded`)
 
 Symptoms:
-- `GET /api/v1/status` returns `status: degraded` and an entry with
+- `GET /api/v2/status` returns `status: degraded` and an entry with
   `recovery_state: unavailable` (or `recovering` for a long time)
 - a create returned `503 / 1003`; fewer antennas can be reserved
 

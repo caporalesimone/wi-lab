@@ -39,9 +39,9 @@ def running(monkeypatch):
 
         def get():
             manager.active[device] = network()
-            data = client.get("/api/v1/status", headers=headers).json()
+            data = client.get("/api/v2/status", headers=headers).json()
             # The detail of the checks is in /monitoring.
-            return {**data, "checks": client.get("/api/v1/monitoring", headers=headers).json()["checks"]}
+            return {**data, "checks": client.get("/api/v2/monitoring", headers=headers).json()["checks"]}
 
         yield get, state, manager, device
 
@@ -107,7 +107,7 @@ def test_status_reads_the_background_checks_without_running_commands(monkeypatch
     client = TestClient(create_app())
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     for _ in range(5):
-        assert client.get("/api/v1/status", headers=headers).status_code == 200
+        assert client.get("/api/v2/status", headers=headers).status_code == 200
     assert calls == []
 
 
@@ -134,12 +134,12 @@ def test_degraded_reasons_name_the_problem_and_the_antenna(monkeypatch):
     monkeypatch.setattr(status_route, "stuck_commands", lambda: 1)
     client = TestClient(create_app())
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    status = client.get("/api/v1/status", headers=headers).json()
+    status = client.get("/api/v2/status", headers=headers).json()
     assert status["status"] == "degraded" and "checks" not in status
     codes = [(r["code"], r["interface"]) for r in status["degraded_reasons"]]
     assert ("hostapd_not_running", device) in codes and ("command_stuck", None) in codes
-    monitoring = client.get("/api/v1/monitoring", headers=headers).json()
+    monitoring = client.get("/api/v2/monitoring", headers=headers).json()
     assert monitoring["status"] == "degraded"
     assert monitoring["checks"]["hostapd"]["missing"] == [device]
     assert monitoring["check_interval_seconds"] == 10 and monitoring["checked_at"].endswith("Z")
-    assert client.get("/api/v1/monitoring").status_code == 401
+    assert client.get("/api/v2/monitoring").status_code == 401

@@ -44,7 +44,7 @@ def reservation_id(client, valid_token, monkeypatch):
     monkeypatch.setattr(dependencies, '_channel_manager', None, raising=False)
 
     resp = client.post(
-        '/api/v1/reservations',
+        '/api/v2/reservations',
         headers={'Authorization': valid_token},
         json={'duration_seconds': 3600},
     )
@@ -247,7 +247,7 @@ class TestChannelManagerResolve:
 
 
 # ---------------------------------------------------------------------------
-# API tests – GET /api/v1/antennas
+# API tests – GET /api/v2/antennas
 # ---------------------------------------------------------------------------
 
 def _set_show_dfs(value: bool) -> None:
@@ -260,23 +260,23 @@ class TestAntennasAPI:
     """Antennas: the managed radios and the options of a create on each."""
 
     def test_requires_auth(self, client):
-        assert client.get('/api/v1/antennas').status_code == 401
-        assert client.get('/api/v1/antennas/wls16').status_code == 401
+        assert client.get('/api/v2/antennas').status_code == 401
+        assert client.get('/api/v2/antennas/wls16').status_code == 401
 
     def test_list_needs_no_reservation(self, client, valid_token):
-        resp = client.get('/api/v1/antennas', headers={'Authorization': valid_token})
+        resp = client.get('/api/v2/antennas', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         assert {"display_name": "bench-antenna-1", "interface": "wls16"} in resp.json()["antennas"]
 
     def test_unknown_antenna_returns_404(self, client, valid_token):
-        resp = client.get('/api/v1/antennas/wlan99', headers={'Authorization': valid_token})
+        resp = client.get('/api/v2/antennas/wlan99', headers={'Authorization': valid_token})
         assert resp.status_code == 404
 
     def test_details(self, client, valid_token, monkeypatch):
         from wilab.api.routes import antennas
         from wilab.wifi.discovery import DeviceInfo
         monkeypatch.setattr(antennas, "detect_device", lambda i: DeviceInfo("usb", "2-1", "mt7921u"))
-        data = client.get('/api/v1/antennas/wls16', headers={'Authorization': valid_token}).json()
+        data = client.get('/api/v2/antennas/wls16', headers={'Authorization': valid_token}).json()
         assert data["interface"] == "wls16"
         assert data["device"] == {"bus": "usb", "address": "2-1", "driver": "mt7921u"}
         assert data["encryptions"] == ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"]
@@ -296,13 +296,13 @@ class TestAntennasAPI:
     def test_device_is_null_when_sysfs_does_not_show_it(self, client, valid_token, monkeypatch):
         from wilab.api.routes import antennas
         monkeypatch.setattr(antennas, "detect_device", lambda i: None)
-        data = client.get('/api/v1/antennas/wls16', headers={'Authorization': valid_token}).json()
+        data = client.get('/api/v2/antennas/wls16', headers={'Authorization': valid_token}).json()
         assert data["device"] is None
 
     def test_every_listed_choice_is_accepted_by_the_create_check(self, client, valid_token):
         """The lists and the create use the same rules: no combination is refused."""
         _set_show_dfs(True)
-        data = client.get('/api/v1/antennas/wls16', headers={'Authorization': valid_token}).json()
+        data = client.get('/api/v2/antennas/wls16', headers={'Authorization': valid_token}).json()
         mgr = dependencies.get_channel_manager()
         checked = 0
         for band, options in data["bands"].items():
@@ -475,10 +475,10 @@ class TestNetworkCreationChannelValidation:
         config = dependencies.get_config()
         start_network = Mock()
         monkeypatch.setattr(dependencies.get_manager(config), "start_network", start_network)
-        url = f"/api/v1/reservations/{reservation_id}/network"
+        url = f"/api/v2/reservations/{reservation_id}/network"
         headers = {"Authorization": valid_token}
 
-        listing = client.get("/api/v1/antennas/wls16", headers=headers)
+        listing = client.get("/api/v2/antennas/wls16", headers=headers)
         assert listing.status_code == 200
         channels = {ch["channel"]: ch for ch in listing.json()["bands"]["5ghz"]["channels"]}
         assert (52 in channels) is show_dfs
@@ -502,7 +502,7 @@ class TestNetworkCreationChannelValidation:
 
     def test_disabled_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
-            f'/api/v1/reservations/{reservation_id}/network',
+            f'/api/v2/reservations/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestNet', channel=14, password='testpass123', encryption='wpa2', band='2.4ghz', tx_power_level=4),
         )
@@ -511,7 +511,7 @@ class TestNetworkCreationChannelValidation:
 
     def test_unsupported_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
-            f'/api/v1/reservations/{reservation_id}/network',
+            f'/api/v2/reservations/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestNet', channel=173, password='testpass123', encryption='wpa2', band='5ghz', tx_power_level=4),
         )
@@ -522,7 +522,7 @@ class TestNetworkCreationChannelValidation:
 
     def test_no_ir_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
-            f'/api/v1/reservations/{reservation_id}/network',
+            f'/api/v2/reservations/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestNet', channel=12, password='testpass123', encryption='wpa2', band='2.4ghz', tx_power_level=4),
         )

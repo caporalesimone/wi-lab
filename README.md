@@ -12,7 +12,7 @@ Typical use-cases: automated wireless testing, RF/antenna benchmarking, classroo
 2. **Reservation system** — before touching an interface you acquire a time-limited (or unlimited) reservation token via the API. The token is an 8-char hex string; when it expires the AP is torn down automatically. A device is not reassigned until cleanup succeeds. If cleanup fails, the device stays held for retry; other free devices remain available.
 3. **One AP per interface** — while reserved, you can create a WiFi network (hostapd), configure DHCP (dnsmasq), enable/disable Internet (iptables NAT), and adjust TX power — all via REST calls.
 4. **Web frontend** — an Angular SPA shows every interface as a card (available / owned / occupied), lets you reserve, configure, and monitor networks from the browser. The auth token is entered at runtime via a login dialog.
-5. **Web API** — every operation is also available programmatically (`/api/v1/…`), with full Swagger UI at `http://<host>:8080/docs`. Useful for scripting, SDKs, or CI integration.
+5. **Web API** — every operation is also available programmatically (`/api/v2/…`), with full Swagger UI at `http://<host>:8080/docs`. Useful for scripting, SDKs, or CI integration.
 
 ---
 
@@ -149,7 +149,7 @@ All requests require the header `Authorization: Bearer <auth_token>`.
 
 ```bash
 # 1. Reserve a device for 15 minutes (900 seconds)
-curl -X POST http://localhost:8080/api/v1/reservations \
+curl -X POST http://localhost:8080/api/v2/reservations \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"duration_seconds": 900}'
@@ -164,7 +164,7 @@ curl -X POST http://localhost:8080/api/v1/reservations \
 # }
 
 # 2. Create a WiFi network on the reserved device
-curl -X POST http://localhost:8080/api/v1/reservations/a1b2c3d4/network \
+curl -X POST http://localhost:8080/api/v2/reservations/a1b2c3d4/network \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"radio": {"band": "2.4ghz", "channel": 6, "tx_power_level": 4},

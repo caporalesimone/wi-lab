@@ -43,7 +43,7 @@ def test_network_mid_operation_does_not_make_status_degraded(stopping_network):
     client, headers, manager, device = stopping_network
     release, thread = _hold(manager, device)  # the stop holds the device lock
     try:
-        data = client.get("/api/v1/status", headers=headers).json()
+        data = client.get("/api/v2/status", headers=headers).json()
     finally:
         release.set()
         thread.join()
@@ -53,5 +53,5 @@ def test_network_mid_operation_does_not_make_status_degraded(stopping_network):
 
 def test_settled_network_with_dhcp_down_is_still_degraded(stopping_network):
     client, headers, _manager, _device = stopping_network
-    data = client.get("/api/v1/status", headers=headers).json()
+    data = client.get("/api/v2/status", headers=headers).json()
     assert data["status"] == "degraded"

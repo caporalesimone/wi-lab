@@ -44,7 +44,7 @@ When Wi-Lab crashes or is forcefully terminated:
 
 ### Health Check Integration
 
-- [ ] Add recovery stats to `GET /api/v1/health` response:
+- [ ] Add recovery stats to `GET /api/v2/health` response:
   - Orphaned processes found and cleaned
   - Orphaned rules found and cleaned
   - Orphaned namespaces found and cleaned

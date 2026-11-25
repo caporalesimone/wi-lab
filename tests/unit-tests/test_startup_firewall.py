@@ -102,13 +102,13 @@ def test_api_returns_500_and_keeps_the_reservation(monkeypatch):
     body = {"ssid": "fw", "channel": 6, "band": "2.4ghz", "encryption": "open",
             "tx_power_level": 4, "internet_enabled": True}
     with TestClient(create_app()) as client:
-        rid = client.post("/api/v1/reservations", headers=headers, json={"duration_seconds": 60}).json()[
+        rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 60}).json()[
             "reservation_id"
         ]
-        response = client.post(f"/api/v1/reservations/{rid}/network", headers=headers, json=network_body(**body))
+        response = client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=network_body(**body))
         assert response.status_code == 500
         assert "enable Internet" in response.json()["detail"]["message"]
         assert "Retry-After" not in response.headers
-        network = client.get(f"/api/v1/reservations/{rid}/network", headers=headers).json()
+        network = client.get(f"/api/v2/reservations/{rid}/network", headers=headers).json()
         assert network["active"] is False
-        assert client.get(f"/api/v1/reservations/{rid}", headers=headers).status_code == 200
+        assert client.get(f"/api/v2/reservations/{rid}", headers=headers).status_code == 200

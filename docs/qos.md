@@ -20,15 +20,15 @@ A **profile** is an ordered sequence of steps. Each step defines a duration and 
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/v1/qos/profiles` | List all available profiles (full detail) |
+| `GET` | `/api/v2/qos/profiles` | List all available profiles (full detail) |
 
 ### Per-Reservation (requires `Authorization: Bearer <token>`)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/reservations/{reservation_id}/qos/profile` | Start a profile |
-| `GET` | `/api/v1/reservations/{reservation_id}/qos/profile` | Get active profile state |
-| `DELETE` | `/api/v1/reservations/{reservation_id}/qos/profile` | Stop profile and clear QoS |
+| `POST` | `/api/v2/reservations/{reservation_id}/qos/profile` | Start a profile |
+| `GET` | `/api/v2/reservations/{reservation_id}/qos/profile` | Get active profile state |
+| `DELETE` | `/api/v2/reservations/{reservation_id}/qos/profile` | Stop profile and clear QoS |
 
 ---
 
@@ -149,7 +149,7 @@ For precise control over impairment parameters:
 All examples assume:
 
 ```
-BASE=http://localhost:8080/api/v1
+BASE=http://localhost:8080/api/v2
 TOKEN=<your_auth_token>
 RES=<reservation_id>
 ```

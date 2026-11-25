@@ -32,6 +32,7 @@ from .errors import (
     document_errors,
     domain_error,
 )
+from .routes import is_api_path
 from .routes import router as api_router
 from .routes.recovery_responses import device_busy_detail
 
@@ -41,10 +42,10 @@ API_DESCRIPTION = """
 ## Reservation and network lifecycle
 
 Authenticate with a Bearer token. Reserve an adapter with
-`POST /api/v1/reservations` (for example `{"duration_seconds": 120}`),
+`POST /api/v2/reservations` (for example `{"duration_seconds": 120}`),
 then pass the returned `reservation_id` to the network endpoints. Use one
 creation request at a time per reservation. Release with
-`DELETE /api/v1/reservations/{reservation_id}` when finished; this also
+`DELETE /api/v2/reservations/{reservation_id}` when finished; this also
 stops the network. A failed cleanup can return `503` and keep the device held.
 
 Set `"captive_portal": {"enabled": true}` when creating a network to hold each
@@ -54,8 +55,8 @@ portal page; see the network creation operation. Omitted, it is disabled.
 Operations under **Maintenance** are not part of the client workflow. Each one
 requires the `X-Confirm-Password` header matching `protected_commands_password`
 in the server configuration, and is disabled when that setting is missing.
-`DELETE /api/v1/reservations/all` releases every reservation, including
-other clients'; `GET /api/v1/debug` shows internal state.
+`DELETE /api/v2/reservations/all` releases every reservation, including
+other clients'; `GET /api/v2/debug` shows internal state.
 
 Every API error body has a `detail` object with an integer `code` and a
 stable `reason`. Generic errors use the HTTP status as their code and
@@ -78,19 +79,19 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 | `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Every reservation endpoint except the create, which waits instead. |
 
 A transport timeout is not a recovery code. For a lost create response, check
-`GET /api/v1/reservations/{reservation_id}/network` before attempting another
+`GET /api/v2/reservations/{reservation_id}/network` before attempting another
 create. A lost reservation response may already have allocated an adapter:
 do not blindly repeat it. A `404` for a reservation ID means stop using it.
 
 ### Service health and quarantined adapters
 
-Poll `GET /api/v1/status` to know whether the service is fully usable.
+Poll `GET /api/v2/status` to know whether the service is fully usable.
 Its `status` is `standby` (nothing active, all adapters healthy), `ok`
 (networks active and healthy) or `degraded`. `degraded` means an adapter is
 quarantined (`antennas[].recovery_state`), a reserved network is being
 repaired or lost DHCP (`antennas[].runtime_state`), or a health check failed
 while networks are active: `degraded_reasons` lists each cause with a stable
-`code`, and `GET /api/v1/monitoring` gives the detail of every check. Show it
+`code`, and `GET /api/v2/monitoring` gives the detail of every check. Show it
 to the user with the affected adapter: fewer adapters may be allocatable than
 are listed.
 
@@ -102,7 +103,7 @@ are listed.
 | `runtime_state` | `dhcp_failed` | DHCP could not be repaired alone; within 5 s the watchdog restarts the whole network (`restoring_ap`). Wait. |
 | `runtime_state` | `restore_failed` | AP down: the restart failed and the watchdog retries (15 s, 30 s, 60 s, 120 s, then every 5 min). Wait, or `DELETE .../network` to stop the retries, or create a new network. |
 
-`GET /api/v1/status` distinguishes quarantined adapters (`recovery_state`)
+`GET /api/v2/status` distinguishes quarantined adapters (`recovery_state`)
 from reserved networks being repaired (`runtime_state`). `reserved: false`
 does not make a quarantined adapter allocatable. During
 `restoring_ap` or `restoring_dhcp`, poll status instead of sending a new
@@ -199,7 +200,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(StarletteHTTPException)
     async def api_http_exception(request: Request, exc: StarletteHTTPException):
         path = request.url.path
-        if not (path == "/api/v1" or path.startswith("/api/v1/")) or exc.status_code < 400:
+        if not is_api_path(path) or exc.status_code < 400:
             return await http_exception_handler(request, exc)
         return api_error_response(request, exc.status_code, exc.detail, headers=exc.headers)
 
@@ -216,13 +217,13 @@ def create_app() -> FastAPI:
             return await call_next(request)
         except Exception:
             logger.exception("Unhandled error in %s %s", request.method, request.url.path)
-            if request.url.path == "/api/v1" or request.url.path.startswith("/api/v1/"):
+            if is_api_path(request.url.path):
                 return api_error_response(request, 500, None)
             return PlainTextResponse("Internal Server Error", status_code=500)
 
     @app.exception_handler(Exception)
     async def unhandled_api_exception(request: Request, exc: Exception):
-        if request.url.path == "/api/v1" or request.url.path.startswith("/api/v1/"):
+        if is_api_path(request.url.path):
             return api_error_response(request, 500, None)
         return PlainTextResponse("Internal Server Error", status_code=500)
 
@@ -280,6 +281,15 @@ def create_app() -> FastAPI:
     # Include API router
     app.include_router(api_router)
 
+    # /api/v1 was removed in 4.0.0 (the contract changed): 404 for every method,
+    # not 405 from the frontend catch-all. Nothing of v1 is kept.
+    @app.api_route(
+        "/api/v1/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+        include_in_schema=False,
+    )
+    async def removed_api_v1(rest: str) -> None:
+        raise StarletteHTTPException(status_code=404)
+
     # Serve static files (frontend) if directory exists
     frontend_candidates = _candidate_frontend_paths()
     frontend_path = next((path for path in frontend_candidates if path.is_dir()), None)
@@ -294,11 +304,11 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}", include_in_schema=False)
         async def serve_frontend(full_path: str):
-            if full_path == "api/v1" or full_path.startswith("api/v1/"):
+            # Unknown API paths, including the removed /api/v1, are a JSON 404.
+            if is_api_path("/" + full_path):
                 raise StarletteHTTPException(status_code=404)
             if (
-                full_path.startswith("api/")
-                or full_path == "docs"
+                full_path == "docs"
                 or full_path.startswith("docs/")
                 or full_path == "openapi.json"
             ):

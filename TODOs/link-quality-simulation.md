@@ -19,7 +19,7 @@ Add ability to simulate poor network conditions (packet loss, high latency) on i
 
 ### Backend Implementation
 
-- [ ] Create new admin endpoint: `POST /api/v1/admin/reservations/{net_id}/simulate-quality`
+- [ ] Create new admin endpoint: `POST /api/v2/admin/reservations/{net_id}/simulate-quality`
 - [ ] Parameters:
   - `packet_loss_percent` (0-100, default 0)
   - `latency_ms` (0-5000, default 0)
@@ -28,7 +28,7 @@ Add ability to simulate poor network conditions (packet loss, high latency) on i
 - [ ] Use Linux `tc` (traffic control) with netem qdisc
 - [ ] Store simulation state per network in memory
 - [ ] Add simulation status to `GET /reservations/{net_id}/status` response
-- [ ] Implement `POST /api/v1/admin/reservations/{net_id}/clear-simulation` to reset
+- [ ] Implement `POST /api/v2/admin/reservations/{net_id}/clear-simulation` to reset
 
 ### Linux tc Implementation
 

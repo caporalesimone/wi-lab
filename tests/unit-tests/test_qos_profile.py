@@ -541,7 +541,7 @@ class TestQosProfileAPI:
 
         # Reserve a device
         resp = client.post(
-            "/api/v1/reservations",
+            "/api/v2/reservations",
             headers=auth_headers,
             json={"duration_seconds": 300},
         )
@@ -551,7 +551,7 @@ class TestQosProfileAPI:
         # Mock DHCP so start_network works without root
         mgr = dependencies._manager
         if mgr is None:
-            client.get(f"/api/v1/reservations/{rid}/network", headers=auth_headers)
+            client.get(f"/api/v2/reservations/{rid}/network", headers=auth_headers)
             mgr = dependencies._manager
         assert mgr is not None
 
@@ -566,7 +566,7 @@ class TestQosProfileAPI:
 
         # Start a network
         resp = client.post(
-            f"/api/v1/reservations/{rid}/network",
+            f"/api/v2/reservations/{rid}/network",
             headers=auth_headers,
             json=network_body(ssid="QoSProfileTest", channel=6, encryption="open", band="2.4ghz", tx_power_level=4),
         )
@@ -576,7 +576,7 @@ class TestQosProfileAPI:
     # --- Catalogue endpoints ---
 
     def test_list_profiles(self, client):
-        resp = client.get("/api/v1/qos/profiles")
+        resp = client.get("/api/v2/qos/profiles")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) >= 10
@@ -589,7 +589,7 @@ class TestQosProfileAPI:
 
     def test_start_profile_from_catalogue(self, client, auth_headers, reservation_id):
         resp = client.post(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
             json={"profile_id": "4g_urban_stationary"},
         )
@@ -606,13 +606,13 @@ class TestQosProfileAPI:
 
         # Clean up
         client.delete(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
 
     def test_start_inline_qos(self, client, auth_headers, reservation_id):
         resp = client.post(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
             json={"download_speed_kbit": 1000, "download_quality": 40},
         )
@@ -625,13 +625,13 @@ class TestQosProfileAPI:
         assert data["steps"] == 1
 
         client.delete(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
 
     def test_start_profile_unknown_id(self, client, auth_headers, reservation_id):
         resp = client.post(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
             json={"profile_id": "nonexistent_profile"},
         )
@@ -640,25 +640,25 @@ class TestQosProfileAPI:
 
     def test_start_profile_already_active_409(self, client, auth_headers, reservation_id):
         client.post(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
             json={"profile_id": "4g_urban_stationary"},
         )
         resp = client.post(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
             json={"profile_id": "4g_urban_moving"},
         )
         assert resp.status_code == 409
 
         client.delete(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
 
     def test_start_both_profile_and_params_422(self, client, auth_headers, reservation_id):
         resp = client.post(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
             json={"profile_id": "4g_urban_stationary", "download_quality": 80},
         )
@@ -666,7 +666,7 @@ class TestQosProfileAPI:
 
     def test_start_empty_body_422(self, client, auth_headers, reservation_id):
         resp = client.post(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
             json={},
         )
@@ -674,12 +674,12 @@ class TestQosProfileAPI:
 
     def test_get_profile_state_active(self, client, auth_headers, reservation_id):
         client.post(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
             json={"profile_id": "4g_urban_stationary"},
         )
         resp = client.get(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
         assert resp.status_code == 200
@@ -689,13 +689,13 @@ class TestQosProfileAPI:
         assert data["source_file"] == "default.json"
 
         client.delete(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
 
     def test_get_profile_state_inactive(self, client, auth_headers, reservation_id):
         resp = client.get(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
         assert resp.status_code == 200
@@ -707,12 +707,12 @@ class TestQosProfileAPI:
 
     def test_delete_profile(self, client, auth_headers, reservation_id):
         client.post(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
             json={"profile_id": "4g_urban_stationary"},
         )
         resp = client.delete(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
         assert resp.status_code == 200
@@ -721,14 +721,14 @@ class TestQosProfileAPI:
 
         # Verify cleared
         resp = client.get(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
         assert resp.json()["active"] is False
 
     def test_delete_when_no_profile_active(self, client, auth_headers, reservation_id):
         resp = client.delete(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
         assert resp.status_code == 409
@@ -736,14 +736,14 @@ class TestQosProfileAPI:
 
     def test_start_requires_auth(self, client, reservation_id):
         resp = client.post(
-            f"/api/v1/reservations/{reservation_id}/qos/profile",
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
             json={"profile_id": "4g_urban_stationary"},
         )
         assert resp.status_code in (401, 403)
 
     def test_start_invalid_reservation(self, client, auth_headers):
         resp = client.post(
-            "/api/v1/reservations/nonexistent/qos/profile",
+            "/api/v2/reservations/nonexistent/qos/profile",
             headers=auth_headers,
             json={"profile_id": "4g_urban_stationary"},
         )

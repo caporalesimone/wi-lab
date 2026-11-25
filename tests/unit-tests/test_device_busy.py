@@ -49,7 +49,7 @@ def busy_adapter(valid_token, monkeypatch):
     with TestClient(create_app()) as client:
         headers = {"Authorization": valid_token}
         reservation = client.post(
-            "/api/v1/reservations", headers=headers, json={"duration_seconds": 3600},
+            "/api/v2/reservations", headers=headers, json={"duration_seconds": 3600},
         ).json()
         manager = dependencies.get_manager(dependencies.get_config())
         held, release = threading.Event(), threading.Event()
@@ -82,7 +82,7 @@ def test_busy_adapter_answers_503_1006_with_retry_after(busy_adapter, method, pa
     client, headers, rid = busy_adapter
     start = time.monotonic()
     kwargs = {"headers": headers, **({"json": body} if body is not None else {})}
-    response = getattr(client, method)(f"/api/v1/reservations/{rid}{path}", **kwargs)
+    response = getattr(client, method)(f"/api/v2/reservations/{rid}{path}", **kwargs)
     assert time.monotonic() - start < 2
     assert response.status_code == 503, response.text
     assert response.headers["Retry-After"] == "2"
@@ -94,19 +94,19 @@ def test_many_waiting_requests_do_not_block_status(busy_adapter):
     client, headers, rid = busy_adapter
     with ThreadPoolExecutor(max_workers=45) as pool:
         polls = [
-            pool.submit(client.get, f"/api/v1/reservations/{rid}/network", headers=headers) for _ in range(45)
+            pool.submit(client.get, f"/api/v2/reservations/{rid}/network", headers=headers) for _ in range(45)
         ]
         start = time.monotonic()
-        assert client.get("/api/v1/status", headers=headers).status_code == 200
+        assert client.get("/api/v2/status", headers=headers).status_code == 200
         assert time.monotonic() - start < 5
         assert {p.result(timeout=10).status_code for p in polls} == {503}
 
 
 def test_openapi_documents_device_busy():
     schema = create_app().openapi()
-    response = schema["paths"]["/api/v1/reservations/{reservation_id}/network"]["get"]["responses"]["503"]
+    response = schema["paths"]["/api/v2/reservations/{reservation_id}/network"]["get"]["responses"]["503"]
     assert "1006" in response["description"]
     assert response["headers"]["Retry-After"]["example"] == 2
     assert "device_busy" in response["content"]["application/json"]["examples"]
-    create = schema["paths"]["/api/v1/reservations/{reservation_id}/network"]["post"]["responses"]["503"]
+    create = schema["paths"]["/api/v2/reservations/{reservation_id}/network"]["post"]["responses"]["503"]
     assert "1006" not in create.get("description", "")  # a create waits for the adapter

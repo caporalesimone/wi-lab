@@ -8,7 +8,7 @@ This package splits Wi-Lab API routes into semantic groups:
 - txpower: Transmit power control
 - qos_profile: QoS profile catalogue and per-reservation profile control
 
-All routes are prefixed with /api/v1.
+All routes are prefixed with API_PREFIX (/api/v2). /api/v1 was removed in 4.0.0.
 """
 
 from fastapi import APIRouter
@@ -24,8 +24,15 @@ from .status import maintenance_router as debug_router
 from .status import router as health_router
 from .txpower import router as txpower_router
 
-# Root router at /api/v1 prefix
-router = APIRouter(prefix="/api/v1")
+# Every route is under API_PREFIX. Wi-Lab 4.0.0 changed the contract, so the prefix
+# went from /api/v1 to /api/v2; /api/v1 is not kept and answers 404.
+API_PREFIX = "/api/v2"
+router = APIRouter(prefix=API_PREFIX)
+
+
+def is_api_path(path: str) -> bool:
+    """Any path under /api/ (also a removed version): answered with JSON errors, never the frontend."""
+    return path == "/api" or path.startswith("/api/")
 
 # Include all domain routers. Release-all comes before the reservation routes so
 # that DELETE /reservations/all is not read as a reservation ID.

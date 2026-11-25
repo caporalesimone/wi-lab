@@ -15,8 +15,6 @@ implementing.
   `{"internet": {"enabled": false}, "radio": {"tx_power_level": 2}}`.
 - **The create answers only a sentence (Fable API-5).** Return the network, as
   `GET .../network` does, so the client saves a call.
-- **`/api/v2` prefix.** Explained on 2026-11-25, not decided: change only the
-  prefix, without keeping `/api/v1`.
 
 ## Additions (not breaking)
 
