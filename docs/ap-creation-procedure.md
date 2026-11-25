@@ -257,7 +257,7 @@ The actions for every call, in one place, are in [3.1](#31-what-to-do-with-each-
 | `422` | Invalid body (including `encryption: wpa`), channel unsupported/disabled on this antenna, or an encryption, channel width or Wi-Fi generation the antenna does not support. | Fix the request. Do not retry the same body. |
 | `404` | The reservation is unknown, expired or invalidated. | Stop using the ID. Reserve again if needed. |
 | `503 / 1003` | **Terminal failure.** The antenna was quarantined and the reservation **invalidated**. | Discard the ID. Do not retry creation and do not release it. Reserve again if needed. |
-| `500 / 500` (generic startup error) | An unclassified startup error (e.g. `hostapd` exited with code 1, gateway or DHCP failure, or the NAT rules for `internet_enabled: true`, the isolation rules or the host guard rules could not be installed). The rollback succeeded and the reservation is **still valid**. | Do not retry automatically. Show `detail.message`. Release the ID if abandoning this attempt; release it before asking for a fresh reservation. |
+| `500 / 1013` (`startup_failed`) | A non-radio startup error. `detail.stage` says what failed: `hostapd` (e.g. exit code 1), `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation` or `host_guard`. The rollback succeeded and the reservation is **still valid**. | Do not retry automatically. Show `detail.message`. Release the ID if abandoning this attempt; release it before asking for a fresh reservation. |
 | `503 / 1004` | A device cleanup failed. | Do not retry automatically. |
 | `401` | Missing or invalid token. | Fix the token. |
 
@@ -265,7 +265,7 @@ The create waits for the adapter if another request on it is running, so it
 never returns `503 / 1006`; the other reservation endpoints do (see
 [2.6](#26-after-the-ap-is-running)).
 
-After this generic startup `500`, `DELETE /api/v1/device-reservation/{id}`
+After `500 / 1013`, `DELETE /api/v1/device-reservation/{id}`
 releases the still-held antenna on `200`. The next reservation may get the same
 antenna or a different one. Do not implement release → reserve → create as an
 automatic recovery loop: that bypasses the retry budget. In contrast, after
@@ -585,8 +585,8 @@ sequenceDiagram
         else 404
             W-->>C: reservation unknown, expired, released or invalidated
             Note over C: Discard the id. Reserve again if needed
-        else 500 / 500 generic startup error
-            W-->>C: detail.message (hostapd exit, gateway, DHCP, NAT, isolation)
+        else 500 / 1013 startup_failed
+            W-->>C: detail.stage (hostapd, interface, gateway, dhcp, nat, isolation, ...) and message
             Note over C: Rolled back, reservation still valid. No automatic retry.<br/>Show the message. Release the id before reserving again
         else 503 / 1004
             W-->>C: cleanup of the previous startup failed
@@ -725,7 +725,8 @@ Every answer leads to exactly one of these actions:
 | | `422` | FIX | The message starts with the field path, e.g. `radio.channel_width: ...`. |
 | | `409 / 1008` | DONE | An AP already runs on this reservation (often a previous create whose answer was lost). Read it with `GET .../network`; to replace it, `DELETE .../network` first. |
 | | `409 / 1009` | WAIT | Until `runtime_state` is `null`, then create only if `active` is `false`. |
-| | `500 / 500` | STOP | Startup failed for a non-radio reason and was rolled back; the reservation is still valid. Release it before reserving again. |
+| | `500 / 1013` | STOP | Startup failed for a non-radio reason (`detail.stage`) and was rolled back; the reservation is still valid. Release it before reserving again. |
+| | `500 / 500` | STOP | An unexpected server error. |
 | | `503 / 1004` | STOP | Cleanup of the previous startup failed. |
 | | no answer (timeout, connection lost) | WAIT | Never resend blindly: `GET .../network` with a long timeout. `active: true` → DONE. `runtime_state` set → WAIT. `active: false` and no `runtime_state` → send the create again (it counts as an attempt). `404` → RESERVE AGAIN. |
 | `GET .../network` | `200`, `runtime_state: null` | DONE | |
@@ -817,8 +818,8 @@ Details and diagrams are in [Architecture](architecture.md).
   every create of the sequence, not only in the first one. After successful rollback the first two produce `409 / 1001`; the
   third invalidates the reservation (`503 / 1003`).
 - **Unclassified failures** (for example `hostapd` exiting with code 1, a
-  gateway, DHCP or captive portal startup error) are rolled back and return a
-  generic `500`. They do not count as radio failures and do not invalidate the
+  gateway, DHCP or captive portal startup error) are rolled back and return
+  `500 / 1013` (`startup_failed`) with the failed `stage`. They do not count as radio failures and do not invalidate the
   reservation. Radio failures while starting the AP are first retried
   internally (up to 3 starts); only if all fail does the request count as a
   radio failure (`409 / 1001`).

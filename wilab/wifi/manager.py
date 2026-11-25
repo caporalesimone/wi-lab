@@ -91,11 +91,29 @@ class NetworkStopError(RuntimeError):
     """
 
 
+# Stable names of the startup stages, answered as `stage` with 500 / 1013 startup_failed.
+STARTUP_STAGES = {
+    "start AP": "hostapd",
+    "complete startup retry": "hostapd",
+    "block Internet": "internet_block",
+    "assign gateway IP": "gateway",
+    "configure DHCP": "dhcp",
+    "start captive portal": "captive_portal",
+    "enable Internet": "nat",
+    "isolate network": "isolation",
+    "protect host": "host_guard",
+}
+
+
 class StartupFailure(ValueError):
-    def __init__(self, message: str, *, radio: bool = False, cleanup_failed: bool = False):
+    def __init__(
+        self, message: str, *, radio: bool = False, cleanup_failed: bool = False,
+        stage: str | None = None,
+    ):
         super().__init__(message)
         self.radio = radio
         self.cleanup_failed = cleanup_failed
+        self.stage = stage   # one of STARTUP_STAGES' values, or "interface"
 
 
 class NetworkManager:
@@ -342,7 +360,7 @@ class NetworkManager:
                 raise StartupFailure(
                     f"Interface {cfg_net.interface} is not present", radio=True,
                 ) from e
-            raise ValueError(str(e)) from e
+            raise StartupFailure(str(e), stage="interface") from e
 
         # Determine internet enabled status
         internet_enabled = (
@@ -453,7 +471,7 @@ class NetworkManager:
                     raise StartupFailure(
                         f"Failed to {stage}: {e}",
                         radio=radio or not interface_present(cfg_net.interface),
-                        cleanup_failed=True,
+                        cleanup_failed=True, stage=STARTUP_STAGES.get(stage),
                     ) from e
                 if not interface_present(cfg_net.interface):
                     # Whatever hostapd reported, the netdev vanished under it: a
@@ -486,7 +504,9 @@ class NetworkManager:
                             attempt + 1, STARTUP_ATTEMPTS, type(e).__name__, device_id,
                         )
                         continue
-                raise StartupFailure(f"Failed to {stage}: {e}", radio=radio) from e
+                raise StartupFailure(
+                    f"Failed to {stage}: {e}", radio=radio, stage=STARTUP_STAGES.get(stage),
+                ) from e
             else:
                 if retrying:
                     logger.info("AP startup retry recovered %s", device_id)

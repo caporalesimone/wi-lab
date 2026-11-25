@@ -702,6 +702,27 @@ class TestNetworkDeleteEndpoint:
         assert second.status_code == 409
         assert (second.json()['detail']['code'], second.json()['detail']['reason']) == (1008, 'network_already_active')
 
+    def test_startup_failure_names_its_stage(self, client, valid_token, reservation_id, monkeypatch):
+        """A non-radio startup failure is 500 / 1013 startup_failed with the stage that failed."""
+        from wilab.network.dhcp import DhcpServerError
+
+        cfg = load_config()
+        manager = NetworkManager(cfg)
+        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
+
+        def dhcp_fails(*a, **k):
+            raise DhcpServerError("dnsmasq refused the configuration")
+        monkeypatch.setattr(manager.dhcp_server, 'start', dhcp_fails)
+        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        resp = client.post(
+            f'/api/v1/interface/{reservation_id}/network', headers={'Authorization': valid_token},
+            json=network_body(ssid='TestAP', channel=6, encryption='open', band='2.4ghz', tx_power_level=4),
+        )
+        assert resp.status_code == 500
+        detail = resp.json()['detail']
+        assert (detail['code'], detail['reason'], detail['stage']) == (1013, 'startup_failed', 'dhcp')
+        assert 'dnsmasq refused' in detail['message']
+
     def test_stop_network_inactive(self, client, valid_token, reservation_id, monkeypatch):
         """Test stopping an inactive network returns 409."""
         cfg = load_config()

@@ -203,7 +203,8 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert "Retry-After" in create["409"]["headers"]
     assert "headers" not in create["500"]
     generic = create["500"]["content"]["application/json"]["examples"]
-    assert generic["startup_failure"]["value"]["detail"]["code"] == 500
+    assert generic["startup_failure"]["value"]["detail"]["code"] == 1013  # startup_failed
+    assert generic["startup_failure"]["value"]["detail"]["stage"] == "hostapd"
     assert "1003" not in create["500"]["description"]  # API-4: quarantine is a 503
     failures = create["503"]["content"]["application/json"]["examples"]
     assert failures["device_unavailable"]["value"]["detail"]["code"] == 1003

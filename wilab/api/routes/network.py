@@ -159,16 +159,20 @@ def _error(code: int, reason: str, message: str) -> dict:
         },
         500: {
             "description": (
-                "**Generic `500 / 500`:** `detail.message` explains the error. Keep the reservation ID; "
-                "release it if no longer needed. Do not retry creation automatically. "
-                "No `Retry-After`."
+                "**`500 / 1013` (`startup_failed`):** the network could not start for a non-radio "
+                "reason and was rolled back; the reservation is kept. `detail.stage` names what "
+                "failed: `hostapd`, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, "
+                "`internet_block`, `isolation`, `host_guard`. Do not retry creation automatically; "
+                "release the ID if no longer needed. No `Retry-After`.\n\n"
+                "**`500 / 500`:** an unexpected server error."
             ),
             "content": {"application/json": {"examples": {
                 "startup_failure": {
-                    "summary": "500 - Startup failed; reservation still valid",
-                    "value": {"detail": _error(
-                        500, "internal_server_error", "Failed to start AP: hostapd exited with code 1",
-                    )},
+                    "summary": "500 / 1013 - Startup failed; reservation still valid",
+                    "value": {"detail": {
+                        "code": 1013, "reason": "startup_failed", "stage": "hostapd",
+                        "message": "Failed to start AP: hostapd exited with code 1 on wlan0",
+                    }},
                 },
             }}},
         },
@@ -361,7 +365,10 @@ def start_network(
             # The next attempt reads the channel list again (BUG-4).
             channel_mgr.invalidate(device_id)
             if not (e.radio or e.cleanup_failed):
-                raise HTTPException(status_code=500, detail=str(e)) from e
+                # Rolled back, reservation kept: the stage tells the client what failed.
+                raise HTTPException(status_code=500, detail=domain_error(
+                    ApiErrorCode.STARTUP_FAILED, str(e), stage=e.stage,
+                )) from e
             reservation.radio_failures += 1
             if not e.cleanup_failed and reservation.radio_failures <= len(CREATE_RETRY_DELAYS):
                 delay = CREATE_RETRY_DELAYS[reservation.radio_failures - 1]

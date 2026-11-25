@@ -34,6 +34,7 @@ release it), **STOP** (show the message, ask an operator).
 | 1010 | `qos_profile_already_active` | 409 | no | start a QoS profile | A profile already runs on this network. | FIX: stop it first |
 | 1011 | `qos_profile_not_active` | 409 | no | stop a QoS profile | No profile runs on this network. | DONE |
 | 1012 | `stop_incomplete` | 503 | 5 | `DELETE .../network` | The stop did not complete, usually hostapd stuck in the kernel for a few seconds after a driver firmware timeout. The network is half stopped (`runtime_state: stop_failed`) and the watchdog leaves it alone. | REPEAT the DELETE until `200` |
+| 1013 | `startup_failed` | 500 | no | create | The network could not start for a non-radio reason and was rolled back; the reservation is kept. Adds `stage`: `hostapd`, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation` or `host_guard`. | STOP (release the ID before reserving again) |
 
 ## Generic codes (the HTTP status)
 
@@ -45,7 +46,7 @@ Errors without a domain meaning use the HTTP status as `code`.
 | 403 | `forbidden` | A Maintenance call without the right `X-Confirm-Password`, or with protected commands disabled. | FIX |
 | 404 | `not_found` | **On a call with a reservation ID: the ID expired, was released or was invalidated** (its antenna was quarantined, also by a failed watchdog restart). On `GET /antennas/{interface}`: no managed antenna has that interface. On a release: nothing left to release. | RESERVE AGAIN (release: DONE) |
 | 422 | `validation_error` | The request is invalid. The message starts with the path of the refused field, with dots: `radio.channel_width: ...`, `wifi.security.password: ...`, `profile_id: ...`. Also an antenna that cannot do what is asked (channel, width, generation, encryption, TX power not supported by the driver). | FIX |
-| 500 | `internal_server_error` | An unexpected server error, or a network startup that failed for a non-radio reason and was rolled back (the reservation is kept). | STOP |
+| 500 | `internal_server_error` | An unexpected server error. | STOP |
 | 503 | `service_unavailable` | `GET /antennas/{interface}`: the radio cannot be read now (unplugged or being reset). | REPEAT after a few seconds |
 
 `404` never means anything else on a call with a reservation ID: a missing QoS

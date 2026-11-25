@@ -102,7 +102,7 @@ Its `409` examples distinguish a recoverable radio failure (`detail.code:
 1001`), an existing AP (`1008`) and a watchdog restoration (`1009`). Only 1001
 permits retrying creation with the same ID after `Retry-After`. Every code is
 listed in [Error codes](error-codes.md). Under **Responses → 500 → Example Value**, select
-**500 - Startup failed; reservation still valid** for a generic error. Under
+**500 / 1013 - Startup failed; reservation still valid**: `detail.stage` names what failed. Under
 **Responses → 503**, **503 / 1003 - Adapter quarantined; discard the reservation
 ID** is the terminal error (`reservation_invalidated: true`); before API-4 it
 was a `500`. Neither includes `Retry-After`. In the **Reservation** group, `503 / 1003` means

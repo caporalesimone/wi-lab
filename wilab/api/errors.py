@@ -27,6 +27,7 @@ class ApiErrorCode(IntEnum):
     QOS_PROFILE_ALREADY_ACTIVE = 1010
     QOS_PROFILE_NOT_ACTIVE = 1011
     STOP_INCOMPLETE = 1012
+    STARTUP_FAILED = 1013
 
 # Seconds a client should wait before repeating a request answered 503 / 1006.
 DEVICE_BUSY_RETRY_AFTER = 2

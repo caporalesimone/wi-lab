@@ -11,7 +11,7 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 55 |
-| ⚠️ Breaking changes | 14 |
+| ⚠️ Breaking changes | 15 |
 | 🔧 Maintenance changes | 13 |
 | ✨ New features | 19 |
 | 📦 Commits since 3.0.0 | 89 |
@@ -33,6 +33,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - `GET /api/v1/interface/{id}/network/available-channels` is removed: use `GET /api/v1/antennas/{interface}`, which lists only the usable channels, grouped by band with the widths each can use, and needs no reservation.
 - `GET /api/v1/status` no longer returns `checks`: it gives `degraded_reasons`, one entry per cause of `degraded` with a stable `code` (`antenna_quarantined`, `network_being_repaired`, `hostapd_not_running`, `dnsmasq_not_running`, `nat_rule_missing`, `upstream_unreachable`, `command_stuck`, `loop_stalled`), the `interface` it concerns and a `message`. The detail of the checks moved to the new `GET /api/v1/monitoring`.
 - Every `409` has a `detail.code` (Fable API-3): `1008 network_already_active` and `1009 restoration_in_progress` on the create, `1007 network_not_active` on stopping a stopped network, `1010 qos_profile_already_active` and `1011 qos_profile_not_active` on QoS profiles; before they had none and the client had to read the message. `404` on a call with a reservation ID now only means the ID is gone: an unknown QoS `profile_id` and a TX power the driver does not support answer `422` (were `404`), stopping a QoS profile that is not running answers `409 / 1011` (was `404`).
+- A create that fails for a non-radio reason answers `500 / 1013` (`startup_failed`) with `detail.stage` (`hostapd`, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation`, `host_guard`) instead of a generic `500 / 500` with only a message.
 - Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all: `GET /api/v1/debug` now returns `403` without it, or when `protected_commands_password` is not set.
 
 ### ✨ Features
@@ -219,6 +220,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 **Error codes**
 
 - New domain codes on `409`: `1008` (create on an active network), `1009` (create during a watchdog restoration), `1010` / `1011` (QoS profile already / not running); stopping a stopped network answers `409 / 1007`. Full list: [docs/error-codes.md](docs/error-codes.md).
+- Create: non-radio startup failure `500 / 1013` with `detail.stage` (was `500 / 500`).
 - `404` with a reservation ID only means the ID is gone. Unknown QoS `profile_id` and unsupported TX power: `422` (were `404`). Stopping a QoS profile that is not running: `409 / 1011` (was `404`).
 
 **Internet, TX power, QoS profile**
