@@ -11,7 +11,7 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 55 |
-| ⚠️ Breaking changes | 19 |
+| ⚠️ Breaking changes | 20 |
 | 🔧 Maintenance changes | 13 |
 | ✨ New features | 19 |
 | 📦 Commits since 3.0.0 | 89 |
@@ -37,6 +37,7 @@ Counts are the entries of the sections below (as of 2026-11-25) and `git rev-lis
 - Unknown fields in a request body are refused with `422` and the field path (`captive-portal: Extra inputs are not permitted`, `radio.chanel: ...`) instead of being ignored: a typo no longer creates a network without the intended setting (Fable API-10). Applies to the reservation, the create (every section), TX power and QoS profile bodies.
 - The API prefix is `/api/v2` (was `/api/v1`): the contract changed, so the version in the URL changes too. `/api/v1` is not kept: every path under it answers `404`, with any method.
 - Paths renamed (Fable API-6): `/api/v1/device-reservation` → `/api/v2/reservations`, and every `/api/v1/interface/{reservation_id}/...` → `/api/v2/reservations/{reservation_id}/...` (network, Internet, TX power, QoS profile). The old `interface` segment held a reservation ID, not an interface, which the new `/antennas/{interface}` would have made more confusing. The old paths answer `404`.
+- A successful create answers the network, the same body as `GET .../network`, instead of `{"detail": "Network ... created successfully"}`: the client no longer needs a second call (Fable API-5).
 - `GET /api/v2/status` lists the antennas in `antennas[]` (was `networks[]`), like the Antennas API: an entry is an antenna, reserved or not, not a network.
 - Every **Maintenance** endpoint requires the `X-Confirm-Password` header, like release-all: `GET /api/v2/debug` now returns `403` without it, or when `protected_commands_password` is not set.
 
@@ -196,8 +197,9 @@ The rest of this chapter names each endpoint by its 3.x path.
   - stricter validation, `422`: `ssid` 1–32 bytes, `password` 8–63 bytes, no control characters, channel must match the band, DFS channels refused unless the antenna has `show_dfs: true`.
   - new `409 / 1001` + `Retry-After` (5 s, then 10 s): repeat the same request with the same ID.
   - new `503 / 1003` with `reservation_invalidated: true`: discard the ID.
-  - `500`: startup failed, reservation still valid.
-  - `409` without code: network already active, or a watchdog restore in progress.
+  - `500 / 1013` with `detail.stage`: startup failed for a non-radio reason, reservation still valid.
+  - `409 / 1008`: network already active; `409 / 1009`: a watchdog restore in progress (both had no code).
+  - `200`: the body is the network, as `GET .../network` returns it (was `{"detail": "Network ... created successfully"}`).
   - can take up to about 20 s: use a read timeout of at least 60 s.
 - `GET /api/v1/interface/{id}/network`: the answer is grouped in sections, which are `null` while the network is not running:
 

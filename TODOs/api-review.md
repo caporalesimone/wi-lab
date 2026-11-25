@@ -7,14 +7,13 @@ Points left open after the 4.0.0 API changes (sections, Antennas API,
 monitoring, error codes, `/reservations` paths). To be discussed before
 implementing.
 
-## Breaking, to decide before 4.0.0 is released
+## Breaking, postponed (decided 2026-11-25: not now)
 
 - **Actions as paths (Fable API-7).** Replace `POST .../internet/enable`,
   `.../internet/disable` and `POST .../txpower` with one `PATCH .../network`
   that takes the same sections as the create body, e.g.
-  `{"internet": {"enabled": false}, "radio": {"tx_power_level": 2}}`.
-- **The create answers only a sentence (Fable API-5).** Return the network, as
-  `GET .../network` does, so the client saves a call.
+  `{"internet": {"enabled": false}, "radio": {"tx_power_level": 2}}`. It would
+  also settle the TX power field name (`level` vs `radio.tx_power_level`).
 
 ## Additions (not breaking)
 

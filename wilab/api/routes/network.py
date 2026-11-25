@@ -63,6 +63,33 @@ router = APIRouter(
 )
 
 
+_ACTIVE_EXAMPLE = {
+    "interface": "wlx7419f8176286", "active": True, "runtime_state": None,
+    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3471},
+    "radio": {
+        "band": "5ghz", "channel": 36,
+        "channel_width": {"requested": 80, "reported": 80},
+        "wifi_generation": 5,
+        "tx_power": {"requested_level": 4, "reported_level": 4, "reported_dbm": 20.0},
+    },
+    "wifi": {
+        "ssid": "test-network-ap-01", "hidden": False,
+        "security": {"encryption": "wpa2", "password": "12345678"},
+    },
+    "ip": {
+        "subnet": "192.168.120.0/24", "gateway": "192.168.120.1",
+        "dhcp_range": {"start": "192.168.120.10", "end": "192.168.120.250"},
+        "dns_server": "192.168.10.21",
+    },
+    "internet": {"enabled": True},
+    "captive_portal": {"enabled": False, "url": None},
+    "clients": [
+        {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.120.10"},
+        {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.120.11"},
+    ],
+}
+
+
 def _error(code: int, reason: str, message: str) -> dict:
     """An error `detail` object as the API returns it."""
     return {"code": code, "reason": reason, "message": message}
@@ -70,13 +97,15 @@ def _error(code: int, reason: str, message: str) -> dict:
 
 @router.post(
     "/{reservation_id}/network",
+    response_model=NetworkResponse,
     summary="Create a network on a reserved adapter",
     responses={
         200: {
-            "description": "Network created and started successfully",
-            "content": {"application/json": {
-                "example": {"detail": "Network wlx7419f8176286 created successfully"},
-            }},
+            "description": (
+                "Network created and started: the same answer as `GET .../network`, "
+                "read right after the start (no clients yet)."
+            ),
+            "content": {"application/json": {"example": {**_ACTIVE_EXAMPLE, "clients": []}}},
         },
         401: {"description": "Unauthorized", "content": {"application/json": {
             "example": {"detail": _error(401, "unauthorized", "Invalid token")},
@@ -365,7 +394,8 @@ def start_network(
             )
             reservation.radio_failures = 0
             reservation.retry_at = 0
-            return {"detail": f"Network {device_id} created successfully"}
+            # API-5: the network as GET .../network returns it, so the client saves a call.
+            return _network_response(manager, reservation)
         except StartupFailure as e:
             # The next attempt reads the channel list again (BUG-4).
             channel_mgr.invalidate(device_id)
@@ -475,31 +505,7 @@ def stop_network(
             "content": {"application/json": {"examples": {
                 "active": {
                     "summary": "Active 5 GHz network at 80 MHz with Internet and two clients",
-                    "value": {
-                        "interface": "wlx7419f8176286", "active": True, "runtime_state": None,
-                        "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3471},
-                        "radio": {
-                            "band": "5ghz", "channel": 36,
-                            "channel_width": {"requested": 80, "reported": 80},
-                            "wifi_generation": 5,
-                            "tx_power": {"requested_level": 4, "reported_level": 4, "reported_dbm": 20.0},
-                        },
-                        "wifi": {
-                            "ssid": "test-network-ap-01", "hidden": False,
-                            "security": {"encryption": "wpa2", "password": "12345678"},
-                        },
-                        "ip": {
-                            "subnet": "192.168.120.0/24", "gateway": "192.168.120.1",
-                            "dhcp_range": {"start": "192.168.120.10", "end": "192.168.120.250"},
-                            "dns_server": "192.168.10.21",
-                        },
-                        "internet": {"enabled": True},
-                        "captive_portal": {"enabled": False, "url": None},
-                        "clients": [
-                            {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.120.10"},
-                            {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.120.11"},
-                        ],
-                    },
+                    "value": _ACTIVE_EXAMPLE,
                 },
                 "restoring_ap": {"value": {
                     "interface": "wlan0", "active": False, "runtime_state": "restoring_ap",
@@ -583,14 +589,19 @@ def get_network(
             ),
         )
     with hold_reservation(reservation_mgr, reservation):
-        device_id = reservation.device_id
-        st = manager.get_status(device_id)
-        if not st:
-            raise HTTPException(status_code=404, detail=UNKNOWN_ANTENNA)
-        st.expires_at = format_utc_timestamp(reservation.expires_at)
-        st.expires_in = reservation.expires_in
-        runtime_state = manager.watchdog.state(reservation) or (
-            "stop_failed" if manager.stop_failed(device_id) else None
-        )
-        st = st.model_copy(update={"runtime_state": runtime_state})
-        return NetworkResponse.from_status(st, dns_server=manager.config.dns_server)
+        return _network_response(manager, reservation)
+
+
+def _network_response(manager: NetworkManager, reservation: Reservation) -> NetworkResponse:
+    """`GET .../network` for a reservation whose device the caller holds."""
+    device_id = reservation.device_id
+    st = manager.get_status(device_id)
+    if not st:
+        raise HTTPException(status_code=404, detail=UNKNOWN_ANTENNA)
+    st.expires_at = format_utc_timestamp(reservation.expires_at)
+    st.expires_in = reservation.expires_in
+    runtime_state = manager.watchdog.state(reservation) or (
+        "stop_failed" if manager.stop_failed(device_id) else None
+    )
+    st = st.model_copy(update={"runtime_state": runtime_state})
+    return NetworkResponse.from_status(st, dns_server=manager.config.dns_server)

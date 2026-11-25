@@ -59,13 +59,13 @@ def test_unknown_create_field_is_rejected(wilab: WiLab) -> None:
     assert response.json()["detail"]["message"].startswith("captive-portal: ")
 
 
-@pending("API-5")
 def test_create_returns_the_network_state(wilab: WiLab) -> None:
+    """API-5: the create answers what GET .../network answers."""
     antenna = wilab.reserve()
     response = wilab.create(antenna)
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body.get("active") is True and body.get("ssid") == "wilab-e2e", body
+    assert body.get("active") is True and body["wifi"]["ssid"] == "wilab-e2e", body
 
 
 def test_actions_without_a_network_share_one_status_code(wilab: WiLab) -> None:

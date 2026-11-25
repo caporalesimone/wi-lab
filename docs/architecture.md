@@ -726,7 +726,7 @@ sequenceDiagram
             A-->>C: 500 / 500 reservation kept, no attempt used
         else all installed
             NM->>NM: TX power (unsupported: one warning), active[device] = status
-            A-->>C: 200 "Network ... created successfully"
+            A-->>C: 200 the network (as GET .../network)
         end
     else classified radio failure after layer 1
         NM->>NM: rollback, radio_failures += 1

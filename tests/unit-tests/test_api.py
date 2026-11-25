@@ -457,22 +457,36 @@ class TestNetworkCreateEndpoint:
             json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 500
     
-    def test_network_response_structure(self, client, valid_token, reservation_id, monkeypatch):
-        """Test POST returns a simple creation confirmation payload."""
-        from wilab.api.dependencies import _manager
-        if _manager:
-            def mock_dhcp_start(*args, **kwargs):
-                return {'gateway': '192.168.10.1'}
-            monkeypatch.setattr(_manager.dhcp_server, 'start', mock_dhcp_start)
-            
-            resp = client.post(
-                f'/api/v2/reservations/{reservation_id}/network',
-                headers={'Authorization': valid_token},
-                json=network_body(ssid='TestAP', channel=6, encryption='wpa2', band='2.4ghz', tx_power_level=4))
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                assert data == {'detail': 'Network wls16 created successfully'}
+    def test_create_returns_the_network(self, client, valid_token, reservation_id, monkeypatch):
+        """API-5: a successful create answers what GET .../network answers."""
+        from unittest.mock import Mock
+
+        from wilab.models import NetworkStatus
+        manager = dependencies.get_manager(dependencies.get_config())
+        channels = dependencies.get_channel_manager()
+        monkeypatch.setattr(channels, 'validate_network', Mock())
+        monkeypatch.setattr(manager, 'start_network', Mock())
+        status = NetworkStatus(
+            interface='wls16', active=True, ssid='TestAP', channel=6, band='2.4ghz',
+            encryption='wpa2', password='testpass123', channel_width=20, reported_channel_width=20,
+            wifi_generation=4, subnet='192.168.120.0/24', internet_enabled=True,
+        )
+        monkeypatch.setattr(manager, 'get_status', lambda device: status)
+        url = f'/api/v2/reservations/{reservation_id}/network'
+        headers = {'Authorization': valid_token}
+
+        resp = client.post(url, headers=headers, json=network_body(
+            ssid='TestAP', channel=6, encryption='wpa2', password='testpass123',
+            band='2.4ghz', tx_power_level=4,
+        ))
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data['active'] is True
+        assert data['wifi']['ssid'] == 'TestAP'
+        assert data['radio']['channel'] == 6
+        assert data['reservation']['expires_in'] is not None
+        assert data == client.get(url, headers=headers).json() | {'reservation': data['reservation']}
 
     def test_start_network_422_has_coded_detail(self, client, valid_token, reservation_id):
         """Validation errors should expose a stable code and a display message."""

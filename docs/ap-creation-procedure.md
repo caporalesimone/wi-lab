@@ -250,7 +250,7 @@ The actions for every call, in one place, are in [3.1](#31-what-to-do-with-each-
 
 | Response | Meaning | Client action |
 |---|---|---|
-| `200` | The AP is up and DHCP is running. | Done. Stop retrying. |
+| `200` | The AP is up and DHCP is running. The body is the network, as `GET .../network` returns it. | Done. Stop retrying. |
 | `409 / 1001` + `Retry-After` | A **classified radio failure** occurred and was rolled back. The reservation is still valid. | Wait `Retry-After` seconds, then repeat the **same** request with the **same** ID and body. |
 | `409 / 1008` (`network_already_active`) | An AP is already running on this reservation. | Do not retry. Read it with `GET .../network`, or stop it first with `DELETE .../network`. |
 | `409 / 1009` (`restoration_in_progress`) | The watchdog is restarting this AP. | Do not create. Poll `GET .../network` until `runtime_state` is gone. |
@@ -563,8 +563,8 @@ sequenceDiagram
         C->>W: POST /reservations/{id}/network {radio, wifi, internet, captive_portal}
         Note over W: Waits for the antenna (never 1006). Prepares the radio, starts hostapd,<br/>waits for the AP (20 s, 75 s on DFS), gateway, DHCP, NAT, isolation.<br/>Attempt 1 only: up to 3 internal starts within 20 s on a radio failure
         alt 200
-            W-->>C: detail "Network ... created successfully"
-            Note over C: Done. Read the network with GET .../network. Leave the loop
+            W-->>C: the network, as GET .../network returns it
+            Note over C: Done. Leave the loop
         else 409 / 1001 + Retry-After (5 on attempt 1, 10 on attempt 2)
             W-->>C: classified radio failure, rolled back, reservation still valid
             C->>W: GET /reservations/{id}
@@ -719,7 +719,7 @@ Every answer leads to exactly one of these actions:
 | | `422` | FIX | `duration_seconds` out of limits, or `0` while unlimited reservations are off. |
 | `GET /antennas/{interface}` | `503` | REPEAT | After a few seconds; the radio is being reset. Or create with the defaults. |
 | | `404` | RESERVE AGAIN | The antenna is no longer managed. |
-| `POST .../network` (create) | `200` | DONE | Read it with `GET .../network`. |
+| `POST .../network` (create) | `200` | DONE | The body is the network, as `GET .../network` returns it. |
 | | `409 / 1001` + `Retry-After` | REPEAT | Radio failure, reservation kept. Same ID, same body. At most twice; first check that `expires_in` is longer than `Retry-After` plus the startup time, otherwise release and RESERVE AGAIN. |
 | | `503 / 1003` | RESERVE AGAIN | Third radio failure, or the antenna disappeared: reservation invalidated. **Do not release it.** |
 | | `422` | FIX | The message starts with the field path, e.g. `radio.channel_width: ...`. |
