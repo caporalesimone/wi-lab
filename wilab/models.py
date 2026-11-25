@@ -36,8 +36,8 @@ class NetworkCreateRequest(BaseModel):
             "`wpa2-wpa3`: mixed mode; WPA3 clients use SAE with PMF, WPA2 clients use PSK. "
             "`wpa1`: legacy WPA (PSK, TKIP), only to test legacy clients: insecure, no 802.11n "
             "(802.11a/g, at most 54 Mbit/s, 20 MHz), some recent clients warn or refuse to "
-            "connect, and only on antennas that support it (`GET /status`, "
-            "`networks[].capabilities.encryptions`). "
+            "connect, and only on antennas that support it (`encryptions` in "
+            "`GET /antennas/{interface}`). "
             "`wpa` is no longer accepted (422): it created WPA2, use `wpa2`."
         ),
     )
@@ -61,16 +61,16 @@ class NetworkCreateRequest(BaseModel):
             "165-177); every channel of the block must be available, DFS ones included. "
             "On 2.4 GHz 40 MHz is accepted, but hostapd falls back to 20 MHz when it sees "
             "neighbouring networks (20/40 coexistence): check `reported_channel_width` in "
-            "`GET .../network`. Only widths listed in `GET /status` "
-            "(`networks[].capabilities.channel_widths`) are accepted."
+            "`GET .../network`. Only widths listed for the generation and the channel in "
+            "`GET /antennas/{interface}` are accepted."
         ),
     )
     wifi_generation: Literal[4, 5, 6] = Field(
         4,
         description=(
             "Optional Wi-Fi generation, default 4: 4 = Wi-Fi 4 (802.11n), 5 = Wi-Fi 5 "
-            "(802.11ac, 5 GHz only), 6 = Wi-Fi 6 (802.11ax). Only generations listed in "
-            "`GET /status` (`networks[].capabilities.wifi_generations`) are accepted."
+            "(802.11ac, 5 GHz only), 6 = Wi-Fi 6 (802.11ax). Only generations listed for the band in "
+            "`GET /antennas/{interface}` are accepted."
         ),
     )
 

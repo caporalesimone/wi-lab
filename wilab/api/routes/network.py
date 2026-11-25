@@ -362,8 +362,8 @@ def start_network(
     that support it). `wpa` is no longer accepted and returns `422`: use `wpa2`.
     Optional `radio.channel_width` (20, 40, 80 MHz; default 20) and `radio.wifi_generation`
     (4 = 802.11n, 5 = 802.11ac, 6 = 802.11ax; default 4) select the radio mode;
-    the defaults keep the previous behaviour. `GET /status` lists, per antenna,
-    what it supports (`GET /antennas/{interface}`); anything else returns `422`.
+    the defaults keep the previous behaviour. `GET /antennas/{interface}` lists
+    what the antenna supports; anything else returns `422`.
     40 MHz on 2.4 GHz may fall back to 20 MHz when neighbouring networks are
     present: `GET .../network` reports the actual `radio.channel_width.reported`.
     """
