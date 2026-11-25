@@ -90,6 +90,7 @@ class ReservationManager:
         cleanup: Callable[[str], None] | None = None,
         device_lock: Callable[[str], RLock] | None = None,
         cleanup_due: Callable[[str], bool] | None = None,
+        cleanup_wait: Callable[[str], float] | None = None,
     ) -> None:
         self._device_ids = list(device_ids)
         self._reservations: dict[str, Reservation] = {}   # reservation_id -> Reservation
@@ -104,6 +105,8 @@ class ReservationManager:
         self._cleanup = cleanup
         # WD-6: background sweeps skip a device whose failed cleanup is backing off.
         self._cleanup_due = cleanup_due or (lambda _device: True)
+        # Seconds until the next background cleanup of a device whose cleanup failed.
+        self._cleanup_wait = cleanup_wait or (lambda _device: 0.0)
         self._failing_cleanup: set[str] = set()  # log the traceback once per failure series
 
     # ------------------------------------------------------------------
@@ -115,9 +118,9 @@ class ReservationManager:
 
         Raises:
             UnknownDeviceError: *device_id* is not a managed device.
-            NoDeviceAvailableError: every device (or *device_id*) is reserved.
+            NoDeviceAvailableError: every device (or *device_id*) is reserved, or
+                held by a cleanup that failed and is retried in the background.
             DeviceRecoveryUnavailable: the devices (or *device_id*) are quarantined.
-            ReservationCleanupError: an expired reservation could not be cleaned up.
         """
         if device_id is not None:
             return self._create_on(device_id, duration_seconds)
@@ -126,13 +129,12 @@ class ReservationManager:
             if device_id is not None:
                 return self._reserve(device_id, duration_seconds)
 
-        cleanup_error = self._purge_expired(continue_on_error=True)
+        # A failed cleanup keeps its device held; the background sweep repeats it.
+        self._purge_expired(continue_on_error=True)
         with self._lock:
             device_id = self._first_available()
             if device_id is not None:
                 return self._reserve(device_id, duration_seconds)
-            if cleanup_error is not None:
-                raise cleanup_error
             if any(self._blocked.values()) or len(self._blocked) == len(self._device_ids):
                 raise DeviceRecoveryUnavailable(any(self._blocked.values()))
             raise NoDeviceAvailableError(self._soonest_expiry())
@@ -152,8 +154,12 @@ class ReservationManager:
                 owner = self._reservations[owner_id]
                 if not owner.is_expired:
                     raise NoDeviceAvailableError(owner.expires_at)
-            # Raises ReservationCleanupError; returns at once if another call holds the device.
-            self._cleanup_expired(owner)
+            try:
+                # Returns at once if another call holds the device.
+                self._cleanup_expired(owner)
+            except ReservationCleanupError:
+                # Held until the background sweep cleans it: try again then.
+                raise NoDeviceAvailableError(time.time() + self._cleanup_wait(device_id)) from None
         raise NoDeviceAvailableError(owner.expires_at)
 
     def quarantine(self, reservation: Reservation, *, recovering: bool) -> None:
@@ -224,7 +230,10 @@ class ReservationManager:
             r = self._reservations.get(reservation_id)
             if r is None or not r.is_expired:
                 return r
-        self._cleanup_expired(r)
+        try:
+            self._cleanup_expired(r)
+        except ReservationCleanupError:
+            pass  # logged by _release; the background sweep repeats it
         return None
 
     def delete(self, reservation_id: str) -> bool:
@@ -244,7 +253,19 @@ class ReservationManager:
                 if current is not reservation:
                     return False
                 expired = reservation.is_expired
-                self._release(reservation)
+                try:
+                    self._release(reservation)
+                except ReservationCleanupError:
+                    # The release never fails for the client: the ID is gone, the
+                    # device stays held (not allocatable) and the background sweep
+                    # repeats the cleanup with backoff (WD-6).
+                    with self._lock:
+                        reservation.expires_at = time.time()
+                    logger.warning(
+                        "Reservation %s released; cleanup of %s failed and is retried in the background",
+                        reservation_id, reservation.device_id,
+                    )
+                    return not expired
                 if expired:
                     return False
                 logger.info("Reservation %s released", reservation_id)
@@ -375,8 +396,10 @@ class ReservationManager:
         return first_error
 
     def _soonest_expiry(self) -> float | None:
-        """Return the earliest expires_at among active reservations (excluding unlimited)."""
-        timed = [r.expires_at for r in self._reservations.values() if r.expires_at is not None]
-        if not timed:
-            return None
-        return min(timed)
+        """When a device should be free: the earliest expiry, or next cleanup of an expired one."""
+        now = time.time()
+        timed = [
+            now + self._cleanup_wait(r.device_id) if r.is_expired else r.expires_at
+            for r in self._reservations.values() if r.expires_at is not None
+        ]
+        return min(timed) if timed else None

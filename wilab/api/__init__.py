@@ -72,7 +72,7 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 | Reserve `409`, `detail.code: 1005` | Ordinary contention. Use `detail.next_available_in` as an estimate, not a guarantee. |
 | Reserve `503`, `detail.code: 1002` | Retry the **reservation** POST after `Retry-After` (10 seconds, a polling interval). |
 | Reserve `503`, `detail.code: 1003` | All adapters are quarantined and none is recovering. No automatic retry. |
-| `503`, `detail.code: 1004` | Cleanup failed. Do not apply a recovery-code retry policy; check status and resolve the cleanup failure. |
+| Release `200` | Always, even if the cleanup failed: the server then keeps the adapter out of the pool and repeats the cleanup itself (`GET /status`: `cleanup_failed`). |
 | `409`, `detail.code: 1007` | The reservation is valid but has no running network (Internet, TX power, QoS profile, stop). Create a network first. A `404` always means the reservation itself is gone. |
 | `409`, `detail.code: 1010` / `1011` | A QoS profile is already running / no QoS profile is running. |
 | `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Every reservation endpoint except the create, which waits instead. |

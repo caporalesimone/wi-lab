@@ -7,7 +7,7 @@ import pytest
 
 from wilab.config import load_config
 from wilab.models import NetworkStatus
-from wilab.reservation import ReservationCleanupError, ReservationManager
+from wilab.reservation import ReservationManager
 from wilab.wifi import manager as manager_module
 from wilab.wifi.manager import NetworkManager
 
@@ -86,6 +86,6 @@ def test_reservation_sweep_skips_a_device_backing_off_but_delete_does_not(caplog
     # One traceback per failure series, then short warnings.
     assert [r.levelno for r in caplog.records if "clean up device" in r.getMessage()] == [logging.WARNING]
     due["dev0"] = False
-    with pytest.raises(ReservationCleanupError):
-        store.delete(reservation.reservation_id)  # explicit release ignores the backoff
+    # An explicit release ignores the backoff; the expired ID is gone (nothing to release).
+    assert store.delete(reservation.reservation_id) is False
     assert cleanup.call_count == 3

@@ -18,7 +18,7 @@ class ApiErrorCode(IntEnum):
     Every code is listed, with its HTTP status and client action, in
     docs/error-codes.md.
     """
-    CLEANUP_FAILED = 1004
+    CLEANUP_FAILED = 1004              # no longer answered: the release always succeeds
     NO_DEVICE_AVAILABLE = 1005
     DEVICE_BUSY = 1006
     NETWORK_NOT_ACTIVE = 1007
@@ -104,8 +104,6 @@ def document_errors(paths: dict[str, Any]) -> None:
                     }},
                 })
                 def example_detail(detail: Any, http_status: int = status_code) -> dict[str, Any]:
-                    if http_status == 503 and not isinstance(detail, dict):
-                        return domain_error(ApiErrorCode.CLEANUP_FAILED, detail or "Device cleanup failed")
                     return error_detail(http_status, detail)
 
                 if "examples" in media:

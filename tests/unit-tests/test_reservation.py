@@ -17,10 +17,9 @@ from wilab.api.dependencies import hold_reservation
 from wilab.config import load_config
 from wilab.models import NetworkStatus
 from wilab.reservation import (
+    DeviceRecoveryUnavailable,
     NoDeviceAvailableError,
     Reservation,
-    DeviceRecoveryUnavailable,
-    ReservationCleanupError,
     ReservationManager,
     UnknownDeviceError,
 )
@@ -216,11 +215,15 @@ class TestReservationManagerGivenDevice:
         assert again.reservation_id != owner.reservation_id
         assert mgr.get(owner.reservation_id) is None
 
-    def test_failed_cleanup_of_the_expired_owner_is_raised(self):
-        mgr = ReservationManager(["dev0"], cleanup=Mock(side_effect=RuntimeError("stuck")))
+    def test_failed_cleanup_of_the_expired_owner_answers_when_to_retry(self):
+        """C: a device held by a failing cleanup is 'reserved' until the next background attempt."""
+        mgr = ReservationManager(
+            ["dev0"], cleanup=Mock(side_effect=RuntimeError("stuck")), cleanup_wait=lambda _: 15.0,
+        )
         mgr.create(3600, "dev0").expires_at = time.time() - 1
-        with pytest.raises(ReservationCleanupError):
+        with pytest.raises(NoDeviceAvailableError) as exc:
             mgr.create(3600, "dev0")
+        assert 14 <= exc.value.next_available_in <= 15
 
     @pytest.mark.parametrize("recovering", [True, False])
     def test_quarantined_device_is_refused(self, recovering):
@@ -292,11 +295,12 @@ class TestReservationLifecycleConcurrency:
             if failed:
                 raise RuntimeError("cleanup failed")
 
-        mgr = ReservationManager(["dev0"], cleanup=cleanup)
+        mgr = ReservationManager(["dev0"], cleanup=cleanup, cleanup_wait=lambda _: 5.0)
         old = mgr.create(60)
         old.expires_at = time.time() - 1
-        with pytest.raises(ReservationCleanupError):
+        with pytest.raises(NoDeviceAvailableError) as exc:  # C: 409 / 1005, not 503 / 1004
             mgr.create(60)
+        assert 4 <= exc.value.next_available_in <= 5
         failed = False
         assert mgr.create(60).device_id == "dev0"
 
@@ -308,7 +312,7 @@ class TestReservationLifecycleConcurrency:
         old = mgr.create(60)
         old.expires_at = time.time() - 1
         assert mgr.create(60).device_id == "dev1"
-        with pytest.raises(ReservationCleanupError):
+        with pytest.raises(NoDeviceAvailableError):
             mgr.create(60)
 
     def test_slow_cleanup_does_not_hold_reservation_store(self):
@@ -343,11 +347,12 @@ class TestReservationLifecycleConcurrency:
         mgr = ReservationManager(["dev0", "dev1"], cleanup=cleanup)
         first = mgr.create(60)
         second = mgr.create(60)
-        with pytest.raises(ReservationCleanupError):
-            mgr.delete_all()
+        assert mgr.delete_all() == 2  # C: both released for the clients
         assert mgr.get(first.reservation_id) is None
-        assert mgr.get(second.reservation_id) is second
+        assert mgr.get(second.reservation_id) is None
         assert mgr.create(60).device_id == "dev0"
+        with pytest.raises(NoDeviceAvailableError):  # dev1 stays held until its cleanup succeeds
+            mgr.create(60)
 
     def test_release_waits_for_in_flight_operation(self):
         operation_started = threading.Event()
@@ -383,7 +388,7 @@ class TestReservationLifecycleConcurrency:
         ])
         network = SimpleNamespace(
             device_lock=lambda _: threading.RLock(), release_device=lambda _: None,
-            cleanup_due=lambda _: True,
+            cleanup_due=lambda _: True, cleanup_wait=lambda _: 0.0,
             watchdog=SimpleNamespace(start=lambda _: None),
             recovery=SimpleNamespace(start_reprobe=lambda _: None),
         )
@@ -1005,7 +1010,7 @@ class TestReservationDeleteStopsNetwork:
         assert resp.json()["interface"] == device_id
         assert stopped == [device_id]
 
-    def test_expired_cleanup_failure_returns_503_and_allows_retry(self, client, valid_token, monkeypatch):
+    def test_expired_cleanup_failure_returns_409_and_allows_retry(self, client, valid_token, monkeypatch):
         from wilab.models import NetworkStatus
 
         headers = {"Authorization": valid_token}
@@ -1022,16 +1027,18 @@ class TestReservationDeleteStopsNetwork:
 
         monkeypatch.setattr(manager, "stop_network", fail)
         response = client.post("/api/v2/reservations", headers=headers, json=body)
-        assert response.status_code == 503
-        assert response.json()["detail"]["code"] == 1004
+        assert response.status_code == 409  # C: held by the cleanup, try again later
+        assert response.json()["detail"]["code"] == 1005
+        assert response.json()["detail"]["next_available_in"] is not None
+        manager._cleanup_retry_at.clear()  # the backoff is over
 
         monkeypatch.setattr(manager, "stop_network", lambda did: manager.active.pop(did))
         response = client.post("/api/v2/reservations", headers=headers, json=body)
         assert response.status_code == 200
         assert response.json()["interface"] == device_id
 
-    def test_delete_reservation_stop_network_error_keeps_reservation(self, client, valid_token, monkeypatch):
-        """A failed teardown leaves the reservation held so it can be retried."""
+    def test_release_with_a_failed_teardown_answers_200_and_cleans_up_later(self, client, valid_token, monkeypatch):
+        """C: the release never fails; the antenna stays held until the background cleanup works."""
         resp = client.post(
             "/api/v2/reservations",
             headers={"Authorization": valid_token},
@@ -1053,28 +1060,38 @@ class TestReservationDeleteStopsNetwork:
             f"/api/v2/reservations/{rid}",
             headers={"Authorization": valid_token},
         )
-        assert resp.status_code == 503
+        assert resp.status_code == 200
         resp = client.get(
             f"/api/v2/reservations/{rid}",
             headers={"Authorization": valid_token},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 404
         resp = client.post(
             "/api/v2/reservations",
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
-        assert resp.status_code == 409
+        assert resp.status_code == 409  # still held by the failed cleanup
+        assert resp.json()["detail"]["code"] == 1005
+        status = client.get("/api/v2/status", headers={"Authorization": valid_token}).json()
+        assert status["status"] == "degraded"
+        assert {"code": "cleanup_failed", "interface": device_id} in [
+            {k: r[k] for k in ("code", "interface")} for r in status["degraded_reasons"]
+        ]
 
         def successful_stop(did):
             mgr.active.pop(did)
 
         monkeypatch.setattr(mgr, "stop_network", successful_stop)
-        resp = client.delete(
-            f"/api/v2/reservations/{rid}",
+        mgr._cleanup_retry_at.clear()  # the backoff is over
+        dependencies._reservation_manager.expire()  # the background sweep
+        resp = client.post(
+            "/api/v2/reservations",
             headers={"Authorization": valid_token},
+            json={"duration_seconds": 3600},
         )
         assert resp.status_code == 200
+        assert resp.json()["interface"] == device_id
 
     def test_delete_all_stops_all_active_networks(self, client, valid_token, monkeypatch):
         """DELETE all reservations stops active networks on released devices."""

@@ -255,6 +255,14 @@ class NetworkManager:
         """True after a stop that did not complete, until a stop completes."""
         return device_id in self._stop_failed
 
+    def cleanup_wait(self, device_id: str) -> float:
+        """Seconds until the next background cleanup of a device whose cleanup failed."""
+        return max(0.0, self._cleanup_retry_at.get(device_id, 0.0) - time.monotonic())
+
+    def cleanup_failures(self) -> dict[str, int]:
+        """Devices whose last cleanup failed, with the failures in a row."""
+        return dict(self._cleanup_failures)
+
     def cleanup_due(self, device_id: str) -> bool:
         """False while a failed cleanup of this device waits for its next background attempt."""
         return time.monotonic() >= self._cleanup_retry_at.get(device_id, 0.0)

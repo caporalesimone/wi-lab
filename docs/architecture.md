@@ -303,6 +303,7 @@ stateDiagram-v2
     state "Free" as Free
     state "Reserved" as Reserved
     state "Releasing (cleanup under device lock)" as Releasing
+    state "Held by a failed cleanup (ID gone, not allocatable)" as Held
     state "Quarantined, recovering" as Recovering
     state "Quarantined, unavailable" as Unavailable
 
@@ -311,7 +312,8 @@ stateDiagram-v2
     Reserved --> Reserved: create, stop, restart AP
     Reserved --> Releasing: DELETE reservation or expiry
     Releasing --> Free: cleanup succeeded
-    Releasing --> Reserved: cleanup failed, 503 1004, antenna still held
+    Releasing --> Held: cleanup failed (the release still answers 200)
+    Held --> Releasing: background cleanup due (5, 15, 60, 300 s)
     Reserved --> Recovering: terminal failure on a USB antenna
     Reserved --> Unavailable: terminal failure, no USB reset allowed
     Recovering --> Free: reset and AP/DHCP probe verified
@@ -648,14 +650,12 @@ sequenceDiagram
     end
     A->>RM: create(duration)
     RM->>RM: purge expired reservations (their cleanup runs here, under the device lock)
-    alt cleanup of an expired reservation fails
-        RM-->>A: ReservationCleanupError
-        A-->>C: 503 / 1004 (device stays held, retried with backoff)
-    else first discovered antenna that is free and not quarantined
+    Note over RM: a failed cleanup keeps its antenna held (retried with backoff),<br/>it counts as reserved below
+    alt first discovered antenna that is free and not quarantined
         RM-->>A: Reservation(id, device, expires_at)
         A-->>C: 200 reservation_id, interface, expires_at, expires_in
-    else every antenna reserved
-        A-->>C: 409 / 1005 next_available_at, next_available_in
+    else every antenna reserved (or held by a failed cleanup)
+        A-->>C: 409 / 1005 next_available_at, next_available_in (expiry or next cleanup)
     else none allocatable, a USB recovery is running
         A-->>C: 503 / 1002 Retry-After 10
     else none allocatable, nothing recovering (or none discovered yet)
@@ -703,7 +703,8 @@ sequenceDiagram
     end
     NM->>NM: release_device(): remove leftovers of an earlier start
     alt leftover cleanup fails
-        A-->>C: 503 / 1004
+        NM->>RM: quarantine the antenna, invalidate the reservation
+        A-->>C: 503 / 1003 reservation_invalidated true
     end
     loop Layer 1: up to 3 starts within 20 s (round 1 only)
         NM->>NM: subnet, interface validation, NetworkManager unmanaged
@@ -800,7 +801,8 @@ sequenceDiagram
     RM->>NM: release_device(): tracked stop of everything still running
     alt stop fails
         NM->>NM: cleanup backoff 5, 15, 60, 300 s
-        A-->>C: 503 / 1004 (reservation and antenna still held)
+        RM->>RM: expire the reservation now: ID gone, antenna held
+        A-->>C: 200 (the expiry loop repeats the cleanup, /status: cleanup_failed)
     else
         A-->>C: 200
     end

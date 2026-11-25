@@ -108,9 +108,9 @@ ID** is the terminal error (`reservation_invalidated: true`); before API-4 it
 was a `500`. Neither includes `Retry-After`. In the **Reservation** group, `503 / 1003` means
 all adapters are quarantined and there is no automatic retry recommendation.
 In the **Reservation** group, `503 / 1002` instead means that a *new*
-reservation request can be retried after `Retry-After`. `503 / 1004` means
-cleanup failed; it is not a recovery retry. `409 / 1005` is ordinary
-reservation contention and can include `detail.next_available_in`.
+reservation request can be retried after `Retry-After`. `409 / 1005` is ordinary
+reservation contention and can include `detail.next_available_in`. A release
+always answers `200`, even if the server must repeat the cleanup.
 
 `409 / 1007` (`network_not_active`) is the answer of the Internet, TX power
 and QoS profile endpoints when the reservation is valid but has no running

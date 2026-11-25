@@ -1,5 +1,6 @@
 """System status endpoint."""
 
+from math import ceil
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -127,6 +128,7 @@ def system_status(
     | `upstream_unreachable` | The host uplink is down or has no IPv4 address while a network has Internet. |
     | `command_stuck` | A host command did not exit even after SIGKILL: usually a hung Wi-Fi driver; the adapter may need a reset. |
     | `loop_stalled` | A background loop has not run for 3 minutes; Wi-Lab restarts itself when idle. |
+    | `cleanup_failed` | The cleanup after a release or expiry failed; the antenna is held, not allocatable, and the cleanup is repeated (5 s, 15 s, 60 s, then every 5 min). |
 
     The detail of every check is in `GET /monitoring`. Checks that run host
     commands are refreshed every 10 s in the background: this call runs no
@@ -150,6 +152,7 @@ REASON_MESSAGES = {
     "upstream_unreachable": "Upstream interface {name} is down or has no IPv4 address",
     "command_stuck": "{count} host command(s) stuck in the kernel; the adapter may need a reset",
     "loop_stalled": "Background loop stalled: {loops}",
+    "cleanup_failed": "Cleanup failed {count} time(s) in a row; the antenna stays held, next attempt in {wait} s",
 }
 
 
@@ -182,6 +185,7 @@ def _assess(
     antennas = []
     reservations = reservation_mgr.snapshot()
     recovery = reservation_mgr.recovery_snapshot()
+    cleanup_failures = manager.cleanup_failures()
     for n in config.antennas:
         entry: dict[str, Any] = {"display_name": n.display_name, "interface": n.interface}
         reservation = reservations.get(n.device_id)
@@ -194,6 +198,11 @@ def _assess(
             state = "recovering" if recovery[n.device_id] else "unavailable"
             entry["recovery_state"] = state
             reasons.append(_reason("antenna_quarantined", n.interface, state=state))
+        if count := cleanup_failures.get(n.device_id):
+            # The release answered 200; the background sweep repeats the cleanup (WD-6).
+            reasons.append(_reason(
+                "cleanup_failed", n.interface, count=count, wait=ceil(manager.cleanup_wait(n.device_id)),
+            ))
         antennas.append(entry)
     for device in checks["hostapd"]["missing"]:
         reasons.append(_reason("hostapd_not_running", device))

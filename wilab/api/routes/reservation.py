@@ -91,8 +91,10 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
         401: {"description": "Unauthorized"},
         409: {
             "description": (
-                "No adapter available, or the requested `interface` is reserved. "
-                "next_available_at is UTC, or null when no release is scheduled."
+                "No adapter available, or the requested `interface` is reserved. An adapter "
+                "whose cleanup failed after a release or expiry also counts as reserved until "
+                "the server's next cleanup attempt. next_available_at is UTC, or null when no "
+                "release is scheduled."
             ),
             "content": {"application/json": {"example": {"detail": domain_error(
                 ApiErrorCode.NO_DEVICE_AVAILABLE, "No device available",
@@ -100,14 +102,11 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
             )}}},
         },
         503: {
-            "description": "No allocatable adapter: recovery (1002), quarantine or no Wi-Fi adapter detected (1003), or cleanup failure.",
+            "description": "No allocatable adapter: recovery (1002), quarantine or no Wi-Fi adapter detected (1003).",
             "headers": RETRY_AFTER_HEADER,
             "content": {"application/json": {"examples": {
                 "device_recovering": recovery_example(RecoveryCode.DEVICE_RECOVERING),
                 "device_unavailable": recovery_example(RecoveryCode.DEVICE_UNAVAILABLE),
-                "cleanup_failed": {"value": {"detail": domain_error(
-                    ApiErrorCode.CLEANUP_FAILED, "Failed to clean up device wlan0",
-                )}},
             }}},
         },
     },
@@ -198,7 +197,6 @@ def _build_response(r, config: AppConfig) -> ReservationResponse:
     summary="Release ALL reservations (maintenance only)",
     responses={
         200: {"description": "All reservations released"},
-        503: {"description": "Cleanup failed; remaining reservations are still held"},
     },
 )
 def delete_all_reservations(
@@ -211,8 +209,9 @@ def delete_all_reservations(
     matching `protected_commands_password` in the server configuration; without
     that setting the endpoint is disabled (`403`).
 
-    This is not atomic across adapters. If cleanup fails, earlier releases may
-    already have completed. Inspect status and resolve the failure before retrying.
+    Every reservation is released. An adapter whose cleanup fails stays held
+    and the server repeats its cleanup in the background (`GET /status` lists it
+    in `degraded_reasons` as `cleanup_failed`).
     """
     count = mgr.delete_all()
     return {"detail": f"{count} reservation(s) released", "released": count}
@@ -225,7 +224,6 @@ def delete_all_reservations(
         200: {"description": "Reservation details"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation not found or expired"},
-        503: {"description": "The expired device could not be cleaned up"},
     },
 )
 def get_reservation(
@@ -248,7 +246,6 @@ def get_reservation(
         200: {"description": "Reservation released"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation not found or already expired"},
-        503: {"description": "The device could not be cleaned up; the reservation remains held"},
     },
 )
 def delete_reservation(
@@ -258,8 +255,11 @@ def delete_reservation(
 ):
     """Release a reservation, stop any network and clean up before freeing the device.
 
-    An explicit network stop is not required. For `503 / 1004`,
-    the device stays held; retry release after the cleanup issue is resolved.
+    An explicit network stop is not required. **The release never fails:**
+    `200` means the ID is gone. If the cleanup fails (for example hostapd stuck
+    in the kernel), the device stays held, so nobody can reserve it, and the
+    server repeats the cleanup in the background (5 s, 15 s, 60 s, then every
+    5 min); `GET /status` lists it in `degraded_reasons` as `cleanup_failed`.
     For `404`, stop using the ID.
     """
     removed = mgr.delete(reservation_id)

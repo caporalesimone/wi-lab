@@ -69,7 +69,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/reservations", tags=["Network"],
-    responses={503: {"description": "Device cleanup failed; retry after resolving the error"}},
 )
 
 
@@ -223,17 +222,12 @@ def _error(code: int, reason: str, message: str) -> dict:
                 "**`503 / 1003`:** every start failed (the adapter is quarantined), or the "
                 "reservation expires too soon for the next start; the reservation is invalidated "
                 "(`reservation_invalidated: true`). Discard the ID; do not retry creation or release "
-                "it. Request a new reservation if needed. No `Retry-After`.\n\n"
-                "**`503 / 1004`:** a device cleanup failed while resolving an expired reservation."
+                "it. Request a new reservation if needed. No `Retry-After`."
             ),
             "content": {"application/json": {"examples": {
                 "device_unavailable": {
                     "summary": "503 / 1003 - Adapter quarantined; discard the reservation ID",
                     **recovery_example(RecoveryCode.DEVICE_UNAVAILABLE, invalidated=True),
-                },
-                "cleanup_failed": {
-                    "summary": "503 / 1004 - Cleanup failed",
-                    "value": {"detail": _error(1004, "cleanup_failed", "Failed to clean up device wlan0")},
                 },
             }}},
         },

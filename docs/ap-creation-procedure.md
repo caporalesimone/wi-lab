@@ -57,10 +57,9 @@ less.
 | Response | Meaning | Client action |
 |---|---|---|
 | `200` | Antenna reserved. Body has `reservation_id`, `interface`, `display_name`, `expires_at`, `expires_in`. | Keep `reservation_id`: every following call uses it. |
-| `409 / 1005` | All antennas are reserved. `detail.next_available_at` is the estimated availability in UTC; `detail.next_available_in` is the wait in seconds. Both are `null` when no release is scheduled. | Retry later with backoff, or wait for an unlimited reservation to be released. |
+| `409 / 1005` | All antennas are reserved (an antenna whose cleanup failed counts as reserved until the server's next cleanup attempt). `detail.next_available_at` is the estimated availability in UTC; `detail.next_available_in` is the wait in seconds. Both are `null` when no release is scheduled. | Retry later with backoff, or wait for an unlimited reservation to be released. |
 | `503 / 1002` + `Retry-After: 10` | No antenna can be assigned while an antenna is being recovered. | Retry **the reservation** after `Retry-After`. This is a polling interval, not a promise. |
 | `503 / 1003` | No antenna has been discovered yet, or none is usable and recovery is not running. | If the pool is empty at startup, allow discovery time and check `/status` before reserving again. If antennas remain unavailable, ask an operator to investigate. |
-| `503 / 1004` | Cleanup of an expired reservation failed. | Do not retry automatically. |
 | `422` | `duration_seconds` is outside the server limits, or `0` while unlimited reservations are disabled; or `interface` is not a managed antenna. | Fix the request. |
 
 Rules that matter for the AP:
@@ -74,8 +73,10 @@ Rules that matter for the AP:
 - Without `interface`, the server picks the antenna (the first free one).
 - Release the reservation when you are done:
   `DELETE /api/v2/reservations/{reservation_id}`. This also stops the AP;
-  a separate network stop is not required. A `503 / 1004` on release means
-  cleanup failed and the antenna is still held.
+  a separate network stop is not required. **The release never fails**: `200`
+  means the ID is gone. If the server cannot clean the antenna (for example
+  hostapd stuck in the kernel), it keeps the antenna out of the pool and
+  repeats the cleanup by itself; the client does nothing.
 - `GET /api/v2/reservations/{reservation_id}` returns the remaining time.
   `404` means the ID is no longer valid (expired, released or invalidated).
 
@@ -277,7 +278,6 @@ The actions for every call, in one place, are in [3.1](#31-what-to-do-with-each-
 | `404` | The reservation is unknown, expired or invalidated. | Stop using the ID. Reserve again if needed. |
 | `503 / 1003` | **Terminal failure.** Every start failed (the antenna was quarantined), or the reservation expires too soon for another start; the reservation is **invalidated**. | Discard the ID. Do not retry creation and do not release it. Reserve again if needed. |
 | `500 / 1013` (`startup_failed`) | A non-radio startup error. `detail.stage` says what failed: `hostapd` (e.g. exit code 1), `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation` or `host_guard`. The rollback succeeded and the reservation is **still valid**. | Do not retry automatically. Show `detail.message`. Release the ID if abandoning this attempt; release it before asking for a fresh reservation. |
-| `503 / 1004` | A device cleanup failed. | Do not retry automatically. |
 | `401` | Missing or invalid token. | Fix the token. |
 
 The create waits for the adapter if another request on it is running, so it
@@ -479,6 +479,7 @@ antenna:
 | `upstream_unreachable` | The host uplink is down or has no IPv4 address, while a network has Internet. | Report it; Internet access does not work. |
 | `command_stuck` | A host command (`ip`, `iw`, `usbreset`, ...) did not exit even after SIGKILL: usually a hung Wi-Fi driver. Set in standby too. | Report it: the adapter may need a reset or the host a reboot. |
 | `loop_stalled` | A Wi-Lab background loop has not run for 3 minutes. Wi-Lab restarts itself as soon as no reservation is active. | Report it; release reservations you no longer need. |
+| `cleanup_failed` | The cleanup after a release or expiry failed (for example hostapd stuck in the kernel). The antenna is held, not reservable; Wi-Lab repeats the cleanup after 5 s, 15 s, 60 s, then every 5 minutes. | Nothing: reserve another antenna, or wait. If it persists, an operator checks the host. |
 
 The checks that run host commands are refreshed every 10 s in the background,
 so a problem can take up to 10 s to appear. The detail of every check
@@ -535,9 +536,6 @@ sequenceDiagram
         else 503 / 1003
             W-->>C: no antenna discovered or usable, no recovery running
             Note over C: Right after a service start: wait for discovery (up to 30 s),<br/>check GET /status, then retry. With interface: that antenna is quarantined,<br/>reserve without interface. Otherwise stop and ask an operator
-        else 503 / 1004
-            W-->>C: cleanup of an expired reservation failed
-            Note over C: No automatic retry. Check GET /status, ask an operator
         else 422
             W-->>C: duration outside min/max, 0 while unlimited is off, or unknown interface
             Note over C: Fix the body. Never repeat the same body
@@ -586,9 +584,6 @@ sequenceDiagram
         else 500 / 1013 startup_failed
             W-->>C: detail.stage (hostapd, interface, gateway, dhcp, nat, isolation, ...) and message
             Note over C: Rolled back, reservation still valid. No automatic retry.<br/>Show the message. Release the id before reserving again
-        else 503 / 1004
-            W-->>C: cleanup of the previous startup failed
-            Note over C: No automatic retry. Check GET /status, ask an operator
         else transport error or client timeout (no answer)
             Note over C: Ambiguous: the server may have finished, or still be working
             C->>W: GET /reservations/{id}/network (long timeout: it waits for the create)
@@ -679,13 +674,10 @@ sequenceDiagram
     Note over C,W: Phase 6 - release (also stops the AP), or let the reservation expire
     C->>W: DELETE /reservations/{id}
     alt 200
-        W-->>C: released, AP stopped, antenna free
+        W-->>C: released (always, even if the cleanup failed: then the server<br/>keeps the antenna out of the pool and repeats the cleanup by itself)
     else 404
         W-->>C: already expired, released or invalidated
         Note over C: Nothing to do
-    else 503 / 1004
-        W-->>C: cleanup failed, the antenna is still held
-        Note over C: Usually transient (hostapd stuck for a few seconds): repeat the release<br/>after a few seconds. If it persists, check GET /status and ask an operator.<br/>At expiry Wi-Lab retries the cleanup by itself (5 s, 15 s, 60 s, 300 s)
     end
     Note over W: At expires_at Wi-Lab stops the AP and frees the antenna without any call.<br/>Creating or restarting an AP never extends the reservation
     end
@@ -713,7 +705,6 @@ Every answer leads to exactly one of these actions:
 | | `409 / 1005` | REPEAT | All antennas reserved (with `interface`: that one). Wait `next_available_in`, or a backoff of 10–60 s when it is `null`. |
 | | `503 / 1002` + `Retry-After: 10` | REPEAT | An antenna is being recovered. |
 | | `503 / 1003` | STOP | No usable antenna. Right after a service start, wait up to 30 s for discovery and check `GET /status` first. With `interface`: that antenna is quarantined; reserve without it. |
-| | `503 / 1004` | STOP | Cleanup of an expired reservation failed. |
 | | `422` | FIX | `duration_seconds` out of limits, `0` while unlimited reservations are off, or `interface: ...` not a managed antenna. |
 | `GET /antennas/{interface}` | `503` | REPEAT | After a few seconds; the radio is being reset. Or create with the defaults. |
 | | `404` | RESERVE AGAIN | The antenna is no longer managed. |
@@ -724,7 +715,6 @@ Every answer leads to exactly one of these actions:
 | | `409 / 1009` | WAIT | Until `runtime_state` is `null`, then create only if `active` is `false`. |
 | | `500 / 1013` | STOP | Startup failed for a non-radio reason (`detail.stage`) and was rolled back; the reservation is still valid. Release it before reserving again. |
 | | `500 / 500` | STOP | An unexpected server error. |
-| | `503 / 1004` | STOP | Cleanup of the previous startup failed. |
 | | no answer (timeout, connection lost) | WAIT | Never resend blindly: `GET .../network` with a long timeout. `active: true` → DONE. `runtime_state` set → WAIT. `active: false` and no `runtime_state` → send the create again. `404` → RESERVE AGAIN. |
 | `GET .../network` | `200`, `runtime_state: null` | DONE | |
 | | `200`, `restoring_ap`, `restoring_dhcp`, `dhcp_failed` | WAIT | The watchdog is repairing the network. After `restoring_ap`, devices reconnect and QoS profiles must be reapplied. |
@@ -737,9 +727,8 @@ Every answer leads to exactly one of these actions:
 | `DELETE .../network` | `200` | DONE | The reservation stays. |
 | | `409 / 1007` | DONE | Already inactive. |
 | | `503 / 1012` + `Retry-After: 5` | REPEAT | The stop did not complete, even after the server repeated it for 15 s (hostapd stuck in the kernel). Rare. Repeat until `200`. |
-| `DELETE /reservations/{id}` | `200` | DONE | AP stopped, antenna free. |
+| `DELETE /reservations/{id}` | `200` | DONE | Always, even if the cleanup failed: the server then keeps the antenna out of the pool and repeats the cleanup by itself. |
 | | `404` | DONE | Already expired, released or invalidated: nothing left to release. |
-| | `503 / 1004` | REPEAT, then STOP | Cleanup failed, the antenna is still held. Repeat a few times a few seconds apart (usually transient), then STOP. After expiry Wi-Lab retries the cleanup by itself. |
 
 ### 3.2 Radio failures (such as a hostapd crash)
 

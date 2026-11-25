@@ -15,7 +15,7 @@ from .recovery_responses import DEVICE_BUSY_RESPONSE, NETWORK_NOT_ACTIVE_RESPONS
 
 router = APIRouter(
     prefix="/reservations", tags=["Internet"],
-    responses={503: {"description": "Device cleanup failed; retry after resolving the error"}},
+    responses={503: {"description": "Adapter busy (1006): repeat after Retry-After"}},
 )
 
 
