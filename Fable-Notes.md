@@ -72,8 +72,8 @@ schede `REV` e nei test mancanti del paragrafo 5.5. I punti aperti sono quindi 6
 originali e 18 della revisione.
 
 **Aggiornamento del 2026-11-26 (sera), versione 4.1.0.** Corretti e tolti dal documento REV-1, REV-3,
-REV-4 e REV-7, con i test unit-test-1, unit-test-3 e unit-test-6; REV-16 è corretto in parte. I punti
-aperti sono 60: 46 delle note originali e 14 della revisione.
+REV-4, REV-7 e REV-16, con i test unit-test-1, unit-test-3 e unit-test-6. I punti aperti sono 59: 46
+delle note originali e 13 della revisione.
 
 ---
 
@@ -99,7 +99,7 @@ La revisione del 2026-11-26 ha aggiunto 18 punti sul codice nuovo:
 - **casi rari del contratto e gare minori:** REV-8…REV-12;
 - **frontend:** REV-13 (polling della create), REV-14 (difetti precedenti, tra cui la perdita degli ID
   a una ricarica), REV-15 (funzioni della 4.0.0 non usate);
-- **struttura e test:** REV-16 (parziale), REV-17, REV-18, più 14 test unit e 12 test e2e mancanti (paragrafo 5.5).
+- **struttura e test:** REV-17, REV-18, più 14 test unit e 12 test e2e mancanti (paragrafo 5.5).
 
 ---
 
@@ -114,20 +114,22 @@ ordine.
 
 ### 2.0 Da fare alla ripresa (stato del 2026-11-26, sera)
 
-Versione 4.1.0 aperta (`dd524d3`); le modifiche nuove vanno nella sezione 4.1.0 del CHANGELOG. Fatto in
-questa sessione: REV-1, REV-3, REV-7 corretti con i loro test (unit-test-1, unit-test-3, unit-test-6);
-REV-4 provato a mano sulla macchina (messaggi annotati in [e2e-test-11](#e2e-test-11)) e corretto;
-REV-16 fatto in parte (esito del job senza eccezioni HTTP, tolto `CREATE_IN_BACKGROUND`, test sul
-percorso asincrono). Il servizio sulla macchina gira ancora su `aca248e`: nessuna di queste modifiche è
-installata né provata sull'hardware. Alla ripresa, in quest'ordine:
+Versione 4.1.0 aperta (`dd524d3`); le modifiche nuove vanno nella sezione 4.1.0 del CHANGELOG. Fatto:
+REV-1, REV-3, REV-4, REV-7 e REV-16 corretti, con i test unit-test-1, unit-test-3 e unit-test-6; i
+messaggi di iptables con la catena assente sono annotati in [e2e-test-11](#e2e-test-11).
 
-1. **Eseguire i test e2e**, solo su un sistema libero e dopo conferma, dopo aver riavviato il servizio
-   sul codice nuovo. Nessuna modifica del ciclo è stata provata sull'hardware: create asincrona,
-   annullamento, `404` con `reason`, `restarts`, `409 / 1012`, captive portal sulla porta 8081, le
-   modifiche agli e2e stessi (`WiLab.create()` che tratta `start_failed` come errore), e ora anche i
-   controlli `iptables -C` (REV-3) e la rimozione dell'host guard (REV-4, [e2e-test-11](#e2e-test-11)).
-   Vedi [docs/e2e-testing.md](docs/e2e-testing.md).
-2. **Finire REV-16** (esempi OpenAPI, duplicati, un solo enum), poi gli altri test del paragrafo 5.5.
+**E2E del 2026-11-26** (`make test-e2e`, servizio riavviato su `2353c9a`): 52 passati, 5 xfail noti
+(SEC-1, BUG-7, PERF-6), 8 saltati di proposito (distacco USB, test lunghi, riavvio sporco, lock xtables
+che con nf_tables non esiste). Il primo giro aveva 3 fallimenti nei test del watchdog che bloccano
+dnsmasq: era il test, che provava a occupare la porta 67 mentre il dnsmasq della rete la teneva già;
+corretto in `2353c9a`. Non ancora eseguiti: `make test-e2e-usb`, `WILAB_E2E_SLOW=1`,
+`WILAB_E2E_RESTART=1`, e l'[e2e-test-11](#e2e-test-11) (non esiste ancora come test).
+
+Alla ripresa, in quest'ordine:
+
+1. Gli e2e non ancora eseguiti, sopra, su un sistema libero e dopo conferma (il distacco USB con un AP
+   attivo può bloccare la VM).
+2. Gli altri test del paragrafo 5.5, con REV-18 (fixture comuni).
 3. Poi gli altri punti della tabella 2.1 in ordine di priorità: REV-2, REV-5, REV-6 per primi.
 
 Decisioni ancora aperte:
@@ -177,7 +179,6 @@ Decisioni ancora aperte:
 | 17 | [REV-15](#rev-15) | Bassa |  | Frontend: annullare un avvio, mostrare `restarts` e `error`, scegliere l'antenna; compilazione e spec fuori dal deploy. |
 | 18 | [BUG-7](#bug-7) | Bassa |  | Rendere coerente lo stato della potenza TX in caso di mismatch. |
 | 19 | [BUG-8](#bug-8) | Bassa |  | Usare un confronto constant-time per il token. |
-| 20 | [REV-16](#rev-16) | Media | parz. | Semplificare la route e il job della create. **Fatto:** il job restituisce un esito (`StartOutcome`) senza eccezioni HTTP; tolto `CREATE_IN_BACKGROUND`, i test usano `create_network` (POST e polling). **Manca:** esempi OpenAPI in costanti di modulo, i duplicati `get_network`/`_state_response` e `_error()`/`domain_error`, un solo enum dei codici. |
 | 21 | [REV-17](#rev-17) | Bassa |  | Togliere i residui della catena di modifiche: percorso `1004` morto, metodi usati solo dai test, duplicati, testi vecchi. |
 | 22 | [HAP-7](#hap-7) | Bassa |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
 | 23 | [REV-18](#rev-18) | Bassa |  | Riordinare i test: fixture condivise e collegate come in produzione, poi i test mancanti del paragrafo 5.5. |
@@ -1349,36 +1350,6 @@ ricavare il token misurando i tempi.
 
 ---
 
-<a id="rev-16"></a>
-### 20. REV-16 - Il job della create parla HTTP e i test usano un percorso che il server non ha più (parziale)
-
-**Gravità:** Media · **Confidenza:** Confermato (lettura) · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py) (`_run_start`, `_run_job`, `CREATE_IN_BACKGROUND`), [tests/unit-tests/conftest.py](tests/unit-tests/conftest.py) (`_create_in_the_request`)
-
-> **Stato (2026-11-26):** Fatti i primi due punti: `_run_start` restituisce uno `StartOutcome` (`started`, `cancelled`, `ended` con il motivo, `start_failed` con l'errore `1013`) e `CREATE_IN_BACKGROUND` non esiste più; i test fanno la create con `create_network` (conftest) e leggono l'esito con la `GET`. **Manca:** esempi OpenAPI in costanti di modulo, `get_network` che ripete `_state_response`, `_error()` che duplica `domain_error`, un solo enum per `RecoveryCode` e `ApiErrorCode`, `device_busy_detail()` che scrive 1006 a mano.
-
-**Problema.**
-
-- `_run_start` gira in un thread ma solleva `HTTPException` che nessun client riceve (`503 / 1003`
-  con `reservation_invalidated`, `404`, `409` riconosciuto dal testo "already active"); `_run_job` le
-  decodifica dal codice di stato. Da qui nascevano gli errori `start_failed` con codice 500, corretti
-  il 2026-11-26 con una conversione in `_run_job`.
-- `CREATE_IN_BACKGROUND = False` è un ramo di produzione usato solo dai test: una fixture autouse lo
-  imposta per tutta la suite tranne `test_async_create.py`. La maggior parte dei test del ciclo di vita
-  verifica quindi risposte che il server non dà più (`200`, `500 / 1013` e `503 / 1003` sulla `POST`).
-  Una regressione nel job (annullamento, registro dei job, classificazione) può passare l'intera
-  suite.
-- La route `start_network` è lunga circa 310 righe, 190 delle quali sono esempi OpenAPI nella firma.
-- `get_network` ripete ciò che fa `_state_response`; `_error()` duplica `domain_error`.
-- `RecoveryCode` (1002, 1003) e `ApiErrorCode` (1004 in poi) sono due enum per un solo spazio di
-  codici; `device_busy_detail()` scrive 1006 a mano.
-
-**Come correggerlo.** Un piccolo tipo di esito per `_run_start` (riuscito, annullato, reservation
-finita, fallito con fase), senza eccezioni HTTP. Togliere `CREATE_IN_BACKGROUND`: i test usano un
-helper che fa la `POST` e aspetta la fine del job, e verificano l'esito con la `GET`. Esempi OpenAPI
-in costanti di modulo. Un solo enum dei codici.
-
----
-
 <a id="rev-17"></a>
 ### 21. REV-17 - Residui della catena di modifiche
 
@@ -1476,8 +1447,9 @@ utile, soprattutto con HAP-8.
   `test_nat`, `test_qos`, `test_dhcp`, `test_commands`, `test_config`, `test_discovery`,
   `test_isolation`, `test_captive`.
 
-**Come correggerlo.** Dopo [REV-16](#rev-16): una sola fixture `client` con i manager collegati come
-in produzione, una fixture `running_network`, poi i test mancanti del paragrafo 5.5.
+**Come correggerlo.** REV-16 è fatto (i test usano la create asincrona tramite `create_network`): ora
+una sola fixture `client` con i manager collegati come in produzione, una fixture `running_network`,
+poi i test mancanti del paragrafo 5.5.
 
 ---
 
@@ -2893,7 +2865,6 @@ pagine è stata eseguita.
 | 17 | [REV-15](#rev-15) | Frontend: funzioni dell'API 4.0.0 non usate |
 | 18 | [BUG-7](#bug-7) | TX power: stato incoerente dopo un mismatch |
 | 19 | [BUG-8](#bug-8) | Confronto del token non a tempo costante |
-| 20 | [REV-16](#rev-16) | Il job della create parla HTTP e i test usano un percorso che il server non ha più (parziale) |
 | 21 | [REV-17](#rev-17) | Residui della catena di modifiche |
 | 22 | [HAP-7](#hap-7) | Ipotesi: `hostapd -d` per tutta la vita dell'AP |
 | 23 | [REV-18](#rev-18) | Struttura dei test |
@@ -2925,7 +2896,7 @@ pagine è stata eseguita.
 
 ### Schede per area
 
-- **Revisione del 2026-11-26:** [REV-2](#rev-2), [REV-5](#rev-5), [REV-6](#rev-6), [REV-8](#rev-8), [REV-9](#rev-9), [REV-10](#rev-10), [REV-11](#rev-11), [REV-12](#rev-12), [REV-13](#rev-13), [REV-14](#rev-14), [REV-15](#rev-15), [REV-16](#rev-16), [REV-17](#rev-17), [REV-18](#rev-18)
+- **Revisione del 2026-11-26:** [REV-2](#rev-2), [REV-5](#rev-5), [REV-6](#rev-6), [REV-8](#rev-8), [REV-9](#rev-9), [REV-10](#rev-10), [REV-11](#rev-11), [REV-12](#rev-12), [REV-13](#rev-13), [REV-14](#rev-14), [REV-15](#rev-15), [REV-17](#rev-17), [REV-18](#rev-18)
 - **Sicurezza:** [SEC-1](#sec-1)
 - **Watchdog e recovery:** [WD-5](#wd-5), [WD-7](#wd-7), [WD-8](#wd-8), [WD-10](#wd-10)
 - **Avvio di hostapd:** [HAP-5](#hap-5), [HAP-6](#hap-6), [HAP-7](#hap-7), [HAP-8](#hap-8), [HAP-9](#hap-9)
