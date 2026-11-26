@@ -7,7 +7,9 @@
 # 1. Stops the wi-lab service
 # 2. Disables systemd auto-start
 # 3. Removes systemd unit file
-# 4. Optionally removes Python virtual environment
+# 4. Removes Wi-Lab firewall rules, runtime files and devices
+# 5. Offers to re-enable NetworkManager / wpa_supplicant if they are masked
+# 6. Removes the Python virtual environment
 #
 # Usage: sudo bash uninstall.sh
 ################################################################################
@@ -33,7 +35,8 @@ echo "  1. Stop the wi-lab service"
 echo "  2. Disable autostart on boot"
 echo "  3. Remove systemd unit file at $SERVICE_FILE"
 echo "  4. Remove Wi-Lab firewall rules, runtime files and QoS devices left on the host"
-echo "  5. Remove Python virtual environment at $VENV_PATH"
+echo "  5. Offer to re-enable NetworkManager and wpa_supplicant if they are masked"
+echo "  6. Remove Python virtual environment at $VENV_PATH"
 echo ""
 echo "Note:"
 echo "  - Config file (config.yaml) will REMAIN in $WILAB_DIR"
@@ -162,10 +165,39 @@ fi
 echo ""
 
 ################################################################################
-# STEP 4: Remove virtual environment (MANDATORY)
+# STEP 4: Offer to re-enable services the installer masked (NM-1)
 ################################################################################
 
-log_info "Step 4: Removing virtual environment..."
+# The installer may have disabled and masked them (stages 06 and 07). Its state
+# file is in /tmp and does not survive a reboot: ask for every masked one.
+# wpa_supplicant first: NetworkManager needs it for Wi-Fi.
+if command -v systemctl >/dev/null 2>&1; then
+    log_info "Step 4: Checking services the installer may have masked..."
+    for unit in wpa_supplicant.service NetworkManager.service; do
+        if [ "$(systemctl is-enabled "$unit" 2>/dev/null || true)" != "masked" ]; then
+            continue
+        fi
+        echo -n "$unit is masked (the Wi-Lab installer may have done it). Re-enable it? (y/N) "
+        read -r REPLY
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            if systemctl unmask "$unit" && systemctl enable --now "$unit"; then
+                log_success "$unit re-enabled"
+            else
+                log_warning "Could not re-enable $unit"
+            fi
+        else
+            log_info "$unit left masked"
+        fi
+    done
+fi
+
+echo ""
+
+################################################################################
+# STEP 5: Remove virtual environment (MANDATORY)
+################################################################################
+
+log_info "Step 5: Removing virtual environment..."
 if [ -d "$VENV_PATH" ]; then
     log_info "Removing virtual environment..."
     rm -rf "$VENV_PATH"
