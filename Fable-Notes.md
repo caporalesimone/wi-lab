@@ -26,7 +26,8 @@ In quest'ordine:
 
 1. **Provare sulla macchina le correzioni del paragrafo 2.3** (conferma prima degli e2e): suite e2e
    standard, poi `time systemctl stop wi-lab` con due reti attive (STAB-8, meno di 60 s) e un
-   `sudo reboot` (primo riavvio senza NetworkManager).
+   `sudo reboot` (primo riavvio senza NetworkManager). Per NM-1 il paragrafo 5.8: prima
+   reinstallare l'unit systemd, che ora ha `RestartPreventExitStatus=78`.
 2. **Blocco A** (paragrafo 2.1), nell'ordine della tabella. Le decisioni che lo bloccavano sono prese
    (paragrafo 1.3).
 3. **Congelamento:** RELEASE-API, ultima riga del blocco A.
@@ -73,6 +74,7 @@ staccare la USB (23/11): serve chi la ricollega.
   usate da nessun client). API-7 (`PUT`) resta nel blocco B: si può aggiungere senza rompere nulla.
 - **QoS:** sperimentale nella 4.1.0, fuori dal contratto e dal congelamento. Scritto in OpenAPI,
   `docs/qos.md`, `docs/ap-creation-procedure.md` e CHANGELOG.
+- **`protected_commands_password`:** cambiata in `config.yaml` della macchina con un valore casuale (2026-11-26).
 - **TX power: da debuggare.** Non si è mai riusciti a controllare la potenza sugli adattatori in uso.
   Dichiarato non stabile nella 4.1.0 come il QoS (stessi documenti). Il campo `radio.tx_power_level`
   della create resta obbligatorio e validato 1-4: è nel contratto, il suo effetto no. BUG-7, PERF-6 e
@@ -80,13 +82,11 @@ staccare la USB (23/11): serve chi la ricollega.
 
 **Ancora aperte** (nessuna blocca il congelamento):
 
-- **CHANGELOG 4.0.0:** confermare la rimozione di RACE-2 (giudicato mai rilasciato) e della voce
-  "Prevent concurrent reservations…" (la 3.0.0 aveva già un lock); la data dell'intestazione è ancora
-  2026-11-20.
+- **CHANGELOG 4.0.0:** la voce RACE-2 è già tolta (commit `aca248e`). Resta da confermare la rimozione
+  di "Prevent concurrent reservations…": la 3.0.0 aveva già il lock in `ReservationManager.reserve`.
+  Data dell'intestazione corretta il 2026-11-26 (data di `aca248e`, ultimo commit della 4.0.0).
 - **Frontend (REV-13, REV-14, REV-15):** non si può compilare senza pubblicare in `frontend/dist`;
   serve prima un target di sola compilazione (unit-test-15).
-- `config.yaml` della macchina ha ancora la `protected_commands_password` di esempio (verificato il
-  2026-11-26): va cambiata a mano.
 
 Gravità: **Critica** sicurezza o perdita del servizio · **Alta** una rete o un adattatore resta rotto
 senza che il client lo sappia · **Media** comportamento sbagliato in un caso realistico · **Bassa**
@@ -113,14 +113,13 @@ requisiti di installazione. I punti sono divisi con questo criterio, non per gra
 | Ordine | Id | Gravità | Cosa fare | Perché prima del congelamento |
 |:---:|---|---|---|---|
 | A1 | [SEC-1](#sec-1) | Critica | Limitare la route frontend ai file contenuti nella directory frontend. | Sicurezza critica. Cambia anche le risposte: i percorsi `/api/...` e `/docs/...` inesistenti passano da `200` con `null` a `404`. |
-| A2 | [NM-1](#nm-1) | Media | Togliere `nmcli` dal codice, stadi dell'installer che propongono di disattivare NetworkManager e `wpa_supplicant` senza rischiare l'accesso alla macchina, precheck all'avvio. Tutto nel [capitolo 5](#cap-5). Toglie il codice di STAB-9 e chiude ARCH-7 (i tre rilasci `nmcli` duplicati). | Requisito di sistema nuovo (breaking per chi installa) e codice di uscita `78`: non può arrivare in una versione di sola stabilizzazione. |
-| A3 | [REV-2](#rev-2) | Media | Un annullamento il cui rollback fallisce non deve finire in quarantena né far rispondere `404` al rilascio. | Risposte del rilascio e dello stop durante `starting`: è il ciclo di vita che il client implementa. |
-| A4 | [REV-11](#rev-11) | Bassa | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, `next_available_in` troncato. **Fatto:** punto 4, tipi stretti. | Codici fuori contratto. |
-| A5 | [REV-9](#rev-9) | Bassa | Impostare `stop_failed` solo per lo stop chiesto dal client; rispondere `1012` a Internet, TX power e QoS su una rete fermata a metà. | Cambia `runtime_state` in `/status` e aggiunge `409 / 1012` a Internet, TX power e QoS. |
-| A6 | [HAP-9](#hap-9) | Bassa | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. | Solo la via semplice: `422` sui canali 120, 124, 128 e fuori dall'elenco dei canali. La via completa (stato "radar check") è un cambio di API: non si fa nella 4.x. |
-| A7 | [NET-8](#net-8) | Bassa | Sostituire il DNS predefinito specifico del laboratorio. | Chiave di configurazione che diventa obbligatoria: breaking per chi installa. |
-| A8 | [STAB-7](#stab-7) | Media | Aggiungere un lockfile con versioni esatte delle dipendenze. | Senza versioni bloccate una reinstallazione può cambiare le risposte (per esempio il codice per un `Authorization` mancante). Si genera al congelamento. |
-| A9 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
+| A2 | [REV-2](#rev-2) | Media | Un annullamento il cui rollback fallisce non deve finire in quarantena né far rispondere `404` al rilascio. | Risposte del rilascio e dello stop durante `starting`: è il ciclo di vita che il client implementa. |
+| A3 | [REV-11](#rev-11) | Bassa | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, `next_available_in` troncato. **Fatto:** punto 4, tipi stretti. | Codici fuori contratto. |
+| A4 | [REV-9](#rev-9) | Bassa | Impostare `stop_failed` solo per lo stop chiesto dal client; rispondere `1012` a Internet, TX power e QoS su una rete fermata a metà. | Cambia `runtime_state` in `/status` e aggiunge `409 / 1012` a Internet, TX power e QoS. |
+| A5 | [HAP-9](#hap-9) | Bassa | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. | Solo la via semplice: `422` sui canali 120, 124, 128 e fuori dall'elenco dei canali. La via completa (stato "radar check") è un cambio di API: non si fa nella 4.x. |
+| A6 | [NET-8](#net-8) | Bassa | Sostituire il DNS predefinito specifico del laboratorio. | Chiave di configurazione che diventa obbligatoria: breaking per chi installa. |
+| A7 | [STAB-7](#stab-7) | Media | Aggiungere un lockfile con versioni esatte delle dipendenze. | Senza versioni bloccate una reinstallazione può cambiare le risposte (per esempio il codice per un `Authorization` mancante). Si genera al congelamento. |
+| A8 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
 
 ### 2.2 Blocco B: dopo la 4.1.0, solo stabilizzazione
 
@@ -190,7 +189,7 @@ con un profilo QoS attivo. Decisione del paragrafo 1.3: sperimentale nella 4.1.0
 ### 2.3 Chiusi in questo ciclo ✅
 
 Corretti il 2026-11-26, con test unit. Manca solo la prova sulla macchina (paragrafo 1.1, punto 1).
-NM-1 è in corso: il commit 1 (via `nmcli`) è fatto, il resto è nel [capitolo 5](#cap-5).
+NM-1 è chiuso nel codice; la prova sulla macchina è il paragrafo 5.8.
 
 | Id | Gravità | Cosa è stato fatto |
 |---|---|---|
@@ -204,6 +203,7 @@ NM-1 è in corso: il commit 1 (via `nmcli`) è fatto, il resto è nel [capitolo 
 | ✅ [NET-7](#net-7) | Bassa | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
 | ✅ [REV-8](#rev-8) | Bassa | Il job di un avvio che ignora l'annullamento resta in `start_jobs` finché il thread gira: niente secondo thread, stop `503 / 1006` poi `200` o `409 / 1007`. |
 | ✅ [API-6](#api-6) | Bassa | `POST .../txpower` prende `tx_power_level`, come la create. Breaking, nel CHANGELOG. |
+| ✅ [NM-1](#nm-1) | Media | Nessun `nmcli` nel codice; precheck all'avvio (`78` se non root o manca un comando, avvisi per NetworkManager, `wpa_supplicant` su una radio, regole rimaste); stadi 06 e 07 dell'installer che propongono di disattivare NetworkManager e `wpa_supplicant` senza rischiare l'accesso; `uninstall.sh` propone di riattivarli. Chiude ARCH-7. [Capitolo 5](#cap-5). |
 | ✅ [STAB-9](#stab-9) | Bassa | Regola a runtime per NetworkManager. **Superato:** NM-1 toglie questo codice; su questa macchina NetworkManager non c'è più. |
 
 ---
@@ -211,7 +211,7 @@ NM-1 è in corso: il commit 1 (via `nmcli`) è fatto, il resto è nel [capitolo 
 <a id="cap-3"></a>
 ## 3. Schede
 
-Nell'ordine del capitolo 2: blocco A (NM-1 è il [capitolo 5](#cap-5)), blocco B, gruppo T (TX power),
+Nell'ordine del capitolo 2: blocco A, blocco B, gruppo T (TX power),
 poi le schede chiuse ✅.
 Ogni scheda ha la stessa struttura: **Problema**, **Come si riproduce**, **Come correggerlo**. Dove è
 utile c'è codice o una patch. I percorsi dei file sono relativi alla radice del repository.
@@ -299,7 +299,7 @@ il fallback su `index.html`. Dopo la correzione conviene ruotare `auth_token` e
 ---
 
 <a id="rev-2"></a>
-### A3. REV-2 - Annullare un avvio il cui rollback fallisce mette l'antenna in quarantena
+### A2. REV-2 - Annullare un avvio il cui rollback fallisce mette l'antenna in quarantena
 
 **Gravità:** Media · **Confidenza:** Confermato (riprodotto con il TestClient) · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py) (`_run_start`)
 
@@ -324,7 +324,7 @@ Test: [unit-test-2](#unit-test-2).
 ---
 
 <a id="rev-11"></a>
-### A4. REV-11 - Risposte delle API fuori dal contratto in casi rari
+### A3. REV-11 - Risposte delle API fuori dal contratto in casi rari
 
 **Gravità:** Bassa · **Confidenza:** Confermato per i primi due punti (TestClient); Probabile per gli altri · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py), [wilab/api/routes/txpower.py](wilab/api/routes/txpower.py), [wilab/api/routes/internet.py](wilab/api/routes/internet.py), [wilab/models.py](wilab/models.py)
 
@@ -358,7 +358,7 @@ Test: `test_error_codes.py::test_every_operation_with_a_reservation_id_answers_4
 ---
 
 <a id="rev-9"></a>
-### A5. REV-9 - `stop_failed` segna anche stop che non sono del client
+### A4. REV-9 - `stop_failed` segna anche stop che non sono del client
 
 **Gravità:** Bassa · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`_stop_failed`), [wilab/api/routes/status.py](wilab/api/routes/status.py)
 
@@ -375,7 +375,7 @@ route di Internet, TX power e QoS rispondere `409 / 1012` quando `manager.stop_f
 ---
 
 <a id="hap-9"></a>
-### A6. HAP-9 - Canali DFS con controllo radar di 10 minuti
+### A5. HAP-9 - Canali DFS con controllo radar di 10 minuti
 
 **Gravità:** Bassa · **Confidenza:** Probabile · **File:** [wilab/wifi/hostapd.py:29](wilab/wifi/hostapd.py#L29), [wilab/wifi/hostapd.py:249](wilab/wifi/hostapd.py#L249)
 
@@ -406,7 +406,7 @@ client con uno stato "radar check in corso".
 ---
 
 <a id="net-8"></a>
-### A7. NET-8 - `dns_server` ha come default un indirizzo di laboratorio
+### A6. NET-8 - `dns_server` ha come default un indirizzo di laboratorio
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/config.py:37](wilab/config.py#L37)
 
@@ -432,7 +432,7 @@ modifiche breaking, e `config.example.yaml` deve già contenerla.
 ---
 
 <a id="stab-7"></a>
-### A8. STAB-7 - Dipendenze non bloccate
+### A7. STAB-7 - Dipendenze non bloccate
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [requirements.txt](requirements.txt)
 
@@ -2491,13 +2491,11 @@ diverso da uno bloccato nel kernel.
 ## 5. NM-1 - Togliere NetworkManager come dipendenza e disattivarlo all'installazione
 
 **Gravità:** Media · **Confidenza:** Confermato (codice, installer e stato della macchina letti il
-2026-11-26) · **Stato:** in parte. Comprende `wpa_supplicant` (5.4 bis).
+2026-11-26) · **Stato:** ✅ nel codice, da provare sulla macchina. Comprende `wpa_supplicant` (5.4 bis).
 
-> **Stato (2026-11-26).** **Fatto:** il commit 1 del 5.9 (nessun `nmcli` in codice, test e
-> diagnostica; tolto il file di STAB-9; docs e CHANGELOG aggiornati, con la riga Breaking) e
-> l'installer che non installa più `nmcli` (commit `da5c2a6`). Su questa macchina NetworkManager è
-> disinstallato e `wpa_supplicant` mascherato. **Manca:** precheck (5.5), stadi 06 e 07 e
-> `uninstall.sh` (5.4, 5.4 bis), README e troubleshooting (5.6).
+> **Stato (2026-11-26).** **Fatto** nel codice: commit 1-4 del 5.9 (`d92e05d`, `07f21f3`,
+> `86d0c9a` e il commit docs). **Manca:** la verifica sulla macchina del 5.8, con la conferma
+> dell'utente, e reinstallare la unit systemd per avere `RestartPreventExitStatus=78`.
 
 Questo capitolo basta da solo per fare il lavoro. Le decisioni del paragrafo 5.2 sono già prese: non
 vanno ridiscusse, vanno applicate. L'ordine dei passi è quello del paragrafo 5.9.

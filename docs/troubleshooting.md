@@ -53,6 +53,32 @@ Symptoms:
 Script:
 - [diagnostics/troubleshooting/issue_service_fails_start.sh](../diagnostics/troubleshooting/issue_service_fails_start.sh)
 
+Startup prechecks: `journalctl -u wi-lab | grep "Startup precheck"`.
+- `CRITICAL ... Startup precheck root` or `... commands`: the service exits with code
+  `78` and systemd does not restart it. Run the installer again (it installs missing
+  commands), then `sudo systemctl restart wi-lab`.
+
+### Issue 1b: `WARNING ... Startup precheck network_manager` or `... wpa_supplicant`
+
+NetworkManager or `wpa_supplicant` can take a Wi-Fi adapter back and bring APs down.
+Wi-Lab requires NetworkManager disabled; `wpa_supplicant` is warned about only when
+it manages a Wi-Lab radio.
+
+```bash
+systemctl is-active NetworkManager wpa_supplicant
+nmcli device status          # NetworkManager must manage no interface of the host
+networkctl list              # the host interface must be "configured" by systemd-networkd
+ls /run/wpa_supplicant/      # a socket named like a Wi-Lab radio: wpa_supplicant holds it
+```
+
+If NetworkManager manages no interface (or rerun the installer, which checks it):
+
+```bash
+sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager
+sudo systemctl disable --now wpa_supplicant && sudo systemctl mask wpa_supplicant
+sudo systemctl restart wi-lab
+```
+
 ### Issue 2: Cannot Create WiFi Network
 
 Symptoms:

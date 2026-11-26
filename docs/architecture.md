@@ -104,6 +104,20 @@ flowchart LR
 Wi-Lab starts **without antennas**. A device discovery service, started with the
 API, finds them and keeps looking for new ones for the whole life of the process.
 
+**Startup prechecks** ([wilab/precheck.py](../wilab/precheck.py)) run before the
+configuration is loaded. A `fatal` finding stops the service with exit code `78`;
+the unit has `RestartPreventExitStatus=78`, so systemd leaves it `failed` with the
+reason in the journal instead of restarting it. A `warning` is logged and the
+service starts. No finding: `Startup prechecks passed`.
+
+| Check | Level | When |
+|---|---|---|
+| `root` | fatal | The service does not run as root |
+| `commands` | fatal | A command the service runs is missing (`hostapd`, `hostapd_cli`, `dnsmasq`, `iw`, `ip`, `tc`, `iptables`, `ip6tables`, `udevadm`, `usbreset`, `modprobe`, `networkctl`) |
+| `network_manager` | warning | NetworkManager is active (not supported, see section 9) |
+| `wpa_supplicant` | warning | `wpa_supplicant` manages a Wi-Lab radio (`/run/wpa_supplicant/<radio>` exists). Checked when discovery adds the radio, once per radio |
+| `leftover_rules` | warning | Wi-Lab iptables rules from a previous run (the startup cleanup removes them) |
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -117,8 +131,8 @@ sequenceDiagram
     participant RM as ReservationManager
 
     SD->>M: start wi-lab.service
-    M->>M: log version, host impact warning
-    M->>M: check leftover Wi-Lab iptables rules
+    M->>M: log version, startup prechecks (fatal: exit 78)
+    M->>M: host impact warning
     M->>C: load_config()
     C->>C: read config.yaml and validate (no antenna managed yet)
     C-->>M: AppConfig with an empty antenna pool

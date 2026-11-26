@@ -20,7 +20,9 @@ Typical use-cases: automated wireless testing, RF/antenna benchmarking, classroo
 
 | Category | Requirement |
 |----------|-------------|
-| **OS** | Ubuntu 25+ (tested on 25.04) |
+| **OS** | Ubuntu Server 25+ (tested on 26.04), network managed by systemd-networkd (netplan) |
+| **NetworkManager** | Must not be installed, or must be disabled and masked. The installer detects it and offers to disable it; it never does so if NetworkManager manages the host's network. |
+| **wpa_supplicant** | Not used by Wi-Lab. The installer offers to disable and mask it when the host does not use it as a Wi-Fi client. |
 | **Hardware** | One or more USB WiFi adapters with AP-mode support (`iw list \| grep AP`) |
 | **Network** | Ethernet interface with Internet access (for NAT uplink) |
 | **RAM** | 2 GB+ |

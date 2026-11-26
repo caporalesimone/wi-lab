@@ -13,19 +13,21 @@ All notable changes to Wi-Lab are documented in this file.
 | 🐛 Bug fixes | 14 |
 | ⚠️ Breaking changes | 3 |
 | 🔧 Maintenance changes | 3 |
-| ✨ New features | 0 |
+| ✨ New features | 1 |
 | ✅ Test changes | 7 |
-| 📦 Commits since 4.0.0 | 34 |
+| 📦 Commits since 4.0.0 | 37 |
 
 Counts are the entries of the sections below and `git rev-list --count aca248e..HEAD` (`aca248e` is the last 4.0.0 commit), as of 2026-11-26.
 
 ### ⚠️ Breaking Changes
 
-- NetworkManager is no longer supported: Wi-Lab requires Ubuntu Server with the host network on systemd-networkd and no longer releases radios from NetworkManager (`nmcli` is never run; the runtime file under `/run/NetworkManager/conf.d` is gone). On hosts where NetworkManager runs, check that it manages no interface (`nmcli device status`), then `sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager` (Fable NM-1).
+- NetworkManager is no longer supported: Wi-Lab requires Ubuntu Server with the host network on systemd-networkd and no longer releases radios from NetworkManager (`nmcli` is never run; the runtime file under `/run/NetworkManager/conf.d` is gone). The installer now detects NetworkManager and `wpa_supplicant` and offers to disable and mask them, never when NetworkManager manages the host's network or the host uses `wpa_supplicant` as a Wi-Fi client; `uninstall.sh` offers to re-enable them. When upgrading, run the installer again, or check that NetworkManager manages no interface (`nmcli device status`) and run `sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager` (Fable NM-1).
 - Request bodies of the reservation, the create and `POST .../txpower` take only the JSON types they document: `"6"`, `true` or `6.0` for an integer, and `"false"` or `0` for a boolean, are now a `422` instead of being converted (Fable REV-11).
 - `POST .../txpower` takes `tx_power_level` instead of `level`, the name of `radio.tx_power_level` in the create (Fable API-6).
 
 ### ✨ Features
+
+- Startup prechecks: the service exits with code `78` when it does not run as root or a command it needs is missing, and systemd does not restart it (reinstall the systemd unit to get `RestartPreventExitStatus=78`); an active NetworkManager, a Wi-Lab radio held by `wpa_supplicant` and leftover Wi-Lab rules are a `WARNING` in the journal (Fable NM-1).
 
 ### 🐛 Bug Fixes
 
@@ -69,7 +71,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ---
 
-## [4.0.0] - 2026-11-20
+## [4.0.0] - 2026-11-26
 
 ### 📊 Statistics
 
