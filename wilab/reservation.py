@@ -115,6 +115,7 @@ class ReservationManager:
         cleanup_due: Callable[[str], bool] | None = None,
         cleanup_wait: Callable[[str], float] | None = None,
         before_release: Callable[[str], object] | None = None,
+        on_expiry: Callable[[str], object] | None = None,
     ) -> None:
         self._device_ids = list(device_ids)
         self._reservations: dict[str, Reservation] = {}   # reservation_id -> Reservation
@@ -134,6 +135,7 @@ class ReservationManager:
         # Cancels an AP start in progress, which holds the device lock, so that a
         # release never waits for a long start (asynchronous create).
         self._before_release = before_release or (lambda _device: None)
+        self._on_expiry = on_expiry or (lambda _device: None)
         self._failing_cleanup: set[str] = set()  # log the traceback once per failure series
         self._ended: dict[str, tuple[str, float]] = {}  # reservation_id -> (reason, monotonic)
 
@@ -423,6 +425,10 @@ class ReservationManager:
     def _cleanup_expired(self, reservation: Reservation, *, background: bool = False) -> None:
         if background and not self._cleanup_due(reservation.device_id):
             return
+        # REV-11 point 3: forget a finished start (start_failed) now, not when the
+        # next reservation on this device makes a call. A running start is not
+        # cancelled here: it holds the device lock and ends on its own.
+        self._on_expiry(reservation.device_id)
         lock = self._device_lock(reservation.device_id)
         if not lock.acquire(blocking=False):
             return

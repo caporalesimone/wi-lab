@@ -296,6 +296,13 @@ class NetworkManager:
                 del self.start_jobs[device_id]
         return running
 
+    def forget_finished_start(self, device_id: str) -> None:
+        """Drop a start that ended (start_failed) when its reservation expires (REV-11)."""
+        with self.start_jobs_lock:
+            job = self.start_jobs.get(device_id)
+            if job is not None and job.done.is_set():
+                del self.start_jobs[device_id]
+
     def runs(self, device_id: str, req: NetworkCreateRequest) -> bool:
         """True if the active network of *device_id* has exactly the settings of *req*.
 

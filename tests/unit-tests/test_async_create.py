@@ -448,6 +448,7 @@ def test_start_failed_does_not_pass_to_the_next_reservation_after_an_expiry(api)
     old.expires_at = time.time() - 1
     reservations.expire()   # the background sweep
     assert reservations.ended_reason(rid) == "reservation_expired"
+    assert manager.start_jobs == {}   # gone at the expiry, not at the next call (REV-11 point 3)
     new = client.post(RESERVE, headers=headers, json={"duration_seconds": 300})
     assert new.status_code == 200 and new.json()["interface"] == old.device_id
     status = client.get("/api/v2/status", headers=headers).json()

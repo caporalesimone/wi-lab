@@ -10,7 +10,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 18 |
+| 🐛 Bug fixes | 19 |
 | ⚠️ Breaking changes | 5 |
 | 🔧 Maintenance changes | 4 |
 | ✨ New features | 1 |
@@ -54,6 +54,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - Only a client's `DELETE .../network` that did not complete marks the network `stop_failed` (`network_stop_incomplete` in `/status`): a failed rollback, expiry or background cleanup no longer asks a client to repeat a stop of a network it does not own, and no longer hides the hostapd, dnsmasq and NAT reasons of that antenna. On a half-stopped network Internet, TX power and QoS answer `409 / 1012` instead of acting on it (Fable REV-9).
 - Weather-radar channels 120, 124 and 128 are no longer offered and a create asking for them (also inside a 40/80 MHz block) answers `422`: their 10-minute radar check always exceeded the 75 s start timeout and the start ended as a radio fault, up to quarantining the antenna (Fable HAP-9).
 - Internet and `GET .../txpower` no longer answer `404` with a valid reservation when the server meets an internal inconsistency (for example a network without a channel): they answer `500`, so a client does not take its reservation for ended (Fable REV-11).
+- A `start_failed` is forgotten when its reservation expires, not when the next reservation on that antenna makes its first call (internal, never visible to clients) (Fable REV-11).
 - `uninstall.sh` removes what a stopped service leaves on the host (the `wilab-protect-existing` FORWARD rule, `/tmp/wilab-*`, the systemd-networkd rule, QoS IFB devices); `config.yaml` is still kept.
 
 ### 🔧 Maintenance
