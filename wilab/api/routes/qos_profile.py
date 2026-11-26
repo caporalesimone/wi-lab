@@ -68,8 +68,8 @@ def _require_active_network(device_id: str, manager: NetworkManager) -> str:
     A half-stopped network is 409 / 1012 (REV-9).
     """
     require_stop_complete(manager, device_id)
-    st = manager.get_status(device_id)
-    if st is None or not st.active:
+    st = manager.active_status(device_id)   # no radio queries just to check (PERF-2)
+    if st is None:
         raise NetworkNotActive(device_id)
     return st.interface
 

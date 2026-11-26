@@ -86,6 +86,8 @@ class StartJob:
 
 
 
+CLIENTS_CACHE_SECONDS = 1.5   # reuse of the client list between two reads (PERF-2)
+
 def _monotonic_deadline(expires_at: float | None) -> float | None:
     """Monotonic time of a wall-clock expiry (STAB-5); None for no expiry."""
     return None if expires_at is None else time.monotonic() + (expires_at - time.time())
@@ -163,6 +165,9 @@ class NetworkManager:
         # WD-6: consecutive cleanup failures and next background attempt per device
         self._cleanup_failures: dict[str, int] = {}
         self._stop_failed: set[str] = set()  # stops to repeat (NetworkStopError)
+        # Client list per device, reused for CLIENTS_CACHE_SECONDS (PERF-2): clients
+        # polling GET .../network every second cost one `iw station dump` at most.
+        self._clients_cache: dict[str, tuple[float, list[ClientInfo]]] = {}
         # Asynchronous creates: one job per device, guarded by start_jobs_lock.
         self.start_jobs: dict[str, StartJob] = {}
         self.start_jobs_lock = threading.Lock()
@@ -763,6 +768,7 @@ class NetworkManager:
 
         # Remove from active dict
         self.active.pop(device_id, None)
+        self._clients_cache.pop(device_id, None)
         self._stop_failed.discard(device_id)
         
         logger.info(f"Network {device_id} stopped")
@@ -770,6 +776,24 @@ class NetworkManager:
     def get_status(self, device_id: str) -> NetworkStatus | None:
         with self.device_lock(device_id):
             return self._get_status(device_id)
+
+    def active_status(self, device_id: str) -> NetworkStatus | None:
+        """The stored status of a running network, without querying the radio (PERF-2).
+
+        For callers that only need to know whether the network runs and its
+        settings: no `iw` and no lease file. None if no network runs (an
+        expired one is stopped here, like in get_status).
+        """
+        with self.device_lock(device_id):
+            st = self.active.get(device_id)
+            if st is None:
+                return None
+            deadline = getattr(st, '_deadline', None)
+            if deadline is not None and deadline < time.monotonic():
+                logger.info("Network %s expired, stopping", device_id)
+                self.stop_network(device_id)
+                return None
+            return st if st.active else None
 
     def _get_status(self, device_id: str) -> NetworkStatus | None:
         """
@@ -847,8 +871,8 @@ class NetworkManager:
         """
         logger.info(f"Enabling Internet for network {device_id}")
         
-        st = self.get_status(device_id)
-        if not st or not st.active:
+        st = self.active_status(device_id)
+        if st is None:
             raise NetworkNotActive(device_id)
         
         # Get interface for NAT rules
@@ -886,8 +910,8 @@ class NetworkManager:
         """
         logger.info(f"Disabling Internet for network {device_id}")
         
-        st = self.get_status(device_id)
-        if not st or not st.active:
+        st = self.active_status(device_id)
+        if st is None:
             raise NetworkNotActive(device_id)
         
         # Get interface for NAT rules
@@ -924,6 +948,14 @@ class NetworkManager:
         Returns:
             List of ClientInfo objects (MAC and IP address if known)
         """
+        cached = self._clients_cache.get(device_id)
+        if cached is not None and time.monotonic() - cached[0] < CLIENTS_CACHE_SECONDS:
+            return list(cached[1])
+        clients = self._read_clients(device_id)
+        self._clients_cache[device_id] = (time.monotonic(), clients)
+        return list(clients)
+
+    def _read_clients(self, device_id: str) -> list[ClientInfo]:
         clients: list[ClientInfo] = []
         
         # Get interface for this network
@@ -1210,8 +1242,8 @@ class NetworkManager:
         Change TX power level for active network.
         Verifies if change was applied and warns if interface doesn't support dynamic changes.
         """
-        st = self.get_status(device_id)
-        if not st or not st.active:
+        st = self.active_status(device_id)
+        if st is None:
             raise NetworkNotActive(device_id)
         if level not in [1, 2, 3, 4]:
             raise ValueError("TX power level must be 1-4")
@@ -1232,8 +1264,8 @@ class NetworkManager:
         Get current TX power info for network.
         Compares configured level with actual interface power and warns if mismatch.
         """
-        st = self.get_status(device_id)
-        if not st or not st.active:
+        st = self.active_status(device_id)
+        if st is None:
             raise NetworkNotActive(device_id)
         if st.channel is None:
             raise ValueError("Channel unknown for this network")
