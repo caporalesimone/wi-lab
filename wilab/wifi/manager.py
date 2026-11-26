@@ -85,6 +85,11 @@ class StartJob:
     thread: threading.Thread | None = None
 
 
+
+def _monotonic_deadline(expires_at: float | None) -> float | None:
+    """Monotonic time of a wall-clock expiry (STAB-5); None for no expiry."""
+    return None if expires_at is None else time.monotonic() + (expires_at - time.time())
+
 class NetworkNotActive(ValueError):
     """The reservation is valid but it has no running network (API-2)."""
 
@@ -427,6 +432,8 @@ class NetworkManager:
             raise StartupFailure(f"Failed to clean up previous startup: {e}", cleanup_failed=True) from e
         
         expires_at_str = format_utc_timestamp(expires_at_timestamp)
+        # Monotonic from here on (STAB-5): a wall-clock jump must not expire the network.
+        deadline = _monotonic_deadline(expires_at_timestamp)
         
         # Select a safe subnet before configuring the AP or gateway.
         subnet = self._get_subnet(device_id)
@@ -578,14 +585,14 @@ class NetworkManager:
                     and stage == "start AP"
                     and isinstance(e, HostapdRadioFailure)
                     and (
-                        expires_at_timestamp is None
-                        or time.time() + STARTUP_RETRY_DELAY < expires_at_timestamp
+                        deadline is None
+                        or time.monotonic() + STARTUP_RETRY_DELAY < deadline
                     )
                 ):
                     time.sleep(STARTUP_RETRY_DELAY)
                     if (
                         not (cancelled is not None and cancelled())
-                        and (expires_at_timestamp is None or time.time() < expires_at_timestamp)
+                        and (deadline is None or time.monotonic() < deadline)
                     ):
                         logger.info(
                             "Retrying AP startup (attempt %d/%d) after %s on %s",
@@ -624,7 +631,7 @@ class NetworkManager:
             logger.warning(f"Failed to set TX power for {device_id}: {e}")
         
         # Create status object
-        expires_in = int(expires_at_timestamp - time.time()) if expires_at_timestamp is not None else None
+        expires_in = int(deadline - time.monotonic()) if deadline is not None else None
         status = NetworkStatus(
             interface=cfg_net.interface,
             active=True,
@@ -645,7 +652,7 @@ class NetworkManager:
             expires_in=expires_in,
         )
         # Store internal timestamp for expiration checking
-        object.__setattr__(status, '_expires_at_timestamp', expires_at_timestamp)  # type: ignore[attr-defined]
+        object.__setattr__(status, '_deadline', deadline)  # type: ignore[attr-defined]
         
         self.active[device_id] = status
         logger.info(f"Network {device_id} started successfully (expires at {expires_at_str})")
@@ -784,15 +791,16 @@ class NetworkManager:
             return NetworkStatus(interface=cfg_net.interface, active=False)
         
         # Check if network has expired (use internal timestamp)
-        if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp is not None and st._expires_at_timestamp < time.time():
+        deadline = getattr(st, '_deadline', None)
+        if deadline is not None and deadline < time.monotonic():
             logger.info(f"Network {device_id} expired, stopping")
             self.stop_network(device_id)
             cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
             if not cfg_net:
                 return None
             return NetworkStatus(interface=cfg_net.interface, active=False)
-        if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp is not None:
-            st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))
+        if getattr(st, '_deadline', None) is not None:
+            st.expires_in = max(0, int(st._deadline - time.monotonic()))
         
         # Add DHCP info and clients if active
         if st.active:
@@ -874,8 +882,8 @@ class NetworkManager:
                 raise RuntimeError(f"Cannot enable Internet: {e}") from e
         
         st.internet_enabled = True
-        if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp is not None:
-            st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))
+        if getattr(st, '_deadline', None) is not None:
+            st.expires_in = max(0, int(st._deadline - time.monotonic()))
         self.active[device_id] = st
         logger.info(f"Internet enabled for {device_id}")
         
@@ -913,8 +921,8 @@ class NetworkManager:
                 raise RuntimeError(f"Cannot disable Internet: {e}") from e
         
         st.internet_enabled = False
-        if hasattr(st, '_expires_at_timestamp') and st._expires_at_timestamp is not None:
-            st.expires_in = max(0, int(st._expires_at_timestamp - time.time()))
+        if getattr(st, '_deadline', None) is not None:
+            st.expires_in = max(0, int(st._deadline - time.monotonic()))
         self.active[device_id] = st
         logger.info(f"Internet disabled for {device_id}")
         
@@ -1009,7 +1017,8 @@ class NetworkManager:
         dhcp_info = self.dhcp_server.get_subnet_info(device_id) or {}
         if st is None:
             return {"dhcp_range": str(dhcp_info.get("dhcp_range", "")).replace(",", " - ")}
-        expires = getattr(st, "_expires_at_timestamp", None)
+        deadline = getattr(st, "_deadline", None)
+        expires = None if deadline is None else time.time() + (deadline - time.monotonic())
         return {
             "ssid": st.ssid or "",
             "radio": f"{st.band} / {st.channel}",
@@ -1282,7 +1291,7 @@ class NetworkManager:
         while not self.watchdog.stopping.wait(5):
             heartbeat.beat("expiry")
             try:
-                now = time.time()
+                now = time.monotonic()   # deadlines are monotonic (STAB-5)
                 # Copy keys to avoid mutation during iteration
                 for device_id, st in self.active.copy().items():
                     self._expire_network(device_id, st, now)
@@ -1296,8 +1305,8 @@ class NetworkManager:
                 last_error = ""
 
     def _expire_network(self, device_id: str, status: NetworkStatus, now: float) -> None:
-        timestamp = getattr(status, '_expires_at_timestamp', None)
-        if timestamp is None or timestamp >= now:
+        deadline = getattr(status, '_deadline', None)
+        if deadline is None or deadline >= now:
             return
         lock = self.device_lock(device_id)
         if not lock.acquire(blocking=False):

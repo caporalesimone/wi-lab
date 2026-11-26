@@ -66,7 +66,12 @@ class Reservation:
     device_id: str
     duration_seconds: int
     created_at: float
-    expires_at: float | None  # None = unlimited (no expiry)
+    # Monotonic time of expiry (STAB-5): a jump of the wall clock (NTP fixing a
+    # wrong boot time, a VM resumed after a pause) neither expires every
+    # reservation at once nor stretches them. None = unlimited.
+    deadline: float | None
+    # Wall-clock expiry shown to clients, fixed when the deadline is set.
+    shown_expires_at: float | None = None
     release_requests: int = 0
     # Watchdog repairs over the whole reservation: they only grow, so a client
     # compares them before and after a test even if it recreated the network.
@@ -84,18 +89,32 @@ class Reservation:
         self.last_restart_at = time.time()
         self.last_restart_reason = reason
 
+    def __post_init__(self) -> None:
+        if self.shown_expires_at is None and self.deadline is not None:
+            self.shown_expires_at = time.time() + (self.deadline - time.monotonic())
+
+    @property
+    def expires_at(self) -> float | None:
+        """Wall-clock time of expiry shown to clients. Never used to decide the expiry."""
+        return None if self.deadline is None else self.shown_expires_at
+
+    @expires_at.setter
+    def expires_at(self, value: float | None) -> None:
+        self.shown_expires_at = value
+        self.deadline = None if value is None else time.monotonic() + (value - time.time())
+
     @property
     def expires_in(self) -> int | None:
         """Seconds remaining until expiry (clamped to 0). None if unlimited."""
-        if self.expires_at is None:
+        if self.deadline is None:
             return None
-        return max(0, int(self.expires_at - time.time()))
+        return max(0, int(self.deadline - time.monotonic()))
 
     @property
     def is_expired(self) -> bool:
-        if self.expires_at is None:
+        if self.deadline is None:
             return False
-        return time.time() >= self.expires_at
+        return time.monotonic() >= self.deadline
 
 
 class DeviceBusyError(Exception):
@@ -251,7 +270,7 @@ class ReservationManager:
             device_id=device_id,
             duration_seconds=duration_seconds,
             created_at=now,
-            expires_at=None if duration_seconds == 0 else now + duration_seconds,
+            deadline=None if duration_seconds == 0 else time.monotonic() + duration_seconds,
         )
         self._reservations[reservation_id] = reservation
         self._device_to_rid[device_id] = reservation_id

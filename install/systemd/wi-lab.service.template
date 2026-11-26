@@ -1,8 +1,10 @@
 [Unit]
 Description=Wi-Lab WiFi Access Point Manager
 Documentation=https://github.com/caporalesimone/wi-lab
-After=network-online.target
-Wants=network-online.target
+# time-sync.target: start after the clock is synchronized when the host waits
+# for it; expiries use the monotonic clock anyway (STAB-5).
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
 
 [Service]
 # Type=notify: Wi-Lab reports READY=1 after startup and pings the watchdog.

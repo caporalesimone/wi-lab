@@ -10,7 +10,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 20 |
+| 🐛 Bug fixes | 21 |
 | ⚠️ Breaking changes | 6 |
 | 🔧 Maintenance changes | 4 |
 | ✨ New features | 1 |
@@ -57,6 +57,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - Internet and `GET .../txpower` no longer answer `404` with a valid reservation when the server meets an internal inconsistency (for example a network without a channel): they answer `500`, so a client does not take its reservation for ended (Fable REV-11).
 - A `start_failed` is forgotten when its reservation expires, not when the next reservation on that antenna makes its first call (internal, never visible to clients) (Fable REV-11).
 - `next_available_in` of a reserve answered `409 / 1005` is rounded up like `GET /status`: the two no longer differ by one second for the same wait (Fable REV-11).
+- A jump of the system clock (NTP correcting a wrong boot time, a VM resumed after a pause) no longer expires every reservation and network at once, nor stretches them: expiries use the monotonic clock, and the unit starts after `time-sync.target`. Reinstall the systemd unit to get the new ordering (Fable STAB-5).
 - `uninstall.sh` removes what a stopped service leaves on the host (the `wilab-protect-existing` FORWARD rule, `/tmp/wilab-*`, the systemd-networkd rule, QoS IFB devices); `config.yaml` is still kept.
 
 ### 🔧 Maintenance

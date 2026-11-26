@@ -491,7 +491,7 @@ class TestNetworkLifecycle:
         assert status.active is True
         
         # Manually set internal timestamp to past to simulate expiration
-        mgr.active['wls16']._expires_at_timestamp = time.time() - 1  # Expired 1 second ago
+        mgr.active['wls16']._deadline = time.monotonic() - 1  # Expired 1 second ago
         
         # Check status should return inactive due to expiration
         expired_status = mgr.get_status('wls16')

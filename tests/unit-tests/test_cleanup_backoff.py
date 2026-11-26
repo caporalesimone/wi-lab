@@ -31,7 +31,7 @@ def stuck_network(monkeypatch, clock):
     mgr = NetworkManager(load_config())
     device = mgr.config.antennas[0].device_id
     status = NetworkStatus(interface=device, active=True)
-    status._expires_at_timestamp = 1.0  # long expired
+    status._deadline = time.monotonic() - 3600  # long expired
     mgr.active[device] = status
     stop = Mock(side_effect=RuntimeError("Cannot find device"))
     monkeypatch.setattr(mgr, "stop_network", stop)

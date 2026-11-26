@@ -436,7 +436,7 @@ class TestReservationLifecycleConcurrency:
         from wilab.models import NetworkStatus
 
         old = NetworkStatus(interface="wls16", active=True)
-        object.__setattr__(old, "_expires_at_timestamp", time.time() - 1)
+        object.__setattr__(old, "_deadline", time.monotonic() - 1)
         new = NetworkStatus(interface="wls16", active=True)
         clean_manager.active["wls16"] = new
         stopped = []
@@ -1342,3 +1342,23 @@ class TestReserveGivenInterfaceWithTwoAntennas:
         resp = _reserve_on(client, headers, interfac="wls16")
         assert resp.status_code == 422
         assert resp.json()["detail"]["message"].startswith("interfac: ")
+
+
+class TestWallClockJumps:
+    """STAB-5: expiries follow the monotonic clock; a wall-clock jump changes neither."""
+
+    def test_a_forward_jump_does_not_expire_a_reservation(self, monkeypatch):
+        mgr = ReservationManager(["dev0"])
+        r = mgr.create(3600)
+        real = time.time
+        monkeypatch.setattr(time, "time", lambda: real() + 7200)   # NTP moves the clock 2 h ahead
+        assert not r.is_expired
+        assert 3590 <= r.expires_in <= 3600
+
+    def test_a_backward_jump_does_not_stretch_a_reservation(self, monkeypatch):
+        mgr = ReservationManager(["dev0"])
+        r = mgr.create(60)
+        real_time, real_mono = time.time, time.monotonic
+        monkeypatch.setattr(time, "time", lambda: real_time() - 7200)
+        monkeypatch.setattr(time, "monotonic", lambda: real_mono() + 61)   # 61 s really passed
+        assert r.is_expired

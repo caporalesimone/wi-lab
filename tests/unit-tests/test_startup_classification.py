@@ -156,7 +156,7 @@ def test_no_retry_after_the_reservation_expires(monkeypatch, manager, clock):
 
     def start(*args, **kwargs):
         budgets.append(None)
-        monkeypatch.setattr(manager_module.time, "time", lambda: expires_at + 1.0)
+        clock["t"] += 6.0   # past the expiry on the monotonic clock (STAB-5)
         raise HostapdRadioFailure("AP not ready on wlan0 (hostapd state: COUNTRY_UPDATE)")
 
     monkeypatch.setattr(manager.hostapd_manager, "start", start)
