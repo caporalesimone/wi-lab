@@ -525,8 +525,12 @@ class HostapdManager:
         process = self._instances[net_id]["process"]
         return process is not None and process.poll() is None
 
-    def is_enabled(self, net_id: str) -> bool:
-        """Check the private control socket with a short, bounded timeout."""
+    def is_enabled(self, net_id: str) -> bool | None:
+        """Check the private control socket with a short, bounded timeout.
+
+        True or False is hostapd's answer; None when hostapd_cli did not answer
+        in time (a loaded host, not necessarily a broken AP: WD-10).
+        """
         instance = self._instances.get(net_id)
         if instance is None or not self.is_running(net_id):
             return False
@@ -536,6 +540,8 @@ class HostapdManager:
                 ["hostapd_cli", "-p", instance["control_dir"], "-i", interface, "status"],
                 check=False, timeout=1.0, exact_timeout=True,
             )
+        except CommandTimeout:
+            return None
         except CommandError:
             return False
         fields = dict(line.split("=", 1) for line in status.splitlines() if "=" in line)

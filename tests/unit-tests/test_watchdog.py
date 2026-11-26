@@ -522,3 +522,20 @@ def test_restart_counters_live_as_long_as_the_reservation(scripted_creates):
     fresh = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300}).json()
     zero = client.get(f"/api/v2/reservations/{fresh['reservation_id']}/network", headers=headers).json()
     assert zero["restarts"] == {"ap": 0, "dhcp": 0, "last_at": None, "last_reason": None}
+
+
+# --------------------------------------------------------------------------- WD-10
+
+
+@pytest.mark.parametrize(("answers", "restarted"), [
+    ([None] * 5, False),            # five slow probes: a loaded host, not a dead AP
+    ([None] * 6, True),             # six in a row: restart
+    ([None, None, False, None, None], True),   # 1 + 1 + 2 + 1 + 1 half misses
+    ([None] * 4 + [True] + [None] * 4, False),  # a real ENABLED answer resets the count
+    ([False] * 3, True),            # hostapd's own "not ENABLED" keeps the old limit
+])
+def test_slow_probes_count_half(monkeypatch, answers, restarted):
+    ticks = [(5.0 * i, True, answer, True) for i, answer in enumerate(answers)]
+    _watch_until_a_restart(monkeypatch, ticks)
+    manager = dependencies.get_manager(dependencies.get_config())
+    assert manager.watchdog._restore_ap.called is restarted

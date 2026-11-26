@@ -27,6 +27,10 @@ DHCP_RESTORE_LIMIT = 3
 # Ticks (5 s each) between checks of what a running network needs beyond its
 # processes: gateway address, firewall rules, captive portal (WD-7).
 VERIFY_EVERY = 6
+# Probe misses that restart the AP, counted in half misses: hostapd answering
+# "not ENABLED" (or not running) counts 2, a probe that timed out counts 1. So
+# 3 real answers restart the AP, while only 6 slow probes in a row do (WD-10).
+MISS_LIMIT = 6
 # Delay before each new attempt after a restore that failed for a non-radio
 # reason; the last value repeats while the reservation is valid.
 RETRY_BACKOFF = (15.0, 30.0, 60.0, 120.0, 300.0)
@@ -116,13 +120,16 @@ class NetworkWatchdog:
                     # Half stopped on purpose: repairing it would undo the client's stop.
                     continue
                 alive = self.manager.hostapd_manager.is_running(device)
-                misses = 0 if alive and self.manager.hostapd_manager.is_enabled(device) else misses + 1
-                if not alive or misses >= 3 or restart_network:
+                enabled = self.manager.hostapd_manager.is_enabled(device) if alive else False
+                misses = 0 if enabled else misses + (1 if enabled is None else 2)
+                if not alive or misses >= MISS_LIMIT or restart_network:
                     if restart_network:
                         logger.warning("%s; restarting the network", restart_network)
                     reservation.record_restart("ap", (
                         "hostapd_not_running" if not alive
-                        else restart_reason or ("hostapd_not_enabled" if misses >= 3 else "network_check_failed")
+                        else restart_reason or (
+                            "hostapd_not_enabled" if misses >= MISS_LIMIT else "network_check_failed"
+                        )
                     ))
                     restart_network = restart_reason = ""
                     self.states[device] = (reservation, "restoring_ap")

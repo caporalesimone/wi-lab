@@ -1149,3 +1149,23 @@ class _BlockFirewall:
         elif args[0] == "-D":
             self.rules.remove(args[1:])
         return ""
+
+
+@pytest.mark.parametrize("error, expected", [
+    (hostapd.CommandTimeout("hostapd_cli timed out"), None),
+    (hostapd.CommandError("no control socket"), False),
+])
+def test_is_enabled_tells_a_slow_probe_from_a_failed_one(monkeypatch, error, expected):
+    """WD-10: a probe that timed out is not hostapd answering "not ENABLED"."""
+    mgr = hostapd.HostapdManager()
+    mgr._instances["wlan0"] = {
+        "interface": "wlan0", "ssid": "AP", "control_dir": "/run/x",
+        "process": SimpleNamespace(poll=lambda: None),
+    }
+    monkeypatch.setattr(mgr, "is_running", lambda net_id: True)
+
+    def fail(cmd, **kw):
+        raise error
+
+    monkeypatch.setattr(hostapd, "execute_command", fail)
+    assert mgr.is_enabled("wlan0") is expected

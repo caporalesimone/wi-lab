@@ -80,7 +80,7 @@ refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` =
 | 1 | [BUG-5](#bug-5) | Media | ✅ | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
 | 1 | [STAB-9](#stab-9) | Bassa | ✅ | Ripristinare le impostazioni unmanaged se NetworkManager si riavvia. |
 | 1 | [STAB-8](#stab-8) | Bassa | ✅ | Limitare il lavoro di arresto entro il timeout di systemd. |
-| 1 | [WD-10](#wd-10) | Bassa |  | Non considerare guasto un access point solo per probe lenti. |
+| 1 | [WD-10](#wd-10) | Bassa | ✅ | Non considerare guasto un access point solo per probe lenti. |
 | 1 | [HAP-9](#hap-9) | Bassa |  | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. |
 | 1 | [BUG-6](#bug-6) | Bassa |  | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
 | 1 | [NET-9](#net-9) | Bassa |  | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
@@ -474,7 +474,7 @@ in corso. Sostituire anche il `except Exception: pass` di `lifespan` con `logger
 ---
 
 <a id="wd-10"></a>
-### 1. WD-10 - Tre probe lenti riavviano un AP forse sano
+### 1. WD-10 - Tre probe lenti riavviano un AP forse sano ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:64-66](wilab/wifi/watchdog.py#L64-L66), [wilab/wifi/hostapd.py:399-411](wilab/wifi/hostapd.py#L399-L411)
 

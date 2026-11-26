@@ -791,7 +791,7 @@ sequenceDiagram
         WD->>NM: active network? stop_failed? reservation valid?
         alt stop_failed (a stop did not complete)
             WD->>WD: leave it alone (repairing would undo the client's stop)
-        else hostapd dead or not ENABLED 3 times
+        else hostapd dead or not ENABLED 3 times (a probe without answer counts half)
             WD->>WD: runtime_state restoring_ap (budget 3 per hour per antenna)
             WD->>NM: restart the network with the same request
             alt restart fails, radio fault, or 4th failure in the hour
@@ -873,8 +873,9 @@ flowchart TD
     A -->|no| CLR["clear runtime_state"] --> T
     A -->|yes| P{"hostapd process alive?"}
     P -->|no| RA
-    P -->|yes| E{"AP ENABLED?"}
-    E -->|no| M["misses += 1"] --> M3{"3 misses in a row?"}
+    P -->|yes| E{"AP ENABLED?<br/>(hostapd_cli, 1 s)"}
+    E -->|"no answer in 1 s"| MH["misses += 1/2"] --> M3
+    E -->|"not ENABLED"| M["misses += 1"] --> M3{"3 misses in a row?"}
     M3 -->|no| T
     M3 -->|yes| RA
     E -->|yes| DH{"dnsmasq running?"}
@@ -898,6 +899,12 @@ flowchart TD
     RS2 -->|"radio failure or unsafe cleanup"| Q
     RD -->|"cleanup unsafe"| Q2["teardown, quarantine without USB reset"]
 ```
+
+A probe that gets no answer within 1 s counts half a miss (Fable WD-10): on a
+loaded host three slow probes in 15 s would otherwise restart a healthy AP,
+disconnect every client and use one of the 3 restores of the hour. Six probes
+in a row without an answer (30 s) still restart it, since a hung hostapd never
+answers either.
 
 - No connected stations is not a failure.
 - **Restore budget (WD-1):** an antenna can have its AP restored up to 3 times in
