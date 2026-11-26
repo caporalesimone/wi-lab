@@ -835,21 +835,6 @@ class NetworkManager:
         
         return st
 
-    def get_summary(self, device_id: str) -> dict | None:
-        """Backward-compatible summary view for a network."""
-        st = self.get_status(device_id)
-        if st is None:
-            return None
-
-        clients = st.clients or []
-        return {
-            "interface": st.interface,
-            "active": st.active,
-            "dhcp": st.dhcp or {},
-            "clients_connected": st.clients_connected if st.clients_connected is not None else len(clients),
-            "clients": [c.model_dump() if hasattr(c, "model_dump") else c for c in clients],
-        }
-
     def enable_internet(self, device_id: str) -> NetworkStatus:
         """
         Enable Internet access for a network (NAT forwarding).

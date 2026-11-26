@@ -364,11 +364,3 @@ class DhcpServer:
             "instances": instances,
         }
     
-    def stop_all(self) -> None:
-        """Stop all active DHCP servers."""
-        net_ids = list(self._instances.keys())
-        for net_id in net_ids:
-            self.stop(net_id)
-        logger.info("All DHCP servers stopped")
-
-

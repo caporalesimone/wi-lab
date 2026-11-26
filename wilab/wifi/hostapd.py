@@ -610,7 +610,6 @@ class HostapdManager:
                 "net_id": net_id,
                 "interface": data.get("interface"),
                 "ssid": data.get("ssid"),
-                "pid_file": None,
                 "running": (process := data["process"]) is not None and process.poll() is None,
             })
         return {
@@ -618,10 +617,3 @@ class HostapdManager:
             "instances": instances,
         }
     
-    def stop_all(self) -> None:
-        """Stop all hostapd instances."""
-        net_ids = list(self._instances.keys())
-        for net_id in net_ids:
-            self.stop(net_id)
-        logger.info("All hostapd instances stopped")
-

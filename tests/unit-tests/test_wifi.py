@@ -660,54 +660,6 @@ class TestClientList:
 class TestNetworkSummary:
     """Tests for network summary information."""
 
-    def test_summary_inactive_network(self):
-        """Summary for known but inactive network returns defaults."""
-        cfg = load_config()
-        mgr = NetworkManager(cfg)
-        summary = mgr.get_summary('wls16')
-        assert summary is not None
-        assert summary['active'] is False
-        assert summary['dhcp'] == {}
-        assert summary['clients_connected'] == 0
-        assert summary['clients'] == []
-
-    def test_summary_active_network(self, monkeypatch):
-        """Summary for active network includes DHCP info and clients count."""
-        cfg = load_config()
-        mgr = NetworkManager(cfg)
-
-        def mock_dhcp_start(net_id, interface, subnet, dns_server='192.168.10.21'):
-            info = {
-                'interface': interface,
-                'subnet': subnet,
-                'gateway': '192.168.10.1',
-                'dhcp_range': '192.168.10.10,192.168.10.250',
-            }
-            mgr.dhcp_server._instances[net_id] = info
-            return info
-
-        monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
-        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: {})
-        monkeypatch.setattr(mgr.nat_manager, 'enable_nat', lambda *_args, **_kwargs: None)
-
-        req = NetworkCreateRequest(
-            ssid='TestAP',
-            channel=6,
-            encryption='wpa2',
-            password='testpass123',
-            band='2.4ghz',
-            tx_power_level=4
-        )
-
-        mgr.start_network('wls16', req)
-        summary = mgr.get_summary('wls16')
-        assert summary is not None
-        assert summary['active'] is True
-        assert summary['dhcp']['gateway'] == '192.168.10.1'
-        assert summary['clients_connected'] == 0
-        assert summary['clients'] == []
-
-
 class TestShutdownAll:
     """Tests for shutting down all networks."""
     

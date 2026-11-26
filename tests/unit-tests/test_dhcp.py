@@ -175,12 +175,6 @@ class TestDhcpServerStop:
         dhcp = DhcpServer()
         dhcp.stop('nonexistent')  # Should not raise
     
-    def test_stop_all_empty(self):
-        """Test stopping all when none active."""
-        dhcp = DhcpServer()
-        dhcp.stop_all()  # Should not raise
-
-
 class TestDhcpIntegration:
     """Integration tests for DHCP server."""
     

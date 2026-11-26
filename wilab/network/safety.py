@@ -1,25 +1,10 @@
-"""Safety utilities for checking host network impact."""
+"""What Wi-Lab changes on the host: its firewall rules, and the startup notice."""
 
 import logging
 
-from .commands import execute_command, execute_iptables
+from .commands import execute_iptables
 
 logger = logging.getLogger(__name__)
-
-
-def check_ip_forwarding() -> bool:
-    """
-    Check if IP forwarding is currently enabled.
-    
-    Returns:
-        True if enabled, False otherwise
-    """
-    try:
-        output = execute_command(["sysctl", "-n", "net.ipv4.ip_forward"])
-        return output.strip() == "1"
-    except Exception as e:
-        logger.warning(f"Could not check IP forwarding status: {e}")
-        return False
 
 
 def list_wilab_rules() -> dict:
@@ -50,17 +35,9 @@ def list_wilab_rules() -> dict:
     return rules
 
 
-def log_host_impact_warning():
-    """Log warning about host network impact."""
-    logger.warning("=" * 80)
-    logger.warning("⚠️  NETWORK_MODE=HOST: All networking changes affect the HOST system!")
-    logger.warning("=" * 80)
-    logger.warning("Wi-Lab will modify:")
-    logger.warning("  - IP forwarding (sysctl net.ipv4.ip_forward)")
-    logger.warning("  - iptables NAT rules (POSTROUTING)")
-    logger.warning("  - iptables FORWARD rules")
-    logger.warning("  - WiFi interface state (AP mode)")
-    logger.warning("")
-    logger.warning("All rules include '-m comment --comment wilab-*' for tracking.")
-    logger.warning("=" * 80)
-
+def log_host_impact_warning() -> None:
+    """Say once at startup what Wi-Lab changes on the host (ARCH-9)."""
+    logger.info(
+        "Wi-Lab changes the host network: IP forwarding, iptables NAT, FORWARD and INPUT rules "
+        "(all tagged 'wilab-'), and the Wi-Fi adapters it manages",
+    )

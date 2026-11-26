@@ -14,7 +14,6 @@ from wilab.network.commands import (
     execute_command,
     execute_ip,
     execute_iptables,
-    execute_pkill,
     execute_sysctl,
     start_foreground,
     stop_process,
@@ -367,26 +366,6 @@ class TestSysctlWrapper:
 class TestPkillWrapper:
     """Tests for pkill command wrapper."""
     
-    def test_pkill_pattern(self):
-        """Test pkill with pattern."""
-        with patch('wilab.network.commands.execute_command') as mock:
-            mock.return_value = ''
-            execute_pkill('dnsmasq')
-            mock.assert_called_once()
-            call_args = mock.call_args[0][0]
-            assert 'pkill' in call_args
-            assert 'dnsmasq' in call_args
-    
-    def test_pkill_with_signal(self):
-        """Test pkill with signal."""
-        with patch('wilab.network.commands.execute_command') as mock:
-            mock.return_value = ''
-            execute_pkill('hostapd', signal='KILL')
-            call_args = mock.call_args[0][0]
-            assert 'pkill' in call_args
-            assert 'KILL' in call_args or '-f' in call_args
-
-
 class TestCommandError:
     """Tests for CommandError exception."""
     

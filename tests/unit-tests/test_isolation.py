@@ -146,22 +146,6 @@ class TestRemoveNetwork:
 class TestFlushAll:
     """Tests for flushing all isolation rules."""
     
-    @patch('wilab.network.isolation.execute_iptables')
-    def test_flush_all(self, mock_iptables):
-        """Test flushing all isolation rules."""
-        manager = IsolationManager()
-        manager.add_network('192.168.10.0/24')
-        manager.add_network('192.168.11.0/24')
-        manager.add_network('192.168.12.0/24')
-        mock_iptables.reset_mock()
-        
-        manager.flush_all()
-        
-        # Should remove all networks
-        assert len(manager._active_subnets) == 0
-        assert manager.get_active_subnets() == []
-
-
 class TestIptablesRuleFormat:
     """Tests for correct iptables rule formatting."""
     

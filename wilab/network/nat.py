@@ -123,14 +123,6 @@ class NatManager:
             logger.error(f"Failed to enable IP forwarding: {e}")
             raise RuntimeError(f"Cannot enable IP forwarding: {e}") from e
     
-    def disable_ip_forwarding(self) -> None:
-        """Disable IPv4 forwarding (only if no other networks need it)."""
-        try:
-            execute_sysctl("net.ipv4.ip_forward", "0")
-            logger.info("IP forwarding disabled")
-        except Exception as e:
-            logger.warning(f"Failed to disable IP forwarding: {e}")
-    
     def _rule_exists(self, table: str | None, args: list) -> bool:
         """Whether a rule is installed; raises CommandError when iptables cannot tell (REV-3)."""
         prefix = ["-t", table] if table else []
@@ -358,15 +350,6 @@ class NatManager:
                 raise RuntimeError(f"Cannot remove NAT rules for {net_id}: {exc}") from exc
         logger.info("NAT disabled for %s (%s)", net_id, wifi_interface)
     
-    def flush_all_rules(self) -> None:
-        """Flush all NAT and FORWARD rules (use with caution)."""
-        logger.warning("Flushing all NAT and FORWARD rules")
-        try:
-            execute_iptables(["-t", "nat", "-F"])
-            execute_iptables(["-F", "FORWARD"])
-        except Exception as e:
-            logger.error(f"Failed to flush iptables rules: {e}")
-
     def status(self) -> dict:
         """Return minimal iptables status for debugging (nat + forward chains)."""
         nat_rules = None

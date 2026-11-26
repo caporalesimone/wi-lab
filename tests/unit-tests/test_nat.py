@@ -300,21 +300,6 @@ class TestIpForwarding:
         with pytest.raises(RuntimeError, match="Cannot enable IP forwarding"):
             nat.enable_ip_forwarding()
 
-    def test_disable_ip_forwarding(self, monkeypatch):
-        """Test disabling IP forwarding."""
-        nat = NatManager()
-
-        called_with = []
-        def mock_sysctl(key, value=None):
-            called_with.append((key, value))
-            return ""
-
-        monkeypatch.setattr("wilab.network.nat.execute_sysctl", mock_sysctl)
-
-        nat.disable_ip_forwarding()
-        assert called_with == [("net.ipv4.ip_forward", "0")]
-
-
 class TestEnableNat:
     """Tests for enabling NAT."""
 
@@ -479,23 +464,6 @@ class TestDisableNat:
 
 class TestFlushRules:
     """Tests for flushing all rules."""
-
-    def test_flush_all_rules(self, monkeypatch):
-        """Test flushing all NAT and FORWARD rules."""
-        nat = NatManager()
-
-        iptables_calls = []
-        monkeypatch.setattr(
-            "wilab.network.nat.execute_iptables",
-            lambda args, **kwargs: iptables_calls.append(args)
-        )
-
-        nat.flush_all_rules()
-
-        assert len(iptables_calls) == 2
-        assert iptables_calls[0] == ["-t", "nat", "-F"]
-        assert iptables_calls[1] == ["-F", "FORWARD"]
-
 
 # --------------------------------------------------------------------------- STAB-6
 

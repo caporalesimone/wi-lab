@@ -144,11 +144,7 @@ OPENAPI_TAGS = [
 def _candidate_frontend_paths() -> list[Path]:
     project_root = Path(__file__).resolve().parents[2]
     return [
-        project_root / "frontend" / "dist" / "wi-lab-frontend" / "browser",  # Docker build output (preferred)
-#        Path("/opt/wilab-frontend"),  # System install location used previously
-#        project_root / "wilab-frontend",  # Local sibling folder
-#        Path.home() / "wi-lab" / "wilab-frontend",  # User home
-#        Path("/root/wi-lab/wilab-frontend"),  # Root home (service as root)
+        project_root / "frontend" / "dist" / "wi-lab-frontend" / "browser",  # Docker build output
     ]
 
 

@@ -145,15 +145,3 @@ class IsolationManager:
         """Get list of subnets with active isolation rules."""
         return sorted(list(self._active_subnets))
     
-    def flush_all(self) -> None:
-        """
-        Remove all isolation rules (emergency cleanup).
-        WARNING: This removes ALL DROP rules in FORWARD chain.
-        """
-        logger.warning("Flushing all isolation rules")
-        
-        for subnet in list(self._active_subnets):
-            self.remove_network(subnet)
-        
-        self._active_subnets.clear()
-        logger.info("All isolation rules flushed")

@@ -341,15 +341,6 @@ def execute_sysctl(key: str, value: str | None = None) -> str:
         return execute_command(["sysctl", "-w", f"{key}={value}"])
 
 
-def execute_pkill(pattern: str, signal: str | None = None) -> str:
-    """Kill processes by pattern."""
-    cmd = ["pkill"]
-    if signal:
-        cmd.extend(["-KILL", "-f"] if signal == "KILL" else ["-f"])
-    cmd.append(pattern)
-    return execute_command(cmd, check=False)
-
-
 def execute_iw(args: list[str], *, quiet: bool = False) -> str:
     """Execute iw command (wireless tools)."""
     return execute_command(["iw", *args], quiet=quiet)
