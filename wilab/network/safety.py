@@ -64,24 +64,3 @@ def log_host_impact_warning():
     logger.warning("All rules include '-m comment --comment wilab-*' for tracking.")
     logger.warning("=" * 80)
 
-
-def check_existing_wilab_rules():
-    """Check and warn about existing Wi-Lab rules (from previous runs)."""
-    rules = list_wilab_rules()
-    
-    if rules["nat"] or rules["forward"]:
-        logger.warning("⚠️  Found existing Wi-Lab iptables rules (from previous run?):")
-        
-        if rules["nat"]:
-            logger.warning(f"  NAT rules: {len(rules['nat'])} found")
-            for rule in rules["nat"][:3]:  # Show first 3
-                logger.warning(f"    {rule}")
-        
-        if rules["forward"]:
-            logger.warning(f"  FORWARD rules: {len(rules['forward'])} found")
-            for rule in rules["forward"][:3]:  # Show first 3
-                logger.warning(f"    {rule}")
-        
-        logger.warning("  Consider running cleanup script before starting new networks.")
-    else:
-        logger.info("✅ No existing Wi-Lab iptables rules found")

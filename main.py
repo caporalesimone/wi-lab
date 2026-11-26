@@ -5,7 +5,8 @@ import uvicorn
 from wilab.api.dependencies import get_config
 from wilab.api import create_app
 from wilab.version import __version__
-from wilab.network.safety import log_host_impact_warning, check_existing_wilab_rules
+from wilab.network.safety import log_host_impact_warning
+from wilab.precheck import EXIT_PRECHECK_FAILED, log_findings, run_prechecks
 
 # Configure logging
 logging.basicConfig(
@@ -17,12 +18,14 @@ logger = logging.getLogger(__name__)
 
 def main():
     logger.info(f"Wi-Lab v{__version__} starting...")
-    
+
+    # What the host must offer (NM-1). A fatal finding stops here with 78:
+    # the unit does not restart on it (RestartPreventExitStatus=78).
+    if log_findings(run_prechecks()):
+        raise SystemExit(EXIT_PRECHECK_FAILED)
+
     # ⚠️ WARNING: Running with network_mode=host impacts the host system
     log_host_impact_warning()
-    
-    # Check for existing rules from previous runs
-    check_existing_wilab_rules()
     
     # Load configuration (exits with descriptive error on failure)
     config = get_config()

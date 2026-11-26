@@ -12,6 +12,7 @@ from ..network.commands import CommandError
 from ..network.qos import QosManager
 from ..network.qos_profile import QosProfileManager
 from ..network.unmanaged import exclude_from_host_managers
+from ..precheck import warn_wpa_supplicant
 from ..reservation import Reservation, ReservationManager
 from ..wifi.channels import ChannelManager
 from ..wifi.interface import reset_interface
@@ -79,6 +80,7 @@ def scan_devices(config: AppConfig, *, quiet: bool = False) -> list[NetworkEntry
         # Appending preserves the order used for subnet allocation.
         config.antennas = [*config.antennas, *added]
         exclude_from_host_managers(n.interface for n in config.antennas)
+        warn_wpa_supplicant(n.interface for n in added)
         reservations.add_devices([n.device_id for n in added])
         manager = get_manager(config)
         for net in added:

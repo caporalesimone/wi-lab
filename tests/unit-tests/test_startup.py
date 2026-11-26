@@ -11,7 +11,7 @@ def test_main_reuses_runtime_configuration(monkeypatch, config):
     monkeypatch.setattr(dependencies, "_config", None)
     monkeypatch.setattr(dependencies, "load_config", loader)
     monkeypatch.setattr(main, "log_host_impact_warning", lambda: None)
-    monkeypatch.setattr(main, "check_existing_wilab_rules", lambda: None)
+    monkeypatch.setattr(main, "run_prechecks", list)
     monkeypatch.setattr(main.uvicorn, "run", lambda *args, **kwargs: None)
     main.main()
     assert dependencies.get_config() is config
@@ -24,7 +24,7 @@ def test_main_listens_on_configured_port(monkeypatch, config, port):
     server = Mock()
     monkeypatch.setattr(main, "get_config", lambda: config)
     monkeypatch.setattr(main, "log_host_impact_warning", lambda: None)
-    monkeypatch.setattr(main, "check_existing_wilab_rules", lambda: None)
+    monkeypatch.setattr(main, "run_prechecks", list)
     monkeypatch.setattr(main.uvicorn, "run", server)
     main.main()
     assert server.call_args.kwargs["port"] == port

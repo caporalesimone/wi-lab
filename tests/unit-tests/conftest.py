@@ -41,6 +41,7 @@ def _test_config_env(monkeypatch):
     monkeypatch.setattr(discovery, 'default_route_interfaces', set)
     # Never write host network manager rules under /run from tests.
     monkeypatch.setattr(dependencies, 'exclude_from_host_managers', lambda interfaces: None)
+    monkeypatch.setattr(dependencies, 'warn_wpa_supplicant', lambda interfaces: None)
     # Startup cleanup kills Wi-Lab's hostapd/dnsmasq and empties /tmp/wilab-*: on the
     # Wi-Lab machine that would hit the real service (STAB-4). Never run it from tests.
     import wilab.api as api_module
