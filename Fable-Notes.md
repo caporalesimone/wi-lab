@@ -77,6 +77,10 @@ staccare la USB (23/11): serve chi la ricollega.
 - **CHANGELOG 4.0.0:** tolte RACE-2 (mai rilasciato) e "Prevent concurrent reservations…" (la 3.0.0
   aveva già il lock); data dell'intestazione = data di `aca248e`, ultimo commit della 4.0.0.
 - **`protected_commands_password`:** cambiata in `config.yaml` della macchina con un valore casuale (2026-11-26).
+- **SEC-1:** resta aperto finché non si rifà il frontend; avviso nel paragrafo 2.1, nel README e nel
+  CHANGELOG.
+- **NET-8:** `dns_server` sempre obbligatoria.
+- **STAB-7:** lockfile con pip; uv eventualmente dopo la 4.1.0.
 - **TX power: da debuggare.** Non si è mai riusciti a controllare la potenza sugli adattatori in uso.
   Dichiarato non stabile nella 4.1.0 come il QoS (stessi documenti). Il campo `radio.tx_power_level`
   della create resta obbligatorio e validato 1-4: è nel contratto, il suo effetto no. BUG-7, PERF-6 e
@@ -109,13 +113,17 @@ requisiti di installazione. I punti sono divisi con questo criterio, non per gra
 
 ### 2.1 Blocco A: da chiudere per la 4.1.0
 
+> ⚠️ **SEC-1 resta aperto di proposito (decisione del 2026-11-26): il frontend verrà rifatto.** Fino ad
+> allora chi raggiunge la porta dell'API legge **senza autenticazione** qualunque file della macchina
+> (`GET //etc/shadow`, `config.yaml` con token e password, `/home/simone/.wilabsudo`): verificato sulla
+> macchina il 2026-11-26. Non esporre la porta fuori dalla rete del laboratorio. Scritto anche nel
+> README e nel CHANGELOG. Il nuovo frontend deve chiuderlo; se il rifacimento slitta, la correzione
+> della [scheda](#sec-1) è piccola e si può fare da sola.
+
 | Ordine | Id | Gravità | Cosa fare | Perché prima del congelamento |
 |:---:|---|---|---|---|
-| A1 | [SEC-1](#sec-1) | Critica | Limitare la route frontend ai file contenuti nella directory frontend. | Sicurezza critica. Cambia anche le risposte: i percorsi `/api/...` e `/docs/...` inesistenti passano da `200` con `null` a `404`. |
-| A2 | [REV-11](#rev-11) | Bassa | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, `next_available_in` troncato. **Fatto:** punto 4, tipi stretti. | Codici fuori contratto. |
-| A3 | [NET-8](#net-8) | Bassa | Sostituire il DNS predefinito specifico del laboratorio. | Chiave di configurazione che diventa obbligatoria: breaking per chi installa. |
-| A4 | [STAB-7](#stab-7) | Media | Aggiungere un lockfile con versioni esatte delle dipendenze. | Senza versioni bloccate una reinstallazione può cambiare le risposte (per esempio il codice per un `Authorization` mancante). Si genera al congelamento. |
-| A5 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
+| A1 | [REV-11](#rev-11) | Bassa | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, `next_available_in` troncato. **Fatto:** punto 4, tipi stretti. | Codici fuori contratto. |
+| A2 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
 
 ### 2.2 Blocco B: dopo la 4.1.0, solo stabilizzazione
 
@@ -200,6 +208,8 @@ NM-1 è chiuso nel codice; la prova sulla macchina è il paragrafo 5.8.
 | ✅ [REV-2](#rev-2) | Media | Un annullamento il cui rollback fallisce non mette più in quarantena: il rilascio risponde `200` e passa il cleanup al ciclo in background, lo stop risponde `503 / 1012`. unit-test-2 in `test_async_create.py`. |
 | ✅ [REV-9](#rev-9) | Bassa | `stop_failed` solo per lo stop chiesto dal client (`stop_network(client=True)`); il cleanup del server lo toglie. Internet, TX power e QoS rispondono `409 / 1012` su una rete fermata a metà. |
 | ✅ [HAP-9](#hap-9) | Bassa | Canali 120, 124, 128 mai offerti, `422` nella create (anche dentro un blocco 40/80 MHz). |
+| ✅ [NET-8](#net-8) | Bassa | `dns_server` obbligatoria: senza, il servizio non parte e nomina la chiave. Breaking, nel CHANGELOG. |
+| ✅ [STAB-7](#stab-7) | Media | `requirements.lock` con le versioni esatte (dal venv su cui sono passati gli e2e), usato da installer, Makefile e CI; `make lock` lo rigenera. Decisione: pip, non uv, per la 4.1.0. |
 | ✅ [REV-8](#rev-8) | Bassa | Il job di un avvio che ignora l'annullamento resta in `start_jobs` finché il thread gira: niente secondo thread, stop `503 / 1006` poi `200` o `409 / 1007`. |
 | ✅ [API-6](#api-6) | Bassa | `POST .../txpower` prende `tx_power_level`, come la create. Breaking, nel CHANGELOG. |
 | ✅ [NM-1](#nm-1) | Media | Nessun `nmcli` nel codice; precheck all'avvio (`78` se non root o manca un comando, avvisi per NetworkManager, `wpa_supplicant` su una radio, regole rimaste); stadi 06 e 07 dell'installer che propongono di disattivare NetworkManager e `wpa_supplicant` senza rischiare l'accesso; `uninstall.sh` propone di riattivarli. Chiude ARCH-7. [Capitolo 5](#cap-5). |
@@ -216,9 +226,9 @@ Ogni scheda ha la stessa struttura: **Problema**, **Come si riproduce**, **Come 
 utile c'è codice o una patch. I percorsi dei file sono relativi alla radice del repository.
 
 <a id="sec-1"></a>
-### A1. SEC-1 - Lettura di file senza autenticazione dalla route del frontend
+### ⚠️ SEC-1 - Lettura di file senza autenticazione dalla route del frontend
 
-**Gravità:** Critica · **Confidenza:** Probabile · **File:** [wilab/api/__init__.py:195-214](wilab/api/__init__.py#L195-L214)
+**Gravità:** Critica · **Stato:** aperto di proposito fino al nuovo frontend (paragrafo 2.1) · **Confidenza:** Confermato sulla macchina il 2026-11-26 · **File:** [wilab/api/__init__.py:195-214](wilab/api/__init__.py#L195-L214)
 
 **Problema.** Quando esiste la cartella del frontend compilato (l'installer la crea), `create_app`
 registra `GET /{full_path:path}` e serve `frontend_path / full_path` se è un file. Non c'è alcun
@@ -298,7 +308,7 @@ il fallback su `index.html`. Dopo la correzione conviene ruotare `auth_token` e
 ---
 
 <a id="rev-11"></a>
-### A2. REV-11 - Risposte delle API fuori dal contratto in casi rari
+### A1. REV-11 - Risposte delle API fuori dal contratto in casi rari
 
 **Gravità:** Bassa · **Confidenza:** Confermato per i primi due punti (TestClient); Probabile per gli altri · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py), [wilab/api/routes/txpower.py](wilab/api/routes/txpower.py), [wilab/api/routes/internet.py](wilab/api/routes/internet.py), [wilab/models.py](wilab/models.py)
 
@@ -328,58 +338,6 @@ client: decidere prima del rilascio). (5) Calcolare `next_available_in` come `/s
 Test: `test_error_codes.py::test_every_operation_with_a_reservation_id_answers_404_with_the_exact_reason`
 (i motivi della reservation; il punto 2 manca), `test_cleanup_backoff.py::test_reserve_next_available_in_equals_the_cleanup_wait`
 (`xfail` stretto finché il punto 5 non è corretto).
-
----
-
-<a id="net-8"></a>
-### A3. NET-8 - `dns_server` ha come default un indirizzo di laboratorio
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/config.py:37](wilab/config.py#L37)
-
-**Problema.** Il default di `dns_server` in `AppConfig` è `192.168.10.21`. Un'installazione che omette
-la chiave consegna ai client un server DNS che non esiste: i dispositivi dicono "connesso, senza
-Internet".
-
-**Come si riproduce.** Configurazione senza `dns_server`, rete con Internet attivo, client collegato:
-`nslookup example.com` va in timeout.
-
-**Come correggerlo.** Rendere la chiave obbligatoria (errore chiaro all'avvio):
-
-```diff
---- a/wilab/config.py
-+++ b/wilab/config.py
--    dns_server: str = "192.168.10.21"
-+    dns_server: str
-```
-
-È un cambiamento di configurazione che rompe chi ometteva la chiave: va annotato nel CHANGELOG tra le
-modifiche breaking, e `config.example.yaml` deve già contenerla.
-
----
-
-<a id="stab-7"></a>
-### A4. STAB-7 - Dipendenze non bloccate
-
-**Gravità:** Media · **Confidenza:** Confermato · **File:** [requirements.txt](requirements.txt)
-
-**Problema.** `requirements.txt` ha solo limiti inferiori (`fastapi>=0.110.0`, `pydantic>=2.6.0`,
-`uvicorn>=0.27.0`, ...). Una reinstallazione tra sei mesi può portare una versione che cambia
-comportamento, per esempio il codice che FastAPI restituisce per un header `Authorization` mancante, o
-il modo in cui Starlette gestisce le route.
-
-**Come si riproduce.** Due installazioni dello stesso commit in date diverse danno `pip freeze`
-diversi.
-
-**Come correggerlo.** Tenere `requirements.txt` come elenco delle dipendenze dirette e aggiungere un
-file di blocco con le versioni esatte, usato dall'installer e dalla CI.
-
-```bash
-python -m venv /tmp/lock && /tmp/lock/bin/pip install -r requirements.txt
-/tmp/lock/bin/pip freeze > requirements.lock
-```
-
-Nell'installer e nella CI: `pip install -r requirements.lock`. Il file va rigenerato di proposito,
-con i test verdi, quando si decide di aggiornare.
 
 ---
 
@@ -1844,6 +1802,58 @@ per il livello 4.
 Attenzione: se una rete precedente sullo stesso adattatore aveva abbassato la potenza, il valore può
 restare. `reset_interface` (STAB-4) dovrebbe quindi includere `iw dev <if> set txpower auto`, da
 eseguire a interfaccia ferma, cioè nel momento meno delicato.
+
+---
+
+<a id="net-8"></a>
+### ✅ NET-8 - `dns_server` ha come default un indirizzo di laboratorio
+
+**Gravità:** Bassa · **Stato:** ✅ corretto il 2026-11-26 · **Confidenza:** Confermato · **File:** [wilab/config.py:37](wilab/config.py#L37)
+
+**Problema.** Il default di `dns_server` in `AppConfig` è `192.168.10.21`. Un'installazione che omette
+la chiave consegna ai client un server DNS che non esiste: i dispositivi dicono "connesso, senza
+Internet".
+
+**Come si riproduce.** Configurazione senza `dns_server`, rete con Internet attivo, client collegato:
+`nslookup example.com` va in timeout.
+
+**Come correggerlo.** Rendere la chiave obbligatoria (errore chiaro all'avvio):
+
+```diff
+--- a/wilab/config.py
++++ b/wilab/config.py
+-    dns_server: str = "192.168.10.21"
++    dns_server: str
+```
+
+È un cambiamento di configurazione che rompe chi ometteva la chiave: va annotato nel CHANGELOG tra le
+modifiche breaking, e `config.example.yaml` deve già contenerla.
+
+---
+
+<a id="stab-7"></a>
+### ✅ STAB-7 - Dipendenze non bloccate
+
+**Gravità:** Media · **Stato:** ✅ corretto il 2026-11-26 · **Confidenza:** Confermato · **File:** [requirements.txt](requirements.txt)
+
+**Problema.** `requirements.txt` ha solo limiti inferiori (`fastapi>=0.110.0`, `pydantic>=2.6.0`,
+`uvicorn>=0.27.0`, ...). Una reinstallazione tra sei mesi può portare una versione che cambia
+comportamento, per esempio il codice che FastAPI restituisce per un header `Authorization` mancante, o
+il modo in cui Starlette gestisce le route.
+
+**Come si riproduce.** Due installazioni dello stesso commit in date diverse danno `pip freeze`
+diversi.
+
+**Come correggerlo.** Tenere `requirements.txt` come elenco delle dipendenze dirette e aggiungere un
+file di blocco con le versioni esatte, usato dall'installer e dalla CI.
+
+```bash
+python -m venv /tmp/lock && /tmp/lock/bin/pip install -r requirements.txt
+/tmp/lock/bin/pip freeze > requirements.lock
+```
+
+Nell'installer e nella CI: `pip install -r requirements.lock`. Il file va rigenerato di proposito,
+con i test verdi, quando si decide di aggiornare.
 
 ---
 

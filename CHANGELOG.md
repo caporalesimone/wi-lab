@@ -19,6 +19,10 @@ All notable changes to Wi-Lab are documented in this file.
 
 Counts are the entries of the sections below and `git rev-list --count aca248e..HEAD` (`aca248e` is the last 4.0.0 commit), as of 2026-11-26.
 
+### 🛑 Known issue (not fixed in 4.1.0)
+
+- The frontend route serves any file of the host without authentication (`GET //etc/shadow`, `config.yaml` with the auth token). It stays open on purpose until the frontend is rewritten: do not expose the API port outside a trusted lab network (Fable SEC-1).
+
 ### ⚠️ Breaking Changes
 
 - NetworkManager is no longer supported: Wi-Lab requires Ubuntu Server with the host network on systemd-networkd and no longer releases radios from NetworkManager (`nmcli` is never run; the runtime file under `/run/NetworkManager/conf.d` is gone). The installer now detects NetworkManager and `wpa_supplicant` and offers to disable and mask them, never when NetworkManager manages the host's network or the host uses `wpa_supplicant` as a Wi-Fi client; `uninstall.sh` offers to re-enable them. When upgrading, run the installer again, or check that NetworkManager manages no interface (`nmcli device status`) and run `sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager` (Fable NM-1).

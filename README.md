@@ -4,6 +4,12 @@ Wi-Lab turns a Linux machine with multiple USB WiFi adapters into a shared, API-
 
 Typical use-cases: automated wireless testing, RF/antenna benchmarking, classroom labs, CI pipelines that need on-demand WiFi networks.
 
+> ⚠️ **Security warning (4.1.0): known, unfixed.** The route that serves the web frontend does not
+> keep requests inside the frontend directory: anyone who can reach the API port can read **any file
+> of the host without authentication** (for example `GET //etc/shadow`, or `config.yaml` with the
+> auth token). It stays open until the frontend is rewritten. Do not expose the API port outside a
+> trusted lab network.
+
 ---
 
 ## How It Works
