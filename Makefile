@@ -4,7 +4,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help venv test-local test-local-quick test-local-cov test-e2e test-e2e-usb clean-venv lint lint-fix type-check stop start restart build-frontend
+.PHONY: help venv lock test-local test-local-quick test-local-cov test-e2e test-e2e-usb clean-venv lint lint-fix type-check stop start restart build-frontend
 
 # Default target: show help
 help:
@@ -13,6 +13,7 @@ help:
 	@echo "Virtual Environment:"
 	@echo "  make venv              Create local Python virtual environment"
 	@echo "  make clean-venv        Remove virtual environment"
+	@echo "  make lock              Regenerate requirements.lock (on purpose, then run the tests)"
 	@echo ""
 	@echo "Testing (Local - uses venv):"
 	@echo "  make test-local        Run unit tests with verbose output"
@@ -40,12 +41,21 @@ help:
 # Virtual environment setup
 venv: $(VENV)/bin/activate
 
-$(VENV)/bin/activate: requirements.txt
+$(VENV)/bin/activate: requirements.lock
 	@echo "Creating local virtual environment at $(VENV)..."
 	python3 -m venv $(VENV)
 	$(PIP) install --upgrade pip setuptools wheel
-	$(PIP) install -r requirements.txt
+	$(PIP) install -r requirements.lock
 	@echo "✓ Virtual environment created. Activate with: source $(VENV)/bin/activate"
+
+# Regenerate requirements.lock from requirements.txt in a clean venv (STAB-7).
+# Only on purpose, then run the unit and e2e tests before committing it.
+lock:
+	rm -rf .lock-venv && python3 -m venv .lock-venv
+	.lock-venv/bin/pip install -q -r requirements.txt
+	{ head -3 requirements.lock; .lock-venv/bin/pip freeze | grep -viE '^(setuptools|wheel|pip)=='; } > requirements.lock.new
+	mv requirements.lock.new requirements.lock && rm -rf .lock-venv
+	@echo "✓ requirements.lock regenerated: review the diff, run the tests"
 
 # Local test targets (use venv)
 test-local: venv

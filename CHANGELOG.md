@@ -12,7 +12,7 @@ All notable changes to Wi-Lab are documented in this file.
 |---|---:|
 | 🐛 Bug fixes | 17 |
 | ⚠️ Breaking changes | 4 |
-| 🔧 Maintenance changes | 3 |
+| 🔧 Maintenance changes | 4 |
 | ✨ New features | 1 |
 | ✅ Test changes | 7 |
 | 📦 Commits since 4.0.0 | 40 |
@@ -55,6 +55,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The create job reports its outcome as a value instead of HTTP exceptions that no client received, and the synchronous create used only by the unit tests is gone; the create and network OpenAPI examples are module constants, and every error code is in one enum. The API contract is unchanged (Fable REV-16).
 - `validate_interface_wireless`, `validate_interface_ap_mode` and `validate_interface` are gone: the AP-mode check was a substring search that proved nothing, and no start used them any more; discovery already establishes wireless and AP capability (Fable BUG-6).
 - Dependencies: the installer no longer requires or installs `jq` (unused), `network-manager` (not supported any more, see Breaking Changes) and the system `python3-pip` (the venv has its own); it now checks `ip6tables`, `hostapd_cli`, `networkctl` and `usbreset` (package `usbutils`, needed by the USB recovery and so far never installed). `uvicorn[standard]` becomes `uvicorn` with `uvloop` and `httptools`, without the unused `watchfiles`, `websockets` and `python-dotenv`; `pytest-asyncio` leaves the development requirements. Docker stays: it builds the frontend.
+- Exact dependency versions in `requirements.lock`, used by the installer, the Makefile venv and CI; `requirements.txt` keeps the direct dependencies and their ranges. A reinstall gets the versions that were tested. `make lock` regenerates the file on purpose (Fable STAB-7).
 
 ### ✅ Tests
 

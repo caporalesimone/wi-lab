@@ -1,0 +1,26 @@
+# Exact versions installed by install.sh, the Makefile venv and CI (STAB-7).
+# Direct dependencies are in requirements.txt. Regenerate on purpose, with the
+# unit and e2e tests green, when deciding to upgrade: make lock
+annotated-doc==0.0.7
+annotated-types==0.8.0
+anyio==4.16.0
+attrs==26.1.0
+click==8.5.1
+fastapi==0.165.0
+h11==0.16.0
+httptools==0.9.0
+idna==3.20
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+opentelemetry-api==1.45.2
+packaging==26.4
+pydantic==2.14.4
+pydantic_core==2.50.5
+PyYAML==6.0.4
+referencing==0.37.0
+rpds-py==2026.9.1
+starlette==1.10.0
+typing-inspection==0.4.5
+typing_extensions==4.16.0
+uvicorn==0.54.0
+uvloop==0.23.0

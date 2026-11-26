@@ -1,5 +1,5 @@
 # Development dependencies (include runtime + testing tools)
--r requirements.txt
+-r requirements.lock
 
 # Testing
 pytest>=8.0.0

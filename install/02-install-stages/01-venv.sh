@@ -29,7 +29,8 @@ if [ ! -d "$VENV_PATH" ]; then
 
     log_info "Installing Python dependencies..."
     "$VENV_PATH/bin/pip" install --upgrade pip setuptools wheel
-    "$VENV_PATH/bin/pip" install --no-cache-dir -r "$WILAB_DIR/requirements.txt"
+    # Exact versions (STAB-7): a reinstall gets what was tested.
+    "$VENV_PATH/bin/pip" install --no-cache-dir -r "$WILAB_DIR/requirements.lock"
     state_set INSTALL_PY_DEPS_INSTALLED "1"
     log_success "Dependencies installed"
 else

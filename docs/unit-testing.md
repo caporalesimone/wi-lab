@@ -124,9 +124,8 @@ pytest --version
 The `requirements-dev.txt` file contains testing and development tools:
 
 ```
--r requirements.txt # Runtime dependencies
+-r requirements.lock # Runtime dependencies, exact versions (STAB-7)
 pytest              # Test framework
-pytest-asyncio      # Async test support
 pytest-cov          # Coverage reporting
 httpx               # HTTP client used by the FastAPI test client and the e2e tests
 ruff                # Linter
