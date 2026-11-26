@@ -148,7 +148,7 @@ def test_missing_gateway_is_restored_and_dhcp_restarted(monkeypatch, running):
     monkeypatch.setattr(manager_module, "execute_ip", ip)
     assert mgr.verify_network(device) == (["gateway address"], False)
     assert ["addr", "add", "192.168.10.1/24", "dev", device] in calls
-    mgr.dhcp_server.stop.assert_called_once_with(device)
+    mgr.dhcp_server.stop.assert_called_once_with(device, keep_leases=True)
     mgr.dhcp_server.start.assert_called_once()
 
 

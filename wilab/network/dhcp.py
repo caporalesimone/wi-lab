@@ -225,12 +225,17 @@ class DhcpServer:
         except Exception as e:
             raise DhcpServerError(f"Failed to start DHCP server for {net_id}: {e}") from e
     
-    def stop(self, net_id: str) -> None:
+    def stop(self, net_id: str, *, keep_leases: bool = False) -> None:
         """
         Stop DHCP server for a network interface.
         
         Args:
             net_id: Network identifier
+            keep_leases: Keep the lease file. Only for a restart of dnsmasq on a
+                network that goes on (watchdog repair): its clients keep their
+                addresses. Otherwise the leases end with the network, so the
+                next user of the adapter never inherits the previous clients
+                (NET-7).
         """
         if net_id not in self._instances:
             # Normal after a startup that failed before DHCP started (NET-5).
@@ -273,6 +278,11 @@ class DhcpServer:
             if os.path.exists(config_file):
                 os.remove(config_file)
                 logger.info(f"Removed dnsmasq config {config_file}")
+            if not keep_leases:
+                try:
+                    os.remove(instance["lease_file"])
+                except (KeyError, FileNotFoundError):
+                    pass
             
             del self._instances[net_id]
             logger.info(f"DHCP server stopped for {net_id}")

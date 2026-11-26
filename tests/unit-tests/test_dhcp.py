@@ -1,5 +1,6 @@
 import os
 from ipaddress import IPv4Network
+from pathlib import Path
 
 import pytest
 
@@ -237,6 +238,17 @@ class TestLaunchTimeoutCleanup:
         timed_out.stop("ap-01")
         assert stopped == [4321]
         assert "ap-01" not in timed_out.list_active()
+
+    @pytest.mark.parametrize("keep_leases", [False, True])
+    def test_leases_end_with_the_network(self, timed_out, monkeypatch, keep_leases):
+        """NET-7: the next user of the adapter never inherits the previous clients;
+        a watchdog restart of dnsmasq on the same network keeps them."""
+        monkeypatch.setattr("wilab.network.dhcp.stop_process", lambda pid: None)
+        monkeypatch.setattr(DhcpServer, "_find_process", staticmethod(lambda config_file: None))
+        leases = Path(timed_out._instances["ap-01"]["lease_file"])
+        leases.write_text("1700000000 aa:bb:cc:dd:ee:ff 192.168.10.50 phone *\n")
+        timed_out.stop("ap-01", keep_leases=keep_leases)
+        assert leases.exists() is keep_leases
 
     def test_find_process_matches_name_and_conf_file(self, tmp_path):
         import subprocess

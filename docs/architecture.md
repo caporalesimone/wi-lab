@@ -1132,7 +1132,7 @@ device lock for a 60 s radar check.
 |---|---|---|
 | Reservations, quarantine, active networks, watchdog states | Process memory | Lost on restart. |
 | hostapd configuration and control socket | `/tmp/wilab-hostapd/ap-*/` | Removed at teardown. Contains the WPA passphrase. |
-| dnsmasq configuration, leases, PID | `/tmp/wilab-dnsmasq/` | Removed at teardown. If a launch timed out before the PID file existed, teardown finds the daemon by its unique `--conf-file` argument in `/proc`, or concludes none was started (Fable NET-6). |
+| dnsmasq configuration, leases, PID | `/tmp/wilab-dnsmasq/` | Removed at teardown, leases included, so the next user of the adapter never inherits the previous clients; a watchdog restart of dnsmasq alone keeps the leases (Fable NET-7). If a launch timed out before the PID file existed, teardown finds the daemon by its unique `--conf-file` argument in `/proc`, or concludes none was started (Fable NET-6). |
 | NAT and isolation rules | iptables `nat` and `FORWARD` | Removed at teardown. Leftovers are reported at startup. |
 | Captive portal chains and sign-ins | iptables `wilab-cp-<interface>` chains; sign-ins in process memory | Removed at teardown and at startup. |
 | Host guard | iptables and ip6tables `wilab-in-<interface>` chains, jumped to from `INPUT` | Removed at teardown and at startup. |

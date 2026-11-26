@@ -84,7 +84,7 @@ refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` =
 | 1 | [HAP-9](#hap-9) | Bassa |  | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. |
 | 1 | [BUG-6](#bug-6) | Bassa | ✅ | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
 | 1 | [NET-9](#net-9) | Bassa | ✅ | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
-| 1 | [NET-7](#net-7) | Bassa |  | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
+| 1 | [NET-7](#net-7) | Bassa | ✅ | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
 | 2 | [SEC-1](#sec-1) | Critica |  | Limitare la route frontend ai file contenuti nella directory frontend. |
 | 3 | [REV-8](#rev-8) | Bassa |  | Non togliere da `start_jobs` un job il cui thread gira ancora dopo il timeout dell'annullamento. |
 | 4 | [REV-9](#rev-9) | Bassa |  | Impostare `stop_failed` solo per lo stop chiesto dal client; rispondere `1012` a Internet, TX power e QoS su una rete fermata a metà. |
@@ -589,7 +589,7 @@ che toglie l'indirizzo prima di qualunque allocazione.
 ---
 
 <a id="net-7"></a>
-### 1. NET-7 - I file dei lease sopravvivono alla reservation
+### 1. NET-7 - I file dei lease sopravvivono alla reservation ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/dhcp.py:232-277](wilab/network/dhcp.py#L232-L277)
 

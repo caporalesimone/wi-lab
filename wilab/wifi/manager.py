@@ -1044,7 +1044,7 @@ class NetworkManager:
         if gateway not in addresses:
             execute_ip(["addr", "add", gateway, "dev", status.interface])
             repaired.append("gateway address")
-            self.dhcp_server.stop(device_id)
+            self.dhcp_server.stop(device_id, keep_leases=True)
             self.dhcp_server.start(
                 device_id, status.interface, status.subnet, self.config.dns_server,
                 **({"captive_dns": True} if status.captive_portal else {}),

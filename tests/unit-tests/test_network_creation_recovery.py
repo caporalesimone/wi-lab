@@ -334,6 +334,8 @@ def test_watchdog_dhcp_failure_does_not_restart_ap_or_schedule_usb(monkeypatch):
 
     manager.watchdog._restore_dhcp(reservations, reservation, status)
     assert [call.args for call in stop.call_args_list] == [(device,), (device,)]
+    # A DHCP-only repair keeps the clients' leases (NET-7).
+    assert all(call.kwargs == {"keep_leases": True} for call in stop.call_args_list)
     start.assert_called_once_with(device, device, status.subnet, config.dns_server)
     restart_ap.assert_not_called()
     assert reservations.get(reservation.reservation_id) is reservation

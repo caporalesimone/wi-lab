@@ -385,7 +385,7 @@ class NetworkWatchdog:
             return
         self.states[device] = (reservation, "restoring_dhcp")
         try:
-            self.manager.dhcp_server.stop(device)
+            self.manager.dhcp_server.stop(device, keep_leases=True)
         except DhcpServerError:
             self._isolate_dhcp_failure(reservations, reservation)
             return
@@ -400,7 +400,7 @@ class NetworkWatchdog:
         except DhcpServerError:
             logger.exception("DHCP restart failed on %s", device)
             try:
-                self.manager.dhcp_server.stop(device)
+                self.manager.dhcp_server.stop(device, keep_leases=True)
             except DhcpServerError:
                 self._isolate_dhcp_failure(reservations, reservation)
                 return
