@@ -61,7 +61,9 @@ def internet_enable(
         except NetworkNotActive:
             raise  # 409 / 1007 (API-2)
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+            # The reservation is valid: a 404 would tell the client it ended (REV-11).
+            # Reaching this is a server-side inconsistency.
+            raise HTTPException(status_code=500, detail=str(e)) from e
         except RuntimeError as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -104,6 +106,8 @@ def internet_disable(
         except NetworkNotActive:
             raise  # 409 / 1007 (API-2)
         except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+            # The reservation is valid: a 404 would tell the client it ended (REV-11).
+            # Reaching this is a server-side inconsistency.
+            raise HTTPException(status_code=500, detail=str(e)) from e
         except RuntimeError as e:
             raise HTTPException(status_code=500, detail=str(e))

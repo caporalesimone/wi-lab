@@ -72,3 +72,21 @@ def test_openapi_documents_1007():
     ):
         assert "1007" in paths[path][method]["responses"]["409"]["description"], (path, method)
         assert "1012" in paths[path][method]["responses"]["409"]["description"], (path, method)
+
+
+@pytest.mark.parametrize(("method", "path", "manager_call"), [
+    ("post", "/internet/enable", "enable_internet"),
+    ("post", "/internet/disable", "disable_internet"),
+    ("get", "/txpower", "get_tx_power_info"),
+])
+def test_an_internal_error_on_a_valid_reservation_is_never_404(idle_reservation, monkeypatch, method, path, manager_call):
+    """REV-11 point 2: a 404 on these calls always means the reservation ended."""
+    client, headers, rid = idle_reservation
+    manager = dependencies.get_manager(dependencies.get_config())
+
+    def broken(*args, **kwargs):
+        raise ValueError("Channel unknown for this network")
+
+    monkeypatch.setattr(manager, manager_call, broken)
+    response = getattr(client, method)(f"/api/v2/reservations/{rid}{path}", headers=headers)
+    assert response.status_code == 500, response.text
