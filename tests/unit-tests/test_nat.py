@@ -548,6 +548,22 @@ def test_verify_moves_the_rules_of_a_running_network(moving_route):
     assert nat.verify("wlan0", "wlan0", "192.168.120.0/24") == []
 
 
+def test_verify_leaves_a_network_with_internet_disabled_alone(moving_route):
+    """The watchdog check must not give Internet back after `internet/disable`."""
+    _route, fw = moving_route
+    nat = NatManager("auto")
+    nat.enable_nat("wlan0", "wlan0", "192.168.120.0/24")
+    nat.disable_nat("wlan0", "wlan0", "192.168.120.0/24")
+    blocked = list(fw.rules)
+    assert blocked and not _masquerade_upstreams(fw)
+    assert nat.verify("wlan0", "wlan0", "192.168.120.0/24") == []
+    assert fw.rules == blocked  # no NAT rule back, the block still in place
+    nat.enable_nat("wlan0", "wlan0", "192.168.120.0/24")  # the client enables it again
+    assert _masquerade_upstreams(fw) == ["eth0"]
+    nat.release_network("wlan0", "wlan0")
+    assert fw.rules == []
+
+
 def test_release_forgets_the_upstream(moving_route):
     _route, fw = moving_route
     nat = NatManager("auto")

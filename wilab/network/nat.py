@@ -319,6 +319,9 @@ class NatManager:
         """
         self.block_internet(wifi_interface, net_id)
         self._remove_nat_rules(wifi_interface, net_id)
+        # Not a NAT network any more: verify() must not "repair" what the client disabled.
+        self._nat_networks.discard(net_id)
+        self._upstream_by_network.pop(net_id, None)
 
     def release_network(self, wifi_interface: str, net_id: str) -> None:
         if net_id in self._nat_networks:
