@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
-from conftest import network_body
+from conftest import create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -490,13 +490,13 @@ class TestNetworkCreationChannelValidation:
             "ssid": "TestNet", "channel": 52, "encryption": "open",
             "band": "5ghz", "tx_power_level": 4,
         }
-        response = client.post(url, headers=headers, json=network_body(**request))
+        response = create_network(client, headers, url, network_body(**request))[1]
         if not show_dfs:
             assert response.status_code == 422
             assert response.json()["detail"]["message"].startswith("radio.channel: DFS channel 52")
             assert "show_dfs: false" in response.json()["detail"]["message"]
             start_network.assert_not_called()
-            response = client.post(url, headers=headers, json=network_body(**{**request, "channel": 36}))
+            response = create_network(client, headers, url, network_body(**{**request, "channel": 36}))[1]
         assert response.status_code == 200
         start_network.assert_called_once()
 

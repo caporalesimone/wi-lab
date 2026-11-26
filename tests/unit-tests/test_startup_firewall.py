@@ -7,7 +7,7 @@ import logging
 from unittest.mock import Mock
 
 import pytest
-from conftest import network_body
+from conftest import create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -88,7 +88,7 @@ def test_successful_start_logs_no_false_isolation_line(manager, caplog):
     assert "Isolation disabled for testing" not in caplog.text
 
 
-def test_api_returns_500_and_keeps_the_reservation(monkeypatch):
+def test_api_reports_start_failed_and_keeps_the_reservation(monkeypatch):
     config = dependencies.get_config()
     mgr = dependencies.get_manager(config)
     monkeypatch.setattr(mgr.hostapd_manager, "start", Mock())
@@ -105,10 +105,9 @@ def test_api_returns_500_and_keeps_the_reservation(monkeypatch):
         rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 60}).json()[
             "reservation_id"
         ]
-        response = client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=network_body(**body))
-        assert response.status_code == 500
-        assert "enable Internet" in response.json()["detail"]["message"]
-        assert "Retry-After" not in response.headers
-        network = client.get(f"/api/v2/reservations/{rid}/network", headers=headers).json()
+        _, response = create_network(client, headers, f"/api/v2/reservations/{rid}/network", network_body(**body))
+        network = response.json()
+        assert network["runtime_state"] == "start_failed"
+        assert "enable Internet" in network["error"]["message"]
         assert network["active"] is False
         assert client.get(f"/api/v2/reservations/{rid}", headers=headers).status_code == 200

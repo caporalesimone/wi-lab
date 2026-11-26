@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 
 import pytest
-from conftest import network_body
+from conftest import create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -276,10 +276,7 @@ class TestAuthentication:
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **kw: {'gateway': '192.168.10.1'})
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **kw: {})
 
-        resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
-            headers={'Authorization': valid_token},
-            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
+        resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert resp.status_code == 200, resp.text
         assert resp.json()['active'] is True
 
@@ -329,24 +326,24 @@ class TestNetworkCreateEndpoint:
         assert resp.status_code == 422
         assert resp.json()['detail']['code'] == 422
 
-    def test_start_network_runtime_failure_returns_500(self, client, valid_token, reservation_id, monkeypatch):
-        """Operational failures during startup must map to 500, not 404."""
+    def test_start_network_runtime_failure_is_start_failed(self, client, valid_token, reservation_id, monkeypatch):
+        """Operational failures during startup end as start_failed with 1013, not 404 (REV-16)."""
         manager = dependencies.get_manager(dependencies.get_config())
         monkeypatch.setattr(
             manager, 'start_network',
             Mock(side_effect=ValueError('Failed to start AP: hostapd failed to start')),
         )
 
-        resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
-            headers={'Authorization': valid_token},
-            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
-        assert resp.status_code == 500
-        assert resp.json()['detail'] == {
-            'code': 500, 'reason': 'internal_server_error',
+        created, resp = create_network(
+            client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network',
+            network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
+        assert created.status_code == 202
+        assert resp.json()['runtime_state'] == 'start_failed'
+        assert resp.json()['error'] == {
+            'code': 1013, 'reason': 'startup_failed', 'stage': None,
             'message': 'Failed to start AP: hostapd failed to start',
         }
-    
+
     def test_create_returns_the_network(self, client, valid_token, reservation_id, monkeypatch):
         """API-5: a successful create answers what GET .../network answers."""
         from unittest.mock import Mock
@@ -365,10 +362,10 @@ class TestNetworkCreateEndpoint:
         url = f'/api/v2/reservations/{reservation_id}/network'
         headers = {'Authorization': valid_token}
 
-        resp = client.post(url, headers=headers, json=network_body(
+        resp = create_network(client, headers, url, network_body(
             ssid='TestAP', channel=6, encryption='wpa2', password='testpass123',
             band='2.4ghz', tx_power_level=4,
-        ))
+        ))[1]
 
         assert resp.status_code == 200
         data = resp.json()
@@ -435,10 +432,7 @@ class TestNetworkGetEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         # Start network via reservation token
-        start_resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
-            headers={'Authorization': valid_token},
-            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
         # Get network status
@@ -497,10 +491,7 @@ class TestNetworkGetEndpoint:
         )
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
-        start_resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
-            headers={'Authorization': valid_token},
-            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
         resp = client.get(
@@ -539,10 +530,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
-        start_resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
-            headers={'Authorization': valid_token},
-            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
         stop_resp = client.delete(
@@ -571,7 +559,7 @@ class TestNetworkDeleteEndpoint:
             ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz',
             tx_power_level=4,
         )
-        first = client.post(url, headers=headers, json=body)
+        first = create_network(client, headers, url, body)[1]
         assert first.status_code == 200
 
         again = client.post(url, headers=headers, json=body)
@@ -607,9 +595,9 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
         headers = {'Authorization': valid_token}
         url = f'/api/v2/reservations/{reservation_id}/network'
-        assert client.post(url, headers=headers, json=network_body(
+        assert create_network(client, headers, url, network_body(
             ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz',
-            tx_power_level=4)).status_code == 200
+            tx_power_level=4))[1].status_code == 200
 
         def stuck(*a, **k):
             raise RuntimeError("Failed to stop hostapd for wls16: Process 101153 stuck in the kernel")
@@ -634,9 +622,9 @@ class TestNetworkDeleteEndpoint:
         assert 'wls16' not in manager.active
 
         # B: stuck for a moment only -> the server repeats the stop itself, the client sees 200.
-        assert client.post(url, headers=headers, json=network_body(
+        assert create_network(client, headers, url, network_body(
             ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz',
-            tx_power_level=4)).status_code == 200
+            tx_power_level=4))[1].status_code == 200
         monkeypatch.setattr(network_routes, 'STOP_RETRY_BUDGET', 5.0)
         calls = []
 
@@ -650,7 +638,7 @@ class TestNetworkDeleteEndpoint:
         assert not manager.stop_failed('wls16')
 
     def test_startup_failure_names_its_stage(self, client, valid_token, reservation_id, monkeypatch):
-        """A non-radio startup failure is 500 / 1013 startup_failed with the stage that failed."""
+        """A non-radio startup failure is start_failed with 1013 and the stage that failed."""
         from wilab.network.dhcp import DhcpServerError
 
         cfg = load_config()
@@ -661,12 +649,12 @@ class TestNetworkDeleteEndpoint:
             raise DhcpServerError("dnsmasq refused the configuration")
         monkeypatch.setattr(manager.dhcp_server, 'start', dhcp_fails)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
-        resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network', headers={'Authorization': valid_token},
-            json=network_body(ssid='TestAP', channel=6, encryption='open', band='2.4ghz', tx_power_level=4),
+        _, resp = create_network(
+            client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network',
+            network_body(ssid='TestAP', channel=6, encryption='open', band='2.4ghz', tx_power_level=4),
         )
-        assert resp.status_code == 500
-        detail = resp.json()['detail']
+        assert resp.json()['runtime_state'] == 'start_failed'
+        detail = resp.json()['error']
         assert (detail['code'], detail['reason'], detail['stage']) == (1013, 'startup_failed', 'dhcp')
         assert 'dnsmasq refused' in detail['message']
 
@@ -708,10 +696,7 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 10.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
-        start_resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
-            headers={'Authorization': valid_token},
-            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=2))
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=2))[1]
         assert start_resp.status_code == 200
 
         resp = client.get(f'/api/v2/reservations/{reservation_id}/txpower', headers={'Authorization': valid_token})
@@ -737,10 +722,7 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
-        start_resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
-            headers={'Authorization': valid_token},
-            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
         resp = client.get(f'/api/v2/reservations/{reservation_id}/txpower', headers={'Authorization': valid_token})
@@ -891,10 +873,7 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         # Start network first
-        start_resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
-            headers={'Authorization': valid_token},
-            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
         # Enable internet
@@ -920,10 +899,7 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         # Start network first
-        start_resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
-            headers={'Authorization': valid_token},
-            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
         # Enable internet first
@@ -1117,10 +1093,7 @@ class TestGetNetworkExpiryAlwaysPresent:
         monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
-        client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
-            headers={'Authorization': valid_token},
-            json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
+        create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
 
         resp = client.get(
             f'/api/v2/reservations/{reservation_id}/network',

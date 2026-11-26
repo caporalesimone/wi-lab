@@ -294,14 +294,18 @@ def clean_manager(config, monkeypatch):
 ```
 
 `network_body(**flat)` builds the sectioned create body (`radio`, `wifi`,
-`internet`, `captive_portal`) from flat fields. The autouse fixture
-`_create_in_the_request` runs the AP start inside the `POST` request, so most
-API tests read the outcome of a create directly (`200` or the failure);
-`test_async_create.py` turns the background thread back on to test the real
-contract (`202`, polling, cancel).
+`internet`, `captive_portal`) from flat fields. Every create runs as in
+production: the `POST` answers `202` and the start runs in a background job.
+`create_network(client, headers, url, body)` sends the `POST` and polls
+`GET .../network` until the start ends; it returns the `POST` answer and the
+outcome (the network, `runtime_state: start_failed` with `error`, or `404`
+with the `reason`). `test_async_create.py` tests the contract itself
+(`202`, polling, cancel).
 
 ```python
 body = network_body(ssid="TestAP", channel=6, band="2.4ghz", encryption="open", tx_power_level=4)
+created, outcome = create_network(client, headers, f"/api/v2/reservations/{rid}/network", body)
+assert created.status_code == 202 and outcome.json()["active"] is True
 ```
 
 ---

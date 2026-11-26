@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from conftest import network_body
+from conftest import create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -189,14 +189,14 @@ def test_api_vanished_interface_is_waited_for_not_quarantined(monkeypatch):
 
     pauses: list[float] = []
     monkeypatch.setattr(mgr.hostapd_manager, "start", start)
-    monkeypatch.setattr(network_routes, "sleep", pause)
+    monkeypatch.setattr(network_routes, "_pause", lambda _cancel, seconds: pause(seconds) or False)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     with TestClient(create_app()) as client:
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
-        result = client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=network_body(**PAYLOAD))
+        _, result = create_network(client, headers, f"/api/v2/reservations/{rid}/network", network_body(**PAYLOAD))
         assert pauses == [5]
-        assert result.status_code == 500
-        assert result.json()["detail"]["code"] == 1013
+        assert result.json()["runtime_state"] == "start_failed"
+        assert result.json()["error"]["code"] == 1013
         assert client.get(f"{RESERVE}/{rid}", headers=headers).status_code == 200
         assert dependencies.get_reservation_manager(config).recovery_snapshot() == {}
 
@@ -321,8 +321,8 @@ def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch):
         assert reservations.get(rid).device_id == device
         for _ in config.antennas[1:]:
             assert client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).status_code == 200
-        result = client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=network_body(**PAYLOAD))
-        assert (result.status_code, result.json()["detail"]["code"]) == (503, 1003)
+        _, result = create_network(client, headers, f"/api/v2/reservations/{rid}/network", network_body(**PAYLOAD))
+        assert (result.status_code, result.json()["detail"]["reason"]) == (404, "reservation_invalidated")
         schedule.assert_not_called()
         status = client.get("/api/v2/status", headers=headers).json()
         assert status["status"] == "degraded"

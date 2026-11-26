@@ -2,7 +2,7 @@ import json
 from unittest.mock import Mock
 
 import pytest
-from conftest import network_body
+from conftest import create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -33,7 +33,7 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
     monkeypatch.setattr(manager, "start_network", start)
     monkeypatch.setattr(manager.recovery, "schedule", schedule)
     pauses = []
-    monkeypatch.setattr(network, "sleep", pauses.append)
+    monkeypatch.setattr(network, "_pause", lambda _cancel, seconds: pauses.append(seconds) or False)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
 
     with TestClient(create_app()) as client:
@@ -42,12 +42,11 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
         rid = reservation.json()["reservation_id"]
         create = f"/api/v2/reservations/{rid}/network"
 
-        terminal = client.post(create, headers=headers, json=network_body(**PAYLOAD))
+        accepted, terminal = create_network(client, headers, create, network_body(**PAYLOAD))
+        assert accepted.status_code == 202
         assert pauses == [5, 10]
-        assert terminal.status_code == 503  # API-4: a client state, not a server error
-        assert "Retry-After" not in terminal.headers
-        assert terminal.json()["detail"]["code"] == 1003
-        assert terminal.json()["detail"]["reservation_invalidated"] is True
+        assert terminal.status_code == 404  # API-4: a client state, not a server error
+        assert terminal.json()["detail"]["reason"] == "reservation_invalidated"
         assert client.post(create, headers=headers, json=network_body(**PAYLOAD)).status_code == 404
         assert [c.kwargs["allow_internal_retry"] for c in start.call_args_list] == [True, False, False]
 
@@ -58,8 +57,7 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
         assert "reservation_invalidated" not in blocked.json()["detail"]  # a field of the old create
         assert blocked.headers.get("Retry-After") == ("10" if authorized_port else None)
         messages = [record.getMessage() for record in caplog.records if record.name == "wilab.api.errors"]
-        assert messages == [
-            "API failure operation=start_network http_status=503 detail_code=1003",
+        assert messages == [   # the start ran in the job: no failed request for it
             f"API failure operation=create_reservation http_status=503 detail_code={1002 if authorized_port else 1003}",
         ]
         overall = client.get("/api/v2/status", headers=headers).json()
@@ -90,34 +88,33 @@ def test_radio_failure_recovered_by_a_later_start_answers_200(monkeypatch):
     monkeypatch.setattr(manager, "start_network", start)
     monkeypatch.setattr(manager, "get_status", lambda device: NetworkStatus(interface=device, active=True))
     pauses = []
-    monkeypatch.setattr(network, "sleep", pauses.append)
+    monkeypatch.setattr(network, "_pause", lambda _cancel, seconds: pauses.append(seconds) or False)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     with TestClient(create_app()) as client:
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
-        result = client.post(f"{RESERVE}/{rid}/network", headers=headers, json=network_body(**PAYLOAD))
+        _, result = create_network(client, headers, f"{RESERVE}/{rid}/network", network_body(**PAYLOAD))
     assert result.status_code == 200 and result.json()["active"] is True
     assert (calls, pauses) == ([True, False], [5])
 
 
 def test_reservation_too_short_for_another_start_is_released_without_quarantine(monkeypatch):
-    """A: no time left for the next start -> 503 / 1003, antenna free again, no quarantine."""
+    """A: no time left for the next start -> 404 reservation_expired, antenna free again, no quarantine."""
     config = dependencies.get_config()
     manager = dependencies.get_manager(config)
     start = Mock(side_effect=StartupFailure("radio timeout", radio=True))
     monkeypatch.setattr(manager, "start_network", start)
     monkeypatch.setattr(manager.recovery, "schedule", Mock())
     pauses = []
-    monkeypatch.setattr(network, "sleep", pauses.append)
+    monkeypatch.setattr(network, "_pause", lambda _cancel, seconds: pauses.append(seconds) or False)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     with TestClient(create_app()) as client:
         reserved = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()
         monkeypatch.setattr(network, "START_MARGIN", 400)   # the next start would not fit
-        result = client.post(
-            f"{RESERVE}/{reserved['reservation_id']}/network", headers=headers, json=network_body(**PAYLOAD),
+        _, result = create_network(
+            client, headers, f"{RESERVE}/{reserved['reservation_id']}/network", network_body(**PAYLOAD),
         )
-        assert result.status_code == 503
-        assert result.json()["detail"]["code"] == 1003
-        assert result.json()["detail"]["reservation_invalidated"] is True
+        assert result.status_code == 404
+        assert result.json()["detail"]["reason"] == "reservation_expired"
         assert (start.call_count, pauses) == (1, [])
         reservations = dependencies.get_reservation_manager(config)
         assert reservations.recovery_snapshot() == {}

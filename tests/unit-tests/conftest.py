@@ -365,12 +365,24 @@ def _fresh_health_checks(monkeypatch):
     monkeypatch.setattr(health, "MAX_AGE", -1.0)
 
 
-@pytest.fixture(autouse=True)
-def _create_in_the_request(monkeypatch):
-    """Most tests check the outcome of a start: run it in the request (200 or the failure).
+def create_network(client, headers, url, body, timeout: float = 5.0):
+    """POST a create and poll GET .../network until the start ends (REV-16).
 
-    The asynchronous contract (202, polling, cancel) is tested in
-    test_async_create.py, which turns the background thread back on.
+    *url* is the network URL (`/api/v2/reservations/{id}/network`). Returns
+    `(created, outcome)`: the POST answer, and the first GET answer that is not
+    `starting` (the network, `start_failed`, or 404 with the reason). A POST
+    refused at once (422, 409, 404) is returned as both.
     """
-    from wilab.api.routes import network
-    monkeypatch.setattr(network, "CREATE_IN_BACKGROUND", False)
+    import time
+
+    created = client.post(url, headers=headers, json=body)
+    if created.status_code != 202:
+        return created, created
+    end = time.monotonic() + timeout
+    while True:
+        outcome = client.get(url, headers=headers)
+        if outcome.status_code != 200 or outcome.json()["runtime_state"] != "starting":
+            return created, outcome
+        if time.monotonic() > end:
+            raise AssertionError("the start did not end")
+        time.sleep(0.01)

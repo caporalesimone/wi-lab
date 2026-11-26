@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
-from conftest import network_body
+from conftest import create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab import heartbeat
@@ -204,7 +204,7 @@ def test_new_create_replaces_the_pending_restore(monkeypatch):
     path = f"/api/v2/reservations/{reservation.reservation_id}/network"
     body = network_body(ssid="new", channel=1, band="2.4ghz", encryption="open", tx_power_level=4)
     with TestClient(create_app()) as client:
-        assert client.post(path, headers=headers, json=body).status_code == 200
+        assert create_network(client, headers, path, body)[1].status_code == 200
     assert reservation.device_id not in manager.watchdog._pending
     assert manager.watchdog.state(reservation) is None
 

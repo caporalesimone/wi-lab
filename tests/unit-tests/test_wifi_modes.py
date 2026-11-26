@@ -5,7 +5,7 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
-from conftest import MOCK_PHY_INFO, network_body
+from conftest import MOCK_PHY_INFO, create_network, network_body
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -251,10 +251,7 @@ class TestApi:
         manager = dependencies.get_manager(dependencies.get_config())
         start = Mock()
         monkeypatch.setattr(manager, "start_network", start)
-        resp = client.post(
-            f"/api/v2/reservations/{reservation_id}/network",
-            headers={"Authorization": token}, json=network_body(**{"encryption": "wpa2", **BASE, **body}),
-        )
+        resp = create_network(client, {"Authorization": token}, f"/api/v2/reservations/{reservation_id}/network", network_body(**{"encryption": "wpa2", **BASE, **body}))[1]
         return resp, start
 
     def test_wpa_returns_422_before_radio_work(self, client, token, reservation_id, monkeypatch):

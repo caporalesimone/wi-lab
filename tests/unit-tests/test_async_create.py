@@ -38,7 +38,6 @@ def _wait_until(predicate, timeout: float = 5.0):
 @pytest.fixture
 def api(monkeypatch):
     """Background creates on, a scripted start_network, and a reserved antenna."""
-    monkeypatch.setattr(network, "CREATE_IN_BACKGROUND", True)
     monkeypatch.setattr(network, "CREATE_RETRY_DELAYS", (0, 0))
     config = dependencies.get_config()
     manager = dependencies.get_manager(config)
@@ -221,7 +220,6 @@ def test_start_failed_always_carries_1013_also_for_an_unexpected_error(api):
 @pytest.fixture
 def real_start(monkeypatch):
     """Background creates with the real start_network: hostapd and DHCP are fakes that track state."""
-    monkeypatch.setattr(network, "CREATE_IN_BACKGROUND", True)
     config = dependencies.get_config()
     manager = dependencies.get_manager(config)
     monkeypatch.setattr(dependencies.get_channel_manager(), "validate_network", Mock())

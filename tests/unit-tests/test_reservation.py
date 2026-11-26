@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from conftest import network_body
+from conftest import create_network, network_body
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -529,7 +529,8 @@ def test_slow_lifecycle_operation_does_not_block_event_loop(operation, valid_tok
                 assert probe_future.result(timeout=2).status_code == 200
             finally:
                 finish.set()
-            assert operation_future.result(timeout=5).status_code == 200
+            # The create answers 202 and starts in the background; the expired cleanup is a request.
+            assert operation_future.result(timeout=5).status_code == (202 if operation == "start_network" else 200)
 
 
 def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeypatch):
@@ -560,28 +561,42 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
         first = client.post(reserve, headers=headers, json={"duration_seconds": 60}).json()
         first_id = first["reservation_id"]
 
-        def create(rid: str):
-            return client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=network_body(**payload))
+        def network(rid: str) -> str:
+            return f"/api/v2/reservations/{rid}/network"
 
-        slow = pool.submit(create, first_id)
+        slow = client.post(network(first_id), headers=headers, json=network_body(**payload))
+        assert slow.status_code == 202   # the start runs in the background
         try:
             assert entered.wait(timeout=5)
-            release = pool.submit(client.delete, f"{reserve}/{first_id}", headers=headers)
             second = pool.submit(
                 client.post, reserve, headers=headers, json={"duration_seconds": 60},
             ).result(timeout=2)
             assert second.status_code == 200 and second.json()["interface"] == "wlan1"
             rid = second.json()["reservation_id"]
-            assert pool.submit(create, rid).result(timeout=2).status_code == 200
+            _, started = pool.submit(
+                create_network, client, headers, network(rid), network_body(**payload),
+            ).result(timeout=3)
+            assert started.status_code == 200 and started.json()["active"] is True
+            first_state = pool.submit(client.get, network(first_id), headers=headers).result(timeout=2)
+            assert first_state.json()["runtime_state"] == "starting"   # answered while the start holds the device
             status = pool.submit(client.get, "/api/v2/status", headers=headers).result(timeout=2)
             assert status.status_code == 200 and status.json()["active_networks"] == 1
             assert all(n["reservation"] for n in status.json()["antennas"])
             assert [n["network_active"] for n in status.json()["antennas"]].count(True) == 1
-            assert not release.done()
         finally:
             finish.set()
-        assert slow.result(timeout=3).status_code == 200
-        assert release.result(timeout=3).status_code == 200
+        done = _wait_for(lambda: client.get(network(first_id), headers=headers).json()["active"])
+        assert done
+        assert client.delete(f"{reserve}/{first_id}", headers=headers).status_code == 200
+
+
+def _wait_for(predicate, timeout: float = 5.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return False
 
 
 class TestReservationAPICreate:

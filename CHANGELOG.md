@@ -19,9 +19,12 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🔧 Maintenance
 
+- The create job reports its outcome as a value instead of HTTP exceptions that no client received, and the synchronous create used only by the unit tests is gone (Fable REV-16, in part).
+
 ### ✅ Tests
 
 - New tests for unexpected start errors (REV-1), failed firewall checks (REV-3), a missing host guard chain (REV-4) and a stop failing in each phase (REV-7).
+- Unit tests create networks through the real asynchronous path (`202`, then polling) with the `create_network` helper (REV-16).
 
 ### 🔌 API changes from 4.0.0 (client migration)
 
