@@ -577,3 +577,25 @@ class TestChannelCacheRefresh:
 
         manager = dependencies.get_manager(dependencies.get_config())
         assert manager._channel_manager is dependencies.get_channel_manager()
+
+
+class TestWeatherRadarChannels:
+    """HAP-9: 120, 124 and 128 need a 10-minute radar check; never offered, 422 on a create."""
+
+    def test_parsed_as_disabled_even_with_dfs_shown(self):
+        output = "\n".join(
+            f"* {5000 + 5 * ch} MHz [{ch}]\n  Maximum TX power: 23.0 dBm\n  Radar detection"
+            for ch in (116, 120, 124, 128, 132)
+        )
+        parsed = {c.channel: c.disabled for c in ChannelManager._parse_iw_phy_output(output, show_dfs=True)}
+        assert parsed == {116: False, 120: True, 124: True, 128: True, 132: False}
+
+    @pytest.mark.parametrize("channel", [120, 124, 128])
+    def test_create_check_refuses_them_with_the_reason(self, channel):
+        with pytest.raises(FieldError, match="10-minute radar check") as exc:
+            ChannelManager(show_dfs=lambda _i: True).validate_network("wls16", "5ghz", channel, 20, 5, "wpa2")
+        assert exc.value.field == "channel"
+
+    def test_not_listed_as_usable(self):
+        info = ChannelManager(show_dfs=lambda _i: True).get_channels("wls16")
+        assert all(c.disabled for c in info.channels_5ghz if c.channel in (120, 124, 128))

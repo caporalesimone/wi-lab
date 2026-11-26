@@ -170,9 +170,9 @@ country_code: "IT"
 #                   listed by GET /api/v2/antennas/{interface} and accepted by the
 #                   create only when true; when false they are not listed and a create
 #                   asking for one returns HTTP 422. Before transmitting on a DFS channel
-#                   the radio listens for radar, usually about 60 seconds (on some
-#                   frequencies several minutes), and radar detected later can interrupt
-#                   the AP. false gives a shorter, predictable startup with fewer 5 GHz
+#                   the radio listens for radar, usually about 60 seconds, and radar
+#                   detected later can interrupt the AP. Channels 120, 124 and 128 (10-minute
+#                   weather-radar check) are never offered. false gives a shorter, predictable startup with fewer 5 GHz
 #                   channels. It never turns off radar detection or overrides regulations.
 #                   Discovered antennas not listed here behave as true.
 #                   Restart Wi-Lab after changing it for an antenna already in use.

@@ -156,8 +156,11 @@ extra rule is `wpa1`: 802.11n (`wifi_generation` 4) at 20 MHz only.
   listed in the configuration behave as `true`). When `false` they are not
   listed and a create asking for one returns `422`. Before transmitting on a
   DFS channel the radio listens for radar (CAC), usually about 60 seconds;
-  Wi-Lab's startup timeout for 5 GHz channels 52–144 is 75 seconds, so longer
-  checks can time out.
+  Wi-Lab's startup timeout for 5 GHz channels 52–144 is 75 seconds.
+- **Weather-radar channels 120, 124 and 128** are never offered, also with
+  `show_dfs: true`: in Europe they need a 10-minute radar check before the AP
+  may transmit. A create asking for one, or for a 40/80 MHz block that contains
+  one, returns `422`.
 - **`404`**: no managed antenna has this interface. **`503`**: the radio
   cannot be read now (unplugged or being reset); retry later.
 

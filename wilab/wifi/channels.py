@@ -252,6 +252,15 @@ def set_regulatory_domain(country_code: str) -> None:
         logger.warning("Failed to set regulatory domain to %s: %s", country_code, exc)
 
 
+# ETSI weather-radar channels need a 10-minute radar check (CAC) before the AP
+# may transmit: longer than the start can wait, so they are never offered (HAP-9).
+LONG_CAC_CHANNELS = frozenset({120, 124, 128})
+
+
+def _long_cac(channel: int, frequency_mhz: int) -> bool:
+    return channel in LONG_CAC_CHANNELS and _BAND_5_MIN_FREQ <= frequency_mhz < _BAND_5_MAX_FREQ
+
+
 # ---- Data classes ----
 
 
@@ -422,6 +431,11 @@ class ChannelManager:
         else:
             raise FieldError("band", f"Unknown band: {band}")
 
+        if band == "5ghz" and channel in LONG_CAC_CHANNELS:
+            raise FieldError(
+                "channel", f"Channel {channel} requires a 10-minute radar check (weather radar) "
+                "and is not supported",
+            )
         match = next((c for c in pool if c.channel == channel), None)
         if match is None:
             raise FieldError(
@@ -476,7 +490,10 @@ class ChannelManager:
             nonlocal current_freq, current_chan, current_disabled
             nonlocal current_power, current_no_ir, current_dfs
             if current_freq is not None and current_chan is not None:
-                disabled = current_disabled or current_no_ir or (current_dfs and not show_dfs)
+                disabled = (
+                    current_disabled or current_no_ir or (current_dfs and not show_dfs)
+                    or _long_cac(current_chan, current_freq)
+                )
                 channels.append(ChannelInfo(
                     channel=current_chan,
                     frequency_mhz=current_freq,
