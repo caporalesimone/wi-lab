@@ -14,7 +14,7 @@ def _lines(name: str) -> list[str]:
 
 
 def _locked() -> dict[str, str]:
-    pins = {}
+    pins: dict[str, str] = {}
     for line in _lines("requirements.lock"):
         name, sep, version = line.partition("==")
         assert sep and version, f"not an exact pin: {line}"
