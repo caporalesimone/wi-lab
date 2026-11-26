@@ -74,6 +74,12 @@ def test_leftover_rules_are_a_warning(host):
     assert "3" in finding.message
 
 
+def test_the_protect_existing_rule_is_not_a_leftover(host):
+    """Kept by design while the service runs (FORWARD policy DROP); not worth a warning."""
+    host["rules"] = {"nat": [], "forward": ["ACCEPT ... /* wilab-protect-existing */"]}
+    assert precheck.run_prechecks() == []
+
+
 def test_broken_check_does_not_stop_the_others(host, monkeypatch):
     monkeypatch.setattr(precheck, "list_wilab_rules", lambda: 1 / 0)
     host["uid"] = 1000

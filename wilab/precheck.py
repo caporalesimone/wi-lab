@@ -76,7 +76,10 @@ def _check_network_manager() -> list[Finding]:
 
 def _check_leftover_rules() -> list[Finding]:
     rules = list_wilab_rules()
-    count = len(rules["nat"]) + len(rules["forward"])
+    # wilab-protect-existing is expected: with FORWARD policy DROP (Docker) the
+    # service keeps it while it runs and does not remove it at stop.
+    forward = [r for r in rules["forward"] if "wilab-protect-existing" not in r]
+    count = len(rules["nat"]) + len(forward)
     if not count:
         return []
     # The service removes them itself while it starts (REV-17): this only reports them.
