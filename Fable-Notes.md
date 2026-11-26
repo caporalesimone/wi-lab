@@ -23,11 +23,13 @@ In quest'ordine:
    e staccare la USB (23/11): serve chi la ricollega. Non blocca i punti sotto.
 1. **Da provare sulla macchina** (riavvio del servizio, conferma prima degli e2e) le correzioni ✅
    della priorità 1 del 2026-11-26: REV-5, REV-6, BUG-5, STAB-9, STAB-8, WD-10, BUG-6, NET-9, NET-7.
-   STAB-9 con `systemctl restart NetworkManager` e una rete attiva; STAB-8 dopo aver reinstallato
+   STAB-9 non va provato: NM-1 lo sostituisce. STAB-8 dopo aver reinstallato
    l'unit systemd (`TimeoutStopSec=60s`) e con `time systemctl stop wi-lab`.
-2. REV-2 (priorità 1, cambia le risposte del rilascio), poi gli altri punti della tabella 2 in ordine
+2. **NM-1**, il [capitolo 5](#cap-5): togliere NetworkManager. Il capitolo è completo, si può
+   eseguire così com'è.
+3. REV-2 (priorità 1, cambia le risposte del rilascio), poi gli altri punti della tabella 2 in ordine
    di priorità.
-3. RELEASE-API, solo alla fine.
+4. RELEASE-API, solo alla fine.
 
 ### 1.2 Regole
 
@@ -80,6 +82,7 @@ refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` =
 | 1 | [REV-2](#rev-2) | Media |  | Un annullamento il cui rollback fallisce non deve finire in quarantena né far rispondere `404` al rilascio. |
 | 1 | [REV-5](#rev-5) | Media | ✅ | Togliere il budget di 20 s dai tentativi interni di avvio: è un residuo della create sincrona e fa fallire avvii riusciti. |
 | 1 | [REV-6](#rev-6) | Media | ✅ | Rendere annullabili gli avvii del watchdog e del probe, e annullare le create in `shutdown_all`. |
+| 1 | [NM-1](#nm-1) | Media |  | Togliere NetworkManager come dipendenza: via `nmcli` dal codice, l'installer propone di disattivarlo senza rischiare l'accesso alla macchina, precheck all'avvio. Tutto nel [capitolo 5](#cap-5). Supera STAB-9 e chiude ARCH-7. |
 | 1 | [WD-5](#wd-5) | Alta | parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. **Fatto:** stop e cleanup con l'interfaccia sparita (punti 1–2), classificazione come guasto radio. **Manca:** ritirare la voce di un'antenna che ricompare con un nome diverso (punto 3); dipende da ARCH-4. |
 | 1 | [WD-7](#wd-7) | Media | parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. **Fatto:** gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca:** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware. |
 | 1 | [BUG-5](#bug-5) | Media | ✅ | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
@@ -2448,3 +2451,309 @@ risposta entro circa 15-17 s, `200` oppure `503 / 1012` con `Retry-After: 5`; co
 mostra `stop_failed`, la create risponde `409 / 1012`, e dopo `SIGCONT` la `DELETE` risponde `200`.
 Provare prima su una VM sacrificabile: un processo fermato con un segnale può comportarsi in modo
 diverso da uno bloccato nel kernel.
+
+---
+
+<a id="cap-5"></a>
+<a id="nm-1"></a>
+## 5. NM-1 - Togliere NetworkManager come dipendenza e disattivarlo all'installazione
+
+**Gravità:** Media · **Confidenza:** Confermato (codice, installer e stato della macchina letti il
+2026-11-26) · **Stato:** da fare, nessuna riga di codice scritta. Comprende `wpa_supplicant` (5.4 bis).
+
+Questo capitolo basta da solo per fare il lavoro. Le decisioni del paragrafo 5.2 sono già prese: non
+vanno ridiscusse, vanno applicate. L'ordine dei passi è quello del paragrafo 5.9.
+
+### 5.1 Analisi: perché NetworkManager non serve
+
+**Wi-Lab non usa NetworkManager per nessuna funzione.** `nmcli` compare in tre punti del codice e fa
+sempre la stessa cosa: dire a NetworkManager di non toccare una radio.
+
+| Dove | Cosa fa |
+|---|---|
+| [wilab/wifi/manager.py](wilab/wifi/manager.py) `_configure_networkmanager_unmanaged` (chiamata in `_start_network`) | Prima di ogni avvio AP: `nmcli device set <radio> managed no`, `nmcli device disconnect <radio>`, poi `time.sleep(0.2)` |
+| [wilab/network/unmanaged.py](wilab/network/unmanaged.py) `exclude_from_host_managers` | Quando la discovery aggiunge antenne: `nmcli ... managed no` per ogni radio, e il file `/run/NetworkManager/conf.d/00-wilab-unmanaged.conf` (STAB-9) |
+| [wilab/wifi/recovery.py](wilab/wifi/recovery.py) `_quiesce` | Dopo un reset USB e prima di ogni re-probe: `nmcli ... managed no` |
+
+**È l'installer di Wi-Lab a installarlo.** [install/01-preconditions/04-tools.sh](install/01-preconditions/04-tools.sh)
+ha `nmcli` in `REQUIRED_CMDS` e `[nmcli]="network-manager"` in `CMD_TO_PKGS`: se manca, lo installa
+con `apt-get install`. Viene dal commit `617328c` (2026-03-17), che nel codice tratta `nmcli` come
+facoltativo ("best-effort", si salta se manca) e nell'installer lo rende obbligatorio. Su Ubuntu
+Server NetworkManager di base non c'è: la rete è di systemd-networkd tramite netplan.
+
+**Stato di questa macchina** (Ubuntu Server 26.04.1, pacchetto `ubuntu-server` installato):
+
+- `network-manager` risulta installato a mano (`apt-mark showmanual`), cioè dall'installer;
+- NetworkManager non gestisce nessuna interfaccia: `nmcli device status` dà `unmanaged` per `ens18`,
+  `docker0`, `lo` e le due radio;
+- `ens18` (unica interfaccia di accesso, default route) è di systemd-networkd: `networkctl list` la dà
+  `routable / configured`;
+- sono attivi `NetworkManager`, `NetworkManager-wait-online`, `NetworkManager-dispatcher`, più
+  `wpa_supplicant` e `ModemManager` arrivati come dipendenze del pacchetto.
+
+**Problemi che porta:**
+
+- può prendersi una radio (la accende, avvia la scansione) mentre fa da AP o subito dopo un reset USB:
+  è il motivo dei tre punti sopra e di STAB-9;
+- dimentica `managed no` a ogni suo riavvio (aggiornamento del pacchetto): STAB-9;
+- costringe a non fare mai un reload, perché un reload una volta ha cambiato l'indirizzo
+  dell'interfaccia di gestione (commit `87c3ce1`);
+- costa due comandi e 0,2 s a ogni avvio AP.
+
+**`wpa_supplicant`.** Wi-Lab non lo usa (l'AP è hostapd). Su questa macchina non è arrivato con
+NetworkManager: lo ha installato l'installer di Ubuntu il 2026-10-06 (`/var/log/apt/history.log.1.gz`,
+comando di curtin), quasi certamente perché c'erano adattatori Wi-Fi collegati durante l'installazione
+del sistema. `ubuntu-server` non dipende da `wpasupplicant`; `netplan-generator` lo suggerisce soltanto.
+Gira come servizio D-Bus (`wpa_supplicant -u -s`, alias `dbus-fi.w1.wpa_supplicant1.service`): senza
+`-i` non prende interfacce da solo, aspetta che un client gliele chieda via D-Bus. L'unico client qui è
+NetworkManager; i `p2p-dev-wlx…` di `nmcli device status` indicano che lo ha fatto con le radio di
+Wi-Lab, cioè un secondo processo sulla radio di hostapd. Senza NetworkManager resta inattivo, ma un
+qualunque programma via D-Bus può riattivarlo e dargli una radio.
+
+**Conclusione.** Con il requisito "Ubuntu Server, VM o host dedicato" NetworkManager va tolto dalle
+dipendenze e disattivato dove c'è. Resta systemd-networkd, da cui Wi-Lab tiene già lontane le radio
+con `/run/systemd/network/00-wilab-unmanaged.network` (`Unmanaged=yes`): quella parte non si tocca.
+
+### 5.2 Decisioni prese
+
+1. **Requisito di sistema:** Ubuntu Server con la rete di systemd-networkd (netplan), e NetworkManager
+   non installato oppure disattivato e mascherato.
+2. **Nessun codice parla più con NetworkManager.** Si tolgono tutte le chiamate a `nmcli` e il file di
+   STAB-9. Nessun ripiego "se c'è lo uso": se l'utente rifiuta la disattivazione, l'installazione è
+   fuori requisito e lo dicono l'installer e il precheck a ogni avvio.
+3. **L'installer non installa e non disinstalla il pacchetto.** Se NetworkManager è attivo, spiega il
+   rischio e chiede se disattivarlo (`disable --now` + `mask`). Rifiutare non blocca l'installazione.
+4. **L'accesso alla macchina non si rischia mai.** La disattivazione è offerta solo se le condizioni
+   del paragrafo 5.4 sono tutte vere; altrimenti l'installer non tocca nulla e spiega perché.
+5. **All'avvio del servizio NetworkManager attivo è un avviso, non un errore.** Il servizio parte lo
+   stesso (l'utente può aver rifiutato), con un `WARNING` nel log a ogni avvio.
+6. **`wpa_supplicant`: l'installer avvisa e chiede se disattivarlo** (`disable --now` + `mask`; il
+   `mask` serve perché è attivabile via D-Bus). Solo dopo NetworkManager e solo se NetworkManager è
+   fermo, e solo se l'host non lo usa come client Wi-Fi (paragrafo 5.4, stadio 07). Il pacchetto non si
+   disinstalla. Il precheck all'avvio avvisa solo se ha in carico una radio di Wi-Lab, non per la sola
+   presenza. `ModemManager` non si tocca.
+7. **Nessun cambiamento alle API.** `/status` non riporta l'esito del precheck.
+
+### 5.3 Codice da togliere
+
+| File | Cosa togliere |
+|---|---|
+| [wilab/wifi/manager.py](wilab/wifi/manager.py) | `_nmcli_available`, `_configure_networkmanager_unmanaged`, la sua chiamata in `_start_network` con il commento "Best-effort: prevent NetworkManager/wpa_supplicant…", e `import shutil` se non serve ad altro |
+| [wilab/wifi/recovery.py](wilab/wifi/recovery.py) | In `_quiesce` il blocco `try/except` con `nmcli`; resta `ip link set dev <radio> down`. Aggiornare la docstring: solo systemd-networkd |
+| [wilab/network/unmanaged.py](wilab/network/unmanaged.py) | Il ciclo `nmcli`, `NM_RUNTIME_DIR`, `NM_RULES` e il blocco che scrive il file. Resta tutta la parte systemd-networkd. Riscrivere la docstring del modulo. Il nome `exclude_from_host_managers` resta |
+| [install/01-preconditions/04-tools.sh](install/01-preconditions/04-tools.sh) | `"nmcli"` da `REQUIRED_CMDS` e `[nmcli]="network-manager"` da `CMD_TO_PKGS` |
+| [diagnostics/diagnose-ap.py](diagnostics/diagnose-ap.py) (sezione "NetworkManager Status") | Sostituire con `systemctl is-active NetworkManager` e `networkctl list` |
+| [diagnostics/troubleshooting/issue_network_creation_fails.sh](diagnostics/troubleshooting/issue_network_creation_fails.sh) | `nmcli dev \|\| true` → `networkctl list \|\| true` |
+
+Dopo le modifiche `grep -rn "nmcli" wilab/ install/ diagnostics/` non deve trovare nulla.
+
+**Test unit da adeguare:**
+
+| File | Cosa cambia |
+|---|---|
+| `tests/unit-tests/test_unmanaged.py` | I comandi attesi sono solo `networkctl reload`; togliere `test_networkmanager_restart_keeps_the_radios_unmanaged` e `test_no_networkmanager_rule_without_networkmanager`; aggiungere l'asserzione che nessun comando inizia con `nmcli` |
+| `tests/unit-tests/test_wifi.py` | Togliere `test_configure_networkmanager_unmanaged_when_nmcli_available` e `..._when_nmcli_missing`, e la riga `monkeypatch.setattr(mgr, "_configure_networkmanager_unmanaged", …)` in `test_startup_segfault_retry` |
+| `tests/unit-tests/test_startup_classification.py` | In `test_start_runs_no_redundant_commands`: via `_nmcli_available`; l'asserzione diventa "nessun comando `nmcli`" |
+| `tests/unit-tests/test_network_creation_recovery.py` | Il finto host (`"""Fake ip/nmcli/usbreset layer…"""`) e le due asserzioni su `nmcli`: la radio si riporta giù solo con `ip link set … down` |
+
+### 5.4 Installer: nuovo stadio `install/01-preconditions/06-network-manager.sh`
+
+Gli stadi di `01-preconditions` girano in ordine di nome; questo va dopo `05-network.sh`. Stile e
+funzioni (`log_info`, `log_warning`, `log_error`, `state_set`, `read -r REPLY`) come in
+`04-tools.sh`. L'installer gira già come root.
+
+**Passo 1 - C'è?** Se `systemctl is-active --quiet NetworkManager` fallisce **e**
+`systemctl is-enabled NetworkManager` non dà `enabled`: `log_success`, `state_set NM_STATE "absent"`,
+fine. Se è già `masked`: lo stesso, con `NM_STATE "masked"`.
+
+**Passo 2 - Si può disattivare senza perdere l'accesso?** Tutte le condizioni devono essere vere:
+
+| # | Condizione | Come si controlla |
+|---|---|---|
+| a | netplan non usa NetworkManager | `netplan get network.renderer` non è `NetworkManager` |
+| b | Ogni interfaccia con una default route è `unmanaged` per NetworkManager | `ip -j route show default \| jq -r '.[].dev'`, poi lo stato in `nmcli -t -f DEVICE,STATE device` |
+| c | La stessa interfaccia è di systemd-networkd | colonna SETUP = `configured` in `networkctl list --no-legend` |
+| d | Con una sessione SSH (`$SSH_CONNECTION`), l'interfaccia che ha l'indirizzo locale della sessione rispetta b e c | terzo campo di `$SSH_CONNECTION`, cercato in `ip -o -4 addr` |
+| e | NetworkManager non ha nessun dispositivo `connected` o `connecting` | `nmcli -t -f DEVICE,TYPE,STATE device` |
+
+Se una condizione è falsa: **non offrire la disattivazione**. `log_error` con la condizione fallita e
+il testo: "NetworkManager manages the network of this host. Wi-Lab requires Ubuntu Server with
+systemd-networkd. Move the host network to systemd-networkd (netplan `renderer: networkd`) and run the
+installer again." Poi chiedere se continuare comunque (`y/N`, default No): con No uscire con `1`, con
+Sì `state_set NM_STATE "active_unsupported"` e proseguire.
+
+**Passo 3 - Informare e chiedere.** Testo da mostrare:
+
+```
+⚠️  NetworkManager is active on this host.
+    Wi-Lab does not use it. While it runs it can take a Wi-Fi adapter back
+    (after its own restart or a USB reset) and bring a running AP down.
+    It manages no interface of this host: <interfaccia> is handled by systemd-networkd,
+    so disabling it does not change the network access to this machine.
+
+Disable NetworkManager now (systemctl disable --now + mask)? (y/N)
+```
+
+Con No: `log_warning` "NetworkManager left active: AP drops and failed recoveries are expected",
+`state_set NM_STATE "active_declined"`, proseguire.
+
+**Passo 4 - Disattivare.**
+
+```bash
+systemctl disable --now NetworkManager-wait-online.service NetworkManager-dispatcher.service NetworkManager.service
+systemctl mask NetworkManager.service
+```
+
+`mask` impedisce che un aggiornamento del pacchetto o un altro servizio lo riavvii. `network-online.target`
+resta servito da `systemd-networkd-wait-online`, quindi l'unit di Wi-Lab non cambia.
+
+**Passo 5 - Verificare, e tornare indietro se serve.** Entro 10 s: la default route c'è ancora
+(`ip route show default` non vuoto) e il gateway risponde (`ping -c 1 -W 2 <gateway>`). Se uno dei due
+manca: `systemctl unmask NetworkManager && systemctl enable --now NetworkManager`, `log_error`,
+`state_set NM_STATE "rollback"`, uscire con `1`. Altrimenti `state_set NM_STATE "disabled"` e
+`log_success`.
+
+### 5.4 bis Installer: nuovo stadio `install/01-preconditions/07-wpa-supplicant.sh`
+
+Gira dopo `06-network-manager.sh`, con le stesse convenzioni.
+
+**Passo 1 - Serve chiedere?** Uscire con `log_success` senza domande se:
+- `systemctl is-active --quiet wpa_supplicant` fallisce e `is-enabled` non dà `enabled`
+  (`state_set WPA_STATE "absent"`), oppure dà già `masked` (`WPA_STATE "masked"`);
+- NetworkManager è ancora attivo (`systemctl is-active --quiet NetworkManager`): fermare
+  `wpa_supplicant` sotto NetworkManager gli toglie la gestione del Wi-Fi e riempie il log di errori.
+  `log_info` "wpa_supplicant left as it is: NetworkManager is active", `WPA_STATE "kept_nm_active"`.
+
+**Passo 2 - L'host lo usa come client Wi-Fi?** Tutte vere, altrimenti non offrire la disattivazione,
+`log_warning` con la condizione fallita, `WPA_STATE "in_use"`, proseguire:
+
+| # | Condizione | Come si controlla |
+|---|---|---|
+| a | netplan non ha reti Wi-Fi | `netplan get network.wifis` vuoto o `null` |
+| b | Nessuna unit client attiva | `systemctl list-units --state=active --no-legend 'netplan-wpa-*' 'wpa_supplicant@*'` vuoto |
+| c | Nessuna default route su un'interfaccia wireless | per ogni `dev` di `ip -j route show default`, `/sys/class/net/<dev>/wireless` non esiste |
+
+**Passo 3 - Informare e chiedere:**
+
+```
+⚠️  wpa_supplicant is active on this host.
+    Wi-Lab does not use it (the APs run on hostapd). If a program asks it to
+    manage a Wi-Fi adapter, it competes with hostapd on that radio.
+    No Wi-Fi client connection of this host uses it.
+
+Disable wpa_supplicant now (systemctl disable --now + mask)? (y/N)
+```
+
+Con No: `log_warning`, `WPA_STATE "active_declined"`, proseguire.
+
+**Passo 4 - Disattivare:** `systemctl disable --now wpa_supplicant.service` poi
+`systemctl mask wpa_supplicant.service`; `WPA_STATE "disabled"`. Non serve il controllo della default
+route: il passo 2 ha già escluso che l'accesso dipenda da `wpa_supplicant`.
+
+**`uninstall.sh`:** per `NetworkManager` e per `wpa_supplicant`, se `systemctl is-enabled` dà `masked`,
+chiedere se riattivarlo (`y/N`); con Sì `systemctl unmask <unit> && systemctl enable --now <unit>`.
+Riattivare prima `wpa_supplicant`, poi NetworkManager. Lo stato dell'installer è in `/tmp` e non
+sopravvive: non usarlo per questa scelta.
+
+### 5.5 Precheck all'avvio del servizio
+
+Oggi [main.py](main.py) chiama `log_host_impact_warning()` e `check_existing_wilab_rules()` di
+[wilab/network/safety.py](wilab/network/safety.py) prima di caricare la configurazione. Diventano una
+fase unica.
+
+**Nuovo modulo `wilab/precheck.py`:**
+
+```python
+@dataclass(frozen=True)
+class Finding:
+    check: str                              # stable name, e.g. "network_manager"
+    level: Literal["fatal", "warning"]
+    message: str                            # what is wrong and what to do
+
+def run_prechecks() -> list[Finding]: ...   # runs every check, never raises
+```
+
+`main()` chiama `run_prechecks()` come prima cosa, scrive ogni `Finding` nel log (`CRITICAL` o
+`WARNING`) e, se ce n'è almeno uno `fatal`, esce con codice `78`. Nessun `Finding`: una riga `INFO`
+"Startup prechecks passed".
+
+| Controllo | Livello | Regola |
+|---|---|---|
+| `root` | fatal | `os.geteuid() != 0`: nessun comando di rete può funzionare |
+| `commands` | fatal | Manca uno fra `hostapd`, `hostapd_cli`, `dnsmasq`, `iw`, `ip`, `iptables`, `tc`, `udevadm` (`shutil.which`); il messaggio li elenca tutti |
+| `network_manager` | warning | `systemctl is-active --quiet NetworkManager` riesce. Messaggio: "NetworkManager is active: it can take Wi-Fi adapters back and bring APs down. Wi-Lab requires it disabled: sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager (first check that it manages no interface: nmcli device status)". Se `systemctl` manca o fallisce in altro modo: nessun `Finding` |
+| `wpa_supplicant` | warning | Per ogni antenna configurata o scoperta esiste `/run/wpa_supplicant/<radio>` (il socket di controllo che `wpa_supplicant` crea per un'interfaccia che gestisce). Messaggio: "wpa_supplicant manages <radio>: it competes with hostapd. Disable it: sudo systemctl disable --now wpa_supplicant && sudo systemctl mask wpa_supplicant". La sola presenza del servizio non è un avviso. Il controllo gira anche alla discovery (antenne aggiunte dopo l'avvio): `log` una volta per radio |
+| `leftover_rules` | warning | L'attuale `check_existing_wilab_rules`, senza il consiglio "Consider running cleanup script" (il servizio pulisce da solo all'avvio: nota di REV-17) |
+
+`log_host_impact_warning` resta com'è, chiamata dopo il precheck. Le funzioni di `safety.py` usate dal
+precheck si spostano o si richiamano da `precheck.py`; `main.py` non importa più `safety`.
+
+**Unit systemd** ([install/systemd/wi-lab.service.template](install/systemd/wi-lab.service.template)):
+aggiungere `RestartPreventExitStatus=78`, così un precheck fatale lascia il servizio `failed` con il
+motivo nel journal invece di riavviarlo ogni 10 s.
+
+**Test unit** (`tests/unit-tests/test_precheck.py`), con `os.geteuid`, `shutil.which` ed
+`execute_command` finti:
+
+- tutto a posto: lista vuota;
+- non root: un `fatal` `root`;
+- manca `hostapd`: un `fatal` `commands` che lo nomina;
+- NetworkManager attivo: un `warning` `network_manager`, nessun `fatal`;
+- `/run/wpa_supplicant/<radio>` presente (cartella finta in `tmp_path`): un `warning` `wpa_supplicant`
+  che nomina la radio; servizio attivo ma nessun socket per le radio: nessun `Finding`;
+- `systemctl` assente (`CommandError`): nessun `Finding` per `network_manager`;
+- `main()` con un `fatal`: `SystemExit(78)` e `create_app` mai chiamata.
+
+I test unit girano senza root: `conftest.py` deve rendere `run_prechecks` innocuo dove un test avvia
+`main()`.
+
+### 5.6 Documentazione
+
+| File | Cosa scrivere |
+|---|---|
+| [README.md](README.md), tabella Requirements | **OS:** "Ubuntu Server 25+ (tested on 26.04), network managed by systemd-networkd (netplan)". Nuova riga **NetworkManager:** "Must not be installed, or must be disabled and masked. The installer detects it and offers to disable it; it never does so if NetworkManager manages the host's network." Nuova riga **wpa_supplicant:** "Not used by Wi-Lab. The installer offers to disable and mask it when the host does not use it as a Wi-Fi client." Togliere `nmcli`/`network-manager` da ogni elenco di pacchetti |
+| [docs/networking.md](docs/networking.md), "6. Host Network Manager Exclusion" | Solo systemd-networkd; togliere `nmcli` e il file in `/run/NetworkManager`; dire che NetworkManager non è supportato |
+| [docs/architecture.md](docs/architecture.md) | Togliere `nmcli` dai due diagrammi dei comandi; "release from NetworkManager" nel diagramma del recovery; il paragrafo "NetworkManager:" di "Host network managers" (sostituire con il requisito); il comando `sudo nmcli device set …` della procedura di recovery manuale; la riga "Host network manager exclusion" della tabella dei file. Aggiungere un paragrafo "Startup prechecks" con la tabella del 5.5 |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Nuove voci: `WARNING … NetworkManager is active` e `WARNING … wpa_supplicant manages <radio>` nel journal, con i comandi per controllare e disattivare |
+| [docs/unit-testing.md](docs/unit-testing.md), [docs/e2e-testing.md](docs/e2e-testing.md) | Aggiornare l'elenco dei file di test |
+| [CHANGELOG.md](CHANGELOG.md), sezione `[4.1.0]` | **Breaking Changes:** requisito di sistema (Ubuntu Server senza NetworkManager; l'installer propone di disattivarlo; chi aggiorna deve rieseguire l'installer o dare i due comandi). **Features:** fase di precheck all'avvio. **Bug Fixes:** sostituire la riga di STAB-9 con una riga NM-1 (la 4.1.0 non è rilasciata: non lasciare due righe che si contraddicono). Aggiornare la tabella Statistics |
+| Questo file | Segnare ✅ NM-1 nella tabella 2; ARCH-7 si chiude con NM-1 (non c'è più nulla da consolidare) |
+
+### 5.7 Cosa non fare
+
+- Non disinstallare i pacchetti `network-manager` e `wpasupplicant`; non toccare `ModemManager`.
+- Non disattivare `wpa_supplicant` mentre NetworkManager è attivo.
+- Non modificare netplan né nessuna configurazione di rete dell'host.
+- Non dare `systemctl stop/disable/mask` a NetworkManager o `wpa_supplicant` senza avere prima
+  verificato le condizioni del 5.4 e del 5.4 bis, e mai su questa macchina senza la conferma
+  dell'utente (serve `sudo`).
+- Non toccare la parte systemd-networkd di `unmanaged.py`.
+
+### 5.8 Verifica sulla macchina (dopo conferma, sistema libero)
+
+1. Prima: `nmcli -t -f DEVICE,STATE device` (tutto `unmanaged`), `networkctl list` (`ens18` `configured`),
+   `ip route show default`.
+2. Eseguire lo stadio `06-network-manager.sh` da una sessione SSH e rispondere `y`: la sessione non
+   deve cadere, `systemctl is-enabled NetworkManager` dà `masked`, la default route è invariata.
+3. `systemctl restart wi-lab`: nel journal "Startup prechecks passed" e nessun avviso su NetworkManager.
+4. E2E standard, poi `WILAB_E2E_USB=1` (reset USB e re-probe senza `nmcli`): tutti verdi come prima.
+5. `sudo reboot`: la macchina torna raggiungibile, NetworkManager resta fermo, le radio sono
+   `unmanaged` in `networkctl list`.
+6. Eseguire lo stadio `07-wpa-supplicant.sh` e rispondere `y`: `systemctl is-enabled wpa_supplicant`
+   dà `masked`, `/run/wpa_supplicant/` non ha socket delle radio, `nmcli` non c'è più da interrogare e
+   dopo il reboot `iw dev` non mostra interfacce `P2P-device`.
+7. Prova negativa: `systemctl unmask NetworkManager && systemctl start NetworkManager`, riavviare
+   Wi-Lab: il journal ha il `WARNING` del precheck e il servizio funziona. Poi rimascherarlo.
+   L'avviso su `wpa_supplicant` non si prova sulla macchina (servirebbe dargli una radio via D-Bus):
+   lo copre il test unit del precheck.
+
+### 5.9 Ordine dei commit
+
+1. `refactor(host)`: via `nmcli` da codice, test e diagnostica (5.3). Suite unit verde.
+2. `feat(startup)`: `wilab/precheck.py`, `main.py`, unit systemd, test (5.5).
+3. `feat(install)`: `04-tools.sh`, nuovi stadi `06-network-manager.sh` e `07-wpa-supplicant.sh`,
+   `uninstall.sh` (5.4, 5.4 bis).
+4. `docs`: README, docs, CHANGELOG, questo file (5.6).
+5. Verifica sulla macchina (5.8), solo dopo la conferma dell'utente.
+
+A ogni commit: `make test-local-quick`, `make lint` (86 errori già presenti), `make type-check`.
