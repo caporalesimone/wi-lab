@@ -22,7 +22,8 @@ def test_busy_answers_are_retried_on_every_reservation_call_but_the_create():
     # The stop also repeats 503 / 1012 (stop_incomplete) after Retry-After.
     assert "retryWhenBusy(4, [RecoveryCode.DeviceBusy, RecoveryCode.StopIncomplete])" in stop
     create = service.split("public startNetwork(", 1)[1].split("\n  public ", 1)[0]
-    assert "retryWhenBusy" not in create  # the create waits on the server instead
+    # Only 1006 is repeated: the same body on a running network reads it like GET (REV-11).
+    assert "retryWhenBusy()" in create
     assert "retry(" not in create  # radio failures are retried by the server (no 409 / 1001)
 
 
@@ -33,4 +34,7 @@ def test_create_polls_and_quarantine_is_detected_by_reason():
     assert "runtime_state !== 'starting'" in create and "timer(" in create
     card = (APP / "components/network-card/network-card.component.ts").read_text()
     assert "runtime_state === 'start_failed'" in card
-    assert "reason === 'reservation_invalidated'" in card
+    # Every 404 reason becomes a sentence (REV-13), invalidated included.
+    assert "reservationGoneText(err)" in card
+    recovery = (APP / "services/recovery-response.ts").read_text()
+    assert "reservation_invalidated:" in recovery
