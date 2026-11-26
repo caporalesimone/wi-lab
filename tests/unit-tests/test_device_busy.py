@@ -108,5 +108,28 @@ def test_openapi_documents_device_busy():
     assert "1006" in response["description"]
     assert response["headers"]["Retry-After"]["example"] == 2
     assert "device_busy" in response["content"]["application/json"]["examples"]
-    create = schema["paths"]["/api/v2/reservations/{reservation_id}/network"]["post"]["responses"]
-    assert "503" not in create  # a create answers 202 at once and never 1006
+
+
+def test_the_same_create_on_a_running_network_can_answer_1006(busy_adapter, monkeypatch):
+    """REV-11 point 1: the 200 reads the network like GET .../network, so it waits like it.
+
+    Documented, not avoided: one rule for every request on a reservation (1006: repeat).
+    """
+    from conftest import network_body
+
+    from wilab.models import NetworkStatus
+
+    client, headers, rid = busy_adapter
+    manager = dependencies.get_manager(dependencies.get_config())
+    device = dependencies.get_reservation_manager().device_for(rid)
+    monkeypatch.setitem(manager.active, device, NetworkStatus(interface=device, active=True))
+    monkeypatch.setattr(manager, "runs", lambda _device, _req: True)
+    body = network_body(ssid="busy", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)
+    response = client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=body)
+    assert response.status_code == 503, response.text
+    assert (response.json()["detail"]["code"], response.headers["Retry-After"]) == (1006, "2")
+
+
+def test_openapi_documents_device_busy_on_the_create():
+    responses = create_app().openapi()["paths"]["/api/v2/reservations/{reservation_id}/network"]["post"]["responses"]
+    assert "1006" in responses["503"]["description"]

@@ -123,6 +123,15 @@ _STARTING_EXAMPLE = {
 
 
 _CREATE_RESPONSES: dict = {
+    503: {
+        **DEVICE_BUSY_RESPONSE,
+        "description": (
+            "`detail.code: 1006` (`device_busy`), only for the same body on a network already "
+            "running (the `200` case): reading the network waited 5 s for another operation on "
+            "the adapter. Nothing was changed; repeat the same create after `Retry-After` (2 s). "
+            "A create that starts a network answers `202` at once and never `1006` (REV-11)."
+        ),
+    },
     202: {
         "description": (
             "Start accepted: the network with `active: false` and `runtime_state: starting` "

@@ -88,7 +88,7 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 | Release `200` | Always, even if the cleanup failed: the server then keeps the adapter out of the pool and repeats the cleanup itself (`GET /status`: `cleanup_failed`). |
 | `409`, `detail.code: 1007` | The reservation is valid but has no running network (Internet, TX power, QoS profile, stop). Create a network first. A `404` always means the reservation itself is gone. |
 | `409`, `detail.code: 1010` / `1011` | A QoS profile is already running / no QoS profile is running. |
-| `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Never on the create or a release. |
+| `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Never on a release; on the create only when the same body finds the network already running (the `200` case). |
 
 A transport timeout is not a recovery code. For a lost create response, send
 the same create again (same ID and body) or poll `GET .../network`: the same

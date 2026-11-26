@@ -82,6 +82,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - Cancelling a start (release or `DELETE .../network`) whose rollback fails: the release answers `200` (before: `404 reservation_invalidated` and the antenna quarantined); `DELETE .../network` answers `503 / 1012`, repeat it (REV-2).
 - `GET /status`: `runtime_state: stop_failed` and `network_stop_incomplete` appear only after the client's own `DELETE .../network` failed (REV-9).
 - Channels 120, 124 and 128 (5 GHz) are no longer listed by `GET /antennas/{interface}` and are `422` in the create (HAP-9).
+- `POST .../network` can answer `503 / 1006` with `Retry-After: 2`, only when the same body finds the network already running (the `200` case) and another operation holds the adapter: repeat it. It was possible before but documented as never happening (REV-11).
 
 ---
 

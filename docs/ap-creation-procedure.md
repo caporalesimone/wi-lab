@@ -345,17 +345,19 @@ of them. Further rules:
   answered `503 / 1012` (`runtime_state: stop_failed`), Internet, TX power and
   QoS profile requests return `409` with `detail.code: 1012`
   (`stop_incomplete`): repeat the DELETE until `200`.
-- **Adapter busy: `503 / 1006`.** Every request on a reservation other than
-  the create (`GET`/`DELETE .../network`, Internet,
-  TX power, QoS profile) waits at most **5 s** for another operation on the
+- **Adapter busy: `503 / 1006`.** Every request on a reservation except the
+  release (`GET`/`DELETE .../network`, Internet, TX power, QoS profile, and
+  the create in one case below) waits at most **5 s** for another operation on the
   same adapter, such as a network start (for its duration see
   [2.3](#23-send-it-then-poll)) or a stop that the server is repeating.
   After that it returns `503` with `detail.code: 1006`,
   `reason: device_busy` and `Retry-After: 2`. Nothing was changed: repeat the
-  same request after `Retry-After`. A create never returns `1006`: it answers
-  at once and the start, in the background, waits for the adapter. During
-  that start `GET .../network` answers at once too, and the release never
-  returns `1006`.
+  same request after `Retry-After`. A create that starts a network never
+  returns `1006`: it answers `202` at once and the start, in the background,
+  waits for the adapter. Only the same body sent again on a network already
+  running (the `200` answer) reads the network like `GET .../network` and can
+  return `1006`. During a start `GET .../network` answers at once, and the
+  release never returns `1006`.
 
   ```json
   HTTP/1.1 503 Service Unavailable
@@ -760,7 +762,7 @@ Every answer leads to exactly one of these actions:
 | any | `401` | FIX | Wrong or missing token. |
 | any call with an ID | `404` + `reason: reservation_invalidated` or `reservation_expired` | RESERVE AGAIN | The ID was invalidated (its antenna was quarantined: radio failures, also during a watchdog restart) or expired. Never release it. On a release: DONE. |
 | | `404` + `reason: reservation_released` or `reservation_not_found` | DONE | Released (by you or release-all), never existed, or ended more than an hour ago. Nothing to release. |
-| `GET`/`DELETE .../network`, Internet, TX power, QoS | `503 / 1006` + `Retry-After: 2` | REPEAT | Another operation holds the antenna. Nothing was changed. Never on the create or the release. |
+| `GET`/`DELETE .../network`, Internet, TX power, QoS | `503 / 1006` + `Retry-After: 2` | REPEAT | Another operation holds the antenna. Nothing was changed. Never on the release; on the create see its row. |
 | `POST /reservations` | `200` | DONE | Keep `reservation_id` and `interface`. |
 | | `409 / 1005` | REPEAT | All antennas reserved (with `interface`: that one). Wait `next_available_in`, or a backoff of 10–60 s when it is `null`. |
 | | `503 / 1002` + `Retry-After: 10` | REPEAT | An antenna is being recovered. |
@@ -770,6 +772,7 @@ Every answer leads to exactly one of these actions:
 | | `404` | RESERVE AGAIN | The antenna is no longer managed. |
 | `POST .../network` (create) | `202` | WAIT | Start accepted: poll `GET .../network` every 1–2 s (rows below). |
 | | `200` | DONE | The same body on a network already running with it: the network. |
+| | `503 / 1006` + `Retry-After: 2` | REPEAT | Only for the same body on a running network: another operation holds the antenna. Nothing was changed. |
 | | `422` | FIX | The message starts with the field path, e.g. `radio.channel_width: ...`. |
 | | `409 / 1008` | FIX | A network with **different** settings runs or is starting (the same body answers `202` or `200`). Read it with `GET .../network`; `DELETE .../network` first to replace it. |
 | | `409 / 1012` | REPEAT | The last `DELETE .../network` did not complete: repeat it until `200`, then send the create again. |

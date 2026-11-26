@@ -238,7 +238,8 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     # Asynchronous create: 202 starting; failures are read with GET .../network.
     assert create["202"]["content"]["application/json"]["example"]["runtime_state"] == "starting"
     assert "1013" not in str(create.get("500", {}))
-    assert "503" not in create
+    # Its only 503 is 1006 for the same body on a running network (REV-11), never recovery codes.
+    assert {e["value"]["detail"]["code"] for e in create["503"]["content"]["application/json"]["examples"].values()} == {1006}
     assert {e["value"]["detail"]["code"] for e in create["409"]["content"]["application/json"]["examples"].values()} == {
         1008, 1009, 1012,
     }
