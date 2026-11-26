@@ -108,6 +108,35 @@ numeri mancanti sono quelli dei punti completati. La colonna **Stato** segna `pa
 in parte: la descrizione dice cosa è fatto e cosa manca. Le schede del capitolo 4 seguono lo stesso
 ordine.
 
+### 2.0 Da fare alla ripresa (stato del 2026-11-26)
+
+Il lavoro si è fermato dopo i commit della revisione (`8923bc3` … `aca248e`); il servizio gira su
+`aca248e` con il frontend ricostruito. Alla ripresa, in quest'ordine:
+
+1. **Eseguire i test e2e**, solo su un sistema libero e dopo conferma. Nessuna modifica di questo
+   ciclo è stata provata sull'hardware: create asincrona, annullamento, `404` con `reason`, `restarts`,
+   `409 / 1012`, captive portal sulla porta 8081, e le modifiche agli e2e stessi (`WiLab.create()` che
+   ora tratta `start_failed` come errore). Vedi [docs/e2e-testing.md](docs/e2e-testing.md).
+2. **Correggere REV-1, REV-3 e REV-7** (AP lasciato acceso, regole di blocco duplicate, protezioni tolte
+   durante uno stop incompleto), ciascuno con il suo `unit-test-N`.
+3. **REV-16** (togliere `CREATE_IN_BACKGROUND` e far usare ai test il percorso asincrono), prima di
+   scrivere gli altri test del paragrafo 5.5.
+4. **Provare a mano REV-4** sulla macchina: il messaggio di `iptables -D` e `ip6tables -D` con la catena
+   `wilab-in-<if>` assente, con il backend in uso.
+5. Poi gli altri punti della tabella 2.1 in ordine di priorità.
+
+Decisioni ancora aperte:
+
+- **CHANGELOG 4.0.0:** confermare la rimozione di RACE-2 (giudicato mai rilasciato) e la voce
+  "Prevent concurrent reservations…" (la 3.0.0 aveva già un lock); la data dell'intestazione è ancora
+  2026-11-20; il contatore dei commit va aggiornato all'ultimo commit prima del rilascio.
+- **REV-11, punto 4:** rendere stretti i tipi (`strict=True`) cambia ciò che i client possono inviare:
+  da decidere prima del rilascio.
+- **Frontend (REV-13, REV-14, REV-15):** qui non si può compilare senza pubblicare in `frontend/dist`;
+  serve un target di sola compilazione (unit-test-15) prima di modificarlo.
+- `config.yaml` della macchina ha ancora la `protected_commands_password` di esempio.
+- `copilot.md` resta fuori dai commit.
+
 ### 2.1 Punti aperti
 
 | Prio | Id | Gravità | Stato | Cosa fare |
