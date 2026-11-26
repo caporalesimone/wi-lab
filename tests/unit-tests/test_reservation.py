@@ -104,14 +104,15 @@ class TestReservationManagerCreate:
             # ETA should be closest to r2's expiry (60s), not r1 (600s)
             assert exc.next_available_in <= 65
 
-    def test_simultaneous_expiries_non_negative(self):
+    def test_eta_of_an_owner_about_to_expire_is_never_negative(self):
         mgr = ReservationManager(["dev0"])
-        r = mgr.create(1)
-        r.expires_at = time.time()  # about to expire
-        try:
+        r = mgr.create(60)
+        r.expires_at = time.time() + 0.5  # about to expire, still the owner
+        with pytest.raises(NoDeviceAvailableError) as exc:
             mgr.create(3600)
-        except NoDeviceAvailableError as exc:
-            assert exc.next_available_in >= 0
+        assert exc.value.next_available_in == 0
+        # A release that is already late (failed cleanup) is clamped, not negative.
+        assert NoDeviceAvailableError(time.time() - 5).next_available_in == 0
 
     def test_create_reservation_sets_expiry(self):
         mgr = ReservationManager(["dev0"])

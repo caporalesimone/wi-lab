@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 import time
 
 import pytest
@@ -16,6 +17,7 @@ from wilab.models import (
     QosProfileStepState,
     QosQualityAdvanced,
 )
+from wilab.network import qos_profile as qos_profile_module
 from wilab.network.qos import QosManager
 from wilab.network.qos_profile import QosProfileManager
 
@@ -264,6 +266,24 @@ class TestQosProfileCatalogue:
 # ---------------------------------------------------------------------------
 
 
+class _FastEvent(threading.Event):
+    """A step lasts whole seconds (the model accepts nothing shorter): wait a twentieth."""
+
+    def wait(self, timeout=None):
+        return super().wait(None if timeout is None else timeout / 20)
+
+
+def _wait_until(predicate, timeout: float = 5.0):
+    """Poll instead of sleeping for a fixed time: no thin margins on a loaded machine."""
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(0.005)
+    raise AssertionError("condition not reached")
+
+
 class TestQosProfileManager:
     """Tests for profile execution logic."""
 
@@ -297,11 +317,16 @@ class TestQosProfileManager:
         return mgr
 
     @pytest.fixture
-    def pm(self):
-        """Create a QosProfileManager with the real catalogue."""
+    def pm(self, monkeypatch):
+        """Create a QosProfileManager with the real catalogue; its steps run 20 times faster."""
         catalogue_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
             "wilab", "data", "qos-profiles",
+        )
+        active_profile = qos_profile_module._ActiveProfile
+        monkeypatch.setattr(
+            qos_profile_module, "_ActiveProfile",
+            lambda **fields: active_profile(stop_event=_FastEvent(), **fields),
         )
         return QosProfileManager(catalogue_dir)
 
@@ -354,7 +379,7 @@ class TestQosProfileManager:
             steps=[QosProfileStep(duration_sec=1, quality=80)],
         )
         pm.start_profile("wlan0", profile, qos)
-        time.sleep(0.1)  # let the thread apply the step
+        _wait_until(lambda: self.apply_calls)  # the thread applied the step
         pm.stop_profile("wlan0", qos)
 
         state = qos.get_status("wlan0")
@@ -379,7 +404,7 @@ class TestQosProfileManager:
             steps=[QosProfileStep(duration_sec=1, quality=80, dl_speed_kbit=5000)],
         )
         pm.start_profile("wlan0", profile, qos)
-        time.sleep(0.1)
+        _wait_until(lambda: self.apply_calls)
         pm.stop_profile("wlan0", qos)
 
         assert len(self.apply_calls) >= 1
@@ -406,9 +431,8 @@ class TestQosProfileManager:
             steps=[QosProfileStep(duration_sec=1, quality=80)],
         )
         pm.start_profile("wlan0", profile, qos)
-        # Wait for the profile to finish (1 second step + some margin)
-        time.sleep(1.5)
-        assert not pm.is_active("wlan0")
+        _wait_until(lambda: not pm.is_active("wlan0"))  # ends by itself after its only step
+        assert len(self.apply_calls) == 1
 
     def test_loop_mode_wraps(self, pm, qos):
         """Loop mode should wrap step_index back to 0."""
@@ -422,14 +446,13 @@ class TestQosProfileManager:
             ],
         )
         pm.start_profile("wlan0", profile, qos)
-        # Wait for ~2.5 seconds (should be on step 0 again after wrapping)
-        time.sleep(2.5)
+        # After two full steps it is on step 0 again: step0, step1, step0
+        _wait_until(lambda: len(self.apply_calls) >= 3)
         state = pm.get_state("wlan0")
         assert state is not None
         assert state.active
-        # After 2 full steps (2 sec), should have wrapped
-        assert len(self.apply_calls) >= 3  # at least: step0, step1, step0
         pm.stop_profile("wlan0", qos)
+        assert [c["download_quality"] for c in self.apply_calls][:3] == [80, 50, 80]
 
     def test_bounce_mode_reverses(self, pm, qos):
         """Bounce mode: 0→1→2→1→0→1→... without duplicating boundary steps."""
@@ -444,8 +467,8 @@ class TestQosProfileManager:
             ],
         )
         pm.start_profile("wlan0", profile, qos)
-        # Wait for steps: 0(1s) → 1(1s) → 2(1s) → 1(1s) → 0(1s)  = 5 steps in ~5 sec
-        time.sleep(5.5)
+        # Steps 0 → 1 → 2 → 1 → 0
+        _wait_until(lambda: len(self.apply_calls) >= 5)
         pm.stop_profile("wlan0", qos)
 
         # Verify the quality sequence: 90, 50, 10, 50, 90, ...
@@ -463,11 +486,13 @@ class TestQosProfileManager:
             ],
         )
         pm.start_profile("wlan0", profile, qos)
-        # Wait for both steps to execute and then once-hold-last
-        time.sleep(2.5)
+        # Both steps run, then it holds on the last one
+        _wait_until(lambda: pm.get_state("wlan0").step_index == 1)
+        time.sleep(0.2)  # four step durations: it must not move on or end
         assert pm.is_active("wlan0")
         state = pm.get_state("wlan0")
         assert state.step_index == 1  # holding on last step
+        assert len(self.apply_calls) == 2
         pm.stop_profile("wlan0", qos)
 
     def test_build_inline_profile(self):

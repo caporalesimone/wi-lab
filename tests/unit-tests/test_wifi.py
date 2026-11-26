@@ -54,7 +54,10 @@ class TestNetworkManagerInit:
         cfg = load_config()
         mgr = NetworkManager(cfg)
 
+        calls = []
+
         def mock_execute_command(cmd, check=True):
+            calls.append(cmd)
             raise CommandError("Command not found: nmcli")
 
         monkeypatch.setattr('wilab.wifi.manager.execute_command', mock_execute_command)
@@ -62,6 +65,7 @@ class TestNetworkManagerInit:
 
         # Should not raise, and runs nothing
         mgr._configure_networkmanager_unmanaged('wlan0')
+        assert calls == []
 
 
 class TestSubnetResolution:

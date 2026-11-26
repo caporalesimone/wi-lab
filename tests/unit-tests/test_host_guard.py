@@ -78,11 +78,11 @@ def test_guard_allows_only_dhcp_and_icmp_and_is_first_in_input(tables):
 
 def test_captive_portal_keeps_dns_and_the_portal_page(tables):
     v4, _ = tables
-    HostGuard().add("wlan0", "wlan0", captive_port=80)
+    HostGuard().add("wlan0", "wlan0", captive_port=8081)
     accepted = [r for r in v4.chains["wilab-in-wlan0"] if r[-1] == "ACCEPT"]
     assert ["-p", "udp", "--dport", "53", "-j", "ACCEPT"] in accepted
     assert ["-p", "tcp", "--dport", "53", "-j", "ACCEPT"] in accepted
-    assert ["-p", "tcp", "--dport", "80", "-j", "ACCEPT"] in accepted
+    assert ["-p", "tcp", "--dport", "8081", "-j", "ACCEPT"] in accepted
     assert not any("8080" in r for r in accepted)
 
 

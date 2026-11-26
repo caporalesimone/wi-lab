@@ -21,7 +21,9 @@ def stopping_network(monkeypatch):
             manager.active, device,
             NetworkStatus(interface=device, active=True, subnet="192.168.120.0/24"),
         )
-        monkeypatch.setattr(manager.dhcp_server, "status", lambda: {"running": False, "instances": []})
+        # The checks ask each process (BUG-2): hostapd is alive, dnsmasq is not.
+        monkeypatch.setattr(manager.hostapd_manager, "is_running", lambda _device: True)
+        monkeypatch.setattr(manager.dhcp_server, "is_running", lambda _device: False)
         yield client, headers, manager, device
 
 
@@ -55,3 +57,4 @@ def test_settled_network_with_dhcp_down_is_still_degraded(stopping_network):
     client, headers, _manager, _device = stopping_network
     data = client.get("/api/v2/status", headers=headers).json()
     assert data["status"] == "degraded"
+    assert [reason["code"] for reason in data["degraded_reasons"]] == ["dnsmasq_not_running"]

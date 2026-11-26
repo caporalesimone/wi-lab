@@ -1,4 +1,4 @@
-"""API-only checks from the tester's plan (fable-todo.md, "Test per il tester").
+"""API-only checks from the tester's plan (Fable-Notes.md, 5.4 "Test per il tester").
 
 These tests use only the public API, so they behave the same from the
 Wi-Lab machine or from an external one. A few also read `iw` to compare
@@ -60,7 +60,7 @@ def test_unknown_create_field_is_rejected(wilab: WiLab) -> None:
 
 
 def test_create_returns_the_network_state(wilab: WiLab) -> None:
-    """API-5: the create answers what GET .../network answers."""
+    """API-5: the polling of a create ends with the network as GET .../network reports it."""
     antenna = wilab.reserve()
     response = wilab.create(antenna)
     assert response.status_code == 200, response.text

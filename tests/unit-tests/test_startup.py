@@ -20,7 +20,7 @@ def test_main_reuses_runtime_configuration(monkeypatch, config):
 
 @pytest.mark.parametrize("port", [8080, 8123])
 def test_main_listens_on_configured_port(monkeypatch, config, port):
-    config.api_port = port
+    monkeypatch.setattr(config, "api_port", port)  # `config` is shared by the whole session
     server = Mock()
     monkeypatch.setattr(main, "get_config", lambda: config)
     monkeypatch.setattr(main, "log_host_impact_warning", lambda: None)

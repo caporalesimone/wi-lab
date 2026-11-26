@@ -8,11 +8,25 @@ device from the VM: see docs/e2e-testing.md before enabling these tests.
 
 import threading
 import time
+from collections.abc import Iterator
 
+import httpx
 import pytest
 from wilab_e2e import Server, WiLab, wait_for
 
 pytestmark = pytest.mark.usb
+
+
+@pytest.fixture(autouse=True)
+def _replug_after_the_test(server: Server) -> Iterator[None]:
+    """Re-authorize the port when a test fails half way.
+
+    The `server` fixture does it only at the end of the session: the next test
+    would otherwise start with the antenna still unplugged.
+    """
+    yield
+    for port in list(server.unplugged):
+        server.set_usb_authorized(port, 1)
 
 # USB recovery: 10 attempts 60 s apart. Re-probe backoff tops out at 900 s.
 RECOVERY_WINDOW = 11 * 60
@@ -29,13 +43,14 @@ def test_antenna_gone_at_create_is_waited_for_by_the_server(
     server.set_usb_authorized(port, 0)
     assert server.wait_interface(antenna.interface, present=False)
 
-    result = {}
-    create = threading.Thread(target=lambda: result.update(response=wilab.create(antenna)))
+    result: dict[str, httpx.Response] = {}
+    create = threading.Thread(target=lambda: result.update(response=wilab.create(antenna)), daemon=True)
     create.start()
     time.sleep(2)  # the first round has failed; the server is in its 5 s pause
     server.set_usb_authorized(port, 1)
     assert server.wait_interface(antenna.interface)
     create.join(timeout=150)
+    assert "response" in result, "the create did not end within 150 s"
     response = result["response"]
     assert response.status_code == 200, response.text
     assert not wilab.device(antenna.interface).get("recovery_state")

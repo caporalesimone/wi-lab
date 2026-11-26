@@ -342,8 +342,25 @@ class WiLab:
             time.sleep(1)
             response = self.http.get(url)
             if response.status_code != 200 or response.json().get("runtime_state") != "starting":
-                return response
+                return self._start_outcome(response)
         raise TimeoutError(f"{url} still starting after 360 s")
+
+    @staticmethod
+    def _start_outcome(response: httpx.Response) -> httpx.Response:
+        """The polled end of a start, so that `status_code == 200` means "the network is up".
+
+        GET .../network answers 200 also when the start failed (`runtime_state:
+        start_failed` with `error`) or left no network: that is returned as a 500
+        whose `detail` is the error (code 1013), which `detail_code` reads.
+        """
+        if response.status_code != 200 or response.json().get("active") is True:
+            return response
+        state = response.json()
+        detail = state.get("error") or {
+            "code": 500, "reason": state.get("runtime_state") or "network_not_active",
+            "message": f"The start ended without a network: {state}",
+        }
+        return httpx.Response(500, json={"detail": detail}, request=response.request)
 
     def delete_network(self, antenna: Antenna) -> int:
         return self.http.delete(f"/reservations/{antenna.reservation_id}/network").status_code

@@ -57,6 +57,30 @@ def _test_config_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _stop_background_threads(monkeypatch):
+    """Stop the loops of every NetworkManager a test created.
+
+    Each manager starts an expiry loop, and a watchdog per antenna and a re-probe
+    loop once it is wired to the reservations. Left running they outlive the
+    test's mocks (the next tick would run the real host commands) and add up to
+    about 400 threads by the end of a run.
+    """
+    from wilab.wifi.manager import NetworkManager
+    created = []
+    original_init = NetworkManager.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        created.append(self)
+
+    monkeypatch.setattr(NetworkManager, "__init__", tracking_init)
+    yield
+    for manager in created:
+        manager.watchdog.stopping.set()
+        manager.recovery.stop()
+
+
+@pytest.fixture(autouse=True)
 def mock_network_operations(monkeypatch, tmp_path):
     """Auto-mock network operations that require root privileges."""
     from wilab.network import captive, commands, dhcp, nat, subnet
@@ -254,6 +278,12 @@ Band 2:
     from wilab.network import host_guard
     monkeypatch.setattr(host_guard, "execute_command", mock_execute_command)  # ip6tables
     monkeypatch.setattr(subnet, "execute_command", lambda cmd, **kwargs: "[]")
+    # /status reads the upstream link with `ip -j addr show`: a healthy uplink on every
+    # host, instead of whatever the machine running the tests has as "eth0".
+    from wilab import health
+    monkeypatch.setattr(health, "execute_command", lambda cmd, **kwargs: (
+        '[{"operstate": "UP", "flags": ["UP", "LOWER_UP"], "addr_info": [{"family": "inet"}]}]'
+    ))
 
     class _UnboundPortalServer:
         """Stands in for the portal web server, which would bind the AP gateway."""

@@ -15,8 +15,10 @@ from wilab.models import (
 CREATE = "/api/v2/reservations/{reservation_id}/network"
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def spec():
+    # Function scope: a module-scoped fixture runs before the autouse fixtures that
+    # select the test configuration, and would load the host's own config.yaml.
     return TestClient(create_app()).get("/openapi.json").json()
 
 

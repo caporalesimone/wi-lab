@@ -4,6 +4,7 @@ import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlsplit
 
 import pytest
 from wilab_e2e import Server, WiLab, detail_code
@@ -114,6 +115,10 @@ def test_host_is_guarded_from_ap_clients(wilab: WiLab, server: Server, captive_p
     accepted = " ".join(line for line in v4 if line.endswith("-j ACCEPT"))
     assert "--dport 67" in accepted and "-p icmp" in accepted
     assert ("--dport 53" in accepted) is captive_portal
+    if captive_portal:
+        # The portal page, on captive_portal_port (8081 by default, no longer 80).
+        network = wilab.http.get(f"/reservations/{antenna.reservation_id}/network").json()
+        assert f"--dport {urlsplit(network['captive_portal']['url']).port or 80}" in accepted
     assert "8080" not in accepted and "--dport 22" not in accepted
     assert v4[-1] == f"-A {chain} -j REJECT --reject-with icmp-port-unreachable"
 

@@ -71,18 +71,8 @@ class TestStatusEndpoint:
         assert 'antennas' in data and 'networks' not in data
         assert 'checks' not in data and data['degraded_reasons'] == []
     
-    def test_status_standby_mode(self, client, valid_token, monkeypatch):
+    def test_status_standby_mode(self, client, valid_token):
         """Test status endpoint in standby mode (no active networks)."""
-        from wilab.api.dependencies import get_manager
-        
-        # Mock manager with no active networks
-        def mock_manager(*args, **kwargs):
-            mgr = get_manager()
-            mgr.active = {}  # No active networks = standby
-            return mgr
-        
-        monkeypatch.setattr('wilab.api.routes.status.get_manager', mock_manager)
-        
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         data = resp.json()
         assert data['status'] == 'standby'
@@ -152,27 +142,22 @@ class TestStatusEndpoint:
         
         # Add an active network
         real_mgr.active['test-net'] = NetworkStatus(
-            device_id='test-net',
             interface='wlan0',
             active=True,
             ssid='TestAP',
             subnet='192.168.120.0/24'
         )
         
-        # Mock DHCP as not running
-        original_status = real_mgr.dhcp_server.status
-        monkeypatch.setattr(real_mgr.dhcp_server, 'status', 
-                          lambda: {'running': False, 'instances': []})
+        # hostapd is alive, DHCP is not: the only reason for degraded
+        monkeypatch.setattr(real_mgr.hostapd_manager, 'is_running', lambda _device: True)
+        monkeypatch.setattr(real_mgr.dhcp_server, 'is_running', lambda _device: False)
         
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         data = resp.json()
         assert data['status'] == 'degraded'
         assert data['active_networks'] == 1
+        assert [reason['code'] for reason in data['degraded_reasons']] == ['dnsmasq_not_running']
         assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['running'] is False
-        
-        # Cleanup
-        real_mgr.active.clear()
-        monkeypatch.setattr(real_mgr.dhcp_server, 'status', original_status)
     
     def test_status_upstream_error_handling(self, client, valid_token, monkeypatch):
         """Test status gracefully handles upstream interface errors."""
@@ -184,7 +169,6 @@ class TestStatusEndpoint:
         real_mgr = original_get_manager(get_config())
         
         # Mock get_upstream_interface to raise error
-        original_get_upstream = real_mgr.nat_manager.get_upstream_interface
         monkeypatch.setattr(
             real_mgr.nat_manager,
             'get_upstream_interface',
@@ -197,9 +181,6 @@ class TestStatusEndpoint:
         assert 'upstream_interface' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']
         assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']['reachable'] is False
         assert 'error' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']
-        
-        # Cleanup
-        monkeypatch.setattr(real_mgr.nat_manager, 'get_upstream_interface', original_get_upstream)
 
 
 class TestDebugRemoved:
@@ -291,31 +272,20 @@ class TestAuthentication:
     
     def test_start_network_with_valid_token(self, client, valid_token, reservation_id, monkeypatch):
         """Test that request with valid token succeeds (with mocked DHCP)."""
-        from wilab.api.dependencies import _manager
-        if _manager:
-            def mock_dhcp_start(*args, **kwargs):
-                return {'gateway': '192.168.10.1'}
-            monkeypatch.setattr(_manager.dhcp_server, 'start', mock_dhcp_start)
-            monkeypatch.setattr(_manager.hostapd_manager, 'start', lambda *a, **kw: {})
-        
+        manager = dependencies.get_manager(dependencies.get_config())
+        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **kw: {'gateway': '192.168.10.1'})
+        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **kw: {})
+
         resp = client.post(
             f'/api/v2/reservations/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
-        # Should succeed with mocked DHCP
-        assert resp.status_code in [200, 500]  # 500 if DHCP not fully mocked
+        assert resp.status_code == 200, resp.text
+        assert resp.json()['active'] is True
 
 
 class TestNetworkCreateEndpoint:
     """Tests for network creation endpoint."""
-    
-    def test_start_network_invalid_json(self, client, valid_token, reservation_id):
-        """Test that invalid JSON is rejected."""
-        resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
-            headers={'Authorization': valid_token},
-            json=network_body(invalid='payload'))
-        assert resp.status_code == 422  # Validation error
     
     def test_start_network_invalid_reservation(self, client, valid_token):
         """Test starting with an invalid reservation token returns 404."""
@@ -361,21 +331,21 @@ class TestNetworkCreateEndpoint:
 
     def test_start_network_runtime_failure_returns_500(self, client, valid_token, reservation_id, monkeypatch):
         """Operational failures during startup must map to 500, not 404."""
-        from wilab.api.dependencies import _manager
-        if _manager:
-            monkeypatch.setattr(
-                _manager,
-                'start_network',
-                lambda *args, **kwargs: (_ for _ in ()).throw(
-                    ValueError('Failed to start AP: hostapd failed to start')
-                )
-            )
+        manager = dependencies.get_manager(dependencies.get_config())
+        monkeypatch.setattr(
+            manager, 'start_network',
+            Mock(side_effect=ValueError('Failed to start AP: hostapd failed to start')),
+        )
 
         resp = client.post(
             f'/api/v2/reservations/{reservation_id}/network',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 500
+        assert resp.json()['detail'] == {
+            'code': 500, 'reason': 'internal_server_error',
+            'message': 'Failed to start AP: hostapd failed to start',
+        }
     
     def test_create_returns_the_network(self, client, valid_token, reservation_id, monkeypatch):
         """API-5: a successful create answers what GET .../network answers."""
@@ -432,8 +402,8 @@ class TestNetworkGetEndpoint:
         )
         assert resp.status_code == 200
         data = resp.json()
-        # Network is initially inactive
-        assert data['active'] in [True, False]  # Either state is valid
+        assert (data['active'], data['runtime_state'], data['error']) == (False, None, None)
+        assert data['restarts'] == {'ap': 0, 'dhcp': 0, 'last_at': None, 'last_reason': None}
     
     def test_get_network_status_invalid_reservation(self, client, valid_token):
         """Test getting status with invalid reservation returns 404."""
@@ -615,7 +585,8 @@ class TestNetworkDeleteEndpoint:
         )
         resp = client.post(url, headers=headers, json=other)
         assert resp.status_code == 409
-        assert resp.json()['detail']['code'] == 1008
+        # API-3: an AP already running has its own code, not only a message.
+        assert (resp.json()['detail']['code'], resp.json()['detail']['reason']) == (1008, 'network_already_active')
 
     def test_stop_stuck_in_the_kernel_is_503_and_a_repeat_finishes_it(
         self, client, valid_token, reservation_id, monkeypatch,
@@ -677,25 +648,6 @@ class TestNetworkDeleteEndpoint:
         assert client.delete(url, headers=headers).status_code == 200
         assert len(calls) == 2
         assert not manager.stop_failed('wls16')
-
-    def test_second_create_with_another_body_is_409_1008(self, client, valid_token, reservation_id, monkeypatch):
-        """API-3: an AP already running has its own code, not only a message."""
-        cfg = load_config()
-        manager = NetworkManager(cfg)
-        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
-        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
-        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
-        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
-        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
-        url = f'/api/v2/reservations/{reservation_id}/network'
-        body = network_body(ssid='TestAP', channel=6, encryption='open', band='2.4ghz', tx_power_level=4)
-        headers = {'Authorization': valid_token}
-        assert client.post(url, headers=headers, json=body).status_code == 200
-        different = network_body(ssid='TestAP', channel=11, encryption='open', band='2.4ghz', tx_power_level=4)
-        second = client.post(url, headers=headers, json=different)
-        assert second.status_code == 409
-        assert (second.json()['detail']['code'], second.json()['detail']['reason']) == (1008, 'network_already_active')
 
     def test_startup_failure_names_its_stage(self, client, valid_token, reservation_id, monkeypatch):
         """A non-radio startup failure is 500 / 1013 startup_failed with the stage that failed."""
@@ -1030,6 +982,7 @@ class TestReservationRequiredForOperations:
         )
         assert resp.status_code == 404
         assert resp.json()['detail']['code'] == 404
+        assert resp.json()['detail']['reason'] == 'reservation_not_found'
         assert 'Reservation' in resp.json()['detail']['message']
 
     def test_internet_op_without_reservation_returns_404(self, client, valid_token):
@@ -1064,6 +1017,10 @@ class TestReservationRequiredForOperations:
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 404
+        assert resp.json()['detail']['reason'] == 'reservation_expired'
+        # Still the reason after the expired reservation was purged.
+        again = client.get(f'/api/v2/reservations/{r.reservation_id}', headers={'Authorization': valid_token})
+        assert again.json()['detail']['reason'] == 'reservation_expired'
 
     def test_released_reservation_returns_404(self, client, valid_token):
         """Released reservation token is rejected with 404."""
@@ -1085,18 +1042,19 @@ class TestReservationRequiredForOperations:
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 404
+        assert resp.json()['detail']['reason'] == 'reservation_released'
 
 
 class TestStatusReservationInfo:
     """Tests for reservation info in status endpoint (Task 6)."""
 
-    def test_status_networks_include_reservation_remaining(self, client, valid_token, monkeypatch):
+    def test_status_antennas_have_reservation_and_network_active(self, client, valid_token, monkeypatch):
         """Each antenna has `reservation` (null when free) and `network_active` (API-1)."""
         cfg = load_config()
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
         monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
 
-        # Before reservation: remaining should be None
+        # Before a reservation: `reservation` is null
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         data = resp.json()
         net_entry = data['antennas'][0]
@@ -1106,8 +1064,8 @@ class TestStatusReservationInfo:
         assert net_entry['network_active'] is False
         assert 'reserved' not in net_entry and 'reservation_remaining_seconds' not in net_entry
 
-    def test_status_reservation_remaining_after_reservation(self, client, valid_token, reservation_id):
-        """After reservation, remaining seconds are positive and decrease."""
+    def test_status_reservation_expiry_after_reservation(self, client, valid_token, reservation_id):
+        """A reserved antenna reports `reservation.expires_at` and `expires_in`."""
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         data = resp.json()
         net_entry = data['antennas'][0]
@@ -1331,7 +1289,7 @@ class TestUnlimitedReservationAPI:
         assert policy['max_seconds'] == cfg.max_timeout
         assert policy['allow_unlimited'] is False
 
-    def test_status_shows_null_remaining_for_unlimited(self, client, valid_token, monkeypatch):
+    def test_status_shows_null_expiry_for_unlimited(self, client, valid_token, monkeypatch):
         """/status: an unlimited reservation is an object with null expiry, not a free antenna."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
