@@ -77,7 +77,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 35 |
+| 🐛 Bug fixes | 34 |
 | ⚠️ Breaking changes | 20 |
 | 🔧 Maintenance changes | 11 |
 | ✨ New features | 23 |
@@ -143,7 +143,6 @@ Counts are the entries of the sections below and `git rev-list --count 3.0.0..ac
 - Restrict each Wi-Lab masquerade rule to the corresponding AP subnet.
 - Listen on the configured API port instead of always using 8080.
 - Refuse at startup a `country_code` that is a regulatory region (`EU`, `ETSI`, `FCC`) or not two uppercase letters.
-- Prevent concurrent reservations in one service process from sharing an antenna.
 - Stop active QoS profiles when their network is released or expires.
 - Leave a radio in managed mode and down after a network stops instead of bringing it up again, to avoid an unnecessary activation cycle.
 - Verify that the access point is enabled before assigning its gateway and starting DHCP. Roll back incomplete network starts.

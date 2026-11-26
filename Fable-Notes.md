@@ -74,6 +74,8 @@ staccare la USB (23/11): serve chi la ricollega.
   usate da nessun client). API-7 (`PUT`) resta nel blocco B: si può aggiungere senza rompere nulla.
 - **QoS:** sperimentale nella 4.1.0, fuori dal contratto e dal congelamento. Scritto in OpenAPI,
   `docs/qos.md`, `docs/ap-creation-procedure.md` e CHANGELOG.
+- **CHANGELOG 4.0.0:** tolte RACE-2 (mai rilasciato) e "Prevent concurrent reservations…" (la 3.0.0
+  aveva già il lock); data dell'intestazione = data di `aca248e`, ultimo commit della 4.0.0.
 - **`protected_commands_password`:** cambiata in `config.yaml` della macchina con un valore casuale (2026-11-26).
 - **TX power: da debuggare.** Non si è mai riusciti a controllare la potenza sugli adattatori in uso.
   Dichiarato non stabile nella 4.1.0 come il QoS (stessi documenti). Il campo `radio.tx_power_level`
@@ -82,9 +84,6 @@ staccare la USB (23/11): serve chi la ricollega.
 
 **Ancora aperte** (nessuna blocca il congelamento):
 
-- **CHANGELOG 4.0.0:** la voce RACE-2 è già tolta (commit `aca248e`). Resta da confermare la rimozione
-  di "Prevent concurrent reservations…": la 3.0.0 aveva già il lock in `ReservationManager.reserve`.
-  Data dell'intestazione corretta il 2026-11-26 (data di `aca248e`, ultimo commit della 4.0.0).
 - **Frontend (REV-13, REV-14, REV-15):** non si può compilare senza pubblicare in `frontend/dist`;
   serve prima un target di sola compilazione (unit-test-15).
 
