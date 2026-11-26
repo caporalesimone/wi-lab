@@ -168,13 +168,23 @@ country_code: "IT"
 #                   channels that require DFS (52-144, shared with radar). They are
 #                   listed by GET /api/v2/antennas/{interface} and accepted by the
 #                   create only when true; when false they are not listed and a create
-#                   asking for one returns HTTP 422. Before transmitting on a DFS channel
-#                   the radio listens for radar, usually about 60 seconds, and radar
-#                   detected later can interrupt the AP. Channels 120, 124 and 128 (10-minute
-#                   weather-radar check) are never offered. false gives a shorter, predictable startup with fewer 5 GHz
-#                   channels. It never turns off radar detection or overrides regulations.
+#                   asking for one returns HTTP 422. false gives a shorter, predictable
+#                   startup with fewer 5 GHz channels. It never turns off radar
+#                   detection or overrides regulations.
 #                   Discovered antennas not listed here behave as true.
 #                   Restart Wi-Lab after changing it for an antenna already in use.
+#
+#   Radar channels (DFS), what to expect with show_dfs: true:
+#     - Before transmitting on 52-144 the radio listens for radar (CAC), about
+#       60 seconds: the network stays in runtime_state "starting" meanwhile.
+#     - 120, 124 and 128 are NEVER offered, also with show_dfs: true. In Europe
+#       they are shared with weather radar and need a 10-minute radar check, longer
+#       than Wi-Lab waits for a start (75 s). A create asking for one, or for a
+#       40/80 MHz block that contains one, returns HTTP 422.
+#     - If radar is detected, during the check or while the AP runs, the AP stops
+#       and the regulations forbid that channel for 30 minutes. Wi-Lab does not
+#       recognise this case yet: it may retry and, after several failures, put the
+#       antenna in recovery. Prefer non-DFS channels (36-48 in Europe) for long tests.
 
 antennas:
   - interface: "wlxbc071dc527d6"
