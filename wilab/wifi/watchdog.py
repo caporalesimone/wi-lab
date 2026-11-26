@@ -193,7 +193,7 @@ class NetworkWatchdog:
         """
         try:
             repaired, restore = self.manager.verify_network(device)
-        except (CommandError, DhcpServerError) as exc:
+        except (CommandError, DhcpServerError, RuntimeError) as exc:  # RuntimeError: no upstream, NAT
             logger.warning("Could not verify the network on %s: %s", device, exc)
             return ""
         if restore:

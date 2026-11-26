@@ -1,12 +1,12 @@
 """hostapd configuration generation and process management for WiFi AP mode."""
 
 import logging
-from collections.abc import Callable
 import os
 import re
 import signal
 import tempfile
 import time
+from collections.abc import Callable
 from typing import TypedDict
 
 from ..network.commands import (
