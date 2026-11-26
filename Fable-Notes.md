@@ -16,11 +16,11 @@ nel [CHANGELOG](CHANGELOG.md) e in [docs/](docs/): qui non si ripete.
   systemd-networkd. Il servizio è stato disinstallato e reinstallato con gli script del repository:
   gira da questa cartella con il codice del commit `bf5055f` e l'unit nuova (`TimeoutStopSec=60s`).
 - Test unit tutti verdi; un `xfail` stretto segna REV-11 punto 5.
-- **E2E: nessuno eseguito sul codice di oggi.** L'ultima run verde (suite standard, test lunghi,
-  riavvio sporco, distacco USB) è precedente alle correzioni del paragrafo 2.3. I 5 `xfail` noti sono
-  SEC-1, BUG-7 e PERF-6, che diventano verdi con la correzione. Mai eseguito:
-  `test_antenna_gone_with_active_network` (`WILAB_E2E_USB_ACTIVE_AP=1`, il caso che il 23/11 ha
-  bloccato la VM).
+- **E2E standard sul codice di oggi (2026-11-26, commit `b63b1fb`, unit reinstallata):** 61 passed,
+  5 xfail noti (SEC-1 ×3, BUG-7, PERF-6), 10 skipped. Due skip del watchdog sono per il limite orario
+  dei ripristini consumato dai test precedenti: vanno rilanciati dopo un restart. Non eseguiti: USB,
+  lunghi, riavvio sporco, e `test_antenna_gone_with_active_network` (`WILAB_E2E_USB_ACTIVE_AP=1`, il
+  caso che il 23/11 ha bloccato la VM).
 
 In quest'ordine:
 
