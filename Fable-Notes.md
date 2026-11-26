@@ -71,6 +71,10 @@ frontend. I bug piccoli sono stati corretti subito (elenco nel paragrafo 6.3); i
 schede `REV` e nei test mancanti del paragrafo 5.5. I punti aperti sono quindi 64: 46 delle note
 originali e 18 della revisione.
 
+**Aggiornamento del 2026-11-26 (sera), versione 4.1.0.** Corretti e tolti dal documento REV-1, REV-3,
+REV-4 e REV-7, con i test unit-test-1, unit-test-3 e unit-test-6; REV-16 è corretto in parte. I punti
+aperti sono 60: 46 delle note originali e 14 della revisione.
+
 ---
 
 <a id="cap-1"></a>
@@ -90,12 +94,12 @@ di background sono supervisionati e la create è asincrona. Restano aperti:
 
 La revisione del 2026-11-26 ha aggiunto 18 punti sul codice nuovo:
 
-- **avvio, annullamento e stop** (priorità 1): REV-1…REV-7. Il più serio è REV-1: un avvio che
-  fallisce con un errore imprevisto lascia l'AP acceso;
+- **avvio, annullamento e stop** (priorità 1): REV-2, REV-5, REV-6 (REV-1, REV-3, REV-4 e REV-7 sono
+  stati corretti il 2026-11-26, versione 4.1.0);
 - **casi rari del contratto e gare minori:** REV-8…REV-12;
 - **frontend:** REV-13 (polling della create), REV-14 (difetti precedenti, tra cui la perdita degli ID
   a una ricarica), REV-15 (funzioni della 4.0.0 non usate);
-- **struttura e test:** REV-16, REV-17, REV-18, più 17 test unit e 12 test e2e mancanti (paragrafo 5.5).
+- **struttura e test:** REV-16 (parziale), REV-17, REV-18, più 14 test unit e 12 test e2e mancanti (paragrafo 5.5).
 
 ---
 
@@ -108,22 +112,23 @@ numeri mancanti sono quelli dei punti completati. La colonna **Stato** segna `pa
 in parte: la descrizione dice cosa è fatto e cosa manca. Le schede del capitolo 4 seguono lo stesso
 ordine.
 
-### 2.0 Da fare alla ripresa (stato del 2026-11-26)
+### 2.0 Da fare alla ripresa (stato del 2026-11-26, sera)
 
-Il lavoro si è fermato dopo i commit della revisione (`8923bc3` … `aca248e`); il servizio gira su
-`aca248e` con il frontend ricostruito. Alla ripresa, in quest'ordine:
+Versione 4.1.0 aperta (`dd524d3`); le modifiche nuove vanno nella sezione 4.1.0 del CHANGELOG. Fatto in
+questa sessione: REV-1, REV-3, REV-7 corretti con i loro test (unit-test-1, unit-test-3, unit-test-6);
+REV-4 provato a mano sulla macchina (messaggi annotati in [e2e-test-11](#e2e-test-11)) e corretto;
+REV-16 fatto in parte (esito del job senza eccezioni HTTP, tolto `CREATE_IN_BACKGROUND`, test sul
+percorso asincrono). Il servizio sulla macchina gira ancora su `aca248e`: nessuna di queste modifiche è
+installata né provata sull'hardware. Alla ripresa, in quest'ordine:
 
-1. **Eseguire i test e2e**, solo su un sistema libero e dopo conferma. Nessuna modifica di questo
-   ciclo è stata provata sull'hardware: create asincrona, annullamento, `404` con `reason`, `restarts`,
-   `409 / 1012`, captive portal sulla porta 8081, e le modifiche agli e2e stessi (`WiLab.create()` che
-   ora tratta `start_failed` come errore). Vedi [docs/e2e-testing.md](docs/e2e-testing.md).
-2. **Correggere REV-1, REV-3 e REV-7** (AP lasciato acceso, regole di blocco duplicate, protezioni tolte
-   durante uno stop incompleto), ciascuno con il suo `unit-test-N`.
-3. **REV-16** (togliere `CREATE_IN_BACKGROUND` e far usare ai test il percorso asincrono), prima di
-   scrivere gli altri test del paragrafo 5.5.
-4. **Provare a mano REV-4** sulla macchina: il messaggio di `iptables -D` e `ip6tables -D` con la catena
-   `wilab-in-<if>` assente, con il backend in uso.
-5. Poi gli altri punti della tabella 2.1 in ordine di priorità.
+1. **Eseguire i test e2e**, solo su un sistema libero e dopo conferma, dopo aver riavviato il servizio
+   sul codice nuovo. Nessuna modifica del ciclo è stata provata sull'hardware: create asincrona,
+   annullamento, `404` con `reason`, `restarts`, `409 / 1012`, captive portal sulla porta 8081, le
+   modifiche agli e2e stessi (`WiLab.create()` che tratta `start_failed` come errore), e ora anche i
+   controlli `iptables -C` (REV-3) e la rimozione dell'host guard (REV-4, [e2e-test-11](#e2e-test-11)).
+   Vedi [docs/e2e-testing.md](docs/e2e-testing.md).
+2. **Finire REV-16** (esempi OpenAPI, duplicati, un solo enum), poi gli altri test del paragrafo 5.5.
+3. Poi gli altri punti della tabella 2.1 in ordine di priorità: REV-2, REV-5, REV-6 per primi.
 
 Decisioni ancora aperte:
 
@@ -141,13 +146,9 @@ Decisioni ancora aperte:
 
 | Prio | Id | Gravità | Stato | Cosa fare |
 |---:|---|---|:---:|---|
-| 1 | [REV-1](#rev-1) | Alta |  | Annullare ogni avvio fallito, qualunque sia l'eccezione: oggi un errore imprevisto lascia l'AP acceso e `DELETE .../network` risponde `200` senza fermarlo. |
 | 1 | [REV-2](#rev-2) | Media |  | Un annullamento il cui rollback fallisce non deve finire in quarantena né far rispondere `404` al rilascio. |
-| 1 | [REV-3](#rev-3) | Media |  | Distinguere "regola assente" da "`iptables -C` fallito": oggi restano regole di blocco non tracciate e partono ripristini inutili. |
-| 1 | [REV-4](#rev-4) | Media |  | Rendere `HostGuard.remove` indipendente dal testo degli errori di iptables (da provare prima sulla macchina). |
 | 1 | [REV-5](#rev-5) | Media |  | Togliere il budget di 20 s dai tentativi interni di avvio: è un residuo della create sincrona e fa fallire avvii riusciti. |
 | 1 | [REV-6](#rev-6) | Media |  | Rendere annullabili gli avvii del watchdog e del probe, e annullare le create in `shutdown_all`. |
-| 1 | [REV-7](#rev-7) | Media |  | In uno stop incompleto lasciare host guard e isolamento finché hostapd non è fermo. |
 | 1 | [WD-5](#wd-5) | Alta | parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. **Fatto:** stop e cleanup con l'interfaccia sparita (punti 1–2), classificazione come guasto radio. **Manca:** ritirare la voce di un'antenna che ricompare con un nome diverso (punto 3); dipende da ARCH-4. |
 | 1 | [WD-7](#wd-7) | Media | parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. **Fatto:** gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca:** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware. |
 | 1 | [BUG-5](#bug-5) | Media |  | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
@@ -176,7 +177,7 @@ Decisioni ancora aperte:
 | 17 | [REV-15](#rev-15) | Bassa |  | Frontend: annullare un avvio, mostrare `restarts` e `error`, scegliere l'antenna; compilazione e spec fuori dal deploy. |
 | 18 | [BUG-7](#bug-7) | Bassa |  | Rendere coerente lo stato della potenza TX in caso di mismatch. |
 | 19 | [BUG-8](#bug-8) | Bassa |  | Usare un confronto constant-time per il token. |
-| 20 | [REV-16](#rev-16) | Media |  | Togliere le eccezioni HTTP dal job della create e il ramo `CREATE_IN_BACKGROUND`: i test devono usare il percorso asincrono reale. |
+| 20 | [REV-16](#rev-16) | Media | parz. | Semplificare la route e il job della create. **Fatto:** il job restituisce un esito (`StartOutcome`) senza eccezioni HTTP; tolto `CREATE_IN_BACKGROUND`, i test usano `create_network` (POST e polling). **Manca:** esempi OpenAPI in costanti di modulo, i duplicati `get_network`/`_state_response` e `_error()`/`domain_error`, un solo enum dei codici. |
 | 21 | [REV-17](#rev-17) | Bassa |  | Togliere i residui della catena di modifiche: percorso `1004` morto, metodi usati solo dai test, duplicati, testi vecchi. |
 | 22 | [HAP-7](#hap-7) | Bassa |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
 | 23 | [REV-18](#rev-18) | Bassa |  | Riordinare i test: fixture condivise e collegate come in produzione, poi i test mancanti del paragrafo 5.5. |
@@ -258,45 +259,6 @@ HAP-6, HAP-7) e ha applicato la strategia di retry solo alla richiesta di creazi
 Ogni scheda ha la stessa struttura: **Problema**, **Come si riproduce**, **Come correggerlo**. Dove è
 utile c'è codice o una patch. I percorsi dei file sono relativi alla radice del repository.
 
-<a id="rev-1"></a>
-### 1. REV-1 - Un avvio che fallisce con un errore imprevisto non viene annullato
-
-**Gravità:** Alta · **Confidenza:** Confermato (riprodotto con i mock dei test) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`_start_network`), [wilab/network/commands.py](wilab/network/commands.py) (`execute_command`), [wilab/wifi/watchdog.py](wilab/wifi/watchdog.py) (`_restore_ap`), [wilab/api/routes/network.py](wilab/api/routes/network.py) (`stop_network`)
-
-**Problema.** `_start_network` annulla l'avvio (`release_device`) solo per quattro eccezioni:
-`HostapdError`, `CommandError`, `DhcpServerError`, `CaptivePortalError`. Qualunque altra eccezione in
-una fase successiva all'avvio dell'AP esce senza rollback:
-
-- `execute_command` converte solo `FileNotFoundError`: un altro `OSError` di `Popen` (`EMFILE`,
-  `ENOMEM`, `EACCES`) passa così com'è;
-- hostapd, ed eventualmente dnsmasq e le regole, restano attivi ma il dispositivo non è in
-  `manager.active`;
-- sulla create il job riporta `start_failed` mentre l'AP trasmette; `DELETE .../network` risponde
-  `200` senza fermare nulla, perché la route esce subito quando il dispositivo non è in `active`;
-- nel watchdog `_restore_ap` cattura solo `StartupFailure` e `ValueError`: un'altra eccezione arriva
-  al gestore generico dopo che la rete è già stata rilasciata. La reservation resta valida senza rete,
-  senza `restore_failed` e senza nuovi tentativi.
-
-L'AP resta acceso fino a un rilascio, a una nuova create o alla scadenza.
-
-**Come si riproduce.** Create asincrona con un `hostapd_manager.start` finto che registra
-`_instances[device]` e `isolation_manager.add_network` che solleva `KeyError`: la `GET` mostra
-`start_failed`, l'istanza hostapd è ancora tracciata, `/status` dice `standby`, la `DELETE .../network`
-risponde `200` e `hostapd.stop` non viene mai chiamato.
-
-**Come correggerlo.**
-
-1. In `execute_command` convertire ogni `OSError` in `CommandError`.
-2. In `_start_network` fare il rollback con `except Exception` e rilanciare come `StartupFailure`
-   (fase nota, `radio=False`).
-3. In `_restore_ap` mandare le eccezioni impreviste a `_owe`, come un ripristino fallito.
-4. Nella route di stop, se il dispositivo non è in `active` ma ha ancora risorse (istanza hostapd,
-   dnsmasq o regole), chiamare `release_device` prima di rispondere.
-
-Test: [unit-test-1](#unit-test-1).
-
----
-
 <a id="rev-2"></a>
 ### 1. REV-2 - Annullare un avvio il cui rollback fallisce mette l'antenna in quarantena
 
@@ -319,58 +281,6 @@ lasciare il dispositivo al percorso normale: il rilascio lo consegna al cleanup 
 ogni rilascio con cleanup fallito), la stop della rete risponde `503 / 1012`.
 
 Test: [unit-test-2](#unit-test-2).
-
----
-
-<a id="rev-3"></a>
-### 1. REV-3 - Un `iptables -C` fallito viene sempre letto come "regola assente"
-
-**Gravità:** Media · **Confidenza:** Confermato per la perdita delle regole di blocco (mock); Probabile per il resto · **File:** [wilab/network/nat.py](wilab/network/nat.py) (`_rule_exists`, `verify`), [wilab/network/host_guard.py](wilab/network/host_guard.py) (`problems`), [wilab/network/captive.py](wilab/network/captive.py) (`problems`), [wilab/network/isolation.py](wilab/network/isolation.py) (`verify`)
-
-**Problema.** Il controllo delle regole non distingue "la regola non c'è" (codice di uscita 1) da "il
-comando è fallito" (lock xtables tenuto oltre 5 s, timeout).
-
-- `nat.verify` su una rete senza Internet: se `-C` fallisce mentre le regole esistono, le tre regole di
-  blocco vengono inserite di nuovo. `unblock_internet` cancella ogni regola tracciata una volta sola,
-  quindi tre regole `wilab-block-<dev>` sopravvivono allo stop, non tracciate. La rete successiva su
-  quell'antenna con Internet abilitato non ha Internet fino al riavvio del servizio.
-- `host_guard.problems` e `CaptivePortal.problems`: lo stesso errore passeggero causa un ripristino
-  completo dell'AP (client scollegati) e consuma uno dei 3 ripristini all'ora. Tre errori del genere
-  mettono in quarantena un'antenna sana.
-
-**Come si riproduce.** Firewall finto in memoria: rete senza Internet, `-C` che solleva `CommandError`
-diverso da "Bad rule", `verify()`, poi `release_network`: restano tre regole.
-
-**Come correggerlo.** Un solo helper per `-C` che restituisce `False` solo con codice di uscita 1 e
-solleva negli altri casi (la verifica salta quel giro). Rimuovere le regole di blocco per commento,
-come fa `_remove_nat_rules`, così anche i doppioni spariscono.
-
-Test: [unit-test-3](#unit-test-3).
-
----
-
-<a id="rev-4"></a>
-### 1. REV-4 - `HostGuard.remove` riconosce gli errori dal testo e forse non il caso "catena assente"
-
-**Gravità:** Media · **Confidenza:** Ipotesi (non si è potuto eseguire iptables) · **File:** [wilab/network/host_guard.py](wilab/network/host_guard.py) (`remove`)
-
-**Problema.** `remove` tollera solo i messaggi "No chain" e "does a matching rule exist". Un
-`-D INPUT ... -j wilab-in-X` con la catena assente risponde in un altro modo ("Chain 'x' does not
-exist" con nf_tables, "Couldn't load target" con il backend legacy). Il firewall finto dei test
-([tests/unit-tests/test_host_guard.py](tests/unit-tests/test_host_guard.py)) assume "Bad rule".
-
-- Se `add()` fallisce su `-N`, il rollback `remove()` fallisce a sua volta: l'esito è
-  `StartupFailure(cleanup_failed=True)` e un'antenna in quarantena, invece di `start_failed` con
-  `stage: host_guard`. Il cleanup non riesce mai.
-- Se un reload del firewall dell'host cancella le catene, il watchdog vede il guard mancante,
-  `_restore_ap` chiama `release_device`, `remove()` fallisce: "Unsafe AP watchdog cleanup" e quarantena.
-
-**Come correggerlo.** Prima una prova a mano sulla macchina: `iptables -D INPUT -j wilab-in-xxx` e
-`ip6tables` con la catena assente, annotando il messaggio. Poi rendere `remove` indipendente dal testo:
-dopo un errore di `-D`, `-F` o `-X`, considerare fatto il lavoro se `-S` non mostra più né il salto né
-la catena.
-
-Test: [e2e-test-11](#e2e-test-11).
 
 ---
 
@@ -418,22 +328,6 @@ Test: [unit-test-4](#unit-test-4).
 passa `cancelled=lambda: self._cancelled(reservation)`; il probe usa un canale non DFS.
 
 Test: [unit-test-5](#unit-test-5).
-
----
-
-<a id="rev-7"></a>
-### 1. REV-7 - Uno stop incompleto toglie comunque le protezioni
-
-**Gravità:** Media · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`_stop_network`)
-
-**Problema.** Se hostapd non si è fermato, il NAT viene lasciato com'è, ma host guard e regole di
-isolamento vengono tolti lo stesso. Nella finestra `stop_failed` (hostapd bloccato, AP forse ancora
-attivo, client con lease valido) i client possono raggiungere l'host (API, SSH) e le altre subnet.
-
-**Come correggerlo.** Condizionare la rimozione di host guard e isolamento a `hostapd_stopped`, come
-il NAT. La stop ripetuta li toglie quando hostapd è davvero fermo.
-
-Test: [unit-test-6](#unit-test-6).
 
 ---
 
@@ -1456,9 +1350,11 @@ ricavare il token misurando i tempi.
 ---
 
 <a id="rev-16"></a>
-### 20. REV-16 - Il job della create parla HTTP e i test usano un percorso che il server non ha più
+### 20. REV-16 - Il job della create parla HTTP e i test usano un percorso che il server non ha più (parziale)
 
 **Gravità:** Media · **Confidenza:** Confermato (lettura) · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py) (`_run_start`, `_run_job`, `CREATE_IN_BACKGROUND`), [tests/unit-tests/conftest.py](tests/unit-tests/conftest.py) (`_create_in_the_request`)
+
+> **Stato (2026-11-26):** Fatti i primi due punti: `_run_start` restituisce uno `StartOutcome` (`started`, `cancelled`, `ended` con il motivo, `start_failed` con l'errore `1013`) e `CREATE_IN_BACKGROUND` non esiste più; i test fanno la create con `create_network` (conftest) e leggono l'esito con la `GET`. **Manca:** esempi OpenAPI in costanti di modulo, `get_network` che ripete `_state_response`, `_error()` che duplica `domain_error`, un solo enum per `RecoveryCode` e `ApiErrorCode`, `device_busy_detail()` che scrive 1006 a mano.
 
 **Problema.**
 
@@ -2668,12 +2564,9 @@ difetto: si scrivono insieme alla correzione.
 
 | Id | Cosa verifica | Schede | File proposto |
 |---|---|---|---|
-| [unit-test-1](#unit-test-1) | Un errore imprevisto in un avvio non lascia nulla acceso | REV-1 | `test_async_create.py` |
 | [unit-test-2](#unit-test-2) | Annullamento con rollback fallito: nessuna quarantena | REV-2 | `test_async_create.py` |
-| [unit-test-3](#unit-test-3) | Un `iptables -C` fallito non duplica regole e non causa ripristini | REV-3 | `test_nat.py`, `test_host_guard.py` |
 | [unit-test-4](#unit-test-4) | Un avvio riuscito non fallisce per il budget dei tentativi | REV-5 | `test_startup_classification.py` |
 | [unit-test-5](#unit-test-5) | Rilascio durante un ripristino del watchdog; arresto con una create in corso | REV-6 | `test_watchdog.py`, `test_startup.py` |
-| [unit-test-6](#unit-test-6) | Guasti parziali dello stop, uno per fase | REV-7 | `test_network_stop.py` (nuovo) |
 | [unit-test-7](#unit-test-7) | Annullamento che va in timeout | REV-8 | `test_async_create.py` |
 | [unit-test-8](#unit-test-8) | `404` con `reason` su ogni operazione con `{reservation_id}` | REV-11 | `test_error_codes.py` |
 | [unit-test-9](#unit-test-9) | Annullamento in ogni fase con il vero `_start_network` | - | `test_async_create.py` |
@@ -2686,24 +2579,11 @@ difetto: si scrivono insieme alla correzione.
 | [unit-test-16](#unit-test-16) | Reserve con `interface` dalle API, con due antenne | - | `test_reservation.py` |
 | [unit-test-17](#unit-test-17) | Backoff del cleanup attraverso il collegamento reale | - | `test_cleanup_backoff.py` |
 
-<a id="unit-test-1"></a>
-**unit-test-1 - Errore imprevisto in un avvio.** Create asincrona, hostapd finto che registra la
-propria istanza, una fase successiva che solleva `KeyError`. Creare, fare polling fino a
-`start_failed`, poi `DELETE .../network`. Atteso: `hostapd.stop` chiamato; nessuna istanza, host guard,
-NAT o isolamento rimasti; la seconda `DELETE` risponde `409 / 1007`. Ripetere con `OSError(EMFILE)` da
-`Popen`. Oggi fallisce (REV-1).
-
 <a id="unit-test-2"></a>
 **unit-test-2 - Annullamento con rollback fallito.** Avvio bloccato; lo stop di hostapd nel rollback
 solleva. `DELETE /reservations/{id}`: atteso `200`, `reason: reservation_released` alle chiamate
 successive, antenna senza `recovery_state`, cleanup affidato al ciclo in background. Con
 `DELETE .../network`: atteso `503 / 1012`, reservation valida. Oggi fallisce (REV-2).
-
-<a id="unit-test-3"></a>
-**unit-test-3 - `iptables -C` fallito.** Firewall finto in memoria. Rete senza Internet; `-C` solleva
-un `CommandError` che non è "Bad rule"; `verify()`. Atteso: nessuna regola aggiunta, e dopo
-`release_network` nessuna regola rimasta. Lo stesso per `host_guard.problems` e
-`CaptivePortal.problems`: nessun problema riportato, quindi nessun ripristino. Oggi fallisce (REV-3).
 
 <a id="unit-test-4"></a>
 **unit-test-4 - Budget dei tentativi.** Orologio finto. Primo avvio con guasto radio; il secondo porta
@@ -2716,13 +2596,6 @@ finisce durante la fase `dhcp`; atteso che il guasto non sia attribuito a `dhcp`
 rispetta `cancelled`; `DELETE /reservations/{id}`: atteso ritorno entro 1 s e nessun AP. (b)
 `shutdown_all` con una create bloccata: atteso ritorno entro 1 s, `start_jobs` vuoto, nessuna risorsa
 tracciata. Oggi fallisce (REV-6).
-
-<a id="unit-test-6"></a>
-**unit-test-6 - Guasti parziali dello stop.** Far fallire da sola ognuna delle fasi: QoS, NAT, captive
-portal, host guard, isolamento, DHCP. Atteso: `NetworkStopError` nomina la fase, la rete resta in
-`active`, `stop_failed` è impostato, una stop ripetuta finisce il lavoro. Con hostapd che non si
-ferma: host guard e isolamento restano installati (REV-7). Copre le righe di `_stop_network` oggi non
-eseguite da alcun test.
 
 <a id="unit-test-7"></a>
 **unit-test-7 - Annullamento in timeout.** `CANCEL_TIMEOUT=0.05` e un avvio che ignora
@@ -2807,10 +2680,10 @@ sparisce e l'antenna è riservabile.
 | [e2e-test-5](#e2e-test-5) | Motivi del `404` sul servizio reale | - | API |
 | [e2e-test-6](#e2e-test-6) | Contatori `restarts` | - | root |
 | [e2e-test-7](#e2e-test-7) | Create durante una riparazione: `409 / 1009` | - | root |
-| [e2e-test-8](#e2e-test-8) | Stop incompleto: `1012` | REV-7 | root, difficile da provocare |
+| [e2e-test-8](#e2e-test-8) | Stop incompleto: `1012` | - | root, difficile da provocare |
 | [e2e-test-9](#e2e-test-9) | Scadenza di una rete attiva | - | API, più `iw` |
 | [e2e-test-10](#e2e-test-10) | Captive portal sulla porta 8081 | - | root o un client |
-| [e2e-test-11](#e2e-test-11) | Host guard con la catena già assente | REV-4 | root |
+| [e2e-test-11](#e2e-test-11) | Host guard con la catena già assente | - | root |
 | [e2e-test-12](#e2e-test-12) | Internet disabilitato resta disabilitato | - | root |
 
 <a id="e2e-test-1"></a>
@@ -2873,7 +2746,10 @@ antenne partono insieme.
 **e2e-test-11 - Host guard senza catena.** Con una rete attiva, cancellare a mano il salto e la catena
 `wilab-in-<if>` (IPv4 e IPv6). Atteso: il watchdog ripristina la rete (`restarts.ap` aumenta), nessuna
 quarantena; lo stop successivo risponde `200`. Annotare il messaggio di `iptables -D` con la catena
-assente sui due backend (REV-4).
+assente sui due backend: già annotato il 2026-11-26 (`-D` risponde codice 2, "Chain 'x' does not exist"
+con nf_tables e "Couldn't load target" con legacy; `-F`, `-X`, `-S` codice 1 "No chain/target/match by
+that name"), e `HostGuard.remove` ora controlla lo stato invece del testo. Resta da provare il recupero
+sulla macchina.
 
 <a id="e2e-test-12"></a>
 **e2e-test-12 - Internet disabilitato.** Create con Internet, `POST .../internet/disable`, attesa di
@@ -2986,13 +2862,9 @@ pagine è stata eseguita.
 
 | Prio | Id | Titolo |
 |---:|---|---|
-| 1 | [REV-1](#rev-1) | Un avvio che fallisce con un errore imprevisto non viene annullato |
 | 1 | [REV-2](#rev-2) | Annullare un avvio il cui rollback fallisce mette l'antenna in quarantena |
-| 1 | [REV-3](#rev-3) | Un `iptables -C` fallito viene sempre letto come "regola assente" |
-| 1 | [REV-4](#rev-4) | `HostGuard.remove` riconosce gli errori dal testo e forse non il caso "catena assente" |
 | 1 | [REV-5](#rev-5) | Il budget di 20 s dei tentativi interni è un residuo della create sincrona |
 | 1 | [REV-6](#rev-6) | Gli avvii che non passano dal job della create non si possono annullare |
-| 1 | [REV-7](#rev-7) | Uno stop incompleto toglie comunque le protezioni |
 | 1 | [WD-5](#wd-5) | Un adattatore che sparisce non si può ripulire né rimuovere (parziale) |
 | 1 | [WD-7](#wd-7) | Il watchdog controlla due processi, non la rete (parziale) |
 | 1 | [BUG-5](#bug-5) | La discovery può ignorare un adattatore per sempre |
@@ -3021,7 +2893,7 @@ pagine è stata eseguita.
 | 17 | [REV-15](#rev-15) | Frontend: funzioni dell'API 4.0.0 non usate |
 | 18 | [BUG-7](#bug-7) | TX power: stato incoerente dopo un mismatch |
 | 19 | [BUG-8](#bug-8) | Confronto del token non a tempo costante |
-| 20 | [REV-16](#rev-16) | Il job della create parla HTTP e i test usano un percorso che il server non ha più |
+| 20 | [REV-16](#rev-16) | Il job della create parla HTTP e i test usano un percorso che il server non ha più (parziale) |
 | 21 | [REV-17](#rev-17) | Residui della catena di modifiche |
 | 22 | [HAP-7](#hap-7) | Ipotesi: `hostapd -d` per tutta la vita dell'AP |
 | 23 | [REV-18](#rev-18) | Struttura dei test |
@@ -3053,7 +2925,7 @@ pagine è stata eseguita.
 
 ### Schede per area
 
-- **Revisione del 2026-11-26:** [REV-1](#rev-1), [REV-2](#rev-2), [REV-3](#rev-3), [REV-4](#rev-4), [REV-5](#rev-5), [REV-6](#rev-6), [REV-7](#rev-7), [REV-8](#rev-8), [REV-9](#rev-9), [REV-10](#rev-10), [REV-11](#rev-11), [REV-12](#rev-12), [REV-13](#rev-13), [REV-14](#rev-14), [REV-15](#rev-15), [REV-16](#rev-16), [REV-17](#rev-17), [REV-18](#rev-18)
+- **Revisione del 2026-11-26:** [REV-2](#rev-2), [REV-5](#rev-5), [REV-6](#rev-6), [REV-8](#rev-8), [REV-9](#rev-9), [REV-10](#rev-10), [REV-11](#rev-11), [REV-12](#rev-12), [REV-13](#rev-13), [REV-14](#rev-14), [REV-15](#rev-15), [REV-16](#rev-16), [REV-17](#rev-17), [REV-18](#rev-18)
 - **Sicurezza:** [SEC-1](#sec-1)
 - **Watchdog e recovery:** [WD-5](#wd-5), [WD-7](#wd-7), [WD-8](#wd-8), [WD-10](#wd-10)
 - **Avvio di hostapd:** [HAP-5](#hap-5), [HAP-6](#hap-6), [HAP-7](#hap-7), [HAP-8](#hap-8), [HAP-9](#hap-9)
