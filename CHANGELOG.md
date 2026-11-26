@@ -15,7 +15,7 @@ All notable changes to Wi-Lab are documented in this file.
 | 🔧 Maintenance changes | 4 |
 | ✨ New features | 1 |
 | ✅ Test changes | 7 |
-| 📦 Commits since 4.0.0 | 40 |
+| 📦 Commits since 4.0.0 | 55 |
 
 Counts are the entries of the sections below and `git rev-list --count aca248e..HEAD` (`aca248e` is the last 4.0.0 commit), as of 2026-11-26.
 

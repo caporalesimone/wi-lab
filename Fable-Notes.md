@@ -15,7 +15,7 @@ nel [CHANGELOG](CHANGELOG.md) e in [docs/](docs/): qui non si ripete.
   disinstallato (pacchetti in stato `rc`), `wpa_supplicant` è mascherato, `ens18` è di
   systemd-networkd. Il servizio è stato disinstallato e reinstallato con gli script del repository:
   gira da questa cartella con il codice del commit `bf5055f` e l'unit nuova (`TimeoutStopSec=60s`).
-- Test unit tutti verdi; un `xfail` stretto segna REV-11 punto 5.
+- Test unit tutti verdi, nessun `xfail`.
 - **E2E standard sul codice di oggi (2026-11-26, commit `b63b1fb`, unit reinstallata):** 61 passed,
   5 xfail noti (SEC-1 ×3, BUG-7, PERF-6), 10 skipped. Due skip del watchdog sono per il limite orario
   dei ripristini consumato dai test precedenti: vanno rilanciati dopo un restart. Non eseguiti: USB,
@@ -88,6 +88,8 @@ staccare la USB (23/11): serve chi la ricollega.
   della create resta obbligatorio e validato 1-4: è nel contratto, il suo effetto no. BUG-7, PERF-6 e
   HAP-6 escono dal blocco A e vanno nel gruppo [TXP-1](#txp-1) del paragrafo 2.2.
 
+- **REV-11 punto 1:** `1006` documentato anche sulla create ripetuta su una rete attiva (strada A).
+
 **Ancora aperte** (nessuna blocca il congelamento):
 
 - **Frontend (REV-13, REV-14, REV-15):** non si può compilare senza pubblicare in `frontend/dist`;
@@ -124,8 +126,7 @@ requisiti di installazione. I punti sono divisi con questo criterio, non per gra
 
 | Ordine | Id | Gravità | Cosa fare | Perché prima del congelamento |
 |:---:|---|---|---|---|
-| A1 | [REV-11](#rev-11) | Bassa | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, `next_available_in` troncato. **Fatto:** punto 4, tipi stretti. | Codici fuori contratto. |
-| A2 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
+| A1 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
 
 ### 2.2 Blocco B: dopo la 4.1.0, solo stabilizzazione
 
@@ -212,6 +213,7 @@ NM-1 è chiuso nel codice; la prova sulla macchina è il paragrafo 5.8.
 | ✅ [HAP-9](#hap-9) | Bassa | Canali 120, 124, 128 mai offerti, `422` nella create (anche dentro un blocco 40/80 MHz). |
 | ✅ [NET-8](#net-8) | Bassa | `dns_server` obbligatoria: senza, il servizio non parte e nomina la chiave. Breaking, nel CHANGELOG. |
 | ✅ [STAB-7](#stab-7) | Media | `requirements.lock` con le versioni esatte (dal venv su cui sono passati gli e2e), usato da installer, Makefile e CI; `make lock` lo rigenera. Decisione: pip, non uv, per la 4.1.0. |
+| ✅ [REV-11](#rev-11) | Bassa | (1) `1006` documentato sulla create ripetuta su una rete attiva; (2) `500` invece di `404` su Internet e `GET .../txpower` per un errore interno; (3) `start_failed` dimenticato alla scadenza; (4) tipi stretti; (5) `next_available_in` arrotondato per eccesso come `/status`. |
 | ✅ [REV-8](#rev-8) | Bassa | Il job di un avvio che ignora l'annullamento resta in `start_jobs` finché il thread gira: niente secondo thread, stop `503 / 1006` poi `200` o `409 / 1007`. |
 | ✅ [API-6](#api-6) | Bassa | `POST .../txpower` prende `tx_power_level`, come la create. Breaking, nel CHANGELOG. |
 | ✅ [NM-1](#nm-1) | Media | Nessun `nmcli` nel codice; precheck all'avvio (`78` se non root o manca un comando, avvisi per NetworkManager, `wpa_supplicant` su una radio, regole rimaste); stadi 06 e 07 dell'installer che propongono di disattivare NetworkManager e `wpa_supplicant` senza rischiare l'accesso; `uninstall.sh` propone di riattivarli. Chiude ARCH-7. [Capitolo 5](#cap-5). |
@@ -306,40 +308,6 @@ la funzione `serve_frontend` con `full_path="/etc/hostname"` (vedi test T-01).
 In alternativa si può montare `StaticFiles` di Starlette, che fa già questo controllo, e tenere solo
 il fallback su `index.html`. Dopo la correzione conviene ruotare `auth_token` e
 `protected_commands_password` sulle macchine già esposte.
-
----
-
-<a id="rev-11"></a>
-### A1. REV-11 - Risposte delle API fuori dal contratto in casi rari
-
-**Gravità:** Bassa · **Confidenza:** Confermato per i primi due punti (TestClient); Probabile per gli altri · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py), [wilab/api/routes/txpower.py](wilab/api/routes/txpower.py), [wilab/api/routes/internet.py](wilab/api/routes/internet.py), [wilab/models.py](wilab/models.py)
-
-**Problema.**
-
-1. **La create può rispondere `503 / 1006`.** Il ramo "stesso body su una rete attiva" usa
-   `hold_reservation` con il timeout di 5 s. Documentazione e OpenAPI dicono che la create non risponde
-   mai `1006`.
-2. **`404` con `reason: not_found` su una reservation valida.** In TX power, Internet e rete ogni
-   `ValueError` diventa `404`: per esempio `GET .../txpower` quando `_get_channel_capabilities`
-   solleva "Channel N not supported". Il contratto dice che un `404` su queste chiamate ha sempre uno
-   dei quattro motivi della reservation. I rami `UNKNOWN_ANTENNA` sembrano irraggiungibili.
-3. **Un `start_failed` sopravvive alla scadenza.** La scadenza non chiama `before_release`: il job
-   resta in `start_jobs` finché la reservation successiva su quell'antenna fa una chiamata. Al massimo
-   uno per antenna, non visibile ai client.
-4. **Tipi accettati per sbaglio.** pydantic in modalità non stretta accetta `radio.channel: true`
-   (canale 1), `"6"`, `duration_seconds: "120"` e `level: true`.
-5. **`next_available_in` arrotondato in modo diverso.** Per un'antenna con il cleanup fallito il reserve
-   (`409 / 1005`) dà `next_available_in` troncato (`int` di una differenza di orari), mentre `/status`
-   arrotonda per eccesso (`ceil`) la stessa attesa: 4 contro 5 s. Trovato dal test del 2026-11-26.
-
-**Come correggerlo.** (1) Costruire il `200` senza lock del dispositivo, oppure documentare `1006`
-anche sulla create. (2) `422` o `503` per i casi raggiungibili; togliere i rami morti. (3) Chiamare
-`cancel_start` anche alla scadenza. (4) `strict=True` su quegli interi (è una modifica visibile ai
-client: decidere prima del rilascio). (5) Calcolare `next_available_in` come `/status`, con `ceil`.
-
-Test: `test_error_codes.py::test_every_operation_with_a_reservation_id_answers_404_with_the_exact_reason`
-(i motivi della reservation; il punto 2 manca), `test_cleanup_backoff.py::test_reserve_next_available_in_equals_the_cleanup_wait`
-(`xfail` stretto finché il punto 5 non è corretto).
 
 ---
 
@@ -1804,6 +1772,40 @@ per il livello 4.
 Attenzione: se una rete precedente sullo stesso adattatore aveva abbassato la potenza, il valore può
 restare. `reset_interface` (STAB-4) dovrebbe quindi includere `iw dev <if> set txpower auto`, da
 eseguire a interfaccia ferma, cioè nel momento meno delicato.
+
+---
+
+<a id="rev-11"></a>
+### ✅ REV-11 - Risposte delle API fuori dal contratto in casi rari
+
+**Gravità:** Bassa · **Stato:** ✅ corretto il 2026-11-26: punto 1 documentato (`1006` sulla create ripetuta), punti 2, 3, 5 corretti, punto 4 con REV-11 strict · **Confidenza:** Confermato per i primi due punti (TestClient); Probabile per gli altri · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py), [wilab/api/routes/txpower.py](wilab/api/routes/txpower.py), [wilab/api/routes/internet.py](wilab/api/routes/internet.py), [wilab/models.py](wilab/models.py)
+
+**Problema.**
+
+1. **La create può rispondere `503 / 1006`.** Il ramo "stesso body su una rete attiva" usa
+   `hold_reservation` con il timeout di 5 s. Documentazione e OpenAPI dicono che la create non risponde
+   mai `1006`.
+2. **`404` con `reason: not_found` su una reservation valida.** In TX power, Internet e rete ogni
+   `ValueError` diventa `404`: per esempio `GET .../txpower` quando `_get_channel_capabilities`
+   solleva "Channel N not supported". Il contratto dice che un `404` su queste chiamate ha sempre uno
+   dei quattro motivi della reservation. I rami `UNKNOWN_ANTENNA` sembrano irraggiungibili.
+3. **Un `start_failed` sopravvive alla scadenza.** La scadenza non chiama `before_release`: il job
+   resta in `start_jobs` finché la reservation successiva su quell'antenna fa una chiamata. Al massimo
+   uno per antenna, non visibile ai client.
+4. **Tipi accettati per sbaglio.** pydantic in modalità non stretta accetta `radio.channel: true`
+   (canale 1), `"6"`, `duration_seconds: "120"` e `level: true`.
+5. **`next_available_in` arrotondato in modo diverso.** Per un'antenna con il cleanup fallito il reserve
+   (`409 / 1005`) dà `next_available_in` troncato (`int` di una differenza di orari), mentre `/status`
+   arrotonda per eccesso (`ceil`) la stessa attesa: 4 contro 5 s. Trovato dal test del 2026-11-26.
+
+**Come correggerlo.** (1) Costruire il `200` senza lock del dispositivo, oppure documentare `1006`
+anche sulla create. (2) `422` o `503` per i casi raggiungibili; togliere i rami morti. (3) Chiamare
+`cancel_start` anche alla scadenza. (4) `strict=True` su quegli interi (è una modifica visibile ai
+client: decidere prima del rilascio). (5) Calcolare `next_available_in` come `/status`, con `ceil`.
+
+Test: `test_error_codes.py::test_every_operation_with_a_reservation_id_answers_404_with_the_exact_reason`
+(i motivi della reservation; il punto 2 manca), `test_cleanup_backoff.py::test_reserve_next_available_in_equals_the_cleanup_wait`
+(`xfail` stretto finché il punto 5 non è corretto).
 
 ---
 
