@@ -5,11 +5,11 @@ import threading
 from unittest.mock import Mock
 
 import pytest
+from conftest import active_network
 
 from wilab import heartbeat
 from wilab.api import dependencies
 from wilab.config import _read_raw_config, load_config
-from wilab.models import NetworkStatus
 from wilab.wifi import watchdog as watchdog_module
 
 
@@ -35,7 +35,7 @@ def test_watchdog_survives_any_exception_and_logs_it_once(monkeypatch, caplog):
     reservations = dependencies.get_reservation_manager(config)
     reservation = reservations.create(0)
     device = reservation.device_id
-    monkeypatch.setitem(manager.active, device, NetworkStatus(interface=device, active=True))
+    monkeypatch.setitem(manager.active, device, active_network(interface=device))
     monkeypatch.setattr(heartbeat, "beat", lambda _name: None)
     probe = Mock(side_effect=[KeyError("x"), KeyError("x"), KeyError("x"), True])
     monkeypatch.setattr(manager.hostapd_manager, "is_running", probe)

@@ -5,7 +5,7 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
-from conftest import MOCK_PHY_INFO, create_network, network_body
+from conftest import MOCK_PHY_INFO, active_network, create_network, network_body
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -300,7 +300,6 @@ class TestManagerAndWatchdog:
         assert (status.channel_width, status.wifi_generation) == (80, 6)
 
     def test_watchdog_restores_with_the_same_mode(self, monkeypatch):
-        from wilab.models import NetworkStatus
         from wilab.wifi import watchdog as watchdog_module
 
         config = dependencies.get_config()
@@ -312,8 +311,8 @@ class TestManagerAndWatchdog:
         start = Mock()
         monkeypatch.setattr(manager, "start_network", start)
         monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: 1000.0)
-        status = NetworkStatus(
-            interface=device, active=True, ssid="net", channel=36, band="5ghz", encryption="wpa3",
+        status = active_network(
+            interface=device, ssid="net", channel=36, band="5ghz", encryption="wpa3",
             password="testpass123", tx_power_level=4, channel_width=80, wifi_generation=5,
         )
         manager.watchdog._restore_ap(reservations, reservation, status, False)

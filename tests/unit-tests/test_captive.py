@@ -5,10 +5,11 @@ import threading
 from unittest.mock import Mock
 
 import pytest
+from conftest import active_network
 
 from wilab.api import dependencies
 from wilab.config import load_config
-from wilab.models import NetworkCreateRequest, NetworkStatus
+from wilab.models import NetworkCreateRequest
 from wilab.network import captive
 from wilab.network.commands import CommandError
 from wilab.network.dhcp import DhcpServer
@@ -257,8 +258,8 @@ def test_watchdog_restart_keeps_the_portal(monkeypatch):
     manager = dependencies.get_manager(config)
     reservations = dependencies.get_reservation_manager(config)
     reservation = reservations.create(60)
-    status = NetworkStatus(
-        interface=reservation.device_id, active=True, ssid="Portal", channel=1, band="2.4ghz",
+    status = active_network(
+        interface=reservation.device_id, ssid="Portal", channel=1, band="2.4ghz",
         encryption="open", tx_power_level=4, captive_portal=True,
     )
     monkeypatch.setattr(manager, "release_device", Mock())

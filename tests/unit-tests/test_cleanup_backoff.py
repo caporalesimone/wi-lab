@@ -8,11 +8,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from conftest import active_network
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
 from wilab.config import load_config
-from wilab.models import NetworkStatus
 from wilab.network.commands import CommandError
 from wilab.reservation import NoDeviceAvailableError, ReservationManager
 from wilab.wifi import manager as manager_module
@@ -30,8 +30,7 @@ def clock(monkeypatch):
 def stuck_network(monkeypatch, clock):
     mgr = NetworkManager(load_config())
     device = mgr.config.antennas[0].device_id
-    status = NetworkStatus(interface=device, active=True)
-    status._deadline = time.monotonic() - 3600  # long expired
+    status = active_network(interface=device, deadline=time.monotonic() - 3600)  # long expired
     mgr.active[device] = status
     stop = Mock(side_effect=RuntimeError("Cannot find device"))
     monkeypatch.setattr(mgr, "stop_network", stop)
@@ -178,7 +177,7 @@ def test_cleanup_backoff_through_the_release_and_the_expiry_loop(stuck_release, 
     """unit-test-17: release with a stuck stop, then the expiry loop retries at +5, +15, +60, +300 s."""
     client, headers, manager, device, clock, attempts, run_expiry_loop = stuck_release
     rid = _reserve(client, headers).json()["reservation_id"]
-    monkeypatch.setitem(manager.active, device, NetworkStatus(interface=device, active=True))
+    monkeypatch.setitem(manager.active, device, active_network(interface=device))
     assert client.delete(f"/api/v2/reservations/{rid}", headers=headers).status_code == 200
     assert attempts == [1000.0]
     for count, (wait, retry_at) in enumerate([(5, 1005), (15, 1020), (60, 1080), (300, 1380)], start=1):
@@ -208,7 +207,7 @@ def test_reserve_next_available_in_equals_the_cleanup_wait(stuck_release, monkey
     """unit-test-17: the 409 of the reserve gives the same wait as /status, not one second less."""
     client, headers, manager, device, _clock, _attempts, _run_expiry_loop = stuck_release
     rid = _reserve(client, headers).json()["reservation_id"]
-    monkeypatch.setitem(manager.active, device, NetworkStatus(interface=device, active=True))
+    monkeypatch.setitem(manager.active, device, active_network(interface=device))
     assert client.delete(f"/api/v2/reservations/{rid}", headers=headers).status_code == 200
     assert _cleanup_reason(client, headers)["message"].endswith("next attempt in 5 s")
     assert _reserve(client, headers).json()["detail"]["next_available_in"] == 5

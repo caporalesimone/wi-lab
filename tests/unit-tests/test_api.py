@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 
 import pytest
-from conftest import create_network, network_body
+from conftest import active_network, create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -135,16 +135,13 @@ class TestStatusEndpoint:
         """Test status returns degraded when DHCP is down but network is active."""
         from wilab.api.dependencies import get_config
         from wilab.api.dependencies import get_manager as original_get_manager
-        from wilab.models import NetworkStatus
         
         # Get the real manager once, then mock it
         real_mgr = original_get_manager(get_config())
         
         # Add an active network
-        real_mgr.active['test-net'] = NetworkStatus(
-            interface='wlan0',
-            active=True,
-            ssid='TestAP',
+        real_mgr.active['test-net'] = active_network(
+            interface='wlan0', ssid='TestAP',
             subnet='192.168.120.0/24'
         )
         

@@ -2,7 +2,7 @@ import json
 from unittest.mock import Mock
 
 import pytest
-from conftest import create_network, network_body
+from conftest import active_network, create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -292,8 +292,8 @@ def test_watchdog_restores_original_network_or_cleans_up_on_cancellation(monkeyp
     reservation = reservations.create(60)
     device = reservation.device_id
     deadline = reservation.expires_at
-    status = NetworkStatus(
-        interface=device, active=True, ssid="original", channel=1, band="2.4ghz",
+    status = active_network(
+        interface=device, ssid="original", channel=1, band="2.4ghz",
         encryption="open", tx_power_level=4, internet_enabled=True,
     )
     release = Mock()
@@ -325,7 +325,7 @@ def test_watchdog_dhcp_failure_does_not_restart_ap_or_schedule_usb(monkeypatch):
     reservations = dependencies.get_reservation_manager(config)
     reservation = reservations.create(60)
     device = reservation.device_id
-    status = NetworkStatus(interface=device, active=True, subnet="192.0.2.0/24")
+    status = active_network(interface=device, subnet="192.0.2.0/24")
     stop = Mock()
     start = Mock(side_effect=DhcpServerError("daemon failed"))
     restart_ap = Mock()
@@ -379,7 +379,7 @@ def test_watchdog_waits_for_confirmed_ap_failure(monkeypatch, ap_alive, checks):
     reservations = dependencies.get_reservation_manager(config)
     reservation = reservations.create(60)
     device = reservation.device_id
-    status = NetworkStatus(interface=device, active=True)
+    status = active_network(interface=device)
     monkeypatch.setitem(manager.active, device, status)
     monkeypatch.setattr(manager.hostapd_manager, "is_running", Mock(return_value=ap_alive))
     enabled = Mock(return_value=False)

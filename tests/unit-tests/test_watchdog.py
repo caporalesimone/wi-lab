@@ -5,7 +5,7 @@ import time
 from unittest.mock import Mock
 
 import pytest
-from conftest import create_network, network_body
+from conftest import active_network, create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab import heartbeat
@@ -28,7 +28,7 @@ def _setup(monkeypatch, times, recreate_at=None):
     reservations = dependencies.get_reservation_manager(config)
     reservation = reservations.create(0)
     device = reservation.device_id
-    monkeypatch.setitem(manager.active, device, NetworkStatus(interface=device, active=True))
+    monkeypatch.setitem(manager.active, device, active_network(interface=device))
     monkeypatch.setattr(manager.hostapd_manager, "is_running", Mock(return_value=False))
     clock = iter(times)
     monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: next(clock))
@@ -38,7 +38,7 @@ def _setup(monkeypatch, times, recreate_at=None):
         flags.append(exhausted)
         if recreate_at is not None and len(flags) == recreate_at:
             # The client deleted and recreated the network: a new status object.
-            manager.active[device] = NetworkStatus(interface=device, active=True)
+            manager.active[device] = active_network(interface=device)
 
     monkeypatch.setattr(manager.watchdog, "_restore_ap", restore)
     monkeypatch.setattr(
@@ -76,8 +76,8 @@ def test_exhausted_budget_quarantines_instead_of_restarting(monkeypatch, exhaust
     reservations = dependencies.get_reservation_manager(config)
     reservation = reservations.create(60)
     device = reservation.device_id
-    status = NetworkStatus(
-        interface=device, active=True, ssid="net", channel=1, band="2.4ghz",
+    status = active_network(
+        interface=device, ssid="net", channel=1, band="2.4ghz",
         encryption="open", tx_power_level=4,
     )
     monkeypatch.setattr(manager, "release_device", Mock())
@@ -93,8 +93,8 @@ def test_exhausted_budget_quarantines_instead_of_restarting(monkeypatch, exhaust
 # --------------------------------------------------------------------------- WD-2
 
 def _restorable(device):
-    return NetworkStatus(
-        interface=device, active=True, ssid="net", channel=1, band="2.4ghz",
+    return active_network(
+        interface=device, ssid="net", channel=1, band="2.4ghz",
         encryption="open", tx_power_level=4,
     )
 
@@ -224,7 +224,7 @@ def _dhcp_setup(monkeypatch, ticks, dhcp_restart_works=True):
     reservation = reservations.create(0)
     device = reservation.device_id
     monkeypatch.setitem(
-        manager.active, device, NetworkStatus(interface=device, active=True, subnet="192.0.2.0/24"),
+        manager.active, device, active_network(interface=device, subnet="192.0.2.0/24"),
     )
     monkeypatch.setattr(manager.hostapd_manager, "is_running", Mock(return_value=True))
     monkeypatch.setattr(manager.hostapd_manager, "is_enabled", Mock(return_value=True))
@@ -294,7 +294,7 @@ def test_a_half_stopped_network_is_not_repaired(monkeypatch):
     manager = dependencies.get_manager(config)
     reservations = dependencies.get_reservation_manager(config)
     device = reservations.create(0).device_id
-    monkeypatch.setitem(manager.active, device, NetworkStatus(interface=device, active=True))
+    monkeypatch.setitem(manager.active, device, active_network(interface=device))
     monkeypatch.setattr(manager, "_stop_failed", {device})
     monkeypatch.setattr(manager.hostapd_manager, "is_running", Mock(return_value=False))
     restore = Mock()
@@ -376,7 +376,7 @@ def _watch_until_a_restart(monkeypatch, ticks, *, dhcp_restart_works=True, verif
     reservation = reservations.create(0)
     device = reservation.device_id
     monkeypatch.setitem(
-        manager.active, device, NetworkStatus(interface=device, active=True, subnet="192.0.2.0/24"),
+        manager.active, device, active_network(interface=device, subnet="192.0.2.0/24"),
     )
     tick = {"now": 0.0, "alive": True, "enabled": True, "dhcp": True}
     pending = iter(ticks)
@@ -453,13 +453,14 @@ def scripted_creates(monkeypatch):
                 raise StartupFailure("AP start cancelled", stage="hostapd")
         if script["fail"]:
             raise StartupFailure("dnsmasq refused the configuration", stage="dhcp")
-        manager.active[device] = NetworkStatus(interface=device, active=True)
+        manager.active[device] = active_network(interface=device)
         return manager.active[device]
 
     monkeypatch.setattr(manager, "start_network", start_network)
     monkeypatch.setattr(
         manager, "get_status",
-        lambda device: manager.active.get(device) or NetworkStatus(interface=device, active=False),
+        lambda device: manager.active[device].status() if device in manager.active
+        else NetworkStatus(interface=device, active=False),
     )
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     with TestClient(create_app()) as client:

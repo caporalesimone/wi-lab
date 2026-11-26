@@ -3,8 +3,8 @@
 from unittest.mock import Mock
 
 import pytest
+from conftest import active_network
 
-from wilab.models import NetworkStatus
 from wilab.wifi import manager as manager_module
 
 
@@ -12,7 +12,7 @@ from wilab.wifi import manager as manager_module
 def running(monkeypatch, config):
     mgr = manager_module.NetworkManager(config)
     device = config.antennas[0].device_id
-    mgr.active[device] = NetworkStatus(interface=device, active=True, channel=6, tx_power_level=4, subnet="192.168.120.0/24")
+    mgr.active[device] = active_network(interface=device, channel=6, tx_power_level=4, subnet="192.168.120.0/24")
     iw = Mock(return_value="")
     monkeypatch.setattr(manager_module, "execute_iw", iw)
     monkeypatch.setattr(mgr.dhcp_server, "get_subnet_info", Mock(return_value={}))
@@ -43,3 +43,16 @@ def test_client_list_is_reused_for_a_moment(running, monkeypatch):
     now[0] += manager_module.CLIENTS_CACHE_SECONDS + 0.1
     mgr.list_clients(device)
     assert len([c for c in iw.call_args_list if "station" in c.args[0]]) == 2
+
+
+def test_a_status_read_leaves_the_stored_network_alone(running, monkeypatch):
+    # ARCH-3: each read builds a new answer; the live reads are never stored.
+    mgr, device, _iw = running
+    monkeypatch.setattr(mgr, "list_clients", Mock(return_value=[]))
+    stored = mgr.active[device]
+    before = repr(stored)
+    first = mgr.get_status(device)
+    assert first is not None and first.clients_connected == 0 and first.dhcp == {}
+    first.expires_at = "changed by a caller"
+    assert mgr.get_status(device) is not first
+    assert mgr.active[device] is stored and repr(stored) == before

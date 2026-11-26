@@ -3,11 +3,11 @@
 import threading
 
 import pytest
+from conftest import active_network
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
 from wilab.config import load_config
-from wilab.models import NetworkStatus
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ def stopping_network(monkeypatch):
         device = manager.config.antennas[0].device_id
         monkeypatch.setitem(
             manager.active, device,
-            NetworkStatus(interface=device, active=True, subnet="192.168.120.0/24"),
+            active_network(interface=device, subnet="192.168.120.0/24"),
         )
         # The checks ask each process (BUG-2): hostapd is alive, dnsmasq is not.
         monkeypatch.setattr(manager.hostapd_manager, "is_running", lambda _device: True)

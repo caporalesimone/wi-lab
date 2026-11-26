@@ -3,9 +3,10 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from conftest import active_network
 
 from wilab.config import NetworkEntry, load_config
-from wilab.models import NetworkCreateRequest, NetworkStatus
+from wilab.models import NetworkCreateRequest
 from wilab.network.commands import CommandError, CommandTimeout
 from wilab.network.dhcp import DhcpServerError
 from wilab.wifi import hostapd
@@ -491,7 +492,7 @@ class TestNetworkLifecycle:
         assert status.active is True
         
         # Manually set internal timestamp to past to simulate expiration
-        mgr.active['wls16']._deadline = time.monotonic() - 1  # Expired 1 second ago
+        mgr.active['wls16'].deadline = time.monotonic() - 1  # Expired 1 second ago
         
         # Check status should return inactive due to expiration
         expired_status = mgr.get_status('wls16')
@@ -504,7 +505,7 @@ class TestInternetControl:
     def test_failed_disable_keeps_enabled_state(self, monkeypatch):
         mgr = NetworkManager(load_config())
         device = 'wls16'
-        mgr.active[device] = NetworkStatus(interface=device, active=True, internet_enabled=True)
+        mgr.active[device] = active_network(interface=device, internet_enabled=True)
 
         def fail(*args):
             raise RuntimeError("block failed")

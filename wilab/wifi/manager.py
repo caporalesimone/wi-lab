@@ -30,6 +30,7 @@ from ..network.qos_profile import QosProfileManager
 from ..network.subnet import host_ipv4_networks
 from ..reservation import Reservation, ReservationManager
 from ..timestamps import format_utc_timestamp
+from .active import ActiveNetwork
 from .channels import ChannelManager
 from .hostapd import (
     HostapdError,
@@ -146,7 +147,7 @@ class NetworkManager:
     
     def __init__(self, config: AppConfig, channel_manager: ChannelManager | None = None):
         self.config = config
-        self.active: dict[str, NetworkStatus] = {}
+        self.active: dict[str, ActiveNetwork] = {}
         self.dhcp_server = DhcpServer()
         self.nat_manager = NatManager(upstream_interface=config.upstream_interface)
         self.hostapd_manager = HostapdManager(debug_dir=config.hostapd_debug_dir)
@@ -635,34 +636,20 @@ class NetworkManager:
         except Exception as e:
             logger.warning(f"Failed to set TX power for {device_id}: {e}")
         
-        # Create status object
-        expires_in = int(deadline - time.monotonic()) if deadline is not None else None
-        status = NetworkStatus(
+        network = ActiveNetwork(
             interface=cfg_net.interface,
-            active=True,
-            ssid=req.ssid,
-            channel=req.channel,
-            password=req.password,
-            encryption=req.encryption,
-            band=req.band,
-            hidden=req.hidden,
-            channel_width=req.channel_width,
-            wifi_generation=req.wifi_generation,
+            request=req,
             subnet=subnet,
             internet_enabled=internet_enabled,
-            captive_portal=req.captive_portal,
-            captive_portal_url=self.captive_portals[device_id].url if req.captive_portal else None,
             tx_power_level=tx_power_level,
+            captive_portal_url=self.captive_portals[device_id].url if req.captive_portal else None,
             expires_at=expires_at_str,
-            expires_in=expires_in,
+            deadline=deadline,
         )
-        # Store internal timestamp for expiration checking
-        object.__setattr__(status, '_deadline', deadline)  # type: ignore[attr-defined]
-        
-        self.active[device_id] = status
+        self.active[device_id] = network
         logger.info(f"Network {device_id} started successfully (expires at {expires_at_str})")
         
-        return status
+        return network.status()
 
     def stop_network(self, device_id: str, *, client: bool = False) -> None:
         """Stop the network of *device_id*.
@@ -777,8 +764,8 @@ class NetworkManager:
         with self.device_lock(device_id):
             return self._get_status(device_id)
 
-    def active_status(self, device_id: str) -> NetworkStatus | None:
-        """The stored status of a running network, without querying the radio (PERF-2).
+    def active_status(self, device_id: str) -> ActiveNetwork | None:
+        """The stored state of a running network, without querying the radio (PERF-2).
 
         For callers that only need to know whether the network runs and its
         settings: no `iw` and no lease file. None if no network runs (an
@@ -788,8 +775,7 @@ class NetworkManager:
             st = self.active.get(device_id)
             if st is None:
                 return None
-            deadline = getattr(st, '_deadline', None)
-            if deadline is not None and deadline < time.monotonic():
+            if st.expired(time.monotonic()):
                 logger.info("Network %s expired, stopping", device_id)
                 self.stop_network(device_id)
                 return None
@@ -806,25 +792,24 @@ class NetworkManager:
         Returns:
             NetworkStatus object or None if unknown device_id
         """
-        st = self.active.get(device_id)
-        if not st:
+        network = self.active.get(device_id)
+        if not network:
             # Return inactive status if known device_id
             cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
             if not cfg_net:
                 return None
             return NetworkStatus(interface=cfg_net.interface, active=False)
         
-        # Check if network has expired (use internal timestamp)
-        deadline = getattr(st, '_deadline', None)
-        if deadline is not None and deadline < time.monotonic():
+        # Check if network has expired (monotonic deadline, STAB-5)
+        if network.expired(time.monotonic()):
             logger.info(f"Network {device_id} expired, stopping")
             self.stop_network(device_id)
             cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
             if not cfg_net:
                 return None
             return NetworkStatus(interface=cfg_net.interface, active=False)
-        if (st_deadline := getattr(st, '_deadline', None)) is not None:
-            st.expires_in = max(0, int(st_deadline - time.monotonic()))
+        # A fresh answer each time: the live reads below are never stored (ARCH-3).
+        st = network.status()
         
         # Add DHCP info and clients if active
         if st.active:
@@ -891,12 +876,9 @@ class NetworkManager:
                 raise RuntimeError(f"Cannot enable Internet: {e}") from e
         
         st.internet_enabled = True
-        if (st_deadline := getattr(st, '_deadline', None)) is not None:
-            st.expires_in = max(0, int(st_deadline - time.monotonic()))
-        self.active[device_id] = st
         logger.info(f"Internet enabled for {device_id}")
         
-        return st
+        return st.status()
 
     def disable_internet(self, device_id: str) -> NetworkStatus:
         """
@@ -930,12 +912,9 @@ class NetworkManager:
                 raise RuntimeError(f"Cannot disable Internet: {e}") from e
         
         st.internet_enabled = False
-        if (st_deadline := getattr(st, '_deadline', None)) is not None:
-            st.expires_in = max(0, int(st_deadline - time.monotonic()))
-        self.active[device_id] = st
         logger.info(f"Internet disabled for {device_id}")
         
-        return st
+        return st.status()
 
     def list_clients(self, device_id: str) -> list[ClientInfo]:
         """
@@ -1034,8 +1013,7 @@ class NetworkManager:
         dhcp_info = self.dhcp_server.get_subnet_info(device_id) or {}
         if st is None:
             return {"dhcp_range": str(dhcp_info.get("dhcp_range", "")).replace(",", " - ")}
-        deadline = getattr(st, "_deadline", None)
-        expires = None if deadline is None else time.time() + (deadline - time.monotonic())
+        expires = None if st.deadline is None else time.time() + (st.deadline - time.monotonic())
         return {
             "ssid": st.ssid or "",
             "radio": f"{st.band} / {st.channel}",
@@ -1256,7 +1234,6 @@ class NetworkManager:
         # Set power with verification (waits 3s and checks if change applied)
         info = self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
         st.tx_power_level = level
-        self.active[device_id] = st
         return info
 
     def get_tx_power_info(self, device_id: str) -> dict:
@@ -1321,9 +1298,8 @@ class NetworkManager:
             else:
                 last_error = ""
 
-    def _expire_network(self, device_id: str, status: NetworkStatus, now: float) -> None:
-        deadline = getattr(status, '_deadline', None)
-        if deadline is None or deadline >= now:
+    def _expire_network(self, device_id: str, status: ActiveNetwork, now: float) -> None:
+        if not status.expired(now):
             return
         lock = self.device_lock(device_id)
         if not lock.acquire(blocking=False):

@@ -4,12 +4,12 @@ import json
 from unittest.mock import Mock
 
 import pytest
+from conftest import active_network
 from fastapi.testclient import TestClient
 
 from wilab import health as status_module
 from wilab.api import create_app, dependencies
 from wilab.config import load_config
-from wilab.models import NetworkStatus
 
 
 def _link(operstate: str, flags: list[str], inet: bool = True) -> str:
@@ -27,7 +27,7 @@ def running(monkeypatch):
         state = {"internet": False, "nat": "-P POSTROUTING ACCEPT", "link": _link("UP", ["UP", "LOWER_UP"])}
 
         def network():
-            return NetworkStatus(interface=device, active=True, subnet="192.168.120.0/24",
+            return active_network(interface=device, subnet="192.168.120.0/24",
                                  internet_enabled=state["internet"])
 
         monkeypatch.setitem(manager.active, device, network())
@@ -129,7 +129,7 @@ def test_degraded_reasons_name_the_problem_and_the_antenna(monkeypatch):
     config = dependencies.get_config()
     manager = dependencies.get_manager(config)
     device = manager.config.antennas[0].device_id
-    monkeypatch.setitem(manager.active, device, NetworkStatus(interface=device, active=True))
+    monkeypatch.setitem(manager.active, device, active_network(interface=device))
     monkeypatch.setattr(manager.hostapd_manager, "is_running", lambda _d: False)
     monkeypatch.setattr(status_route, "stuck_commands", lambda: 1)
     client = TestClient(create_app())

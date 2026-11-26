@@ -13,7 +13,7 @@ import time
 from unittest.mock import Mock
 
 import pytest
-from conftest import network_body
+from conftest import active_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -56,13 +56,14 @@ def api(monkeypatch):
             raise StartupFailure("radio timeout", radio=True)
         if outcome == "stage":
             raise StartupFailure("dnsmasq refused the configuration", stage="dhcp")
-        manager.active[device] = NetworkStatus(interface=device, active=True)
+        manager.active[device] = active_network(interface=device)
         return manager.active[device]
 
     monkeypatch.setattr(manager, "start_network", start_network)
     monkeypatch.setattr(
         manager, "get_status",
-        lambda device: manager.active.get(device) or NetworkStatus(interface=device, active=False),
+        lambda device: manager.active[device].status() if device in manager.active
+        else NetworkStatus(interface=device, active=False),
     )
     monkeypatch.setattr(manager.recovery, "schedule", Mock())
     headers = {"Authorization": f"Bearer {config.auth_token}"}
@@ -287,7 +288,7 @@ def test_a_cancel_that_times_out_is_503_then_the_real_state_and_a_working_stop(a
 
     def start_ignoring_the_cancel(device, req, *args, cancelled=None, **kwargs):
         finish.wait(5)
-        manager.active[device] = NetworkStatus(interface=device, active=True)
+        manager.active[device] = active_network(interface=device)
         return manager.active[device]
 
     monkeypatch.setattr(manager, "start_network", start_ignoring_the_cancel)

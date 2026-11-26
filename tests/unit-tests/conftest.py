@@ -2,6 +2,7 @@
 import os
 import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 # Add project root to path
@@ -10,6 +11,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 import pytest
 
 from wilab.config import AppConfig, load_config
+from wilab.models import NetworkCreateRequest
+from wilab.wifi.active import ActiveNetwork
 
 TEST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'test.config.yaml')
 
@@ -33,6 +36,33 @@ REQUIRED_YAML = "".join(
 def make_config(**settings) -> AppConfig:
     """An AppConfig with every required setting, overridden by *settings*."""
     return AppConfig(**{**REQUIRED_SETTINGS, **settings})
+
+
+# ActiveNetwork fields that are not request settings (ARCH-3).
+_NETWORK_FIELDS = {"subnet", "internet_enabled", "tx_power_level", "captive_portal_url",
+                   "expires_at", "deadline", "active"}
+
+
+def active_network(interface: str, **fields: Any) -> ActiveNetwork:
+    """An ActiveNetwork for `manager.active`, as start_network stores it.
+
+    *fields* are ActiveNetwork fields or request settings (ssid, channel, ...);
+    the request is built without validation, like a stored one never re-checked.
+    """
+    settings: dict[str, Any] = {
+        "ssid": "test", "channel": 6, "password": None, "encryption": "open", "band": "2.4ghz",
+        "hidden": False, "internet_enabled": None, "captive_portal": False, "tx_power_level": 4,
+        "channel_width": 20, "wifi_generation": 4,
+    }
+    own = {key: fields.pop(key) for key in list(fields) if key in _NETWORK_FIELDS}
+    settings.update(fields)
+    if "tx_power_level" in own:
+        settings["tx_power_level"] = own["tx_power_level"]   # the create's level too
+    request = NetworkCreateRequest.model_construct(**settings)
+    own.setdefault("subnet", None)
+    own.setdefault("internet_enabled", False)
+    own.setdefault("tx_power_level", request.tx_power_level)
+    return ActiveNetwork(interface=interface, request=request, **own)
 
 
 def _configured_networks_only(labels):

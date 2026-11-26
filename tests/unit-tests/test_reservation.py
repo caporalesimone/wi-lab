@@ -9,14 +9,13 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from conftest import create_network, make_config, network_body
+from conftest import active_network, create_network, make_config, network_body
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
 from wilab.api.dependencies import hold_reservation
 from wilab.config import load_config
-from wilab.models import NetworkStatus
 from wilab.reservation import (
     DeviceRecoveryUnavailable,
     NoDeviceAvailableError,
@@ -433,11 +432,9 @@ class TestReservationLifecycleConcurrency:
         assert exc.value.status_code == 404
 
     def test_expiry_snapshot_does_not_stop_replacement_network(self, clean_manager, monkeypatch):
-        from wilab.models import NetworkStatus
 
-        old = NetworkStatus(interface="wls16", active=True)
-        object.__setattr__(old, "_deadline", time.monotonic() - 1)
-        new = NetworkStatus(interface="wls16", active=True)
+        old = active_network(interface="wls16", deadline=time.monotonic() - 1)
+        new = active_network(interface="wls16")
         clean_manager.active["wls16"] = new
         stopped = []
         monkeypatch.setattr(clean_manager, "stop_network", stopped.append)
@@ -445,7 +442,7 @@ class TestReservationLifecycleConcurrency:
         assert stopped == []
 
     def test_network_cleanup_stops_qos_profile_before_release(self, clean_manager, monkeypatch):
-        clean_manager.active["wls16"] = NetworkStatus(interface="wls16", active=True)
+        clean_manager.active["wls16"] = active_network(interface="wls16")
         clean_manager.qos_manager = Mock()
         clean_manager.qos_profile_manager = Mock()
         monkeypatch.setattr(clean_manager.hostapd_manager, "stop", lambda _: None)
@@ -509,9 +506,8 @@ def test_slow_lifecycle_operation_does_not_block_event_loop(operation, valid_tok
         else:
             reservation = reservation_manager.get(reservation_id)
             assert reservation is not None
-            manager.active[reservation.device_id] = NetworkStatus(
-                interface=reservation.device_id, active=True
-            )
+            manager.active[reservation.device_id] = active_network(
+                interface=reservation.device_id)
             reservation.expires_at = time.time() - 1
 
             def slow_stop(device_id):
@@ -960,8 +956,7 @@ class TestReservationDeleteStopsNetwork:
         device_id = resp.json()["interface"]
 
         # Simulate an active network on this device
-        from wilab.models import NetworkStatus
-        mgr.active[device_id] = NetworkStatus(interface=device_id, active=True)
+        mgr.active[device_id] = active_network(interface=device_id)
 
         stopped = []
 
@@ -1000,7 +995,6 @@ class TestReservationDeleteStopsNetwork:
         assert stopped == []
 
     def test_expired_network_is_stopped_before_device_is_reassigned(self, client, valid_token, monkeypatch):
-        from wilab.models import NetworkStatus
 
         resp = client.post(
             "/api/v2/reservations",
@@ -1010,7 +1004,7 @@ class TestReservationDeleteStopsNetwork:
         reservation = dependencies._reservation_manager.get(resp.json()["reservation_id"])
         mgr = self._ensure_manager(client, valid_token)
         device_id = reservation.device_id
-        mgr.active[device_id] = NetworkStatus(interface=device_id, active=True)
+        mgr.active[device_id] = active_network(interface=device_id)
         reservation.expires_at = time.time() - 1
         stopped = []
 
@@ -1029,7 +1023,6 @@ class TestReservationDeleteStopsNetwork:
         assert stopped == [device_id]
 
     def test_expired_cleanup_failure_returns_409_and_allows_retry(self, client, valid_token, monkeypatch):
-        from wilab.models import NetworkStatus
 
         headers = {"Authorization": valid_token}
         body = {"duration_seconds": 3600}
@@ -1037,7 +1030,7 @@ class TestReservationDeleteStopsNetwork:
         reservation = dependencies._reservation_manager.get(response.json()["reservation_id"])
         manager = self._ensure_manager(client, valid_token)
         device_id = reservation.device_id
-        manager.active[device_id] = NetworkStatus(interface=device_id, active=True)
+        manager.active[device_id] = active_network(interface=device_id)
         reservation.expires_at = time.time() - 1
 
         def fail(did):
@@ -1066,8 +1059,7 @@ class TestReservationDeleteStopsNetwork:
         device_id = resp.json()["interface"]
 
         mgr = self._ensure_manager(client, valid_token)
-        from wilab.models import NetworkStatus
-        mgr.active[device_id] = NetworkStatus(interface=device_id, active=True)
+        mgr.active[device_id] = active_network(interface=device_id)
 
         def failing_stop(did):
             raise RuntimeError("simulated teardown failure")
@@ -1121,8 +1113,7 @@ class TestReservationDeleteStopsNetwork:
         ).json()
 
         mgr = self._ensure_manager(client, valid_token)
-        from wilab.models import NetworkStatus
-        mgr.active[r1["interface"]] = NetworkStatus(interface=r1["interface"], active=True)
+        mgr.active[r1["interface"]] = active_network(interface=r1["interface"])
 
         stopped = []
 
@@ -1312,7 +1303,7 @@ class TestReserveGivenInterfaceWithTwoAntennas:
     def test_expired_owner_is_cleaned_up_first(self, two_antennas, monkeypatch):
         client, headers, manager, reservations = two_antennas
         owner = reservations.create(300, "wls16")
-        monkeypatch.setitem(manager.active, "wls16", NetworkStatus(interface="wls16", active=True))
+        monkeypatch.setitem(manager.active, "wls16", active_network(interface="wls16"))
         stopped = []
         monkeypatch.setattr(manager, "stop_network", lambda device: stopped.append(device) or manager.active.pop(device))
         owner.expires_at = time.time() - 1
@@ -1325,7 +1316,7 @@ class TestReserveGivenInterfaceWithTwoAntennas:
     def test_expired_owner_whose_cleanup_fails_is_409_never_in_the_past(self, two_antennas, monkeypatch):
         client, headers, manager, reservations = two_antennas
         owner = reservations.create(300, "wls16")
-        monkeypatch.setitem(manager.active, "wls16", NetworkStatus(interface="wls16", active=True))
+        monkeypatch.setitem(manager.active, "wls16", active_network(interface="wls16"))
         monkeypatch.setattr(manager, "stop_network", Mock(side_effect=RuntimeError("hostapd stuck")))
         owner.expires_at = time.time() - 1
         for _ in range(2):   # the cleanup attempt, then while its backoff runs

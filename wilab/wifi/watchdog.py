@@ -8,12 +8,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .. import heartbeat
-from ..models import NetworkCreateRequest, NetworkStatus
+from ..models import NetworkCreateRequest
 from ..network.commands import CommandError
 from ..network.dhcp import DhcpServerError
 from ..reservation import Reservation, ReservationManager
 
 if TYPE_CHECKING:
+    from .active import ActiveNetwork
     from .manager import NetworkManager
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class _Pending:
     """A network the watchdog still owes to its reservation after a failed restore."""
 
     reservation: Reservation
-    request: NetworkCreateRequest | None  # None: original settings unknown, cannot retry
+    request: NetworkCreateRequest
     band: str
     channel: int
     failures: int = 1
@@ -104,7 +105,7 @@ class NetworkWatchdog:
                 ):
                     self._drop_pending(device)
                 elif pending is not None:
-                    if pending.request is not None and time.monotonic() >= pending.next_try:
+                    if time.monotonic() >= pending.next_try:
                         self._retry_pending(reservations, pending)
                         current, misses = self.manager.active.get(device), 0
                     continue
@@ -237,7 +238,7 @@ class NetworkWatchdog:
         return True
 
     def _owe(
-        self, reservation: Reservation, request: NetworkCreateRequest | None,
+        self, reservation: Reservation, request: NetworkCreateRequest,
         band: str, channel: int, reason: object,
     ) -> None:
         """Report a failed restore and schedule a new attempt (WD-2)."""
@@ -246,19 +247,15 @@ class NetworkWatchdog:
             reservation, request, band, channel, next_try=time.monotonic() + RETRY_BACKOFF[0],
         )
         self.states[device] = (reservation, "restore_failed")
-        if request is None:
-            logger.error("AP restore failed on %s and cannot be retried: %s", device, reason)
-        else:
-            logger.warning(
-                "AP restore failed on %s: %s; next attempt in %.0f s", device, reason, RETRY_BACKOFF[0],
-            )
+        logger.warning(
+            "AP restore failed on %s: %s; next attempt in %.0f s", device, reason, RETRY_BACKOFF[0],
+        )
 
     def _retry_pending(self, reservations: ReservationManager, pending: _Pending) -> None:
         from .manager import StartupFailure
 
         reservation = pending.reservation
         device = reservation.device_id
-        assert pending.request is not None
         try:
             self.manager.release_device(device)  # leftovers of the previous attempt
         except RuntimeError:
@@ -312,13 +309,12 @@ class NetworkWatchdog:
 
     def _restore_ap(
         self, reservations: ReservationManager, reservation: Reservation,
-        status: NetworkStatus, budget_exhausted: bool,
+        network: "ActiveNetwork", budget_exhausted: bool,
     ) -> None:
         from .manager import StartupFailure
 
         device = reservation.device_id
-        radio_known = status.band is not None and status.channel is not None
-        band, channel = status.band or "", status.channel or 0
+        band, channel = network.band, network.channel
         if self._cancelled(reservation):
             return
         try:
@@ -326,28 +322,20 @@ class NetworkWatchdog:
         except RuntimeError:
             logger.exception("Unsafe AP watchdog cleanup on %s", device)
             self.manager.quarantine_radio(
-                reservations, reservation, radio_fault=radio_known, band=band, channel=channel,
+                reservations, reservation, radio_fault=True, band=band, channel=channel,
             )
             return
         if self._cancelled(reservation):
             return
         if budget_exhausted:
             self.manager.quarantine_radio(
-                reservations, reservation, radio_fault=radio_known, band=band, channel=channel,
+                reservations, reservation, radio_fault=True, band=band, channel=channel,
             )
             return
-        request: NetworkCreateRequest | None = None
+        # The create request as received, with the Internet access and TX power
+        # level of the moment: no settings to rebuild or to find missing (ARCH-3).
+        request = network.restart_request()
         try:
-            if not (radio_known and status.ssid and status.encryption and status.tx_power_level):
-                raise ValueError("Missing original AP settings")
-            request = NetworkCreateRequest(
-                ssid=status.ssid, password=status.password, channel=channel,
-                encryption=status.encryption, band=band, hidden=bool(status.hidden),
-                internet_enabled=status.internet_enabled, captive_portal=status.captive_portal,
-                tx_power_level=status.tx_power_level,
-                channel_width=status.channel_width or 20,
-                wifi_generation=status.wifi_generation or 4,
-            )
             # Same internal retries as a create request (WD-2).
             self.manager.start_network(
                 device, request, reservation.expires_at, allow_internal_retry=True,
@@ -362,7 +350,7 @@ class NetworkWatchdog:
             elif not self._cancelled(reservation):
                 self._owe(reservation, request, band, channel, exc)
             return
-        except Exception as exc:  # ValueError (settings), or anything unexpected (REV-1)
+        except Exception as exc:  # ValueError (e.g. already active), or anything unexpected (REV-1)
             if isinstance(exc, ValueError):
                 logger.warning("AP restart failed on %s: %s", device, exc)
             else:
@@ -380,7 +368,7 @@ class NetworkWatchdog:
                 )
 
     def _restore_dhcp(
-        self, reservations: ReservationManager, reservation: Reservation, status: NetworkStatus,
+        self, reservations: ReservationManager, reservation: Reservation, status: "ActiveNetwork",
     ) -> None:
         device = reservation.device_id
         if self._cancelled(reservation) or status.subnet is None:

@@ -4,10 +4,10 @@ import threading
 from unittest.mock import Mock
 
 import pytest
+from conftest import active_network
 
 from wilab import heartbeat
 from wilab.api import dependencies
-from wilab.models import NetworkStatus
 from wilab.network import captive, isolation, nat
 from wilab.network.commands import CommandError
 from wilab.network.isolation import IsolationManager
@@ -128,7 +128,7 @@ def running(monkeypatch):
     config = dependencies.get_config()
     mgr = dependencies.get_manager(config)
     device = config.antennas[0].device_id
-    status = NetworkStatus(interface=device, active=True, subnet="192.168.10.0/24")
+    status = active_network(interface=device, subnet="192.168.10.0/24")
     monkeypatch.setitem(mgr.active, device, status)
     monkeypatch.setattr(mgr.nat_manager, "verify", Mock(return_value=[]))
     monkeypatch.setattr(mgr.isolation_manager, "verify", Mock(return_value=[]))
@@ -192,7 +192,7 @@ def test_watchdog_checks_every_sixth_healthy_tick_and_restores_on_request(monkey
     reservations = dependencies.get_reservation_manager(config)
     reservation = reservations.create(0)
     device = reservation.device_id
-    monkeypatch.setitem(mgr.active, device, NetworkStatus(interface=device, active=True))
+    monkeypatch.setitem(mgr.active, device, active_network(interface=device))
     monkeypatch.setattr(heartbeat, "beat", lambda _name: None)
     monkeypatch.setattr(mgr.hostapd_manager, "is_running", Mock(return_value=True))
     monkeypatch.setattr(mgr.hostapd_manager, "is_enabled", Mock(return_value=True))

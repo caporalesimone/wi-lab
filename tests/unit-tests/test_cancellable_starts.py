@@ -4,11 +4,10 @@ import threading
 import time
 from unittest.mock import Mock
 
-from conftest import network_body
+from conftest import active_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
-from wilab.models import NetworkStatus
 from wilab.wifi import manager as manager_module
 from wilab.wifi.manager import StartupFailure
 
@@ -33,8 +32,8 @@ def _blocking_start(started: threading.Event):
 
 
 def _restorable(device):
-    return NetworkStatus(
-        interface=device, active=True, ssid="net", channel=1, band="2.4ghz",
+    return active_network(
+        interface=device, ssid="net", channel=1, band="2.4ghz",
         encryption="open", tx_power_level=4,
     )
 
@@ -116,7 +115,7 @@ def test_recovery_probe_avoids_dfs_channels(monkeypatch):
 def _three_antennas(monkeypatch, manager) -> list[str]:
     """The configured antenna plus two with an active network: shutdown_all releases all of them."""
     for extra in ("wlx-b", "wlx-c"):
-        monkeypatch.setitem(manager.active, extra, NetworkStatus(interface=extra, active=True))
+        monkeypatch.setitem(manager.active, extra, active_network(interface=extra))
     return sorted({n.device_id for n in manager.config.antennas} | manager.active.keys())
 
 

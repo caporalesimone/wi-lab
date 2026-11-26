@@ -5,6 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from conftest import active_network
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -117,12 +118,10 @@ def test_the_same_create_on_a_running_network_can_answer_1006(busy_adapter, monk
     """
     from conftest import network_body
 
-    from wilab.models import NetworkStatus
-
     client, headers, rid = busy_adapter
     manager = dependencies.get_manager(dependencies.get_config())
     device = dependencies.get_reservation_manager().device_for(rid)
-    monkeypatch.setitem(manager.active, device, NetworkStatus(interface=device, active=True))
+    monkeypatch.setitem(manager.active, device, active_network(interface=device))
     monkeypatch.setattr(manager, "runs", lambda _device, _req: True)
     body = network_body(ssid="busy", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)
     response = client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=body)
