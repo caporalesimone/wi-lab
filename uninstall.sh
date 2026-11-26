@@ -32,7 +32,8 @@ echo ""
 echo "  1. Stop the wi-lab service"
 echo "  2. Disable autostart on boot"
 echo "  3. Remove systemd unit file at $SERVICE_FILE"
-echo "  4. Remove Python virtual environment at $VENV_PATH"
+echo "  4. Remove Wi-Lab firewall rules, runtime files and QoS devices left on the host"
+echo "  5. Remove Python virtual environment at $VENV_PATH"
 echo ""
 echo "Note:"
 echo "  - Config file (config.yaml) will REMAIN in $WILAB_DIR"
@@ -116,10 +117,55 @@ fi
 echo ""
 
 ################################################################################
-# STEP 3: Remove virtual environment (MANDATORY)
+# STEP 3: Remove what a stopped service may leave on the host
 ################################################################################
 
-log_info "Step 3: Removing virtual environment..."
+# Stopping the service releases every network, but some state outlives it: the
+# wilab-protect-existing FORWARD rule, runtime directories, the systemd-networkd
+# rule that keeps the radios unmanaged, QoS IFB devices.
+log_info "Step 3: Removing Wi-Lab firewall rules, runtime files and devices..."
+for cmd in iptables ip6tables; do
+    command -v "$cmd" >/dev/null 2>&1 || continue
+    for table in filter nat mangle; do
+        # Rules first (they may jump to Wi-Lab chains), then the chains.
+        "$cmd" -w 5 -t "$table" -S 2>/dev/null | grep -- '--comment wilab-' | sed 's/^-A /-D /' |
+            while read -r rule; do
+                eval "$cmd -w 5 -t $table $rule" 2>/dev/null || true
+            done
+        "$cmd" -w 5 -t "$table" -S 2>/dev/null | grep -E -- '-j wilab-(in|cp)-' | sed 's/^-A /-D /' |
+            while read -r rule; do
+                eval "$cmd -w 5 -t $table $rule" 2>/dev/null || true
+            done
+        "$cmd" -w 5 -t "$table" -S 2>/dev/null | awk '$1 == "-N" && $2 ~ /^wilab-(in|cp)-/ {print $2}' |
+            while read -r chain; do
+                "$cmd" -w 5 -t "$table" -F "$chain" 2>/dev/null || true
+                "$cmd" -w 5 -t "$table" -X "$chain" 2>/dev/null || true
+            done
+    done
+done
+for dev in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1 | grep '^wilab-ifb'); do
+    ip link del "$dev" 2>/dev/null || true
+done
+rm -rf /tmp/wilab-hostapd /tmp/wilab-dnsmasq
+if [ -f /run/systemd/network/00-wilab-unmanaged.network ]; then
+    rm -f /run/systemd/network/00-wilab-unmanaged.network
+    networkctl reload 2>/dev/null || true
+fi
+# grep -c exits 1 on zero matches, and common.sh sets -e: never let it end the script.
+left=$(for cmd in iptables ip6tables; do for t in filter nat mangle; do "$cmd" -w 5 -t "$t" -S 2>/dev/null; done; done | grep -c 'wilab-' || true)
+if [ "$left" -eq 0 ]; then
+    log_success "No Wi-Lab rule, runtime file or device left"
+else
+    log_warning "$left Wi-Lab firewall entries could not be removed: check with iptables -S | grep wilab"
+fi
+
+echo ""
+
+################################################################################
+# STEP 4: Remove virtual environment (MANDATORY)
+################################################################################
+
+log_info "Step 4: Removing virtual environment..."
 if [ -d "$VENV_PATH" ]; then
     log_info "Removing virtual environment..."
     rm -rf "$VENV_PATH"
