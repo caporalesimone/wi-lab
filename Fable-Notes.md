@@ -21,8 +21,12 @@ In quest'ordine:
    `WILAB_E2E=1 WILAB_E2E_USB=1 WILAB_E2E_USB_ACTIVE_AP=1 .venv/bin/pytest
    tests/e2e-tests/test_e2e_device_loss.py::test_antenna_gone_with_active_network`. Può bloccare la VM
    e staccare la USB (23/11): serve chi la ricollega. Non blocca i punti sotto.
-1. REV-2, REV-5, REV-6 (priorità 1 della tabella 2), ciascuno con il suo test del paragrafo 4.6.
-2. Gli altri punti della tabella 2 in ordine di priorità.
+1. **Da provare sulla macchina** (riavvio del servizio, conferma prima degli e2e) le correzioni ✅
+   della priorità 1 del 2026-11-26: REV-5, REV-6, BUG-5, STAB-9, STAB-8, WD-10, BUG-6, NET-9, NET-7.
+   STAB-9 con `systemctl restart NetworkManager` e una rete attiva; STAB-8 dopo aver reinstallato
+   l'unit systemd (`TimeoutStopSec=60s`) e con `time systemctl stop wi-lab`.
+2. REV-2 (priorità 1, cambia le risposte del rilascio), poi gli altri punti della tabella 2 in ordine
+   di priorità.
 3. RELEASE-API, solo alla fine.
 
 ### 1.2 Regole
@@ -30,10 +34,11 @@ In quest'ordine:
 - **CHANGELOG:** ogni correzione aggiunge una riga breve nella sezione `[4.1.0]`, nello stesso commit,
   con l'ID tra parentesi; ciò che cambia per i client va anche nel capitolo "API changes from 4.0.0".
   Prima del rilascio aggiornare la tabella Statistics della 4.1.0.
-- **Una scheda chiusa si toglie** da questo documento: riga della tabella 2, scheda del capitolo 3 e
-  test del capitolo 4. Una scheda fatta in parte passa a `parz.` con un riquadro **Stato** che dice
+- **Una scheda chiusa si marca ✅** nella colonna Stato della tabella 2, nel titolo della scheda del
+  capitolo 3 e nella riga del suo test del capitolo 4 (dal 2026-11-26; prima si toglieva). Una scheda
+  fatta in parte passa a `parz.` con un riquadro **Stato** che dice
   solo cosa manca.
-- **Verifiche a ogni correzione:** `make test-local-quick`, `make lint` (89 errori già presenti:
+- **Verifiche a ogni correzione:** `make test-local-quick`, `make lint` (86 errori già presenti:
   non aggiungerne), `make type-check`.
 - **E2E solo dopo conferma** e su un sistema libero (nessuna attività nel journal del servizio).
   Il servizio gira da questa cartella: una modifica è attiva solo dopo `systemctl restart wi-lab`.
