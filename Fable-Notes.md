@@ -9,35 +9,43 @@ nel [CHANGELOG](CHANGELOG.md) e in [docs/](docs/): qui non si ripete.
 ### 1.1 Da dove ripartire (stato del 2026-11-26)
 
 - Versione in corso: **4.1.0**, non rilasciata. Branch `fix/reservation-lifecycle`.
+- **Obiettivo: congelare il comportamento della 4.1.0** per poter iniziare il client. Dopo il
+  congelamento si fanno solo correzioni che non cambiano il contratto (capitolo 2).
+- **Macchina:** Ubuntu Server 26.04.1, unica macchina, fa da server e da sviluppo. NetworkManager è
+  disinstallato (pacchetti in stato `rc`), `wpa_supplicant` è mascherato, `ens18` è di
+  systemd-networkd. Il servizio è stato disinstallato e reinstallato con gli script del repository:
+  gira da questa cartella con il codice del commit `bf5055f` e l'unit nuova (`TimeoutStopSec=60s`).
 - Test unit tutti verdi; un `xfail` stretto segna REV-11 punto 5.
-- E2E verdi sull'hardware: suite standard, test lunghi, riavvio sporco e distacco USB. I 5 `xfail`
-  noti sono SEC-1, BUG-7 e PERF-6, che diventano verdi con la correzione. Mai eseguito:
+- **E2E: nessuno eseguito sul codice di oggi.** L'ultima run verde (suite standard, test lunghi,
+  riavvio sporco, distacco USB) è precedente alle correzioni del paragrafo 2.3. I 5 `xfail` noti sono
+  SEC-1, BUG-7 e PERF-6, che diventano verdi con la correzione. Mai eseguito:
   `test_antenna_gone_with_active_network` (`WILAB_E2E_USB_ACTIVE_AP=1`, il caso che il 23/11 ha
   bloccato la VM).
 
 In quest'ordine:
 
-0. **Da fare con qualcuno vicino alla macchina:** l'e2e mai eseguito
-   `WILAB_E2E=1 WILAB_E2E_USB=1 WILAB_E2E_USB_ACTIVE_AP=1 .venv/bin/pytest
-   tests/e2e-tests/test_e2e_device_loss.py::test_antenna_gone_with_active_network`. Può bloccare la VM
-   e staccare la USB (23/11): serve chi la ricollega. Non blocca i punti sotto.
-1. **Da provare sulla macchina** (riavvio del servizio, conferma prima degli e2e) le correzioni ✅
-   della priorità 1 del 2026-11-26: REV-5, REV-6, BUG-5, STAB-9, STAB-8, WD-10, BUG-6, NET-9, NET-7.
-   STAB-9 non va provato: NM-1 lo sostituisce. STAB-8 dopo aver reinstallato
-   l'unit systemd (`TimeoutStopSec=60s`) e con `time systemctl stop wi-lab`.
-2. **NM-1**, il [capitolo 5](#cap-5): togliere NetworkManager. Il capitolo è completo, si può
-   eseguire così com'è.
-3. REV-2 (priorità 1, cambia le risposte del rilascio), poi gli altri punti della tabella 2 in ordine
-   di priorità.
-4. RELEASE-API, solo alla fine.
+1. **Provare sulla macchina le correzioni del paragrafo 2.3** (conferma prima degli e2e): suite e2e
+   standard, poi `time systemctl stop wi-lab` con due reti attive (STAB-8, meno di 60 s) e un
+   `sudo reboot` (primo riavvio senza NetworkManager).
+2. **Blocco A** (paragrafo 2.1), nell'ordine della tabella. Prima di iniziarlo, prendere le decisioni
+   del paragrafo 1.3 marcate **(blocca il congelamento)**.
+3. **Congelamento:** RELEASE-API, ultima riga del blocco A.
+4. **Blocco B** (paragrafo 2.2), nelle 4.1.x.
+
+Quando c'è qualcuno vicino alla macchina, senza bloccare il resto: l'e2e mai eseguito
+`WILAB_E2E=1 WILAB_E2E_USB=1 WILAB_E2E_USB_ACTIVE_AP=1 .venv/bin/pytest
+tests/e2e-tests/test_e2e_device_loss.py::test_antenna_gone_with_active_network`. Può bloccare la VM e
+staccare la USB (23/11): serve chi la ricollega.
 
 ### 1.2 Regole
 
 - **CHANGELOG:** ogni correzione aggiunge una riga breve nella sezione `[4.1.0]`, nello stesso commit,
   con l'ID tra parentesi; ciò che cambia per i client va anche nel capitolo "API changes from 4.0.0".
   Prima del rilascio aggiornare la tabella Statistics della 4.1.0.
-- **Una scheda chiusa si marca ✅** nella colonna Stato della tabella 2, nel titolo della scheda del
-  capitolo 3 e nella riga del suo test del capitolo 4 (dal 2026-11-26; prima si toglieva). Una scheda
+- **Dopo il congelamento** una correzione non cambia endpoint, campi, codici, stati, validazione né
+  requisiti di installazione. Se li cambia, va nella versione successiva.
+- **Una scheda chiusa si marca ✅:** la riga passa nella tabella 2.3, la scheda in fondo al capitolo 3
+  con ✅ nel titolo, e ✅ nella riga del suo test del capitolo 4. Una scheda
   fatta in parte passa a `parz.` con un riquadro **Stato** che dice
   solo cosa manca.
 - **Verifiche a ogni correzione:** `make test-local-quick`, `make lint` (86 errori già presenti:
@@ -53,16 +61,29 @@ In quest'ordine:
 
 ### 1.3 Decisioni aperte
 
+**(blocca il congelamento)** = da decidere prima di chiudere il blocco A, perché cambia ciò che il
+client vede.
+
+- **REV-11, punto 4 (blocca il congelamento):** rendere stretti i tipi (`strict=True`) restringe ciò
+  che i client possono inviare. Dopo il congelamento sarebbe breaking: o si fa ora o si lascia per
+  tutta la 4.x. Proposta: farlo ora.
+- **e2e-test-2 / REV-8 (blocca il congelamento):** se un annullamento va oltre i 30 s di
+  `cancel_start`, la `DELETE .../network` risponde `503 / 1006` e la ripetuta può rispondere
+  `409 / 1007` invece di `200` (lettura del codice, non visto sulla macchina). Decidere quale risposta
+  è il contratto e scriverla in `docs/ap-creation-procedure.md`.
+- **API-6 e API-7 (blocca il congelamento):** `level` in `POST .../txpower` contro
+  `radio.tx_power_level` nella create. Rinominare è breaking: o ora o mai nella 4.x. API-7
+  (`PUT .../internet`, `PUT .../txpower`) si può aggiungere dopo senza rompere nulla, quindi non blocca.
+  Proposta: non rinominare, e scrivere in `TODOs/api-review.md` che i due nomi restano per la 4.x.
+- **QoS (blocca il congelamento):** dichiararlo sperimentale nella documentazione della 4.1.0 e fuori
+  dal contratto, oppure portare NET-11, NET-13 e WD-8 nel blocco A. Proposta: sperimentale.
 - **CHANGELOG 4.0.0:** confermare la rimozione di RACE-2 (giudicato mai rilasciato) e della voce
   "Prevent concurrent reservations…" (la 3.0.0 aveva già un lock); la data dell'intestazione è ancora
   2026-11-20.
-- **REV-11, punto 4:** rendere stretti i tipi (`strict=True`) cambia ciò che i client possono inviare.
 - **Frontend (REV-13, REV-14, REV-15):** non si può compilare senza pubblicare in `frontend/dist`;
   serve prima un target di sola compilazione (unit-test-15).
-- **e2e-test-2:** se un annullamento va oltre i 30 s di `cancel_start`, la `DELETE .../network` risponde
-  `503 / 1006` e la ripetuta può rispondere `409 / 1007` invece di `200` (lettura del codice, non visto
-  sulla macchina). Decidere se è il comportamento voluto; si lega a REV-8.
-- `config.yaml` della macchina ha ancora la `protected_commands_password` di esempio.
+- `config.yaml` della macchina ha ancora la `protected_commands_password` di esempio (verificato il
+  2026-11-26).
 
 Gravità: **Critica** sicurezza o perdita del servizio · **Alta** una rete o un adattatore resta rotto
 senza che il client lo sappia · **Media** comportamento sbagliato in un caso realistico · **Bassa**
@@ -72,566 +93,117 @@ noto di uno strumento esterno · **Ipotesi** da provare sulla macchina prima di 
 ---
 
 <a id="cap-2"></a>
-## 2. Punti aperti, in ordine di priorità
+## 2. Punti aperti
 
-La priorità 1 raccoglie i bug che compromettono creazione, avvio, perdita o ripristino delle reti; seguono ipotesi da verificare,
-refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` = corretto in parte: la descrizione dice cosa manca.
+La 4.1.0 deve fissare il comportamento che il client vede: endpoint, campi, codici, stati, validazione e
+requisiti di installazione. I punti sono divisi con questo criterio, non per gravità:
 
-| Prio | Id | Gravità | Stato | Cosa fare |
-|---:|---|---|:---:|---|
-| 1 | [REV-2](#rev-2) | Media |  | Un annullamento il cui rollback fallisce non deve finire in quarantena né far rispondere `404` al rilascio. |
-| 1 | [REV-5](#rev-5) | Media | ✅ | Togliere il budget di 20 s dai tentativi interni di avvio: è un residuo della create sincrona e fa fallire avvii riusciti. |
-| 1 | [REV-6](#rev-6) | Media | ✅ | Rendere annullabili gli avvii del watchdog e del probe, e annullare le create in `shutdown_all`. |
-| 1 | [NM-1](#nm-1) | Media |  | Togliere NetworkManager come dipendenza: via `nmcli` dal codice, l'installer propone di disattivarlo senza rischiare l'accesso alla macchina, precheck all'avvio. Tutto nel [capitolo 5](#cap-5). Supera STAB-9 e chiude ARCH-7. |
-| 1 | [WD-5](#wd-5) | Alta | parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. **Fatto:** stop e cleanup con l'interfaccia sparita (punti 1–2), classificazione come guasto radio. **Manca:** ritirare la voce di un'antenna che ricompare con un nome diverso (punto 3); dipende da ARCH-4. |
-| 1 | [WD-7](#wd-7) | Media | parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. **Fatto:** gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca:** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware. |
-| 1 | [BUG-5](#bug-5) | Media | ✅ | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
-| 1 | [STAB-9](#stab-9) | Bassa | ✅ | Ripristinare le impostazioni unmanaged se NetworkManager si riavvia. |
-| 1 | [STAB-8](#stab-8) | Bassa | ✅ | Limitare il lavoro di arresto entro il timeout di systemd. |
-| 1 | [WD-10](#wd-10) | Bassa | ✅ | Non considerare guasto un access point solo per probe lenti. |
-| 1 | [HAP-9](#hap-9) | Bassa |  | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. |
-| 1 | [BUG-6](#bug-6) | Bassa | ✅ | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
-| 1 | [NET-9](#net-9) | Bassa | ✅ | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
-| 1 | [NET-7](#net-7) | Bassa | ✅ | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
-| 2 | [SEC-1](#sec-1) | Critica |  | Limitare la route frontend ai file contenuti nella directory frontend. |
-| 3 | [REV-8](#rev-8) | Bassa |  | Non togliere da `start_jobs` un job il cui thread gira ancora dopo il timeout dell'annullamento. |
-| 4 | [REV-9](#rev-9) | Bassa |  | Impostare `stop_failed` solo per lo stop chiesto dal client; rispondere `1012` a Internet, TX power e QoS su una rete fermata a metà. |
-| 5 | [REV-10](#rev-10) | Bassa |  | Non chiedere un reset USB quando il watchdog fallisce un cleanup senza guasto radio. |
-| 6 | [REV-11](#rev-11) | Bassa |  | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, tipi accettati per sbaglio, `next_available_in` troncato. |
-| 7 | [REV-12](#rev-12) | Bassa |  | Piccole gare e casi limite: cache dei canali, radar DFS nel watchdog, `runtime_cleanup` che può sollevare, scadenza dentro `_get_status`. |
-| 8 | [STAB-5](#stab-5) | Media |  | Usare scadenze monotone per misurare il tempo trascorso. |
-| 9 | [REV-13](#rev-13) | Media |  | Frontend: correggere il polling della create (avvio annullato dato per riuscito, polling che si ferma o non finisce, stati incoerenti). |
-| 10 | [STAB-2](#stab-2) | Media |  | Spostare i file runtime in una directory privata e gestita. |
-| 11 | [STAB-7](#stab-7) | Media |  | Aggiungere un lockfile con versioni esatte delle dipendenze. |
-| 12 | [REV-14](#rev-14) | Media |  | Frontend: non perdere gli ID delle reservation a una ricarica con il backend in errore; pulsanti e messaggi coerenti con lo stato. |
-| 13 | [HAP-8](#hap-8) | Media | parz. | Conservare un estratto sicuro dell'output hostapd per la diagnosi. **Fatto:** con `hostapd_debug_dir` ogni avvio fallito scrive configurazione (senza password) e ultime 400 righe di `hostapd -d`. **Manca:** l'output quando il watchdog trova hostapd morto su una rete attiva, e un estratto anche senza `hostapd_debug_dir`. |
-| 14 | [HAP-5](#hap-5) | Media |  | Verificare avvii radio concorrenti e serializzarli se necessario. |
-| 15 | [HAP-6](#hap-6) | Media |  | Verificare se ritardare la modifica della potenza TX migliora l'avvio. |
-| 16 | [NET-8](#net-8) | Bassa |  | Sostituire il DNS predefinito specifico del laboratorio. |
-| 17 | [REV-15](#rev-15) | Bassa |  | Frontend: annullare un avvio, mostrare `restarts` e `error`, scegliere l'antenna; compilazione e spec fuori dal deploy. |
-| 18 | [BUG-7](#bug-7) | Bassa |  | Rendere coerente lo stato della potenza TX in caso di mismatch. |
-| 19 | [BUG-8](#bug-8) | Bassa |  | Usare un confronto constant-time per il token. |
-| 21 | [REV-17](#rev-17) | Bassa |  | Togliere i residui della catena di modifiche: percorso `1004` morto, metodi usati solo dai test, duplicati, testi vecchi. |
-| 22 | [HAP-7](#hap-7) | Bassa |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
-| 23 | [REV-18](#rev-18) | Bassa |  | Riordinare i test: fixture condivise e collegate come in produzione, poi i test dei paragrafi 4.6 e 4.7. |
-| 26 | [PERF-1](#perf-1) | Bassa | parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. **Fatto:** validazioni `iw`, `dnsmasq --version`, `nmcli --version`. **Manca**, non fatto di proposito: `iptables-restore` in blocco (cambierebbe come si installano e tolgono tutte le regole). |
-| 27 | [PERF-2](#perf-2) | Bassa |  | Separare i controlli di stato attivo dalle query dettagliate. |
-| 28 | [PERF-5](#perf-5) | Bassa |  | Rispettare il timeout richiesto senza imporre un minimo nascosto. |
-| 29 | [PERF-6](#perf-6) | Bassa |  | Sostituire l'attesa fissa per TX power con polling limitato. |
-| 30 | [PERF-4](#perf-4) | Bassa |  | Ridurre letture di discovery e probe hostapd non necessarie. |
-| 31 | [PERF-7](#perf-7) | Bassa |  | Punto informativo: nessuna crescita di memoria o descrittori trovata. Da riverificare con il test T-21. |
-| 40 | [API-6](#api-6) | Bassa | parz. | Uniformare i nomi di endpoint e campi. **Fatto:** `/api/v2/reservations`, `/reservations/{id}/...`, nessun `device_id` nei messaggi. **Manca:** `level` del TX power contro `radio.tx_power_level` della create; da decidere con API-7, rimandato. |
-| 41 | [API-7](#api-7) | Bassa |  | Valutare un modello API a risorse per le azioni enable/disable (`PATCH .../network`). **Rimandato** (decisione del 2026-11-25, [TODOs/api-review.md](TODOs/api-review.md)). |
-| 42 | [ARCH-2](#arch-2) | Media |  | Centralizzare la classificazione dei guasti. |
-| 43 | [ARCH-1](#arch-1) | Media |  | Separare le responsabilità di `NetworkManager`. |
-| 44 | [ARCH-4](#arch-4) | Media |  | Consolidare lo stato dei dispositivi in un registro unico. |
-| 45 | [ARCH-3](#arch-3) | Bassa | parz. | Separare il modello interno della rete dai modelli API. **Fatto:** la create usa `NetworkCreateBody` e la `GET` `NetworkResponse`. **Manca:** una dataclass interna al posto di `NetworkStatus` in `manager.active` (con `_expires_at_timestamp`). |
-| 46 | [ARCH-5](#arch-5) | Bassa |  | Costruire e avviare i manager esplicitamente tramite un contesto applicativo. |
-| 47 | [ARCH-6](#arch-6) | Bassa |  | Gestire dnsmasq come processo figlio in foreground. |
-| 48 | [ARCH-7](#arch-7) | Bassa |  | Consolidare in un helper il rilascio delle interfacce da NetworkManager. |
-| 49 | [ARCH-10](#arch-10) | Bassa |  | Definire regole di logging e limitare i messaggi ripetuti. |
-| 50 | [ARCH-9](#arch-9) | Bassa |  | Rimuovere codice, modelli e test inutilizzati. |
-| 51 | [ARCH-8](#arch-8) | Bassa |  | Sostituire l'accesso agli attributi privati di altre classi con metodi pubblici. |
-| 53 | [ARCH-11](#arch-11) | Bassa |  | Definire la strategia di integrazione prima di applicare patch specifiche del branch. |
-| 54 | [BUG-9](#bug-9) | Media |  | Allineare la validazione dei profili QoS custom al modello runtime. |
-| 55 | [NET-13](#net-13) | Bassa |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
-| 56 | [RACE-3](#race-3) | Bassa |  | Sincronizzare le operazioni QoS per interfaccia. |
-| 57 | [NET-12](#net-12) | Bassa |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
-| 58 | [NET-11](#net-11) | Media |  | Gestire o rifiutare esplicitamente valori QoS upload/download differenti. |
-| 59 | [WD-8](#wd-8) | Media |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
-| Ultima | RELEASE-API | - |  | **Da fare solo alla fine, quando si dichiara completata la release.** Revisione con Fable di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a quanto documentato in Swagger (`/docs`) e ReDoc (`/redoc`), oltre che in `docs/ap-creation-procedure.md` e nel capitolo API della 4.0.0 in `CHANGELOG.md`. Correggere ogni differenza prima del rilascio. |
+- **Blocco A (2.1):** cambia qualcosa che il client o chi installa vede. Va chiuso prima di congelare.
+- **Blocco B (2.2):** stabilizzazione, pulizia e prestazioni. Porta il servizio a rispettare il contratto
+  già scritto, senza cambiarlo: si fa dopo, nelle 4.1.x, e non costringe a rifare il client.
+- **2.3:** chiusi in questo ciclo, da provare ancora sulla macchina.
 
-Le voci BUG-9, NET-13, RACE-3, NET-12, NET-11 e WD-8 riguardano il **QoS**, ancora sperimentale e non
-testato: sono in fondo di proposito e si fanno dopo tutte le altre. BUG-9 e NET-13 toccano anche l'avvio
-del servizio e lo stop della rete, ma solo quando esiste un profilo QoS personalizzato o attivo.
+`parz.` = corretto in parte: la descrizione dice cosa manca. L'ordine dentro ogni blocco è quello di lavoro.
 
-La voce **RELEASE-API** resta l'ultima attività della release: si esegue dopo tutte le altre, sullo
-stato finale del codice.
+### 2.1 Blocco A: da chiudere per la 4.1.0
+
+| Ordine | Id | Gravità | Cosa fare | Perché prima del congelamento |
+|:---:|---|---|---|---|
+| A1 | [SEC-1](#sec-1) | Critica | Limitare la route frontend ai file contenuti nella directory frontend. | Sicurezza critica. Cambia anche le risposte: i percorsi `/api/...` e `/docs/...` inesistenti passano da `200` con `null` a `404`. |
+| A2 | [NM-1](#nm-1) | Media | Togliere `nmcli` dal codice, stadi dell'installer che propongono di disattivare NetworkManager e `wpa_supplicant` senza rischiare l'accesso alla macchina, precheck all'avvio. Tutto nel [capitolo 5](#cap-5). Toglie il codice di STAB-9 e chiude ARCH-7 (i tre rilasci `nmcli` duplicati). | Requisito di sistema nuovo (breaking per chi installa) e codice di uscita `78`: non può arrivare in una versione di sola stabilizzazione. |
+| A3 | [REV-2](#rev-2) | Media | Un annullamento il cui rollback fallisce non deve finire in quarantena né far rispondere `404` al rilascio. | Risposte del rilascio e dello stop durante `starting`: è il ciclo di vita che il client implementa. |
+| A4 | [REV-11](#rev-11) | Bassa | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, tipi accettati per sbaglio, `next_available_in` troncato. | Codici e tipi fuori contratto. Il punto 4 (`strict`) restringe ciò che il client può inviare: o ora o mai nella 4.x. |
+| A5 | [REV-9](#rev-9) | Bassa | Impostare `stop_failed` solo per lo stop chiesto dal client; rispondere `1012` a Internet, TX power e QoS su una rete fermata a metà. | Cambia `runtime_state` in `/status` e aggiunge `409 / 1012` a Internet, TX power e QoS. |
+| A6 | [REV-8](#rev-8) | Bassa | Non togliere da `start_jobs` un job il cui thread gira ancora dopo il timeout dell'annullamento. | Decide cosa risponde la `DELETE .../network` dopo un annullamento lento (`503 / 1006`, poi `200` o `409 / 1007`): decisione e2e-test-2 del paragrafo 1.3. |
+| A7 | [HAP-9](#hap-9) | Bassa | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. | Solo la via semplice: `422` sui canali 120, 124, 128 e fuori dall'elenco dei canali. La via completa (stato "radar check") è un cambio di API: non si fa nella 4.x. |
+| A8 | [BUG-7](#bug-7) | Bassa | Rendere coerente lo stato della potenza TX in caso di mismatch. | Cambia cosa rispondono `POST` e `GET .../txpower` dopo un mismatch. |
+| A9 | [PERF-6](#perf-6) | Bassa | Sostituire l'attesa fissa per TX power con polling limitato. | Stessa funzione di BUG-7: si fanno insieme. Cambia la durata della `POST .../txpower`. |
+| A10 | [NET-8](#net-8) | Bassa | Sostituire il DNS predefinito specifico del laboratorio. | Chiave di configurazione che diventa obbligatoria: breaking per chi installa. |
+| A11 | [API-6](#api-6) | Bassa | Uniformare i nomi di endpoint e campi. **Fatto:** `/api/v2/reservations`, `/reservations/{id}/...`, nessun `device_id` nei messaggi. **Manca:** `level` del TX power contro `radio.tx_power_level` della create; da decidere con API-7, rimandato. | Solo una decisione: rinominare `level` ora, oppure dichiarare che resta così per tutta la 4.x (paragrafo 1.3). |
+| A12 | [STAB-7](#stab-7) | Media | Aggiungere un lockfile con versioni esatte delle dipendenze. | Senza versioni bloccate una reinstallazione può cambiare le risposte (per esempio il codice per un `Authorization` mancante). Si genera al congelamento. |
+| A13 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
+
+### 2.2 Blocco B: dopo la 4.1.0, solo stabilizzazione
+
+Nessuno di questi punti cambia endpoint, campi o codici documentati. Se lavorandoci si scopre che uno li
+cambia, si ferma e si rimanda alla versione successiva.
+
+| Ordine | Id | Gravità | Stato | Cosa fare |
+|:---:|---|---|:---:|---|
+| B1 | [REV-10](#rev-10) | Bassa |  | Non chiedere un reset USB quando il watchdog fallisce un cleanup senza guasto radio. |
+| B2 | [REV-12](#rev-12) | Bassa |  | Piccole gare e casi limite: cache dei canali, radar DFS nel watchdog, `runtime_cleanup` che può sollevare, scadenza dentro `_get_status`. |
+| B3 | [WD-5](#wd-5) | Alta | parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. **Fatto:** stop e cleanup con l'interfaccia sparita (punti 1–2), classificazione come guasto radio. **Manca:** ritirare la voce di un'antenna che ricompare con un nome diverso (punto 3); dipende da ARCH-4. |
+| B4 | [WD-7](#wd-7) | Media | parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. **Fatto:** gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca:** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware. |
+| B5 | [STAB-5](#stab-5) | Media |  | Usare scadenze monotone per misurare il tempo trascorso. |
+| B6 | [STAB-2](#stab-2) | Media |  | Spostare i file runtime in una directory privata e gestita. |
+| B7 | [REV-13](#rev-13) | Media |  | Frontend: correggere il polling della create (avvio annullato dato per riuscito, polling che si ferma o non finisce, stati incoerenti). |
+| B8 | [REV-14](#rev-14) | Media |  | Frontend: non perdere gli ID delle reservation a una ricarica con il backend in errore; pulsanti e messaggi coerenti con lo stato. |
+| B9 | [HAP-8](#hap-8) | Media | parz. | Conservare un estratto sicuro dell'output hostapd per la diagnosi. **Fatto:** con `hostapd_debug_dir` ogni avvio fallito scrive configurazione (senza password) e ultime 400 righe di `hostapd -d`. **Manca:** l'output quando il watchdog trova hostapd morto su una rete attiva, e un estratto anche senza `hostapd_debug_dir`. |
+| B10 | [HAP-5](#hap-5) | Media |  | Verificare avvii radio concorrenti e serializzarli se necessario. |
+| B11 | [HAP-6](#hap-6) | Media |  | Verificare se ritardare la modifica della potenza TX migliora l'avvio. |
+| B12 | [REV-15](#rev-15) | Bassa |  | Frontend: annullare un avvio, mostrare `restarts` e `error`, scegliere l'antenna; compilazione e spec fuori dal deploy. |
+| B13 | [BUG-8](#bug-8) | Bassa |  | Usare un confronto constant-time per il token. |
+| B14 | [REV-17](#rev-17) | Bassa |  | Togliere i residui della catena di modifiche: percorso `1004` morto, metodi usati solo dai test, duplicati, testi vecchi. |
+| B15 | [HAP-7](#hap-7) | Bassa |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
+| B16 | [REV-18](#rev-18) | Bassa |  | Riordinare i test: fixture condivise e collegate come in produzione, poi i test dei paragrafi 4.6 e 4.7. |
+| B17 | [PERF-1](#perf-1) | Bassa | parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. **Fatto:** validazioni `iw`, `dnsmasq --version`, `nmcli --version`. I tre `nmcli` e la pausa di 0,2 s spariscono con NM-1. **Manca**, non fatto di proposito: `iptables-restore` in blocco (cambierebbe come si installano e tolgono tutte le regole). |
+| B18 | [PERF-2](#perf-2) | Bassa |  | Separare i controlli di stato attivo dalle query dettagliate. |
+| B19 | [PERF-5](#perf-5) | Bassa |  | Rispettare il timeout richiesto senza imporre un minimo nascosto. |
+| B20 | [PERF-4](#perf-4) | Bassa |  | Ridurre letture di discovery e probe hostapd non necessarie. |
+| B21 | [PERF-7](#perf-7) | Bassa |  | Punto informativo: nessuna crescita di memoria o descrittori trovata. Da riverificare con il test T-21. |
+| B22 | [API-7](#api-7) | Bassa |  | Valutare un modello API a risorse per le azioni enable/disable (`PATCH .../network`). **Rimandato** (decisione del 2026-11-25, [TODOs/api-review.md](TODOs/api-review.md)). |
+| B23 | [ARCH-2](#arch-2) | Media |  | Centralizzare la classificazione dei guasti. |
+| B24 | [ARCH-1](#arch-1) | Media |  | Separare le responsabilità di `NetworkManager`. |
+| B25 | [ARCH-4](#arch-4) | Media |  | Consolidare lo stato dei dispositivi in un registro unico. |
+| B26 | [ARCH-3](#arch-3) | Bassa | parz. | Separare il modello interno della rete dai modelli API. **Fatto:** la create usa `NetworkCreateBody` e la `GET` `NetworkResponse`. **Manca:** una dataclass interna al posto di `NetworkStatus` in `manager.active` (con `_expires_at_timestamp`). |
+| B27 | [ARCH-5](#arch-5) | Bassa |  | Costruire e avviare i manager esplicitamente tramite un contesto applicativo. |
+| B28 | [ARCH-6](#arch-6) | Bassa |  | Gestire dnsmasq come processo figlio in foreground. |
+| B29 | [ARCH-10](#arch-10) | Bassa |  | Definire regole di logging e limitare i messaggi ripetuti. |
+| B30 | [ARCH-9](#arch-9) | Bassa |  | Rimuovere codice, modelli e test inutilizzati. |
+| B31 | [ARCH-8](#arch-8) | Bassa |  | Sostituire l'accesso agli attributi privati di altre classi con metodi pubblici. |
+| B32 | [ARCH-11](#arch-11) | Bassa |  | Definire la strategia di integrazione prima di applicare patch specifiche del branch. |
+| B33 | [BUG-9](#bug-9) | Media |  | Allineare la validazione dei profili QoS custom al modello runtime. |
+| B34 | [NET-13](#net-13) | Bassa |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
+| B35 | [RACE-3](#race-3) | Bassa |  | Sincronizzare le operazioni QoS per interfaccia. |
+| B36 | [NET-12](#net-12) | Bassa |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
+| B37 | [NET-11](#net-11) | Media |  | Gestire o rifiutare esplicitamente valori QoS upload/download differenti. Cambia la validazione del QoS: vedi la nota sotto la tabella. |
+| B38 | [WD-8](#wd-8) | Media |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
+
+**Frontend (REV-13, REV-14, REV-15):** è la pagina web di Wi-Lab, non il client. Non tocca le API, quindi
+sta nel blocco B; REV-14 punto 1 (ID persi alla ricarica) è il più grave dei tre.
+
+**QoS (BUG-9, NET-13, RACE-3, NET-12, NET-11, WD-8):** sperimentale e non testato, in fondo di proposito.
+**Resta fuori dal congelamento:** il client non deve costruirci sopra finché non è dichiarato stabile.
+NET-11 e WD-8 ne cambiano il comportamento, NET-13 può far rispondere `503` a uno stop della rete, ma solo
+con un profilo QoS attivo. Vedi la decisione nel paragrafo 1.3.
+
+### 2.3 Chiusi in questo ciclo ✅
+
+Corretti il 2026-11-26, con test unit. Manca solo la prova sulla macchina (paragrafo 1.1, punto 1).
+
+| Id | Gravità | Cosa è stato fatto |
+|---|---|---|
+| ✅ [REV-5](#rev-5) | Media | Togliere il budget di 20 s dai tentativi interni di avvio: è un residuo della create sincrona e fa fallire avvii riusciti. |
+| ✅ [REV-6](#rev-6) | Media | Rendere annullabili gli avvii del watchdog e del probe, e annullare le create in `shutdown_all`. |
+| ✅ [BUG-5](#bug-5) | Media | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
+| ✅ [STAB-8](#stab-8) | Bassa | Limitare il lavoro di arresto entro il timeout di systemd. |
+| ✅ [WD-10](#wd-10) | Bassa | Non considerare guasto un access point solo per probe lenti. |
+| ✅ [BUG-6](#bug-6) | Bassa | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
+| ✅ [NET-9](#net-9) | Bassa | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
+| ✅ [NET-7](#net-7) | Bassa | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
+| ✅ [STAB-9](#stab-9) | Bassa | Regola a runtime per NetworkManager. **Superato:** NM-1 toglie questo codice; su questa macchina NetworkManager non c'è più. |
 
 ---
 
 <a id="cap-3"></a>
-## 3. Schede, in ordine di priorità
+## 3. Schede
 
+Nell'ordine del capitolo 2: blocco A (NM-1 è il [capitolo 5](#cap-5)), blocco B, poi le schede chiuse ✅.
 Ogni scheda ha la stessa struttura: **Problema**, **Come si riproduce**, **Come correggerlo**. Dove è
 utile c'è codice o una patch. I percorsi dei file sono relativi alla radice del repository.
 
-<a id="rev-2"></a>
-### 1. REV-2 - Annullare un avvio il cui rollback fallisce mette l'antenna in quarantena
-
-**Gravità:** Media · **Confidenza:** Confermato (riprodotto con il TestClient) · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py) (`_run_start`)
-
-**Problema.** Con una `DELETE` della reservation o della rete durante `starting`, se il rollback
-solleva `StartupFailure(cleanup_failed=True)` l'annullamento viene ignorato e il codice prosegue fino a
-`quarantine_radio`:
-
-- `DELETE /reservations/{id}` risponde `404` con `reservation_invalidated` (il contratto dice che il
-  rilascio non fallisce mai) e l'antenna va in `recovery_state: unavailable`;
-- `DELETE .../network` risponde `200` "stopped", ma la `GET` successiva è `404` con
-  `reservation_invalidated`.
-
-**Come si riproduce.** Avvio bloccato, `DELETE` della reservation, rollback che fallisce (stop di
-hostapd che solleva).
-
-**Come correggerlo.** Quando `cancel.is_set()` e il cleanup è fallito, sollevare `StartCancelled` e
-lasciare il dispositivo al percorso normale: il rilascio lo consegna al cleanup in background (come
-ogni rilascio con cleanup fallito), la stop della rete risponde `503 / 1012`.
-
-Test: [unit-test-2](#unit-test-2).
-
----
-
-<a id="rev-5"></a>
-### 1. REV-5 - Il budget di 20 s dei tentativi interni è un residuo della create sincrona ✅
-
-**Gravità:** Media · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`STARTUP_RETRY_BUDGET`, `_start_network`)
-
-**Problema.** Il budget serviva a tenere corta la richiesta HTTP. Con `202` e polling non serve più e
-produce esiti sbagliati:
-
-- un tentativo che porta su tutta la rete subito dopo `retry_deadline` viene smontato e riportato come
-  `StartupFailure(radio=False, stage="hostapd")`, cioè `start_failed`;
-- durante un tentativo ogni comando è limitato da `command_deadline`: se il budget finisce in una fase
-  successiva, `bounded_timeout` solleva "Deadline expired before running command" e il guasto viene
-  attribuito a `gateway`, `dhcp`, `nat` o `host_guard`, che non hanno colpa;
-- sui canali DFS un nuovo tentativo non può riuscire: `_wait_until_ready` riceve al massimo 19 s e il
-  CAC ne richiede 60.
-
-**Come correggerlo.** Togliere il limite di tempo dal percorso del job: restano il numero dei
-tentativi e la scadenza della reservation (`_start_time(req)`). Non far mai fallire un avvio che è
-arrivato in fondo. Si lega a [HAP-9](#hap-9).
-
-Test: [unit-test-4](#unit-test-4).
-
----
-
-<a id="rev-6"></a>
-### 1. REV-6 - Gli avvii che non passano dal job della create non si possono annullare ✅
-
-**Gravità:** Media · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`shutdown_all`, `probe_recovered_radio`), [wilab/wifi/watchdog.py](wilab/wifi/watchdog.py) (`_restore_ap`, `_retry_pending`)
-
-**Problema.**
-
-- `shutdown_all` non chiama `cancel_start`: `release_device` aspetta il lock del dispositivo, che una
-  create tiene per tutta la sua durata (pause di 5 e 10 s comprese). Nel caso peggiore più volte 75 s
-  su DFS, oltre il timeout di arresto di systemd: `SIGKILL` e processi orfani. Aggrava
-  [STAB-8](#stab-8).
-- Il watchdog chiama `start_network` senza `cancelled`: una `DELETE` della reservation durante un
-  ripristino non trova job e aspetta il lock senza limite (fino a 75 s + 20 s su DFS). Il rilascio
-  "immediato" del contratto vale solo durante una create.
-- `probe_recovered_radio` prova sull'ultimo canale usato anche se è DFS: 60 s di CAC sotto il lock.
-
-**Come correggerlo.** `shutdown_all` imposta `cancel` su ogni job prima di rilasciare; il watchdog
-passa `cancelled=lambda: self._cancelled(reservation)`; il probe usa un canale non DFS.
-
-Test: [unit-test-5](#unit-test-5).
-
----
-
-<a id="wd-5"></a>
-### 1. WD-5 - Un adattatore che sparisce non si può ripulire né rimuovere (parziale)
-
-**Gravità:** Alta · **Confidenza:** Confermato · **File:** [wilab/wifi/hostapd.py:378-389](wilab/wifi/hostapd.py#L378-L389), [wilab/wifi/manager.py:449-465](wilab/wifi/manager.py#L449-L465), [wilab/config.py:172-182](wilab/config.py#L172-L182)
-
-> **Stato (2026-11-25):** Fatti i punti 1 e 2 (stop e cleanup completi anche con l'interfaccia sparita) e la classificazione come guasto radio. **Manca** il punto 3: ritirare la voce di un'antenna che ricompare con un nome diverso; dipende da ARCH-4.
-
-**Problema.** `HostapdManager.stop` termina con `ip link set <if> down`, `iw ... set type managed`,
-`ip addr flush` e considera ogni errore come "stop fallito". Se l'interfaccia non esiste più
-(adattatore scollegato, nuova enumerazione USB con un altro nome, driver scaricato) quei comandi
-falliscono ogni volta:
-
-- l'istanza resta in `_instances`, quindi `release_device` fallisce per sempre;
-- le regole NAT e di blocco non vengono rimosse, perché quel passo gira solo `if hostapd_stopped`;
-- il dispositivo resta in `manager.active`, quindi `/status` conta una rete che non esiste;
-- il dispositivo non viene mai tolto da `config.networks` (la discovery aggiunge soltanto).
-
-Se l'adattatore torna con lo **stesso** nome mentre il recovery USB sta ancora provando (10 tentativi,
-uno al minuto) il cleanup infine riesce. Dopo quei dieci minuti no (WD-4). Se torna con un altro nome,
-la discovery lo aggiunge come dispositivo nuovo e la voce vecchia resta `unavailable`, tenendo lo stato
-generale `degraded` fino a un riavvio.
-
-**Come si riproduce.** Su hardware: rete attiva, scollegare l'adattatore USB, aspettare 15 minuti,
-ricollegarlo. Nei test: far fallire `execute_command` per ogni comando che nomina l'interfaccia con
-"Cannot find device" e chiamare `release_device`: solleva `RuntimeError` a ogni chiamata.
-
-**Come correggerlo.** Tre cambiamenti.
-
-1. Un'interfaccia assente non ha nulla da resettare:
-
-```diff
---- a/wilab/wifi/hostapd.py
-+++ b/wilab/wifi/hostapd.py
-+def interface_present(interface: str) -> bool:
-+    """True while the kernel still has a network device with this name."""
-+    return os.path.exists(f"/sys/class/net/{interface}")
-+
-@@ def stop(self, net_id: str) -> None:
--            # Leave the interface down until the next network starts.
--            execute_command(["ip", "link", "set", interface, "down"])
--            execute_command(["iw", "dev", interface, "set", "type", "managed"])
--            execute_command(["ip", "addr", "flush", "dev", interface])
--            logger.info(f"Reset interface {interface} to managed mode, down")
-+            if interface_present(interface):
-+                # Leave the interface down until the next network starts.
-+                execute_command(["ip", "link", "set", interface, "down"])
-+                execute_command(["iw", "dev", interface, "set", "type", "managed"])
-+                execute_command(["ip", "addr", "flush", "dev", interface])
-+                logger.info(f"Reset interface {interface} to managed mode, down")
-+            else:
-+                logger.warning("Interface %s is gone; nothing to reset", interface)
-```
-
-   Nei test (che non hanno `/sys`) `interface_present` va sostituita con una funzione che restituisce
-   `True`, in `tests/conftest.py`.
-
-2. Lo stesso controllo in `QosManager._teardown` e negli altri punti di `_stop_network` che eseguono
-   comandi sull'interfaccia, così nessuno di essi blocca il cleanup.
-
-3. Ritiro dei dispositivi: nella discovery, un dispositivo la cui interfaccia manca da più di N
-   scansioni (per esempio 4, cioè due minuti), senza reservation e senza risorse tracciate, viene tolto
-   da `config.networks`, da `ReservationManager` (nuovo metodo `remove_device`) e da `_blocked`. Se
-   ricompare, viene riaggiunto come nuovo. Questo richiede il registro unico di ARCH-4, oppure quattro
-   rimozioni coordinate sotto `_scan_lock`.
-
----
-
-<a id="wd-7"></a>
-### 1. WD-7 - Il watchdog controlla due processi, non la rete (parziale)
-
-**Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:64-82](wilab/wifi/watchdog.py#L64-L82)
-
-> **Stato (2026-11-25):** Il watchdog verifica ogni 30 s e ripara sul posto indirizzo del gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware.
-
-**Problema.** Il watchdog verifica che hostapd sia vivo e `ENABLED` e che dnsmasq sia vivo. Non
-verifica:
-
-- che l'interfaccia abbia ancora l'indirizzo del gateway (un gestore di rete dell'host o un
-  amministratore possono toglierlo; il DHCP allora non risponde più);
-- che le regole firewall di Wi-Lab esistano ancora (un riavvio di `firewalld`, `ufw` o Docker può
-  riscrivere le catene: spariscono NAT, blocco di Internet e redirect del captive portal);
-- che `net.ipv4.ip_forward` sia ancora 1;
-- che la radio stia davvero trasmettendo (la proposta aperta `TODOs/ap-health-validation.md` descrive
-  un adattatore che dichiara ENABLED e non manda beacon);
-- che il thread del captive portal sia vivo.
-
-**Come si riproduce.** Con una rete attiva e client collegati, sulla macchina di laboratorio:
-
-```bash
-ip addr flush dev <interfaccia>          # i nuovi client non ricevono più un indirizzo
-iptables -t nat -F POSTROUTING           # Internet sparisce (solo su macchina di test!)
-```
-
-`/status` e `GET .../network` continuano a dire che tutto funziona e nulla viene riparato.
-
-**Come correggerlo.** Un metodo di verifica che ripara sul posto ciò che si può riparare senza toccare
-l'AP.
-
-```python
-# wilab/wifi/manager.py
-def verify_network(self, device_id: str) -> list[str]:
-    """Check what a running network needs and repair in place. Returns what was repaired."""
-    status = self.active.get(device_id)
-    if status is None or status.subnet is None:
-        return []
-    repaired: list[str] = []
-    net = IPv4Network(status.subnet)
-    gateway = f"{net[1]}/{net.prefixlen}"
-    addresses = json.loads(execute_ip(["-j", "-4", "addr", "show", "dev", status.interface]))
-    present = {
-        f"{a['local']}/{a['prefixlen']}" for link in addresses for a in link.get("addr_info", [])
-    }
-    if gateway not in present:
-        execute_ip(["addr", "add", gateway, "dev", status.interface])
-        repaired.append("gateway address")
-    if status.internet_enabled:
-        with self._firewall_lock:
-            # enable_nat checks each rule before adding it, so it only restores what is missing.
-            self.nat_manager.enable_nat(status.interface, device_id, status.subnet)
-    return repaired
-```
-
-Chiamarlo dal ciclo del watchdog una volta su sei (ogni 30 s), sotto il lock del dispositivo, e
-scrivere un `WARNING` per ogni riparazione. Se `gateway address` è stato riparato, riavviare anche
-dnsmasq. Per la trasmissione reale: leggere `/sys/class/net/<if>/statistics/tx_packets` a ogni giro;
-se con l'AP `ENABLED` il contatore non cresce per 30 s (un AP manda circa 10 beacon al secondo),
-contare un "miss" come per `is_enabled`. Verificare prima su hardware che il driver in uso conti i
-beacon in quel contatore.
-
----
-
-<a id="bug-5"></a>
-### 1. BUG-5 - La discovery può ignorare un adattatore per sempre ✅
-
-**Gravità:** Media · **Confidenza:** Probabile · **File:** [wilab/wifi/discovery.py:82-119](wilab/wifi/discovery.py#L82-L119)
-
-**Problema.** `_ready_radio` richiede che la proprietà udev `ID_NET_NAME`, quando presente, sia uguale
-al nome dell'interfaccia. Sugli host dove l'interfaccia mantiene un altro nome (regola udev
-personalizzata, politica che conserva il nome del kernel) i due valori differiscono per sempre:
-l'interfaccia resta "pending" e l'unico messaggio è a livello `DEBUG`. Il sintomo è "Wi-Lab non vede il
-mio adattatore" con il log vuoto.
-
-**Come si riproduce.** Test: `udevadm info` finto che restituisce `INTERFACE=wlan0`, `IFINDEX=3`,
-`USEC_INITIALIZED=1`, `ID_NET_NAME=wlx00c0ca112233`. `discover_radios()` restituisce una lista vuota a
-ogni chiamata.
-
-**Come correggerlo.** Il controllo serve a non usare un'interfaccia che udev sta per rinominare. Basta
-aspettare un numero limitato di scansioni, poi accettarla e dirlo.
-
-```diff
---- a/wilab/wifi/discovery.py
-+++ b/wilab/wifi/discovery.py
-+# Scans an interface may stay "not yet renamed" before it is accepted as it is.
-+RENAME_GRACE_SCANS = 3
-+_rename_waits: dict[str, int] = {}
-+
-@@ def _ready_radio(phy: str, interface: str) -> DiscoveredRadio | None:
--        if (
--            not props.get("USEC_INITIALIZED")
--            or props.get("INTERFACE") != interface
--            or props.get("IFINDEX") != ifindex
--            or props.get("ID_NET_NAME", interface) != interface
--        ):
-+        if (
-+            not props.get("USEC_INITIALIZED")
-+            or props.get("INTERFACE") != interface
-+            or props.get("IFINDEX") != ifindex
-+        ):
-             return None
-+        if props.get("ID_NET_NAME", interface) != interface:
-+            waits = _rename_waits.get(interface, 0) + 1
-+            _rename_waits[interface] = waits
-+            if waits <= RENAME_GRACE_SCANS:
-+                return None
-+            if waits == RENAME_GRACE_SCANS + 1:
-+                logger.warning(
-+                    "Using %s although udev suggests the name %s: it was not renamed",
-+                    interface, props["ID_NET_NAME"],
-+                )
-```
-
-`discover_radios` fa già cinque tentativi ravvicinati per chiamata: il contatore va incrementato una
-volta per chiamata di `discover_radios`, non per tentativo interno.
-
----
-
-<a id="stab-9"></a>
-### 1. STAB-9 - Il rilascio da NetworkManager è solo a runtime ✅
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/unmanaged.py:61-81](wilab/network/unmanaged.py#L61-L81)
-
-**Problema.** `nmcli device set <if> managed no` viene dimenticato quando NetworkManager riparte (per
-esempio per un aggiornamento di pacchetto). NetworkManager può allora riprendersi la radio di un AP
-attivo. Il watchdog lo ripristina, una volta (WD-1).
-
-**Come si riproduce.** Con una rete attiva: `systemctl restart NetworkManager`, poi
-`nmcli device status`: la radio torna gestita e l'AP può cadere.
-
-**Come correggerlo.** Scrivere un file di configurazione a runtime **senza ricaricare**
-NetworkManager: si mantiene la decisione del commit `87c3ce1` (mai un reload) e si copre il caso del
-riavvio, perché NetworkManager legge quella cartella quando parte.
-
-```python
-# wilab/network/unmanaged.py
-NM_RUNTIME_RULES = Path("/run/NetworkManager/conf.d/00-wilab-unmanaged.conf")
-
-# inside exclude_from_host_managers, after the nmcli loop
-if NM_RUNTIME_RULES.parent.parent.is_dir():
-    devices = ";".join(f"interface-name:{name}" for name in names)
-    try:
-        # Read only when NetworkManager starts: this file is never reloaded on purpose.
-        _replace(NM_RUNTIME_RULES, f"[keyfile]\nunmanaged-devices={devices}\n")
-    except OSError as exc:
-        logger.warning("Cannot write NetworkManager rules for Wi-Lab radios: %s", exc)
-```
-
-Il file elenca solo i nomi delle radio di Wi-Lab, quindi non può toccare l'interfaccia di gestione.
-
----
-
-<a id="stab-8"></a>
-### 1. STAB-8 - L'arresto ordinato può superare `TimeoutStopSec=30s` ✅
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:768-779](wilab/wifi/manager.py#L768-L779), [install/systemd/wi-lab.service.template](install/systemd/wi-lab.service.template)
-
-**Problema.** L'arresto rilascia i dispositivi uno dopo l'altro; ogni rilascio può richiedere diversi
-secondi (join del thread QoS fino a 5 s, terminate e kill di hostapd fino a 4 s, vari comandi). uvicorn
-attende inoltre le richieste in corso, e un avvio DFS può tenerne una per 75 s. Su un pool di dieci
-adattatori i 30 s possono essere superati: systemd uccide il processo e si ricade in STAB-4.
-
-**Come si riproduce.** Con più reti attive: `time systemctl stop wi-lab` e controllare nel journal la
-riga "State 'stop-sigterm' timed out. Killing."
-
-**Come correggerlo.** Rilasciare in parallelo e dare più tempo.
-
-```python
-# wilab/wifi/manager.py, in shutdown_all
-threads = [
-    threading.Thread(target=self._release_quietly, args=(device_id,), name=f"shutdown-{device_id}")
-    for device_id in device_ids
-]
-for thread in threads:
-    thread.start()
-for thread in threads:
-    thread.join(timeout=20)
-```
-
-dove `_release_quietly` contiene il `try / except` attuale. Nell'unit: `TimeoutStopSec=60s`. In
-`uvicorn.run` aggiungere `timeout_graceful_shutdown=10` per non attendere all'infinito le richieste
-in corso. Sostituire anche il `except Exception: pass` di `lifespan` con `logger.exception`.
-
----
-
-<a id="wd-10"></a>
-### 1. WD-10 - Tre probe lenti riavviano un AP forse sano ✅
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:64-66](wilab/wifi/watchdog.py#L64-L66), [wilab/wifi/hostapd.py:399-411](wilab/wifi/hostapd.py#L399-L411)
-
-**Problema.** `is_enabled` concede 1 s a `hostapd_cli`. Su una macchina virtuale carica, tre risposte
-lente in 15 s disconnettono tutti i client, e per via di WD-1 consumano anche l'unico riavvio.
-
-**Come si riproduce.** Test: `execute_command` finto che per `hostapd_cli` solleva `CommandTimeout` tre
-volte, con il processo vivo. Il watchdog chiama `_restore_ap`.
-
-**Come correggerlo.** Distinguere "hostapd dice che non è ENABLED" da "non ha risposto in tempo".
-
-```diff
---- a/wilab/wifi/hostapd.py
-+++ b/wilab/wifi/hostapd.py
--    def is_enabled(self, net_id: str) -> bool:
-+    def is_enabled(self, net_id: str) -> bool | None:
-+        """True or False from hostapd; None when it did not answer in time."""
-@@
--        except CommandError:
-+        except CommandTimeout:
-+            return None
-+        except CommandError:
-             return False
-```
-
-Nel watchdog: una risposta `None` conta mezzo "miss" (soglia 6 invece di 3), una risposta `False`
-conta come oggi. Verificare gli altri chiamanti di `is_enabled` (`probe_recovered_radio` usa
-`not ...is_enabled(...)`, che resta corretto perché `None` è falso).
-
----
-
-<a id="hap-9"></a>
-### 1. HAP-9 - Canali DFS con controllo radar di 10 minuti
-
-**Gravità:** Bassa · **Confidenza:** Probabile · **File:** [wilab/wifi/hostapd.py:29](wilab/wifi/hostapd.py#L29), [wilab/wifi/hostapd.py:249](wilab/wifi/hostapd.py#L249)
-
-> **Aggiornamento (2026-11-25).** Con la create asincrona il client non va più in timeout: riceve `202` e legge lo stato. Resta il problema del server: sui canali radar meteo (120, 124, 128) i 75 s di `DFS_READY_TIMEOUT` non bastano e l'avvio fallisce come guasto radio. `allow_dfs_channels` si chiama ora `show_dfs` ed è per antenna.
-
-**Problema.** Il timeout per i canali da 52 a 144 è 75 s. In Europa i canali dei radar meteo (120, 124,
-128) richiedono 600 s di ascolto. Con `allow_dfs_channels: true` una richiesta su quei canali va sempre
-in timeout e viene trattata come guasto radio, fino alla quarantena.
-
-**Come si riproduce.** Con `allow_dfs_channels: true` e `country_code` europeo, creare una rete sul
-canale 124.
-
-**Come correggerlo.** La via semplice: rifiutare quei canali finché non sono gestiti.
-
-```python
-# wilab/wifi/channels.py
-# ETSI weather-radar channels need a 10-minute radar check, longer than any request can wait.
-LONG_CAC_CHANNELS = frozenset({120, 124, 128})
-```
-
-In `validate_channel`, per la banda `5ghz`: se `channel in LONG_CAC_CHANNELS` sollevare
-`ValueError("Channel ... requires a 10-minute radar check and is not supported")`. La via completa:
-leggere `cac_time` dalla riga `DFS-CAC-START` di hostapd e usarlo come timeout, rispondendo subito al
-client con uno stato "radar check in corso".
-
----
-
-<a id="bug-6"></a>
-### 1. BUG-6 - `validate_interface_ap_mode` non dimostra nulla ✅
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/interface.py:52-90](wilab/wifi/interface.py#L52-L90), [wilab/wifi/manager.py:254-262](wilab/wifi/manager.py#L254-L262)
-
-**Problema.** `"AP" not in phy_output` è una ricerca di sottostringa su tutto il testo di
-`iw phy info`, che contiene "AP" in molte righe non pertinenti (per esempio "Device supports AP-side
-u-APSD"). La discovery ha già un parser corretto (`_supports_ap_mode`). Le tre chiamate
-`validate_interface_*` prima di ogni avvio ripetono, in modo meno preciso, ciò che la discovery ha già
-stabilito, al costo di quattro comandi.
-
-**Come si riproduce.** Test: `iw phy info` finto senza la riga `* AP` tra i modi supportati ma con la
-riga "Device supports AP-side u-APSD". `validate_interface_ap_mode` restituisce `True`.
-
-**Come correggerlo.** Tenere solo il controllo di esistenza, che è l'unico che può cambiare dopo la
-discovery.
-
-```diff
---- a/wilab/wifi/manager.py
-+++ b/wilab/wifi/manager.py
-         try:
-             validate_interface_exists(cfg_net.interface)
--            validate_interface_wireless(cfg_net.interface)
--            validate_interface_ap_mode(cfg_net.interface)
-         except InterfaceError as e:
-```
-
-Rimuovere `validate_interface_wireless`, `validate_interface_ap_mode` e `validate_interface` da
-`interface.py` con i relativi test e le sostituzioni in `tests/conftest.py`.
-
----
-
-<a id="net-9"></a>
-### 1. NET-9 - Le subnet non sono stabili tra un riavvio e l'altro ✅
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:111-141](wilab/wifi/manager.py#L111-L141)
-
-**Problema.** L'allocatore salta ogni subnet che si sovrappone a una route dell'host. Dopo un riavvio
-non pulito, una radio che ha ancora il vecchio indirizzo fa sembrare "in uso" la propria subnet
-precedente: il dispositivo riceve la successiva e la tiene per tutta la vita del processo. I client che
-si aspettano una subnet precisa la vedono cambiare.
-
-**Come si riproduce.** Rete attiva sul primo adattatore (subnet base), `kill -9` del servizio, riavvio,
-nuova rete sullo stesso adattatore: la subnet è la base più uno.
-
-**Come correggerlo.** La causa sparisce con `reset_interface` alla scoperta del dispositivo (STAB-4),
-che toglie l'indirizzo prima di qualunque allocazione.
-
-> **Stato (2026-11-26):** già risolto da STAB-4; il test
-> `test_a_stale_gateway_address_does_not_shift_the_subnet` lo dimostra.
-
----
-
-<a id="net-7"></a>
-### 1. NET-7 - I file dei lease sopravvivono alla reservation ✅
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/dhcp.py:232-277](wilab/network/dhcp.py#L232-L277)
-
-**Problema.** `leases-<dispositivo>.db` non viene mai cancellato: il prossimo utente dell'adattatore
-eredita i lease del precedente per un massimo di 12 ore. Innocuo per l'indirizzamento, ma i dati di una
-sessione di test (indirizzi MAC dei client) passano alla successiva.
-
-**Come si riproduce.** Creare una rete, collegare un client, rilasciare; creare una nuova rete sullo
-stesso adattatore e leggere il file dei lease: contiene il client precedente.
-
-**Come correggerlo.**
-
-```diff
---- a/wilab/network/dhcp.py
-+++ b/wilab/network/dhcp.py
-@@ def stop(self, net_id: str) -> None:
-             if os.path.exists(config_file):
-                 os.remove(config_file)
-                 logger.info(f"Removed dnsmasq config {config_file}")
-+            try:
-+                # Leases belong to the network that ends here, not to the device.
-+                os.remove(instance["lease_file"])
-+            except FileNotFoundError:
-+                pass
-```
-
-Attenzione: il watchdog, quando riavvia solo dnsmasq (`_restore_dhcp`), chiama `stop` e poi `start`:
-in quel caso i lease vanno conservati, altrimenti i client collegati possono ricevere indirizzi già in
-uso. Aggiungere a `stop` un parametro `keep_leases: bool = False` e passarlo `True` da `_restore_dhcp`.
-
----
-
 <a id="sec-1"></a>
-### 2. SEC-1 - Lettura di file senza autenticazione dalla route del frontend
+### A1. SEC-1 - Lettura di file senza autenticazione dalla route del frontend
 
 **Gravità:** Critica · **Confidenza:** Probabile · **File:** [wilab/api/__init__.py:195-214](wilab/api/__init__.py#L195-L214)
 
@@ -712,56 +284,33 @@ il fallback su `index.html`. Dopo la correzione conviene ruotare `auth_token` e
 
 ---
 
-<a id="rev-8"></a>
-### 3. REV-8 - `cancel_start` dimentica il job dopo 30 s anche se il thread gira ancora
+<a id="rev-2"></a>
+### A3. REV-2 - Annullare un avvio il cui rollback fallisce mette l'antenna in quarantena
 
-**Gravità:** Bassa · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`cancel_start`)
+**Gravità:** Media · **Confidenza:** Confermato (riprodotto con il TestClient) · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py) (`_run_start`)
 
-**Problema.** Dopo `CANCEL_TIMEOUT` il job viene tolto da `start_jobs` mentre il suo thread lavora
-ancora. `DELETE .../network` risponde `503 / 1006` e il job resta orfano: un suo guasto successivo non
-è mai visibile come `start_failed`, e una nuova create accoda un secondo thread che può finire in
-`start_failed` se l'orfano riesce. Serve un avvio bloccato per più di 30 s fuori dall'attesa di
-hostapd (l'annullamento è controllato solo lì e prima di un nuovo tentativo).
+**Problema.** Con una `DELETE` della reservation o della rete durante `starting`, se il rollback
+solleva `StartupFailure(cleanup_failed=True)` l'annullamento viene ignorato e il codice prosegue fino a
+`quarantine_radio`:
 
-**Come correggerlo.** Non cancellare un job che non è `done`: lo toglie `_run_job` quando finisce.
+- `DELETE /reservations/{id}` risponde `404` con `reservation_invalidated` (il contratto dice che il
+  rilascio non fallisce mai) e l'antenna va in `recovery_state: unavailable`;
+- `DELETE .../network` risponde `200` "stopped", ma la `GET` successiva è `404` con
+  `reservation_invalidated`.
 
-Test: [unit-test-7](#unit-test-7).
+**Come si riproduce.** Avvio bloccato, `DELETE` della reservation, rollback che fallisce (stop di
+hostapd che solleva).
 
----
+**Come correggerlo.** Quando `cancel.is_set()` e il cleanup è fallito, sollevare `StartCancelled` e
+lasciare il dispositivo al percorso normale: il rilascio lo consegna al cleanup in background (come
+ogni rilascio con cleanup fallito), la stop della rete risponde `503 / 1012`.
 
-<a id="rev-9"></a>
-### 4. REV-9 - `stop_failed` segna anche stop che non sono del client
-
-**Gravità:** Bassa · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`_stop_failed`), [wilab/api/routes/status.py](wilab/api/routes/status.py)
-
-**Problema.** Anche un rollback di avvio fallito, uno stop per scadenza o un cleanup del watchdog
-impostano `_stop_failed`. `/status` riporta allora `runtime_state: stop_failed` e
-`network_stop_incomplete` ("il proprietario ripete la `DELETE`") per un'antenna la cui reservation è
-in quarantena o scaduta, e nasconde per essa i motivi di hostapd, dnsmasq e NAT. Inoltre, mentre una
-rete è `stop_failed`, resta in `manager.active` con `active: true`: Internet, TX power e QoS operano
-su una rete fermata a metà invece di rispondere `1012`.
-
-**Come correggerlo.** Impostare il flag solo nello stop di una rete attiva chiesto dal client; nelle
-route di Internet, TX power e QoS rispondere `409 / 1012` quando `manager.stop_failed(device)`.
-
----
-
-<a id="rev-10"></a>
-### 5. REV-10 - Il watchdog chiede un reset USB per un cleanup fallito
-
-**Gravità:** Bassa · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/watchdog.py](wilab/wifi/watchdog.py) (`_restore_ap`)
-
-**Problema.** Dopo un cleanup fallito (per esempio un errore di iptables) il watchdog chiama la
-quarantena con `radio_fault=radio_known`: il reset USB parte perché banda e canale sono noti, non
-perché la radio abbia un guasto. `_retry_pending` passa `radio_fault=False` per la stessa situazione.
-
-**Come correggerlo.** Passare `False` per il cleanup fallito; `True` solo quando il budget dei
-ripristini è finito per guasti radio.
+Test: [unit-test-2](#unit-test-2).
 
 ---
 
 <a id="rev-11"></a>
-### 6. REV-11 - Risposte delle API fuori dal contratto in casi rari
+### A4. REV-11 - Risposte delle API fuori dal contratto in casi rari
 
 **Gravità:** Bassa · **Confidenza:** Confermato per i primi due punti (TestClient); Probabile per gli altri · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py), [wilab/api/routes/txpower.py](wilab/api/routes/txpower.py), [wilab/api/routes/internet.py](wilab/api/routes/internet.py), [wilab/models.py](wilab/models.py)
 
@@ -794,8 +343,231 @@ Test: `test_error_codes.py::test_every_operation_with_a_reservation_id_answers_4
 
 ---
 
+<a id="rev-9"></a>
+### A5. REV-9 - `stop_failed` segna anche stop che non sono del client
+
+**Gravità:** Bassa · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`_stop_failed`), [wilab/api/routes/status.py](wilab/api/routes/status.py)
+
+**Problema.** Anche un rollback di avvio fallito, uno stop per scadenza o un cleanup del watchdog
+impostano `_stop_failed`. `/status` riporta allora `runtime_state: stop_failed` e
+`network_stop_incomplete` ("il proprietario ripete la `DELETE`") per un'antenna la cui reservation è
+in quarantena o scaduta, e nasconde per essa i motivi di hostapd, dnsmasq e NAT. Inoltre, mentre una
+rete è `stop_failed`, resta in `manager.active` con `active: true`: Internet, TX power e QoS operano
+su una rete fermata a metà invece di rispondere `1012`.
+
+**Come correggerlo.** Impostare il flag solo nello stop di una rete attiva chiesto dal client; nelle
+route di Internet, TX power e QoS rispondere `409 / 1012` quando `manager.stop_failed(device)`.
+
+---
+
+<a id="rev-8"></a>
+### A6. REV-8 - `cancel_start` dimentica il job dopo 30 s anche se il thread gira ancora
+
+**Gravità:** Bassa · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`cancel_start`)
+
+**Problema.** Dopo `CANCEL_TIMEOUT` il job viene tolto da `start_jobs` mentre il suo thread lavora
+ancora. `DELETE .../network` risponde `503 / 1006` e il job resta orfano: un suo guasto successivo non
+è mai visibile come `start_failed`, e una nuova create accoda un secondo thread che può finire in
+`start_failed` se l'orfano riesce. Serve un avvio bloccato per più di 30 s fuori dall'attesa di
+hostapd (l'annullamento è controllato solo lì e prima di un nuovo tentativo).
+
+**Come correggerlo.** Non cancellare un job che non è `done`: lo toglie `_run_job` quando finisce.
+
+Test: [unit-test-7](#unit-test-7).
+
+---
+
+<a id="hap-9"></a>
+### A7. HAP-9 - Canali DFS con controllo radar di 10 minuti
+
+**Gravità:** Bassa · **Confidenza:** Probabile · **File:** [wilab/wifi/hostapd.py:29](wilab/wifi/hostapd.py#L29), [wilab/wifi/hostapd.py:249](wilab/wifi/hostapd.py#L249)
+
+> **Aggiornamento (2026-11-25).** Con la create asincrona il client non va più in timeout: riceve `202` e legge lo stato. Resta il problema del server: sui canali radar meteo (120, 124, 128) i 75 s di `DFS_READY_TIMEOUT` non bastano e l'avvio fallisce come guasto radio. `allow_dfs_channels` si chiama ora `show_dfs` ed è per antenna.
+
+**Problema.** Il timeout per i canali da 52 a 144 è 75 s. In Europa i canali dei radar meteo (120, 124,
+128) richiedono 600 s di ascolto. Con `allow_dfs_channels: true` una richiesta su quei canali va sempre
+in timeout e viene trattata come guasto radio, fino alla quarantena.
+
+**Come si riproduce.** Con `allow_dfs_channels: true` e `country_code` europeo, creare una rete sul
+canale 124.
+
+**Come correggerlo.** Per la 4.1.0 solo la via semplice: rifiutare quei canali. `allow_dfs_channels`
+qui sotto è il vecchio nome di `show_dfs`.
+
+```python
+# wilab/wifi/channels.py
+# ETSI weather-radar channels need a 10-minute radar check, longer than any request can wait.
+LONG_CAC_CHANNELS = frozenset({120, 124, 128})
+```
+
+In `validate_channel`, per la banda `5ghz`: se `channel in LONG_CAC_CHANNELS` sollevare
+`ValueError("Channel ... requires a 10-minute radar check and is not supported")`, e toglierli
+dall'elenco di `GET .../channels`. La via completa, non per la 4.x perché aggiunge uno stato alle API:
+leggere `cac_time` dalla riga `DFS-CAC-START` di hostapd e usarlo come timeout, rispondendo subito al
+client con uno stato "radar check in corso".
+
+---
+
+<a id="bug-7"></a>
+### A8. BUG-7 - TX power: stato incoerente dopo un mismatch
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:824-894](wilab/wifi/manager.py#L824-L894)
+
+**Problema.** `set_tx_power_level` invia il comando, dorme 3 s tenendo il lock del dispositivo, e in
+caso di differenza solleva `TxPowerMismatchError` senza registrare nulla. L'hardware può trovarsi a un
+terzo valore mentre lo stato continua a riportare il vecchio livello richiesto.
+
+**Come si riproduce.** Test: `iw dev info` finto che riporta sempre 20 dBm; `POST .../txpower` con
+livello 1 risponde `422`; `GET .../txpower` riporta ancora il livello precedente.
+
+**Come correggerlo.** Registrare sempre il livello richiesto e riportare la differenza nella risposta,
+senza attesa bloccante.
+
+```diff
+--- a/wilab/wifi/manager.py
++++ b/wilab/wifi/manager.py
+@@ def set_tx_power_level(self, device_id: str, level: int) -> dict:
+-        info = self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
+         st.tx_power_level = level
+         self.active[device_id] = st
+-        return info
++        # The requested level is recorded first: the status must say what was asked,
++        # and reported_dbm says what the hardware does.
++        return self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
+```
+
+Per togliere i 3 s (PERF-6): ridurre l'attesa a un controllo ripetuto ogni 0,2 s per al massimo 1 s,
+uscendo appena il valore riportato corrisponde.
+
+---
+
+<a id="perf-6"></a>
+### A9. PERF-6 - Il cambio di TX power blocca per 3 secondi
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:849-860](wilab/wifi/manager.py#L849-L860)
+
+**Problema.** `_set_tx_power(verify_change=True)` esegue `time.sleep(3)` dentro la richiesta e sotto il
+lock del dispositivo. Per 3 s ogni altra richiesta sulla stessa reservation aspetta (RACE-1).
+
+**Come si riproduce.** Misurare la durata di `POST .../txpower`: sempre più di 3 s.
+
+**Come correggerlo.** Attesa attiva breve al posto della pausa fissa.
+
+```diff
+--- a/wilab/wifi/manager.py
++++ b/wilab/wifi/manager.py
+         if verify_change:
+-            # Wait for driver to apply change
+-            time.sleep(3)
+-            power_after = self._read_current_txpower(interface)
++            # Poll briefly: most drivers report the new value at once or never.
++            deadline = time.monotonic() + 1.0
++            while True:
++                power_after = self._read_current_txpower(interface)
++                if power_after is not None and abs(power_after - desired_dbm) <= 0.5:
++                    break
++                if time.monotonic() >= deadline:
++                    break
++                time.sleep(0.2)
+```
+
+Verificare su hardware che 1 s basti per gli adattatori che supportano il cambio.
+
+---
+
+<a id="net-8"></a>
+### A10. NET-8 - `dns_server` ha come default un indirizzo di laboratorio
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/config.py:37](wilab/config.py#L37)
+
+**Problema.** Il default di `dns_server` in `AppConfig` è `192.168.10.21`. Un'installazione che omette
+la chiave consegna ai client un server DNS che non esiste: i dispositivi dicono "connesso, senza
+Internet".
+
+**Come si riproduce.** Configurazione senza `dns_server`, rete con Internet attivo, client collegato:
+`nslookup example.com` va in timeout.
+
+**Come correggerlo.** Rendere la chiave obbligatoria (errore chiaro all'avvio):
+
+```diff
+--- a/wilab/config.py
++++ b/wilab/config.py
+-    dns_server: str = "192.168.10.21"
++    dns_server: str
+```
+
+È un cambiamento di configurazione che rompe chi ometteva la chiave: va annotato nel CHANGELOG tra le
+modifiche breaking, e `config.example.yaml` deve già contenerla.
+
+---
+
+<a id="api-6"></a>
+### A11. API-6 - Nomi incoerenti (parziale)
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/](wilab/api/routes/)
+
+> **Stato (2026-11-25):** Fatti `/api/v2/reservations` e `/reservations/{id}/...` al posto di `/device-reservation` e `/interface/{id}/...`, e nessun `device_id` nei messaggi. **Manca** un nome unico per il livello di TX power: `level` in `POST .../txpower` contro `radio.tx_power_level` nella create. È la decisione "API-6 e API-7" del paragrafo 1.3: va presa prima del congelamento.
+
+**Problema.** Il percorso dice `/interface/{reservation_id}`: il parametro è una reservation, non
+un'interfaccia. La creazione usa `tx_power_level`, l'endpoint del TX power usa `level`. Gli errori
+citano `device_id`, un nome che nell'API non esiste. `device-reservation` è al singolare.
+
+**Come si riproduce.** Leggere l'elenco dei percorsi in `/docs`.
+
+**Come correggerlo.** **Breaking**, da fare una volta sola insieme alle altre (i percorsi sono già stati rinominati nella 4.0.0, vedi il riquadro Stato).
+
+- `/api/v1/reservations` e `/api/v1/reservations/{id}` al posto di `/device-reservation`;
+- `/api/v1/reservations/{id}/network`, `/internet`, `/txpower`, `/qos/profile`, `/channels`;
+- messaggi di errore con "reservation" o "network" al posto di `device_id`.
+
+Per una transizione morbida si possono registrare gli stessi router due volte, con il vecchio prefisso
+marcato `deprecated=True`, per una versione. La regola del progetto ("cambio netto, niente livelli di
+compatibilità") suggerisce invece di farlo in una sola versione maggiore.
+
+---
+
+<a id="stab-7"></a>
+### A12. STAB-7 - Dipendenze non bloccate
+
+**Gravità:** Media · **Confidenza:** Confermato · **File:** [requirements.txt](requirements.txt)
+
+**Problema.** `requirements.txt` ha solo limiti inferiori (`fastapi>=0.110.0`, `pydantic>=2.6.0`,
+`uvicorn>=0.27.0`, ...). Una reinstallazione tra sei mesi può portare una versione che cambia
+comportamento, per esempio il codice che FastAPI restituisce per un header `Authorization` mancante, o
+il modo in cui Starlette gestisce le route.
+
+**Come si riproduce.** Due installazioni dello stesso commit in date diverse danno `pip freeze`
+diversi.
+
+**Come correggerlo.** Tenere `requirements.txt` come elenco delle dipendenze dirette e aggiungere un
+file di blocco con le versioni esatte, usato dall'installer e dalla CI.
+
+```bash
+python -m venv /tmp/lock && /tmp/lock/bin/pip install -r requirements.txt
+/tmp/lock/bin/pip freeze > requirements.lock
+```
+
+Nell'installer e nella CI: `pip install -r requirements.lock`. Il file va rigenerato di proposito,
+con i test verdi, quando si decide di aggiornare.
+
+---
+
+<a id="rev-10"></a>
+### B1. REV-10 - Il watchdog chiede un reset USB per un cleanup fallito
+
+**Gravità:** Bassa · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/watchdog.py](wilab/wifi/watchdog.py) (`_restore_ap`)
+
+**Problema.** Dopo un cleanup fallito (per esempio un errore di iptables) il watchdog chiama la
+quarantena con `radio_fault=radio_known`: il reset USB parte perché banda e canale sono noti, non
+perché la radio abbia un guasto. `_retry_pending` passa `radio_fault=False` per la stessa situazione.
+
+**Come correggerlo.** Passare `False` per il cleanup fallito; `True` solo quando il budget dei
+ripristini è finito per guasti radio.
+
+---
+
 <a id="rev-12"></a>
-### 7. REV-12 - Piccole gare e casi limite in wifi e network
+### B2. REV-12 - Piccole gare e casi limite in wifi e network
 
 **Gravità:** Bassa · **Confidenza:** Ipotesi · **File:** [wilab/wifi/channels.py](wilab/wifi/channels.py), [wilab/wifi/watchdog.py](wilab/wifi/watchdog.py), [wilab/runtime_cleanup.py](wilab/runtime_cleanup.py), [wilab/wifi/manager.py](wilab/wifi/manager.py) (`_get_status`)
 
@@ -816,8 +588,139 @@ atteso nel watchdog; `try/except OSError` in `runtime_cleanup`; togliere la scad
 
 ---
 
+<a id="wd-5"></a>
+### B3. WD-5 - Un adattatore che sparisce non si può ripulire né rimuovere (parziale)
+
+**Gravità:** Alta · **Confidenza:** Confermato · **File:** [wilab/wifi/hostapd.py:378-389](wilab/wifi/hostapd.py#L378-L389), [wilab/wifi/manager.py:449-465](wilab/wifi/manager.py#L449-L465), [wilab/config.py:172-182](wilab/config.py#L172-L182)
+
+> **Stato (2026-11-25):** Fatti i punti 1 e 2 (stop e cleanup completi anche con l'interfaccia sparita) e la classificazione come guasto radio. **Manca** il punto 3: ritirare la voce di un'antenna che ricompare con un nome diverso; dipende da ARCH-4.
+
+**Problema.** `HostapdManager.stop` termina con `ip link set <if> down`, `iw ... set type managed`,
+`ip addr flush` e considera ogni errore come "stop fallito". Se l'interfaccia non esiste più
+(adattatore scollegato, nuova enumerazione USB con un altro nome, driver scaricato) quei comandi
+falliscono ogni volta:
+
+- l'istanza resta in `_instances`, quindi `release_device` fallisce per sempre;
+- le regole NAT e di blocco non vengono rimosse, perché quel passo gira solo `if hostapd_stopped`;
+- il dispositivo resta in `manager.active`, quindi `/status` conta una rete che non esiste;
+- il dispositivo non viene mai tolto da `config.networks` (la discovery aggiunge soltanto).
+
+Se l'adattatore torna con lo **stesso** nome mentre il recovery USB sta ancora provando (10 tentativi,
+uno al minuto) il cleanup infine riesce. Dopo quei dieci minuti no (WD-4). Se torna con un altro nome,
+la discovery lo aggiunge come dispositivo nuovo e la voce vecchia resta `unavailable`, tenendo lo stato
+generale `degraded` fino a un riavvio.
+
+**Come si riproduce.** Su hardware: rete attiva, scollegare l'adattatore USB, aspettare 15 minuti,
+ricollegarlo. Nei test: far fallire `execute_command` per ogni comando che nomina l'interfaccia con
+"Cannot find device" e chiamare `release_device`: solleva `RuntimeError` a ogni chiamata.
+
+**Come correggerlo.** Tre cambiamenti.
+
+1. Un'interfaccia assente non ha nulla da resettare:
+
+```diff
+--- a/wilab/wifi/hostapd.py
++++ b/wilab/wifi/hostapd.py
++def interface_present(interface: str) -> bool:
++    """True while the kernel still has a network device with this name."""
++    return os.path.exists(f"/sys/class/net/{interface}")
++
+@@ def stop(self, net_id: str) -> None:
+-            # Leave the interface down until the next network starts.
+-            execute_command(["ip", "link", "set", interface, "down"])
+-            execute_command(["iw", "dev", interface, "set", "type", "managed"])
+-            execute_command(["ip", "addr", "flush", "dev", interface])
+-            logger.info(f"Reset interface {interface} to managed mode, down")
++            if interface_present(interface):
++                # Leave the interface down until the next network starts.
++                execute_command(["ip", "link", "set", interface, "down"])
++                execute_command(["iw", "dev", interface, "set", "type", "managed"])
++                execute_command(["ip", "addr", "flush", "dev", interface])
++                logger.info(f"Reset interface {interface} to managed mode, down")
++            else:
++                logger.warning("Interface %s is gone; nothing to reset", interface)
+```
+
+   Nei test (che non hanno `/sys`) `interface_present` va sostituita con una funzione che restituisce
+   `True`, in `tests/conftest.py`.
+
+2. Lo stesso controllo in `QosManager._teardown` e negli altri punti di `_stop_network` che eseguono
+   comandi sull'interfaccia, così nessuno di essi blocca il cleanup.
+
+3. Ritiro dei dispositivi: nella discovery, un dispositivo la cui interfaccia manca da più di N
+   scansioni (per esempio 4, cioè due minuti), senza reservation e senza risorse tracciate, viene tolto
+   da `config.networks`, da `ReservationManager` (nuovo metodo `remove_device`) e da `_blocked`. Se
+   ricompare, viene riaggiunto come nuovo. Questo richiede il registro unico di ARCH-4, oppure quattro
+   rimozioni coordinate sotto `_scan_lock`.
+
+---
+
+<a id="wd-7"></a>
+### B4. WD-7 - Il watchdog controlla due processi, non la rete (parziale)
+
+**Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:64-82](wilab/wifi/watchdog.py#L64-L82)
+
+> **Stato (2026-11-25):** Il watchdog verifica ogni 30 s e ripara sul posto indirizzo del gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware.
+
+**Problema.** Il watchdog verifica che hostapd sia vivo e `ENABLED` e che dnsmasq sia vivo. Non
+verifica:
+
+- che l'interfaccia abbia ancora l'indirizzo del gateway (un gestore di rete dell'host o un
+  amministratore possono toglierlo; il DHCP allora non risponde più);
+- che le regole firewall di Wi-Lab esistano ancora (un riavvio di `firewalld`, `ufw` o Docker può
+  riscrivere le catene: spariscono NAT, blocco di Internet e redirect del captive portal);
+- che `net.ipv4.ip_forward` sia ancora 1;
+- che la radio stia davvero trasmettendo (la proposta aperta `TODOs/ap-health-validation.md` descrive
+  un adattatore che dichiara ENABLED e non manda beacon);
+- che il thread del captive portal sia vivo.
+
+**Come si riproduce.** Con una rete attiva e client collegati, sulla macchina di laboratorio:
+
+```bash
+ip addr flush dev <interfaccia>          # i nuovi client non ricevono più un indirizzo
+iptables -t nat -F POSTROUTING           # Internet sparisce (solo su macchina di test!)
+```
+
+`/status` e `GET .../network` continuano a dire che tutto funziona e nulla viene riparato.
+
+**Come correggerlo.** Un metodo di verifica che ripara sul posto ciò che si può riparare senza toccare
+l'AP.
+
+```python
+# wilab/wifi/manager.py
+def verify_network(self, device_id: str) -> list[str]:
+    """Check what a running network needs and repair in place. Returns what was repaired."""
+    status = self.active.get(device_id)
+    if status is None or status.subnet is None:
+        return []
+    repaired: list[str] = []
+    net = IPv4Network(status.subnet)
+    gateway = f"{net[1]}/{net.prefixlen}"
+    addresses = json.loads(execute_ip(["-j", "-4", "addr", "show", "dev", status.interface]))
+    present = {
+        f"{a['local']}/{a['prefixlen']}" for link in addresses for a in link.get("addr_info", [])
+    }
+    if gateway not in present:
+        execute_ip(["addr", "add", gateway, "dev", status.interface])
+        repaired.append("gateway address")
+    if status.internet_enabled:
+        with self._firewall_lock:
+            # enable_nat checks each rule before adding it, so it only restores what is missing.
+            self.nat_manager.enable_nat(status.interface, device_id, status.subnet)
+    return repaired
+```
+
+Chiamarlo dal ciclo del watchdog una volta su sei (ogni 30 s), sotto il lock del dispositivo, e
+scrivere un `WARNING` per ogni riparazione. Se `gateway address` è stato riparato, riavviare anche
+dnsmasq. Per la trasmissione reale: leggere `/sys/class/net/<if>/statistics/tx_packets` a ogni giro;
+se con l'AP `ENABLED` il contatore non cresce per 30 s (un AP manda circa 10 beacon al secondo),
+contare un "miss" come per `is_enabled`. Verificare prima su hardware che il driver in uso conti i
+beacon in quel contatore.
+
+---
+
 <a id="stab-5"></a>
-### 8. STAB-5 - Le scadenze usano l'orologio di sistema
+### B5. STAB-5 - Le scadenze usano l'orologio di sistema
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/reservation.py:48-71](wilab/reservation.py#L48-L71), [wilab/wifi/manager.py:952-955](wilab/wifi/manager.py#L952-L955), [install/systemd/wi-lab.service.template](install/systemd/wi-lab.service.template)
 
@@ -865,48 +768,8 @@ Nell'unit aggiungere `After=time-sync.target` e `Wants=time-sync.target`.
 
 ---
 
-<a id="rev-13"></a>
-### 9. REV-13 - Frontend: errori nel polling della create
-
-**Gravità:** Media · **Confidenza:** Probabile (lettura; il frontend non è stato compilato) · **File:** [frontend/src/app/services/wilab-api.service.ts](frontend/src/app/services/wilab-api.service.ts) (`startNetwork`), [frontend/src/app/components/network-card/network-card.component.ts](frontend/src/app/components/network-card/network-card.component.ts), [network-card.component.html](frontend/src/app/components/network-card/network-card.component.html), [frontend/src/app/services/recovery-response.ts](frontend/src/app/services/recovery-response.ts)
-
-**Problema.**
-
-1. **Un avvio annullato è riportato come riuscito.** Il polling finisce con
-   `runtime_state !== 'starting'` e la card considera successo tutto tranne `start_failed`. Dopo un
-   annullamento da un'altra scheda la `GET` risponde `active: false, runtime_state: null`: compare
-   "WiFi network started successfully" su una rete non attiva.
-2. **Un errore su una sola `GET` ferma il polling.** Uno stato 0, un `502/504` di un proxy o un
-   `503 / 1006` appena finito il job mostrano "Failed to start network" mentre il server continua.
-   Se l'esito è `start_failed`, `error.stage` e `error.message` non vengono mai mostrati.
-3. **Il polling può restare senza risposta e non ha limite di tempo.** `timer(1500, 1500)` con
-   `switchMap` annulla la `GET` in corso a ogni tick: se la `GET` impiega più di 1,5 s (dopo il job
-   prende il lock ed esegue `iw`), nessuna arriva mai. La card resta su "Starting WiFi..." con tutti i
-   pulsanti disabilitati, Release compreso.
-4. **Una card che non ha lanciato l'avvio è incoerente durante `starting`** (ricarica della pagina,
-   seconda scheda): mostra "Starting the access point..." e sotto "Access point not active"; Start WiFi
-   è abilitato e con altri parametri risponde `409 / 1008` con il testo "already running … Stop it
-   first" mentre Stop è disabilitato.
-5. **Etichetta `start_failed` vecchia durante un nuovo avvio:** `checkStatus` è sospeso mentre
-   `createMessage` è impostato.
-6. **Stato già finito ancora mostrato:** `status?.runtime_state ?? slot.runtimeState` tratta `null`
-   (rete attiva) come "sconosciuto" e usa il valore di `/status`, aggiornato ogni 10 s.
-7. **`404` con `reservation_released` o `reservation_not_found`:** messaggio generico con il JSON
-   grezzo.
-
-**Come correggerlo.** (1) Successo solo con `active: true`; `!active && runtime_state == null` è
-"avvio annullato". (2) Ripetere la `GET` su stato 0, `5xx` e `1006`; mostrare `status.error` nella
-card. (3) `exhaustMap` e un limite superiore che ricade sul polling normale. (4) Un getter `starting`
-che disabilita Start, nasconde il messaggio "non attiva" e mostra lo spinner; testo `1008` che copre
-anche "is starting". (5) Impostare `status` dalla risposta `202`. (6) Usare `slot.runtimeState` solo
-con `status === null`. (7) Una frase per ogni `reason`.
-
-Test: [unit-test-15](#unit-test-15).
-
----
-
 <a id="stab-2"></a>
-### 10. STAB-2 - File di runtime in `/tmp`
+### B6. STAB-2 - File di runtime in `/tmp`
 
 **Gravità:** Media · **Confidenza:** Probabile · **File:** [wilab/wifi/hostapd.py:23](wilab/wifi/hostapd.py#L23), [wilab/network/dhcp.py:11-12](wilab/network/dhcp.py#L11-L12), [wilab/network/dhcp.py:317-331](wilab/network/dhcp.py#L317-L331)
 
@@ -958,34 +821,48 @@ nell'esempio OpenAPI.
 
 ---
 
-<a id="stab-7"></a>
-### 11. STAB-7 - Dipendenze non bloccate
+<a id="rev-13"></a>
+### B7. REV-13 - Frontend: errori nel polling della create
 
-**Gravità:** Media · **Confidenza:** Confermato · **File:** [requirements.txt](requirements.txt)
+**Gravità:** Media · **Confidenza:** Probabile (lettura; il frontend non è stato compilato) · **File:** [frontend/src/app/services/wilab-api.service.ts](frontend/src/app/services/wilab-api.service.ts) (`startNetwork`), [frontend/src/app/components/network-card/network-card.component.ts](frontend/src/app/components/network-card/network-card.component.ts), [network-card.component.html](frontend/src/app/components/network-card/network-card.component.html), [frontend/src/app/services/recovery-response.ts](frontend/src/app/services/recovery-response.ts)
 
-**Problema.** `requirements.txt` ha solo limiti inferiori (`fastapi>=0.110.0`, `pydantic>=2.6.0`,
-`uvicorn[standard]>=0.27.0`, ...). Una reinstallazione tra sei mesi può portare una versione che cambia
-comportamento, per esempio il codice che FastAPI restituisce per un header `Authorization` mancante, o
-il modo in cui Starlette gestisce le route.
+**Problema.**
 
-**Come si riproduce.** Due installazioni dello stesso commit in date diverse danno `pip freeze`
-diversi.
+1. **Un avvio annullato è riportato come riuscito.** Il polling finisce con
+   `runtime_state !== 'starting'` e la card considera successo tutto tranne `start_failed`. Dopo un
+   annullamento da un'altra scheda la `GET` risponde `active: false, runtime_state: null`: compare
+   "WiFi network started successfully" su una rete non attiva.
+2. **Un errore su una sola `GET` ferma il polling.** Uno stato 0, un `502/504` di un proxy o un
+   `503 / 1006` appena finito il job mostrano "Failed to start network" mentre il server continua.
+   Se l'esito è `start_failed`, `error.stage` e `error.message` non vengono mai mostrati.
+3. **Il polling può restare senza risposta e non ha limite di tempo.** `timer(1500, 1500)` con
+   `switchMap` annulla la `GET` in corso a ogni tick: se la `GET` impiega più di 1,5 s (dopo il job
+   prende il lock ed esegue `iw`), nessuna arriva mai. La card resta su "Starting WiFi..." con tutti i
+   pulsanti disabilitati, Release compreso.
+4. **Una card che non ha lanciato l'avvio è incoerente durante `starting`** (ricarica della pagina,
+   seconda scheda): mostra "Starting the access point..." e sotto "Access point not active"; Start WiFi
+   è abilitato e con altri parametri risponde `409 / 1008` con il testo "already running … Stop it
+   first" mentre Stop è disabilitato.
+5. **Etichetta `start_failed` vecchia durante un nuovo avvio:** `checkStatus` è sospeso mentre
+   `createMessage` è impostato.
+6. **Stato già finito ancora mostrato:** `status?.runtime_state ?? slot.runtimeState` tratta `null`
+   (rete attiva) come "sconosciuto" e usa il valore di `/status`, aggiornato ogni 10 s.
+7. **`404` con `reservation_released` o `reservation_not_found`:** messaggio generico con il JSON
+   grezzo.
 
-**Come correggerlo.** Tenere `requirements.txt` come elenco delle dipendenze dirette e aggiungere un
-file di blocco con le versioni esatte, usato dall'installer e dalla CI.
+**Come correggerlo.** (1) Successo solo con `active: true`; `!active && runtime_state == null` è
+"avvio annullato". (2) Ripetere la `GET` su stato 0, `5xx` e `1006`; mostrare `status.error` nella
+card. (3) `exhaustMap` e un limite superiore che ricade sul polling normale. (4) Un getter `starting`
+che disabilita Start, nasconde il messaggio "non attiva" e mostra lo spinner; testo `1008` che copre
+anche "is starting". (5) Impostare `status` dalla risposta `202`. (6) Usare `slot.runtimeState` solo
+con `status === null`. (7) Una frase per ogni `reason`.
 
-```bash
-python -m venv /tmp/lock && /tmp/lock/bin/pip install -r requirements.txt
-/tmp/lock/bin/pip freeze > requirements.lock
-```
-
-Nell'installer e nella CI: `pip install -r requirements.lock`. Il file va rigenerato di proposito,
-con i test verdi, quando si decide di aggiornare.
+Test: [unit-test-15](#unit-test-15).
 
 ---
 
 <a id="rev-14"></a>
-### 12. REV-14 - Frontend: difetti già presenti prima di questo ciclo
+### B8. REV-14 - Frontend: difetti già presenti prima di questo ciclo
 
 **Gravità:** Media · **Confidenza:** Probabile (lettura) · **File:** [frontend/src/app/app.component.ts](frontend/src/app/app.component.ts) (`restoreReservations`), [network-card.component.html](frontend/src/app/components/network-card/network-card.component.html), [network-form-dialog.component.ts](frontend/src/app/components/network-form-dialog/network-form-dialog.component.ts)
 
@@ -1014,7 +891,7 @@ byte.
 ---
 
 <a id="hap-8"></a>
-### 13. HAP-8 - L'output di hostapd non viene conservato (parziale)
+### B9. HAP-8 - L'output di hostapd non viene conservato (parziale)
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/network/commands.py:52-83](wilab/network/commands.py#L52-L83), [wilab/wifi/hostapd.py:330-339](wilab/wifi/hostapd.py#L330-L339)
 
@@ -1056,7 +933,7 @@ frase di `docs/architecture.md` che dichiara che l'output grezzo non viene mai r
 ---
 
 <a id="hap-5"></a>
-### 14. HAP-5 - Ipotesi: avvii senza assestamento e senza serializzazione tra radio
+### B10. HAP-5 - Ipotesi: avvii senza assestamento e senza serializzazione tra radio
 
 **Gravità:** Media · **Confidenza:** Ipotesi · **File:** [wilab/wifi/hostapd.py:239-250](wilab/wifi/hostapd.py#L239-L250), [wilab/wifi/manager.py:81](wilab/wifi/manager.py#L81)
 
@@ -1106,7 +983,7 @@ non fermare gli altri adattatori.
 ---
 
 <a id="hap-6"></a>
-### 15. HAP-6 - Ipotesi: il TX power viene cambiato subito dopo l'avvio
+### B11. HAP-6 - Ipotesi: il TX power viene cambiato subito dopo l'avvio
 
 **Gravità:** Media · **Confidenza:** Ipotesi · **File:** [wilab/wifi/manager.py:365-372](wilab/wifi/manager.py#L365-L372)
 
@@ -1146,34 +1023,8 @@ eseguire a interfaccia ferma, cioè nel momento meno delicato.
 
 ---
 
-<a id="net-8"></a>
-### 16. NET-8 - `dns_server` ha come default un indirizzo di laboratorio
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/config.py:37](wilab/config.py#L37)
-
-**Problema.** Il default di `dns_server` in `AppConfig` è `192.168.10.21`. Un'installazione che omette
-la chiave consegna ai client un server DNS che non esiste: i dispositivi dicono "connesso, senza
-Internet".
-
-**Come si riproduce.** Configurazione senza `dns_server`, rete con Internet attivo, client collegato:
-`nslookup example.com` va in timeout.
-
-**Come correggerlo.** Rendere la chiave obbligatoria (errore chiaro all'avvio):
-
-```diff
---- a/wilab/config.py
-+++ b/wilab/config.py
--    dns_server: str = "192.168.10.21"
-+    dns_server: str
-```
-
-È un cambiamento di configurazione che rompe chi ometteva la chiave: va annotato nel CHANGELOG tra le
-modifiche breaking, e `config.example.yaml` deve già contenerla.
-
----
-
 <a id="rev-15"></a>
-### 17. REV-15 - Frontend: funzioni dell'API 4.0.0 non usate
+### B12. REV-15 - Frontend: funzioni dell'API 4.0.0 non usate
 
 **Gravità:** Bassa · **Confidenza:** Confermato (lettura) · **File:** [frontend/src/app](frontend/src/app)
 
@@ -1198,41 +1049,8 @@ Test: [unit-test-15](#unit-test-15).
 
 ---
 
-<a id="bug-7"></a>
-### 18. BUG-7 - TX power: stato incoerente dopo un mismatch
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:824-894](wilab/wifi/manager.py#L824-L894)
-
-**Problema.** `set_tx_power_level` invia il comando, dorme 3 s tenendo il lock del dispositivo, e in
-caso di differenza solleva `TxPowerMismatchError` senza registrare nulla. L'hardware può trovarsi a un
-terzo valore mentre lo stato continua a riportare il vecchio livello richiesto.
-
-**Come si riproduce.** Test: `iw dev info` finto che riporta sempre 20 dBm; `POST .../txpower` con
-livello 1 risponde `422`; `GET .../txpower` riporta ancora il livello precedente.
-
-**Come correggerlo.** Registrare sempre il livello richiesto e riportare la differenza nella risposta,
-senza attesa bloccante.
-
-```diff
---- a/wilab/wifi/manager.py
-+++ b/wilab/wifi/manager.py
-@@ def set_tx_power_level(self, device_id: str, level: int) -> dict:
--        info = self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
-         st.tx_power_level = level
-         self.active[device_id] = st
--        return info
-+        # The requested level is recorded first: the status must say what was asked,
-+        # and reported_dbm says what the hardware does.
-+        return self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
-```
-
-Per togliere i 3 s (PERF-6): ridurre l'attesa a un controllo ripetuto ogni 0,2 s per al massimo 1 s,
-uscendo appena il valore riportato corrisponde.
-
----
-
 <a id="bug-8"></a>
-### 19. BUG-8 - Confronto del token non a tempo costante
+### B13. BUG-8 - Confronto del token non a tempo costante
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/auth.py:11-19](wilab/api/auth.py#L11-L19)
 
@@ -1255,7 +1073,7 @@ ricavare il token misurando i tempi.
 ---
 
 <a id="rev-17"></a>
-### 21. REV-17 - Residui della catena di modifiche
+### B14. REV-17 - Residui della catena di modifiche
 
 **Gravità:** Bassa · **Confidenza:** Confermato (lettura) · **File:** vari, elencati sotto
 
@@ -1282,7 +1100,7 @@ ricavare il token misurando i tempi.
 - **Piccoli:** `disable_nat(..., subnet)` non usa il parametro; `"5"` scritto a mano in
   `host_guard.py` invece di `IPTABLES_LOCK_WAIT`; `"pid_file": None` in `hostapd.status()`;
   `execute_command(["iw", ...])` invece di `execute_iw` in due punti; la regola
-  `wilab-protect-existing` viene tolta solo all'avvio successivo; `safety.py` consiglia uno script di
+  `wilab-protect-existing` resta dopo lo stop del servizio (la tolgono l'avvio successivo e `uninstall.sh`); `safety.py` consiglia uno script di
   pulizia subito prima che il servizio pulisca da solo; `scan_new_networks` documenta `ValueError` ma
   riceve `TypeError`.
 - **Frontend:** `RecoveryCode.RetryLater`, `ApiErrorDetail.reservation_invalidated`, il parametro
@@ -1297,7 +1115,7 @@ solo dai test insieme ai loro test.
 ---
 
 <a id="hap-7"></a>
-### 22. HAP-7 - Ipotesi: `hostapd -d` per tutta la vita dell'AP
+### B15. HAP-7 - Ipotesi: `hostapd -d` per tutta la vita dell'AP
 
 **Gravità:** Bassa · **Confidenza:** Ipotesi · **File:** [wilab/wifi/hostapd.py:247](wilab/wifi/hostapd.py#L247)
 
@@ -1317,7 +1135,7 @@ utile, soprattutto con HAP-8.
 ---
 
 <a id="rev-18"></a>
-### 23. REV-18 - Struttura dei test
+### B16. REV-18 - Struttura dei test
 
 **Gravità:** Bassa · **Confidenza:** Confermato (lettura e misura della copertura) · **File:** [tests/unit-tests](tests/unit-tests), [tests/e2e-tests](tests/e2e-tests)
 
@@ -1358,11 +1176,11 @@ poi i test dei paragrafi 4.6 e 4.7.
 ---
 
 <a id="perf-1"></a>
-### 26. PERF-1 - L'avvio di una rete esegue circa 20 comandi (parziale)
+### B17. PERF-1 - L'avvio di una rete esegue circa 20 comandi (parziale)
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:94-109](wilab/wifi/manager.py#L94-L109), [wilab/wifi/manager.py:254-272](wilab/wifi/manager.py#L254-L272), [wilab/network/dhcp.py:186-200](wilab/network/dhcp.py#L186-L200), [wilab/network/nat.py:187-313](wilab/network/nat.py#L187-L313)
 
-> **Stato (2026-11-25):** Fatti i tagli a basso rischio (validazioni `iw` ripetute, `dnsmasq --version`, `nmcli --version`). **Manca**, non fatto di proposito, `iptables-restore` in blocco: cambierebbe come si installano e tolgono tutte le regole, appena consolidato con NET-2, SEC-3 e WD-7.
+> **Stato (2026-11-25):** Fatti i tagli a basso rischio (validazioni `iw` ripetute, `dnsmasq --version`, `nmcli --version`). **Manca**, non fatto di proposito, `iptables-restore` in blocco: cambierebbe come si installano e tolgono tutte le regole, appena consolidato con NET-2, SEC-3 e WD-7. I tre `nmcli` e la pausa di 0,2 s dell'elenco sotto spariscono con [NM-1](#nm-1).
 
 **Problema.** In ordine: `nmcli` tre volte più una pausa di 0,2 s, `ip link show`, `iw info` due
 volte, `iw phy info`, `ip route` (controllo subnet), tre comandi di preparazione dell'interfaccia,
@@ -1396,7 +1214,7 @@ def execute_iptables_restore(rules: str) -> None:
 ---
 
 <a id="perf-2"></a>
-### 27. PERF-2 - `GET .../network` costa due o tre comandi a chiamata
+### B18. PERF-2 - `GET .../network` costa due o tre comandi a chiamata
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:505-565](wilab/wifi/manager.py#L505-L565), [wilab/wifi/manager.py:660-713](wilab/wifi/manager.py#L660-L713)
 
@@ -1424,7 +1242,7 @@ conservare l'elenco dei client per 1-2 secondi in `_get_status` (timestamp monot
 ---
 
 <a id="perf-5"></a>
-### 28. PERF-5 - Timeout minimo di 5 s imposto in silenzio
+### B19. PERF-5 - Timeout minimo di 5 s imposto in silenzio
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/commands.py:160-183](wilab/network/commands.py#L160-L183), [wilab/network/subnet.py:12](wilab/network/subnet.py#L12)
 
@@ -1456,42 +1274,8 @@ passano un timeout inferiore a 5 s per decidere il valore voluto: `subnet.py` (2
 
 ---
 
-<a id="perf-6"></a>
-### 29. PERF-6 - Il cambio di TX power blocca per 3 secondi
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:849-860](wilab/wifi/manager.py#L849-L860)
-
-**Problema.** `_set_tx_power(verify_change=True)` esegue `time.sleep(3)` dentro la richiesta e sotto il
-lock del dispositivo. Per 3 s ogni altra richiesta sulla stessa reservation aspetta (RACE-1).
-
-**Come si riproduce.** Misurare la durata di `POST .../txpower`: sempre più di 3 s.
-
-**Come correggerlo.** Attesa attiva breve al posto della pausa fissa.
-
-```diff
---- a/wilab/wifi/manager.py
-+++ b/wilab/wifi/manager.py
-         if verify_change:
--            # Wait for driver to apply change
--            time.sleep(3)
--            power_after = self._read_current_txpower(interface)
-+            # Poll briefly: most drivers report the new value at once or never.
-+            deadline = time.monotonic() + 1.0
-+            while True:
-+                power_after = self._read_current_txpower(interface)
-+                if power_after is not None and abs(power_after - desired_dbm) <= 0.5:
-+                    break
-+                if time.monotonic() >= deadline:
-+                    break
-+                time.sleep(0.2)
-```
-
-Verificare su hardware che 1 s basti per gli adattatori che supportano il cambio.
-
----
-
 <a id="perf-4"></a>
-### 30. PERF-4 - Costo fisso del polling in background
+### B20. PERF-4 - Costo fisso del polling in background
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:49](wilab/wifi/watchdog.py#L49), [wilab/api/dependencies.py:92-123](wilab/api/dependencies.py#L92-L123), [wilab/config.py:207-235](wilab/config.py#L207-L235)
 
@@ -1514,7 +1298,7 @@ trascurabile; è un punto di eleganza e di rumore, non di necessità.
 ---
 
 <a id="perf-7"></a>
-### 31. PERF-7 - Memoria e descrittori: nessuna crescita trovata
+### B21. PERF-7 - Memoria e descrittori: nessuna crescita trovata
 
 **Gravità:** Bassa (informativo) · **Confidenza:** Confermato
 
@@ -1538,33 +1322,8 @@ def _allocate_ifb(self) -> str:
 
 ---
 
-<a id="api-6"></a>
-### 40. API-6 - Nomi incoerenti (parziale)
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/](wilab/api/routes/)
-
-> **Stato (2026-11-25):** Fatti `/api/v2/reservations` e `/reservations/{id}/...` al posto di `/device-reservation` e `/interface/{id}/...`, e nessun `device_id` nei messaggi. **Manca** un nome unico per il livello di TX power: `level` in `POST .../txpower` contro `radio.tx_power_level` nella create. Da decidere con API-7 (un `PATCH .../network`), rimandato.
-
-**Problema.** Il percorso dice `/interface/{reservation_id}`: il parametro è una reservation, non
-un'interfaccia. La creazione usa `tx_power_level`, l'endpoint del TX power usa `level`. Gli errori
-citano `device_id`, un nome che nell'API non esiste. `device-reservation` è al singolare.
-
-**Come si riproduce.** Leggere l'elenco dei percorsi in `/docs`.
-
-**Come correggerlo.** **Breaking**, da fare una volta sola insieme alle altre (i percorsi sono già stati rinominati nella 4.0.0, vedi il riquadro Stato).
-
-- `/api/v1/reservations` e `/api/v1/reservations/{id}` al posto di `/device-reservation`;
-- `/api/v1/reservations/{id}/network`, `/internet`, `/txpower`, `/qos/profile`, `/channels`;
-- messaggi di errore con "reservation" o "network" al posto di `device_id`.
-
-Per una transizione morbida si possono registrare gli stessi router due volte, con il vecchio prefisso
-marcato `deprecated=True`, per una versione. La regola del progetto ("cambio netto, niente livelli di
-compatibilità") suggerisce invece di farlo in una sola versione maggiore.
-
----
-
 <a id="api-7"></a>
-### 41. API-7 - Azioni modellate come percorsi
+### B22. API-7 - Azioni modellate come percorsi
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/internet.py](wilab/api/routes/internet.py), [wilab/api/routes/txpower.py:51-87](wilab/api/routes/txpower.py#L51-L87)
 
@@ -1591,7 +1350,7 @@ Analogamente `PUT .../txpower` con lo stesso corpo della `POST` attuale.
 ---
 
 <a id="arch-2"></a>
-### 42. ARCH-2 - Classificazione dei guasti sparsa in quattro posti
+### B23. ARCH-2 - Classificazione dei guasti sparsa in quattro posti
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/hostapd.py:62-78](wilab/wifi/hostapd.py#L62-L78), [wilab/wifi/manager.py:60-64](wilab/wifi/manager.py#L60-L64), [wilab/api/routes/network.py:232-251](wilab/api/routes/network.py#L232-L251), [wilab/wifi/watchdog.py:133-142](wilab/wifi/watchdog.py#L133-L142)
 
@@ -1628,7 +1387,7 @@ ricalcolarlo; la route ha una tabella `kind → (status HTTP, codice)`; il watch
 ---
 
 <a id="arch-1"></a>
-### 43. ARCH-1 - `NetworkManager` fa troppe cose
+### B24. ARCH-1 - `NetworkManager` fa troppe cose
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py)
 
@@ -1666,7 +1425,7 @@ class RetryPolicy:
 ---
 
 <a id="arch-4"></a>
-### 44. ARCH-4 - Il registro dei dispositivi esiste in quattro copie
+### B25. ARCH-4 - Il registro dei dispositivi esiste in quattro copie
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/config.py:26-39](wilab/config.py#L26-L39), [wilab/reservation.py:83-87](wilab/reservation.py#L83-L87), [wilab/wifi/watchdog.py:23](wilab/wifi/watchdog.py#L23), [wilab/wifi/manager.py:81](wilab/wifi/manager.py#L81), [wilab/api/dependencies.py:66-89](wilab/api/dependencies.py#L66-L89)
 
@@ -1711,7 +1470,7 @@ WD-5 punto 3 e dopo aver messo in sicurezza i punti 1-14.
 ---
 
 <a id="arch-3"></a>
-### 45. ARCH-3 - Il modello dell'API è anche lo stato interno (parziale)
+### B26. ARCH-3 - Il modello dell'API è anche lo stato interno (parziale)
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:374-394](wilab/wifi/manager.py#L374-L394), [wilab/wifi/manager.py:516-565](wilab/wifi/manager.py#L516-L565)
 
@@ -1747,7 +1506,7 @@ campo (`_restore_ap` oggi lo fa a mano e rifiuta di ripartire se un campo manca)
 ---
 
 <a id="arch-5"></a>
-### 46. ARCH-5 - Singleton collegati per effetto collaterale
+### B27. ARCH-5 - Singleton collegati per effetto collaterale
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/dependencies.py:20-56](wilab/api/dependencies.py#L20-L56), [wilab/wifi/manager.py:86-91](wilab/wifi/manager.py#L86-L91)
 
@@ -1783,7 +1542,7 @@ I costruttori non avviano thread. I test costruiscono un contesto invece di azze
 ---
 
 <a id="arch-6"></a>
-### 47. ARCH-6 - Tre modi di gestire un processo figlio
+### B28. ARCH-6 - Tre modi di gestire un processo figlio
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/commands.py:49-157](wilab/network/commands.py#L49-L157), [wilab/network/dhcp.py](wilab/network/dhcp.py)
 
@@ -1810,36 +1569,8 @@ conoscere il motivo di un'uscita, passare un `classify_output` e usare `output_t
 
 ---
 
-<a id="arch-7"></a>
-### 48. ARCH-7 - Tre implementazioni di "rilascia da NetworkManager"
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:94-109](wilab/wifi/manager.py#L94-L109), [wilab/wifi/recovery.py:45-56](wilab/wifi/recovery.py#L45-L56), [wilab/network/unmanaged.py:61-81](wilab/network/unmanaged.py#L61-L81)
-
-**Problema.** Lo stesso `nmcli device set <if> managed no` è scritto tre volte, con gestione degli
-errori diversa: una controlla `nmcli --version` e fa anche `disconnect` con una pausa, una ignora
-l'errore a livello debug, una usa `check=False`.
-
-**Come si riproduce.** Cercare `"managed", "no"` nel codice.
-
-**Come correggerlo.** Una funzione in `unmanaged.py`, usata dagli altri due moduli.
-
-```python
-# wilab/network/unmanaged.py
-def release_from_networkmanager(interface: str) -> None:
-    """Ask NetworkManager to leave this interface alone; silent when nmcli is missing."""
-    if shutil.which("nmcli") is None:
-        return
-    execute_command(["nmcli", "device", "set", interface, "managed", "no"], check=False)
-    execute_command(["nmcli", "device", "disconnect", interface], check=False)
-```
-
-Togliere `_configure_networkmanager_unmanaged` da `manager.py` e le righe equivalenti da `_quiesce`.
-La pausa di 0,2 s va tolta o giustificata con una misura.
-
----
-
 <a id="arch-10"></a>
-### 49. ARCH-10 - Il logging non ha una regola
+### B29. ARCH-10 - Il logging non ha una regola
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** tutto `wilab/`
 
@@ -1862,7 +1593,7 @@ Test T-13: un ciclo completo crea/cancella su hardware simulato non deve produrr
 ---
 
 <a id="arch-9"></a>
-### 50. ARCH-9 - Codice morto
+### B30. ARCH-9 - Codice morto
 
 **Gravità:** Bassa · **Confidenza:** Confermato (ogni nome è stato cercato in `wilab/`) · **File:** vari
 
@@ -1892,7 +1623,7 @@ con il testo aggiornato.
 ---
 
 <a id="arch-8"></a>
-### 51. ARCH-8 - Attributi privati usati tra classi
+### B31. ARCH-8 - Attributi privati usati tra classi
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:158](wilab/wifi/manager.py#L158), [wilab/wifi/manager.py:525](wilab/wifi/manager.py#L525)
 
@@ -1918,7 +1649,7 @@ e in `manager.py`: `self.hostapd_manager.is_tracked(device_id)`. Lo stesso per `
 ---
 
 <a id="arch-11"></a>
-### 53. ARCH-11 - Il layout di questo branch diverge dall'altro
+### B32. ARCH-11 - Il layout di questo branch diverge dall'altro
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** radice del repository
 
@@ -1938,7 +1669,7 @@ scritto in italiano su richiesta esplicita, in deroga alla regola "tutto in ingl
 ---
 
 <a id="bug-9"></a>
-### 54. BUG-9 - Un profilo QoS personalizzato può impedire l'avvio del servizio
+### B33. BUG-9 - Un profilo QoS personalizzato può impedire l'avvio del servizio
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:63-124](wilab/network/qos_profile.py#L63-L124), [wilab/data/qos-profiles/profile.schema.json](wilab/data/qos-profiles/profile.schema.json)
 
@@ -2011,7 +1742,7 @@ Aggiungere allo schema `"minProperties": 1` per `advanced`, per rendere esplicit
 ---
 
 <a id="net-13"></a>
-### 55. NET-13 - QoS: lo stop del profilo può far fallire lo stop della rete
+### B34. NET-13 - QoS: lo stop del profilo può far fallire lo stop della rete
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:182-197](wilab/network/qos_profile.py#L182-L197), [wilab/wifi/manager.py:439-447](wilab/wifi/manager.py#L439-L447)
 
@@ -2046,7 +1777,7 @@ dopo la pulizia.
 ---
 
 <a id="race-3"></a>
-### 56. RACE-3 - Lo stato di `QosManager` non ha lock
+### B35. RACE-3 - Lo stato di `QosManager` non ha lock
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos.py:50-136](wilab/network/qos.py#L50-L136)
 
@@ -2071,7 +1802,7 @@ non si intrecciano mai.
 ---
 
 <a id="net-12"></a>
-### 57. NET-12 - QoS: gara alla fine di un profilo `once`
+### B36. NET-12 - QoS: gara alla fine di un profilo `once`
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:264-274](wilab/network/qos_profile.py#L264-L274)
 
@@ -2111,7 +1842,7 @@ può vedersi togliere le regole dal vecchio thread: lo stato dice "profilo attiv
 ---
 
 <a id="net-11"></a>
-### 58. NET-11 - QoS inline: `upload_quality` ignorato
+### B37. NET-11 - QoS inline: `upload_quality` ignorato
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:203-228](wilab/network/qos_profile.py#L203-L228), [wilab/models.py:316-343](wilab/models.py#L316-L343)
 
@@ -2150,7 +1881,7 @@ silenzio. In alternativa si può estendere `QosProfileStep` con qualità separat
 ---
 
 <a id="wd-8"></a>
-### 59. WD-8 - Una rete ripristinata perde il profilo QoS
+### B38. WD-8 - Una rete ripristinata perde il profilo QoS
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:121-132](wilab/wifi/watchdog.py#L121-L132), [wilab/wifi/manager.py:439-447](wilab/wifi/manager.py#L439-L447)
 
@@ -2186,6 +1917,272 @@ lasciare che il watchdog ripristini. `qos_profile_manager.is_active(interface)` 
 I profili "inline" generati (`<id>:generated_static`) non sono nel catalogo: per ripristinarli bisogna
 conservare l'oggetto `QosProfile` in `_ActiveProfile` invece del solo identificativo. Documentare che
 il profilo riparte dal primo passo.
+
+---
+
+<a id="rev-5"></a>
+### ✅ REV-5 - Il budget di 20 s dei tentativi interni è un residuo della create sincrona
+
+**Gravità:** Media · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`STARTUP_RETRY_BUDGET`, `_start_network`)
+
+**Problema.** Il budget serviva a tenere corta la richiesta HTTP. Con `202` e polling non serve più e
+produce esiti sbagliati:
+
+- un tentativo che porta su tutta la rete subito dopo `retry_deadline` viene smontato e riportato come
+  `StartupFailure(radio=False, stage="hostapd")`, cioè `start_failed`;
+- durante un tentativo ogni comando è limitato da `command_deadline`: se il budget finisce in una fase
+  successiva, `bounded_timeout` solleva "Deadline expired before running command" e il guasto viene
+  attribuito a `gateway`, `dhcp`, `nat` o `host_guard`, che non hanno colpa;
+- sui canali DFS un nuovo tentativo non può riuscire: `_wait_until_ready` riceve al massimo 19 s e il
+  CAC ne richiede 60.
+
+**Come correggerlo.** Togliere il limite di tempo dal percorso del job: restano il numero dei
+tentativi e la scadenza della reservation (`_start_time(req)`). Non far mai fallire un avvio che è
+arrivato in fondo. Si lega a [HAP-9](#hap-9).
+
+Test: [unit-test-4](#unit-test-4).
+
+---
+
+<a id="rev-6"></a>
+### ✅ REV-6 - Gli avvii che non passano dal job della create non si possono annullare
+
+**Gravità:** Media · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`shutdown_all`, `probe_recovered_radio`), [wilab/wifi/watchdog.py](wilab/wifi/watchdog.py) (`_restore_ap`, `_retry_pending`)
+
+**Problema.**
+
+- `shutdown_all` non chiama `cancel_start`: `release_device` aspetta il lock del dispositivo, che una
+  create tiene per tutta la sua durata (pause di 5 e 10 s comprese). Nel caso peggiore più volte 75 s
+  su DFS, oltre il timeout di arresto di systemd: `SIGKILL` e processi orfani. Aggrava
+  [STAB-8](#stab-8).
+- Il watchdog chiama `start_network` senza `cancelled`: una `DELETE` della reservation durante un
+  ripristino non trova job e aspetta il lock senza limite (fino a 75 s + 20 s su DFS). Il rilascio
+  "immediato" del contratto vale solo durante una create.
+- `probe_recovered_radio` prova sull'ultimo canale usato anche se è DFS: 60 s di CAC sotto il lock.
+
+**Come correggerlo.** `shutdown_all` imposta `cancel` su ogni job prima di rilasciare; il watchdog
+passa `cancelled=lambda: self._cancelled(reservation)`; il probe usa un canale non DFS.
+
+Test: [unit-test-5](#unit-test-5).
+
+---
+
+<a id="bug-5"></a>
+### ✅ BUG-5 - La discovery può ignorare un adattatore per sempre
+
+**Gravità:** Media · **Confidenza:** Probabile · **File:** [wilab/wifi/discovery.py:82-119](wilab/wifi/discovery.py#L82-L119)
+
+**Problema.** `_ready_radio` richiede che la proprietà udev `ID_NET_NAME`, quando presente, sia uguale
+al nome dell'interfaccia. Sugli host dove l'interfaccia mantiene un altro nome (regola udev
+personalizzata, politica che conserva il nome del kernel) i due valori differiscono per sempre:
+l'interfaccia resta "pending" e l'unico messaggio è a livello `DEBUG`. Il sintomo è "Wi-Lab non vede il
+mio adattatore" con il log vuoto.
+
+**Come si riproduce.** Test: `udevadm info` finto che restituisce `INTERFACE=wlan0`, `IFINDEX=3`,
+`USEC_INITIALIZED=1`, `ID_NET_NAME=wlx00c0ca112233`. `discover_radios()` restituisce una lista vuota a
+ogni chiamata.
+
+**Come correggerlo.** Il controllo serve a non usare un'interfaccia che udev sta per rinominare. Basta
+aspettare un numero limitato di scansioni, poi accettarla e dirlo.
+
+```diff
+--- a/wilab/wifi/discovery.py
++++ b/wilab/wifi/discovery.py
++# Scans an interface may stay "not yet renamed" before it is accepted as it is.
++RENAME_GRACE_SCANS = 3
++_rename_waits: dict[str, int] = {}
++
+@@ def _ready_radio(phy: str, interface: str) -> DiscoveredRadio | None:
+-        if (
+-            not props.get("USEC_INITIALIZED")
+-            or props.get("INTERFACE") != interface
+-            or props.get("IFINDEX") != ifindex
+-            or props.get("ID_NET_NAME", interface) != interface
+-        ):
++        if (
++            not props.get("USEC_INITIALIZED")
++            or props.get("INTERFACE") != interface
++            or props.get("IFINDEX") != ifindex
++        ):
+             return None
++        if props.get("ID_NET_NAME", interface) != interface:
++            waits = _rename_waits.get(interface, 0) + 1
++            _rename_waits[interface] = waits
++            if waits <= RENAME_GRACE_SCANS:
++                return None
++            if waits == RENAME_GRACE_SCANS + 1:
++                logger.warning(
++                    "Using %s although udev suggests the name %s: it was not renamed",
++                    interface, props["ID_NET_NAME"],
++                )
+```
+
+`discover_radios` fa già cinque tentativi ravvicinati per chiamata: il contatore va incrementato una
+volta per chiamata di `discover_radios`, non per tentativo interno.
+
+---
+
+<a id="stab-8"></a>
+### ✅ STAB-8 - L'arresto ordinato può superare `TimeoutStopSec=30s`
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:768-779](wilab/wifi/manager.py#L768-L779), [install/systemd/wi-lab.service.template](install/systemd/wi-lab.service.template)
+
+**Problema.** L'arresto rilascia i dispositivi uno dopo l'altro; ogni rilascio può richiedere diversi
+secondi (join del thread QoS fino a 5 s, terminate e kill di hostapd fino a 4 s, vari comandi). uvicorn
+attende inoltre le richieste in corso, e un avvio DFS può tenerne una per 75 s. Su un pool di dieci
+adattatori i 30 s possono essere superati: systemd uccide il processo e si ricade in STAB-4.
+
+**Come si riproduce.** Con più reti attive: `time systemctl stop wi-lab` e controllare nel journal la
+riga "State 'stop-sigterm' timed out. Killing."
+
+**Come correggerlo.** Rilasciare in parallelo e dare più tempo.
+
+```python
+# wilab/wifi/manager.py, in shutdown_all
+threads = [
+    threading.Thread(target=self._release_quietly, args=(device_id,), name=f"shutdown-{device_id}")
+    for device_id in device_ids
+]
+for thread in threads:
+    thread.start()
+for thread in threads:
+    thread.join(timeout=20)
+```
+
+dove `_release_quietly` contiene il `try / except` attuale. Nell'unit: `TimeoutStopSec=60s`. In
+`uvicorn.run` aggiungere `timeout_graceful_shutdown=10` per non attendere all'infinito le richieste
+in corso. Sostituire anche il `except Exception: pass` di `lifespan` con `logger.exception`.
+
+---
+
+<a id="wd-10"></a>
+### ✅ WD-10 - Tre probe lenti riavviano un AP forse sano
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:64-66](wilab/wifi/watchdog.py#L64-L66), [wilab/wifi/hostapd.py:399-411](wilab/wifi/hostapd.py#L399-L411)
+
+**Problema.** `is_enabled` concede 1 s a `hostapd_cli`. Su una macchina virtuale carica, tre risposte
+lente in 15 s disconnettono tutti i client, e per via di WD-1 consumano anche l'unico riavvio.
+
+**Come si riproduce.** Test: `execute_command` finto che per `hostapd_cli` solleva `CommandTimeout` tre
+volte, con il processo vivo. Il watchdog chiama `_restore_ap`.
+
+**Come correggerlo.** Distinguere "hostapd dice che non è ENABLED" da "non ha risposto in tempo".
+
+```diff
+--- a/wilab/wifi/hostapd.py
++++ b/wilab/wifi/hostapd.py
+-    def is_enabled(self, net_id: str) -> bool:
++    def is_enabled(self, net_id: str) -> bool | None:
++        """True or False from hostapd; None when it did not answer in time."""
+@@
+-        except CommandError:
++        except CommandTimeout:
++            return None
++        except CommandError:
+             return False
+```
+
+Nel watchdog: una risposta `None` conta mezzo "miss" (soglia 6 invece di 3), una risposta `False`
+conta come oggi. Verificare gli altri chiamanti di `is_enabled` (`probe_recovered_radio` usa
+`not ...is_enabled(...)`, che resta corretto perché `None` è falso).
+
+---
+
+<a id="bug-6"></a>
+### ✅ BUG-6 - `validate_interface_ap_mode` non dimostra nulla
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/interface.py:52-90](wilab/wifi/interface.py#L52-L90), [wilab/wifi/manager.py:254-262](wilab/wifi/manager.py#L254-L262)
+
+**Problema.** `"AP" not in phy_output` è una ricerca di sottostringa su tutto il testo di
+`iw phy info`, che contiene "AP" in molte righe non pertinenti (per esempio "Device supports AP-side
+u-APSD"). La discovery ha già un parser corretto (`_supports_ap_mode`). Le tre chiamate
+`validate_interface_*` prima di ogni avvio ripetono, in modo meno preciso, ciò che la discovery ha già
+stabilito, al costo di quattro comandi.
+
+**Come si riproduce.** Test: `iw phy info` finto senza la riga `* AP` tra i modi supportati ma con la
+riga "Device supports AP-side u-APSD". `validate_interface_ap_mode` restituisce `True`.
+
+**Come correggerlo.** Tenere solo il controllo di esistenza, che è l'unico che può cambiare dopo la
+discovery.
+
+```diff
+--- a/wilab/wifi/manager.py
++++ b/wilab/wifi/manager.py
+         try:
+             validate_interface_exists(cfg_net.interface)
+-            validate_interface_wireless(cfg_net.interface)
+-            validate_interface_ap_mode(cfg_net.interface)
+         except InterfaceError as e:
+```
+
+Rimuovere `validate_interface_wireless`, `validate_interface_ap_mode` e `validate_interface` da
+`interface.py` con i relativi test e le sostituzioni in `tests/conftest.py`.
+
+---
+
+<a id="net-9"></a>
+### ✅ NET-9 - Le subnet non sono stabili tra un riavvio e l'altro
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:111-141](wilab/wifi/manager.py#L111-L141)
+
+**Problema.** L'allocatore salta ogni subnet che si sovrappone a una route dell'host. Dopo un riavvio
+non pulito, una radio che ha ancora il vecchio indirizzo fa sembrare "in uso" la propria subnet
+precedente: il dispositivo riceve la successiva e la tiene per tutta la vita del processo. I client che
+si aspettano una subnet precisa la vedono cambiare.
+
+**Come si riproduce.** Rete attiva sul primo adattatore (subnet base), `kill -9` del servizio, riavvio,
+nuova rete sullo stesso adattatore: la subnet è la base più uno.
+
+**Come correggerlo.** La causa sparisce con `reset_interface` alla scoperta del dispositivo (STAB-4),
+che toglie l'indirizzo prima di qualunque allocazione.
+
+> **Stato (2026-11-26):** già risolto da STAB-4; il test
+> `test_a_stale_gateway_address_does_not_shift_the_subnet` lo dimostra.
+
+---
+
+<a id="net-7"></a>
+### ✅ NET-7 - I file dei lease sopravvivono alla reservation
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/dhcp.py:232-277](wilab/network/dhcp.py#L232-L277)
+
+**Problema.** `leases-<dispositivo>.db` non viene mai cancellato: il prossimo utente dell'adattatore
+eredita i lease del precedente per un massimo di 12 ore. Innocuo per l'indirizzamento, ma i dati di una
+sessione di test (indirizzi MAC dei client) passano alla successiva.
+
+**Come si riproduce.** Creare una rete, collegare un client, rilasciare; creare una nuova rete sullo
+stesso adattatore e leggere il file dei lease: contiene il client precedente.
+
+**Come correggerlo.**
+
+```diff
+--- a/wilab/network/dhcp.py
++++ b/wilab/network/dhcp.py
+@@ def stop(self, net_id: str) -> None:
+             if os.path.exists(config_file):
+                 os.remove(config_file)
+                 logger.info(f"Removed dnsmasq config {config_file}")
++            try:
++                # Leases belong to the network that ends here, not to the device.
++                os.remove(instance["lease_file"])
++            except FileNotFoundError:
++                pass
+```
+
+Attenzione: il watchdog, quando riavvia solo dnsmasq (`_restore_dhcp`), chiama `stop` e poi `start`:
+in quel caso i lease vanno conservati, altrimenti i client collegati possono ricevere indirizzi già in
+uso. Aggiungere a `stop` un parametro `keep_leases: bool = False` e passarlo `True` da `_restore_dhcp`.
+
+---
+
+<a id="stab-9"></a>
+### ✅ STAB-9 - Il rilascio da NetworkManager è solo a runtime (superato da NM-1)
+
+**Fatto e superato.** `nmcli device set <if> managed no` si perdeva a ogni riavvio di NetworkManager;
+[wilab/network/unmanaged.py](wilab/network/unmanaged.py) scrive anche
+`/run/NetworkManager/conf.d/00-wilab-unmanaged.conf`. [NM-1](#nm-1) toglie tutto questo codice: Wi-Lab
+non parla più con NetworkManager. Non c'è nulla da provare: su questa macchina NetworkManager non è
+più installato.
 
 ---
 
@@ -2321,7 +2318,6 @@ in uno script sotto `diagnostics/` che stampa un esito per riga.
 | H-04 | 200 cicli crea/cancella su due adattatori, in parallelo e in sequenza | HAP-5 |
 | H-05 | 24 ore con e senza comando TX power; contare i timeout del firmware nel log del kernel | HAP-6 |
 | H-06 | `kill -9` del servizio con reti e QoS attivi; verificare `tc`, file e subnet dopo il riavvio | NET-9 |
-| H-08 | `systemctl restart NetworkManager` con una rete attiva | STAB-9 |
 | H-11 | `systemd-tmpfiles --cat-config` e rete attiva oltre il limite di età | STAB-2 |
 | H-12 | Rete attiva per 7 giorni con un client che scarica a intervalli; registrare ogni interruzione | obiettivo generale |
 
@@ -2366,7 +2362,7 @@ Atteso:
 | BUG-7 | `POST .../txpower` con ogni livello, poi `GET .../txpower`. | Il `GET` riporta il valore reale, non quello richiesto. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | PERF-6 | Durata di `POST .../txpower`. | Sotto i 3 s. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | SEC-1 | `curl --path-as-is http://<host>:8080//etc/passwd` e `/../config.yaml`. | `404`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
-| API-6, API-7 | Confronto di percorsi e campi con `/docs`. | Un solo nome per il livello di TX power; azioni come `PATCH .../network`, se si decide di farlo. |  |
+| API-6, API-7 | Confronto di percorsi e campi con `/docs`. | Quanto deciso nel paragrafo 1.3. |  |
 | HAP-5, HAP-6, HAP-7 | Run SOAK identiche con la configurazione cambiata sulla macchina tra una run e l'altra. | Confronto del numero di `404 reservation_invalidated` e di `restarts.ap` tra le run. |  |
 | ARCH-1 … ARCH-11 | Run SOAK di regressione. | Nessuna differenza rispetto alla run precedente. |  |
 
@@ -2386,8 +2382,7 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 | WD-8 | Rete attiva con profilo QoS: `kill -9` di hostapd. | `restoring_ap`, poi rete attiva con il profilo QoS di nuovo attivo. |  |
 | HAP-8 (resto) | Rete attiva: `kill -SEGV` di hostapd. | Report con le ultime righe di hostapd anche per il guasto visto dal watchdog. |  |
 | NET-9 | `kill -9` del servizio con una rete attiva, poi riavvio. | Nessun indirizzo residuo; nuova rete sulla stessa antenna. |  |
-| STAB-8 | Due reti attive; `time systemctl stop wi-lab`. | Arresto in meno di 30 s. |  |
-| STAB-9 | Rete attiva; `systemctl restart NetworkManager`. | La radio resta unmanaged e l'AP resta attivo. |  |
+| STAB-8 | Due reti attive; `time systemctl stop wi-lab`. | Arresto in meno di 60 s, nessun "stop-sigterm timed out" nel journal. |  |
 | STAB-5 | Spostare l'orologio della VM di +2 h con una reservation attiva. | La reservation non scade in anticipo. |  |
 | BUG-5 | Collegare un'antenna nuova a servizio avviato. | Compare in `/status` entro 30 s, oppure il motivo dello scarto è nel journal. |  |
 | PERF-1, PERF-2, PERF-4, PERF-5 | `strace -f -e trace=execve` sui processi del servizio durante create, `GET .../network` e a riposo. | Come descritto nelle schede. |  |
@@ -2399,7 +2394,7 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 |---|---|---|---|
 | [unit-test-2](#unit-test-2) | Annullamento con rollback fallito: nessuna quarantena | REV-2 | `test_async_create.py` |
 | ✅ [unit-test-4](#unit-test-4) | Un avvio riuscito non fallisce per il budget dei tentativi | REV-5 | `test_startup_classification.py` |
-| ✅ [unit-test-5](#unit-test-5) | Rilascio durante un ripristino del watchdog; arresto con una create in corso | REV-6 | `test_watchdog.py`, `test_startup.py` |
+| ✅ [unit-test-5](#unit-test-5) | Rilascio durante un ripristino del watchdog; arresto con una create in corso | REV-6 | `test_cancellable_starts.py` |
 | [unit-test-7](#unit-test-7) | Annullamento in timeout: il job resta finché il thread gira | REV-8 | `test_async_create.py` |
 | [unit-test-14](#unit-test-14) | Rami di guasto del watchdog | REV-10 | `test_watchdog.py` |
 | [unit-test-15](#unit-test-15) | Frontend: compilazione e spec di `startNetwork` | REV-13, REV-15 | `frontend/src/app/services/*.spec.ts` |
@@ -2411,16 +2406,10 @@ successive, antenna senza `recovery_state`, cleanup affidato al ciclo in backgro
 `DELETE .../network`: atteso `503 / 1012`, reservation valida. Oggi fallisce (REV-2).
 
 <a id="unit-test-4"></a>
-**unit-test-4 - Budget dei tentativi.** Orologio finto. Primo avvio con guasto radio; il secondo porta
-su l'AP quando `STARTUP_RETRY_BUDGET` è già passato. Atteso: la rete resta attiva. Variante: il budget
-finisce durante la fase `dhcp`; atteso che il guasto non sia attribuito a `dhcp`. Oggi fallisce
-(REV-5).
+**unit-test-4 - Budget dei tentativi.** ✅ Fatto con REV-5, in `test_startup_classification.py`.
 
 <a id="unit-test-5"></a>
-**unit-test-5 - Avvii fuori dal job.** (a) Watchdog in `_restore_ap` con `hostapd.start` bloccato che
-rispetta `cancelled`; `DELETE /reservations/{id}`: atteso ritorno entro 1 s e nessun AP. (b)
-`shutdown_all` con una create bloccata: atteso ritorno entro 1 s, `start_jobs` vuoto, nessuna risorsa
-tracciata. Oggi fallisce (REV-6).
+**unit-test-5 - Avvii fuori dal job.** ✅ Fatto con REV-6, in `test_cancellable_starts.py`.
 
 <a id="unit-test-7"></a>
 **unit-test-7 - Annullamento in timeout, dopo REV-8.** Il caso base (`503 / 1006`, poi lo stato reale e
@@ -2459,7 +2448,13 @@ diverso da uno bloccato nel kernel.
 ## 5. NM-1 - Togliere NetworkManager come dipendenza e disattivarlo all'installazione
 
 **Gravità:** Media · **Confidenza:** Confermato (codice, installer e stato della macchina letti il
-2026-11-26) · **Stato:** da fare, nessuna riga di codice scritta. Comprende `wpa_supplicant` (5.4 bis).
+2026-11-26) · **Stato:** in parte. Comprende `wpa_supplicant` (5.4 bis).
+
+> **Stato (2026-11-26).** **Fatto:** l'installer non richiede e non installa più `nmcli`
+> (`04-tools.sh`, commit `da5c2a6`); su questa macchina NetworkManager è stato disinstallato e
+> `wpa_supplicant` mascherato a mano. **Manca tutto il resto:** il codice chiama ancora `nmcli` (non
+> lo trova e prosegue: nessun errore, solo codice morto), i due stadi dell'installer, il precheck, la
+> documentazione.
 
 Questo capitolo basta da solo per fare il lavoro. Le decisioni del paragrafo 5.2 sono già prese: non
 vanno ridiscusse, vanno applicate. L'ordine dei passi è quello del paragrafo 5.9.
@@ -2475,21 +2470,20 @@ sempre la stessa cosa: dire a NetworkManager di non toccare una radio.
 | [wilab/network/unmanaged.py](wilab/network/unmanaged.py) `exclude_from_host_managers` | Quando la discovery aggiunge antenne: `nmcli ... managed no` per ogni radio, e il file `/run/NetworkManager/conf.d/00-wilab-unmanaged.conf` (STAB-9) |
 | [wilab/wifi/recovery.py](wilab/wifi/recovery.py) `_quiesce` | Dopo un reset USB e prima di ogni re-probe: `nmcli ... managed no` |
 
-**È l'installer di Wi-Lab a installarlo.** [install/01-preconditions/04-tools.sh](install/01-preconditions/04-tools.sh)
-ha `nmcli` in `REQUIRED_CMDS` e `[nmcli]="network-manager"` in `CMD_TO_PKGS`: se manca, lo installa
-con `apt-get install`. Viene dal commit `617328c` (2026-03-17), che nel codice tratta `nmcli` come
-facoltativo ("best-effort", si salta se manca) e nell'installer lo rende obbligatorio. Su Ubuntu
-Server NetworkManager di base non c'è: la rete è di systemd-networkd tramite netplan.
+**Era l'installer di Wi-Lab a installarlo**, fino al commit `da5c2a6`: `04-tools.sh` aveva `nmcli` tra
+i comandi obbligatori (dal commit `617328c`, 2026-03-17), mentre il codice lo tratta come facoltativo.
+Su Ubuntu Server NetworkManager di base non c'è: la rete è di systemd-networkd tramite netplan. Le
+installazioni fatte con un installer precedente lo hanno ancora, attivo.
 
-**Stato di questa macchina** (Ubuntu Server 26.04.1, pacchetto `ubuntu-server` installato):
+**Stato di questa macchina** (Ubuntu Server 26.04.1):
 
-- `network-manager` risulta installato a mano (`apt-mark showmanual`), cioè dall'installer;
-- NetworkManager non gestisce nessuna interfaccia: `nmcli device status` dà `unmanaged` per `ens18`,
-  `docker0`, `lo` e le due radio;
+- prima della pulizia del 2026-11-26 NetworkManager era attivo e non gestiva nessuna interfaccia
+  (`unmanaged` per `ens18`, `docker0`, `lo` e le radio): è la situazione che gli stadi dell'installer
+  troveranno sulle altre installazioni;
+- oggi i pacchetti `network-manager`, `network-manager-pptp`, `libnm0`, `ppp` e `pptp-linux` sono
+  rimossi (stato `rc`), `nmcli` non esiste, `wpa_supplicant` è `masked`;
 - `ens18` (unica interfaccia di accesso, default route) è di systemd-networkd: `networkctl list` la dà
-  `routable / configured`;
-- sono attivi `NetworkManager`, `NetworkManager-wait-online`, `NetworkManager-dispatcher`, più
-  `wpa_supplicant` e `ModemManager` arrivati come dipendenze del pacchetto.
+  `routable / configured`; netplan ha `wifis: {}`.
 
 **Problemi che porta:**
 
@@ -2500,14 +2494,14 @@ Server NetworkManager di base non c'è: la rete è di systemd-networkd tramite n
   dell'interfaccia di gestione (commit `87c3ce1`);
 - costa due comandi e 0,2 s a ogni avvio AP.
 
-**`wpa_supplicant`.** Wi-Lab non lo usa (l'AP è hostapd). Su questa macchina non è arrivato con
-NetworkManager: lo ha installato l'installer di Ubuntu il 2026-10-06 (`/var/log/apt/history.log.1.gz`,
+**`wpa_supplicant`.** Wi-Lab non lo usa (l'AP è hostapd). Su questa macchina non era arrivato con
+NetworkManager: lo aveva installato l'installer di Ubuntu il 2026-10-06 (`/var/log/apt/history.log.1.gz`,
 comando di curtin), quasi certamente perché c'erano adattatori Wi-Fi collegati durante l'installazione
 del sistema. `ubuntu-server` non dipende da `wpasupplicant`; `netplan-generator` lo suggerisce soltanto.
 Gira come servizio D-Bus (`wpa_supplicant -u -s`, alias `dbus-fi.w1.wpa_supplicant1.service`): senza
-`-i` non prende interfacce da solo, aspetta che un client gliele chieda via D-Bus. L'unico client qui è
-NetworkManager; i `p2p-dev-wlx…` di `nmcli device status` indicano che lo ha fatto con le radio di
-Wi-Lab, cioè un secondo processo sulla radio di hostapd. Senza NetworkManager resta inattivo, ma un
+`-i` non prende interfacce da solo, aspetta che un client gliele chieda via D-Bus. L'unico client qui era
+NetworkManager; i `p2p-dev-wlx…` che `nmcli device status` mostrava indicano che lo faceva con le radio
+di Wi-Lab, cioè un secondo processo sulla radio di hostapd. Senza NetworkManager resta inattivo, ma un
 qualunque programma via D-Bus può riattivarlo e dargli una radio.
 
 **Conclusione.** Con il requisito "Ubuntu Server, VM o host dedicato" NetworkManager va tolto dalle
@@ -2521,7 +2515,7 @@ con `/run/systemd/network/00-wilab-unmanaged.network` (`Unmanaged=yes`): quella 
 2. **Nessun codice parla più con NetworkManager.** Si tolgono tutte le chiamate a `nmcli` e il file di
    STAB-9. Nessun ripiego "se c'è lo uso": se l'utente rifiuta la disattivazione, l'installazione è
    fuori requisito e lo dicono l'installer e il precheck a ogni avvio.
-3. **L'installer non installa e non disinstalla il pacchetto.** Se NetworkManager è attivo, spiega il
+3. **L'installer non installa e non disinstalla il pacchetto** (non lo installa più dal commit `da5c2a6`). Se NetworkManager è attivo, spiega il
    rischio e chiede se disattivarlo (`disable --now` + `mask`). Rifiutare non blocca l'installazione.
 4. **L'accesso alla macchina non si rischia mai.** La disattivazione è offerta solo se le condizioni
    del paragrafo 5.4 sono tutte vere; altrimenti l'installer non tocca nulla e spiega perché.
@@ -2541,11 +2535,11 @@ con `/run/systemd/network/00-wilab-unmanaged.network` (`Unmanaged=yes`): quella 
 | [wilab/wifi/manager.py](wilab/wifi/manager.py) | `_nmcli_available`, `_configure_networkmanager_unmanaged`, la sua chiamata in `_start_network` con il commento "Best-effort: prevent NetworkManager/wpa_supplicant…", e `import shutil` se non serve ad altro |
 | [wilab/wifi/recovery.py](wilab/wifi/recovery.py) | In `_quiesce` il blocco `try/except` con `nmcli`; resta `ip link set dev <radio> down`. Aggiornare la docstring: solo systemd-networkd |
 | [wilab/network/unmanaged.py](wilab/network/unmanaged.py) | Il ciclo `nmcli`, `NM_RUNTIME_DIR`, `NM_RULES` e il blocco che scrive il file. Resta tutta la parte systemd-networkd. Riscrivere la docstring del modulo. Il nome `exclude_from_host_managers` resta |
-| [install/01-preconditions/04-tools.sh](install/01-preconditions/04-tools.sh) | `"nmcli"` da `REQUIRED_CMDS` e `[nmcli]="network-manager"` da `CMD_TO_PKGS` |
 | [diagnostics/diagnose-ap.py](diagnostics/diagnose-ap.py) (sezione "NetworkManager Status") | Sostituire con `systemctl is-active NetworkManager` e `networkctl list` |
 | [diagnostics/troubleshooting/issue_network_creation_fails.sh](diagnostics/troubleshooting/issue_network_creation_fails.sh) | `nmcli dev \|\| true` → `networkctl list \|\| true` |
 
-Dopo le modifiche `grep -rn "nmcli" wilab/ install/ diagnostics/` non deve trovare nulla.
+Dopo le modifiche `grep -rn "nmcli" wilab/ diagnostics/` non deve trovare nulla. In `install/` restano
+il commento di `04-tools.sh` e gli usi del nuovo stadio 06.
 
 **Test unit da adeguare:**
 
@@ -2560,7 +2554,9 @@ Dopo le modifiche `grep -rn "nmcli" wilab/ install/ diagnostics/` non deve trova
 
 Gli stadi di `01-preconditions` girano in ordine di nome; questo va dopo `05-network.sh`. Stile e
 funzioni (`log_info`, `log_warning`, `log_error`, `state_set`, `read -r REPLY`) come in
-`04-tools.sh`. L'installer gira già come root.
+`04-tools.sh`. L'installer gira già come root. `jq` non è tra i comandi richiesti dall'installer: non
+usarlo. `nmcli` invece si può usare dal passo 2 in poi, perché è nello stesso pacchetto di
+NetworkManager: se il servizio è attivo, c'è.
 
 **Passo 1 - C'è?** Se `systemctl is-active --quiet NetworkManager` fallisce **e**
 `systemctl is-enabled NetworkManager` non dà `enabled`: `log_success`, `state_set NM_STATE "absent"`,
@@ -2571,7 +2567,7 @@ fine. Se è già `masked`: lo stesso, con `NM_STATE "masked"`.
 | # | Condizione | Come si controlla |
 |---|---|---|
 | a | netplan non usa NetworkManager | `netplan get network.renderer` non è `NetworkManager` |
-| b | Ogni interfaccia con una default route è `unmanaged` per NetworkManager | `ip -j route show default \| jq -r '.[].dev'`, poi lo stato in `nmcli -t -f DEVICE,STATE device` |
+| b | Ogni interfaccia con una default route è `unmanaged` per NetworkManager | `ip -o route show default \| awk '{for (i=1; i<NF; i++) if ($i=="dev") print $(i+1)}'`, poi lo stato in `nmcli -t -f DEVICE,STATE device` |
 | c | La stessa interfaccia è di systemd-networkd | colonna SETUP = `configured` in `networkctl list --no-legend` |
 | d | Con una sessione SSH (`$SSH_CONNECTION`), l'interfaccia che ha l'indirizzo locale della sessione rispetta b e c | terzo campo di `$SSH_CONNECTION`, cercato in `ip -o -4 addr` |
 | e | NetworkManager non ha nessun dispositivo `connected` o `connecting` | `nmcli -t -f DEVICE,TYPE,STATE device` |
@@ -2631,7 +2627,7 @@ Gira dopo `06-network-manager.sh`, con le stesse convenzioni.
 |---|---|---|
 | a | netplan non ha reti Wi-Fi | `netplan get network.wifis` vuoto o `null` |
 | b | Nessuna unit client attiva | `systemctl list-units --state=active --no-legend 'netplan-wpa-*' 'wpa_supplicant@*'` vuoto |
-| c | Nessuna default route su un'interfaccia wireless | per ogni `dev` di `ip -j route show default`, `/sys/class/net/<dev>/wireless` non esiste |
+| c | Nessuna default route su un'interfaccia wireless | per ogni `dev` di `ip -o route show default` (come nella condizione b dello stadio 06), `/sys/class/net/<dev>/wireless` non esiste |
 
 **Passo 3 - Informare e chiedere:**
 
@@ -2650,7 +2646,8 @@ Con No: `log_warning`, `WPA_STATE "active_declined"`, proseguire.
 `systemctl mask wpa_supplicant.service`; `WPA_STATE "disabled"`. Non serve il controllo della default
 route: il passo 2 ha già escluso che l'accesso dipenda da `wpa_supplicant`.
 
-**`uninstall.sh`:** per `NetworkManager` e per `wpa_supplicant`, se `systemctl is-enabled` dà `masked`,
+**`uninstall.sh`** (nuovo passo dopo lo Step 3, che oggi toglie regole, file di runtime e dispositivi):
+per `NetworkManager` e per `wpa_supplicant`, se `systemctl is-enabled` dà `masked`,
 chiedere se riattivarlo (`y/N`); con Sì `systemctl unmask <unit> && systemctl enable --now <unit>`.
 Riattivare prima `wpa_supplicant`, poi NetworkManager. Lo stato dell'installer è in `/tmp` e non
 sopravvive: non usarlo per questa scelta.
@@ -2680,8 +2677,8 @@ def run_prechecks() -> list[Finding]: ...   # runs every check, never raises
 | Controllo | Livello | Regola |
 |---|---|---|
 | `root` | fatal | `os.geteuid() != 0`: nessun comando di rete può funzionare |
-| `commands` | fatal | Manca uno fra `hostapd`, `hostapd_cli`, `dnsmasq`, `iw`, `ip`, `iptables`, `tc`, `udevadm` (`shutil.which`); il messaggio li elenca tutti |
-| `network_manager` | warning | `systemctl is-active --quiet NetworkManager` riesce. Messaggio: "NetworkManager is active: it can take Wi-Fi adapters back and bring APs down. Wi-Lab requires it disabled: sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager (first check that it manages no interface: nmcli device status)". Se `systemctl` manca o fallisce in altro modo: nessun `Finding` |
+| `commands` | fatal | Manca uno dei comandi che il servizio esegue: `hostapd`, `hostapd_cli`, `dnsmasq`, `iw`, `ip`, `tc`, `iptables`, `ip6tables`, `udevadm`, `usbreset`, `modprobe`, `networkctl` (`shutil.which`). È l'elenco `REQUIRED_CMDS` di `04-tools.sh` senza `python3` e `systemctl`: tenerli allineati. Il messaggio elenca tutti quelli che mancano |
+| `network_manager` | warning | `systemctl is-active --quiet NetworkManager` riesce. Messaggio: "NetworkManager is active: it can take Wi-Fi adapters back and bring APs down. Wi-Lab requires it disabled: sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager (first check that it manages no interface: nmcli device status)". Non eseguire `nmcli` dal precheck. Se `systemctl` manca o fallisce in altro modo: nessun `Finding` |
 | `wpa_supplicant` | warning | Per ogni antenna configurata o scoperta esiste `/run/wpa_supplicant/<radio>` (il socket di controllo che `wpa_supplicant` crea per un'interfaccia che gestisce). Messaggio: "wpa_supplicant manages <radio>: it competes with hostapd. Disable it: sudo systemctl disable --now wpa_supplicant && sudo systemctl mask wpa_supplicant". La sola presenza del servizio non è un avviso. Il controllo gira anche alla discovery (antenne aggiunte dopo l'avvio): `log` una volta per radio |
 | `leftover_rules` | warning | L'attuale `check_existing_wilab_rules`, senza il consiglio "Consider running cleanup script" (il servizio pulisce da solo all'avvio: nota di REV-17) |
 
@@ -2711,17 +2708,18 @@ I test unit girano senza root: `conftest.py` deve rendere `run_prechecks` innocu
 
 | File | Cosa scrivere |
 |---|---|
-| [README.md](README.md), tabella Requirements | **OS:** "Ubuntu Server 25+ (tested on 26.04), network managed by systemd-networkd (netplan)". Nuova riga **NetworkManager:** "Must not be installed, or must be disabled and masked. The installer detects it and offers to disable it; it never does so if NetworkManager manages the host's network." Nuova riga **wpa_supplicant:** "Not used by Wi-Lab. The installer offers to disable and mask it when the host does not use it as a Wi-Fi client." Togliere `nmcli`/`network-manager` da ogni elenco di pacchetti |
+| [README.md](README.md), tabella Requirements | **OS:** "Ubuntu Server 25+ (tested on 26.04), network managed by systemd-networkd (netplan)". Nuova riga **NetworkManager:** "Must not be installed, or must be disabled and masked. The installer detects it and offers to disable it; it never does so if NetworkManager manages the host's network." Nuova riga **wpa_supplicant:** "Not used by Wi-Lab. The installer offers to disable and mask it when the host does not use it as a Wi-Fi client." Negli elenchi di pacchetti `nmcli`/`network-manager` non c'è già più |
 | [docs/networking.md](docs/networking.md), "6. Host Network Manager Exclusion" | Solo systemd-networkd; togliere `nmcli` e il file in `/run/NetworkManager`; dire che NetworkManager non è supportato |
 | [docs/architecture.md](docs/architecture.md) | Togliere `nmcli` dai due diagrammi dei comandi; "release from NetworkManager" nel diagramma del recovery; il paragrafo "NetworkManager:" di "Host network managers" (sostituire con il requisito); il comando `sudo nmcli device set …` della procedura di recovery manuale; la riga "Host network manager exclusion" della tabella dei file. Aggiungere un paragrafo "Startup prechecks" con la tabella del 5.5 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Nuove voci: `WARNING … NetworkManager is active` e `WARNING … wpa_supplicant manages <radio>` nel journal, con i comandi per controllare e disattivare |
 | [docs/unit-testing.md](docs/unit-testing.md), [docs/e2e-testing.md](docs/e2e-testing.md) | Aggiornare l'elenco dei file di test |
 | [CHANGELOG.md](CHANGELOG.md), sezione `[4.1.0]` | **Breaking Changes:** requisito di sistema (Ubuntu Server senza NetworkManager; l'installer propone di disattivarlo; chi aggiorna deve rieseguire l'installer o dare i due comandi). **Features:** fase di precheck all'avvio. **Bug Fixes:** sostituire la riga di STAB-9 con una riga NM-1 (la 4.1.0 non è rilasciata: non lasciare due righe che si contraddicono). Aggiornare la tabella Statistics |
-| Questo file | Segnare ✅ NM-1 nella tabella 2; ARCH-7 si chiude con NM-1 (non c'è più nulla da consolidare) |
+| Questo file | NM-1 passa nella tabella 2.3 con ✅; togliere il riquadro Stato di questo capitolo |
 
 ### 5.7 Cosa non fare
 
-- Non disinstallare i pacchetti `network-manager` e `wpasupplicant`; non toccare `ModemManager`.
+- L'installer non disinstalla i pacchetti `network-manager` e `wpasupplicant` e non tocca `ModemManager`
+  (su questa macchina la disinstallazione è stata fatta a mano, su richiesta).
 - Non disattivare `wpa_supplicant` mentre NetworkManager è attivo.
 - Non modificare netplan né nessuna configurazione di rete dell'host.
 - Non dare `systemctl stop/disable/mask` a NetworkManager o `wpa_supplicant` senza avere prima
@@ -2731,29 +2729,41 @@ I test unit girano senza root: `conftest.py` deve rendere `run_prechecks` innocu
 
 ### 5.8 Verifica sulla macchina (dopo conferma, sistema libero)
 
-1. Prima: `nmcli -t -f DEVICE,STATE device` (tutto `unmanaged`), `networkctl list` (`ens18` `configured`),
-   `ip route show default`.
-2. Eseguire lo stadio `06-network-manager.sh` da una sessione SSH e rispondere `y`: la sessione non
-   deve cadere, `systemctl is-enabled NetworkManager` dà `masked`, la default route è invariata.
-3. `systemctl restart wi-lab`: nel journal "Startup prechecks passed" e nessun avviso su NetworkManager.
-4. E2E standard, poi `WILAB_E2E_USB=1` (reset USB e re-probe senza `nmcli`): tutti verdi come prima.
-5. `sudo reboot`: la macchina torna raggiungibile, NetworkManager resta fermo, le radio sono
-   `unmanaged` in `networkctl list`.
-6. Eseguire lo stadio `07-wpa-supplicant.sh` e rispondere `y`: `systemctl is-enabled wpa_supplicant`
-   dà `masked`, `/run/wpa_supplicant/` non ha socket delle radio, `nmcli` non c'è più da interrogare e
-   dopo il reboot `iw dev` non mostra interfacce `P2P-device`.
-7. Prova negativa: `systemctl unmask NetworkManager && systemctl start NetworkManager`, riavviare
-   Wi-Lab: il journal ha il `WARNING` del precheck e il servizio funziona. Poi rimascherarlo.
-   L'avviso su `wpa_supplicant` non si prova sulla macchina (servirebbe dargli una radio via D-Bus):
-   lo copre il test unit del precheck.
+**Su questa macchina** NetworkManager non c'è e `wpa_supplicant` è già mascherato: si provano solo i
+rami "niente da fare".
+
+1. Stadio `06-network-manager.sh`: esce subito con `NM_STATE "absent"`, senza domande. Stadio
+   `07-wpa-supplicant.sh`: `WPA_STATE "masked"`, senza domande.
+2. `systemctl restart wi-lab`: nel journal "Startup prechecks passed", nessun avviso e nessun `nmcli`.
+3. E2E standard, poi `WILAB_E2E_USB=1` (reset USB e re-probe senza `nmcli`): tutti verdi come prima.
+4. `sudo reboot`: la macchina torna raggiungibile, le radio sono `unmanaged` in `networkctl list`,
+   `iw dev` non mostra interfacce `P2P-device`.
+
+**I rami "chiedi e disattiva"** non si possono provare qui senza reinstallare i pacchetti. Servono una
+VM Ubuntu Server con NetworkManager attivo e un adattatore Wi-Fi, oppure, su questa macchina e solo
+con la conferma dell'utente, `apt-get install network-manager` e `systemctl unmask wpa_supplicant`
+prima della prova e la pulizia dopo. Lì:
+
+5. Stadio 06 da una sessione SSH, risposta `y`: la sessione non cade, `systemctl is-enabled
+   NetworkManager` dà `masked`, la default route è invariata. Risposta `n`: `NM_STATE
+   "active_declined"`, l'installazione prosegue.
+6. Stadio 07, risposta `y`: `systemctl is-enabled wpa_supplicant` dà `masked` e
+   `/run/wpa_supplicant/` non ha socket delle radio.
+7. Prova negativa: con NetworkManager attivo, riavviare Wi-Lab: il journal ha il `WARNING` del
+   precheck e il servizio funziona. L'avviso su `wpa_supplicant` non si prova sulla macchina
+   (servirebbe dargli una radio via D-Bus): lo copre il test unit del precheck.
+8. `uninstall.sh`: chiede se riattivare i due servizi mascherati e lo fa nell'ordine giusto.
 
 ### 5.9 Ordine dei commit
 
 1. `refactor(host)`: via `nmcli` da codice, test e diagnostica (5.3). Suite unit verde.
 2. `feat(startup)`: `wilab/precheck.py`, `main.py`, unit systemd, test (5.5).
-3. `feat(install)`: `04-tools.sh`, nuovi stadi `06-network-manager.sh` e `07-wpa-supplicant.sh`,
+3. `feat(install)`: nuovi stadi `06-network-manager.sh` e `07-wpa-supplicant.sh`,
    `uninstall.sh` (5.4, 5.4 bis).
 4. `docs`: README, docs, CHANGELOG, questo file (5.6).
 5. Verifica sulla macchina (5.8), solo dopo la conferma dell'utente.
+
+Il commit 1 non cambia nulla per i client e si può fare subito; i commit 2-4 portano il requisito di
+sistema e il precheck, e vanno chiusi prima del congelamento della 4.1.0.
 
 A ogni commit: `make test-local-quick`, `make lint` (86 errori già presenti), `make type-check`.
