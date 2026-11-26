@@ -17,6 +17,10 @@ nel [CHANGELOG](CHANGELOG.md) e in [docs/](docs/): qui non si ripete.
 
 In quest'ordine:
 
+0. **Da fare con qualcuno vicino alla macchina:** l'e2e mai eseguito
+   `WILAB_E2E=1 WILAB_E2E_USB=1 WILAB_E2E_USB_ACTIVE_AP=1 .venv/bin/pytest
+   tests/e2e-tests/test_e2e_device_loss.py::test_antenna_gone_with_active_network`. Può bloccare la VM
+   e staccare la USB (23/11): serve chi la ricollega. Non blocca i punti sotto.
 1. REV-2, REV-5, REV-6 (priorità 1 della tabella 2), ciascuno con il suo test del paragrafo 4.6.
 2. Gli altri punti della tabella 2 in ordine di priorità.
 3. RELEASE-API, solo alla fine.
