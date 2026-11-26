@@ -1324,3 +1324,76 @@ def test_removed_or_unknown_api_paths_are_a_json_404(method, path, tmp_path, mon
 def test_every_route_is_under_api_v2():
     paths = TestClient(create_app()).get("/openapi.json").json()["paths"]
     assert paths and all(p.startswith("/api/v2/") for p in paths)
+
+
+# --------------------------------------------------------------------------- unit-test-13
+
+
+@pytest.fixture
+def stop_clock(monkeypatch):
+    """A running network through the API; the stop route's monotonic and sleep are a fake clock."""
+    from wilab.api.routes import network as network_routes
+
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    instances = manager.hostapd_manager._instances
+    monkeypatch.setattr(manager.hostapd_manager, "start", lambda *, net_id, **kw: instances.__setitem__(net_id, Mock()))
+    monkeypatch.setattr(manager.hostapd_manager, "stop", lambda net_id: instances.pop(net_id, None))
+    monkeypatch.setattr(manager.dhcp_server, "start", Mock(return_value={}))
+    monkeypatch.setattr(manager.dhcp_server, "stop", Mock())
+    clock = {"now": 100.0, "pauses": []}
+
+    def sleep(seconds):
+        clock["pauses"].append(seconds)
+        clock["now"] += seconds
+
+    monkeypatch.setattr(network_routes, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(network_routes, "sleep", sleep)
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    with TestClient(create_app()) as client:
+        rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300}).json()[
+            "reservation_id"]
+        url = f"/api/v2/reservations/{rid}/network"
+        body = network_body(ssid="stop-budget", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)
+        assert create_network(client, headers, url, body)[1].json()["active"] is True
+        yield client, headers, url, manager, clock
+        manager.active.clear()
+
+
+def test_stop_retry_budget_with_a_fake_clock(stop_clock, monkeypatch):
+    """unit-test-13: 8 attempts 2 s apart in the 15 s budget, then 503 / 1012; a stop that recovers is 200."""
+    from wilab.api.routes import network as network_routes
+    from wilab.network.commands import CommandError
+
+    client, headers, url, manager, clock = stop_clock
+    assert (network_routes.STOP_RETRY_BUDGET, network_routes.STOP_RETRY_PAUSE) == (15.0, 2.0)
+    # Attempts at 0, 2, ..., 14 s: after the one at 14 s a pause would reach the 15 s deadline.
+    attempts = 8
+    device = manager.config.antennas[0].device_id
+    real_stop = manager.hostapd_manager.stop
+    stuck = Mock(side_effect=CommandError("hostapd stuck in the kernel"))
+    monkeypatch.setattr(manager.hostapd_manager, "stop", stuck)
+    resp = client.delete(url, headers=headers)
+    assert (resp.status_code, resp.json()["detail"]["code"]) == (503, 1012)
+    assert resp.headers["Retry-After"] == "5"
+    assert stuck.call_count == attempts
+    assert clock["pauses"] == [2.0] * (attempts - 1)
+    lock = manager.device_lock(device)
+    assert lock.acquire(blocking=False)   # the failed stop did not keep the device
+    lock.release()
+    state = client.get(url, headers=headers)
+    assert (state.status_code, state.json()["runtime_state"]) == (200, "stop_failed")
+
+    clock["pauses"].clear()
+    calls = {"n": 0}
+
+    def stop_on_the_third_attempt(net_id):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise CommandError("hostapd stuck in the kernel")
+        real_stop(net_id)
+
+    monkeypatch.setattr(manager.hostapd_manager, "stop", stop_on_the_third_attempt)
+    assert client.delete(url, headers=headers).status_code == 200
+    assert calls["n"] == 3 and clock["pauses"] == [2.0, 2.0]
+    assert device not in manager.active and not manager.stop_failed(device)

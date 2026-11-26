@@ -1,5 +1,7 @@
 """AP watchdog: restore budget (WD-1), retries after a failed restore (WD-2) and DHCP repair (WD-3)."""
 
+import threading
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -358,3 +360,165 @@ def test_unexpected_error_in_a_restore_is_a_failed_restore(monkeypatch):
     monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: pending.next_try)
     manager.watchdog._retry_pending(reservations, pending)
     assert pending.failures == 2   # the retry failed the same way and was scheduled again
+
+
+# --------------------------------------------------------------------------- unit-test-14 (b)
+
+
+def _watch_until_a_restart(monkeypatch, ticks, *, dhcp_restart_works=True, verify=None):
+    """One watch-loop tick per (time, hostapd alive, hostapd enabled, dnsmasq running).
+
+    The restores themselves are fakes; returns the reservation that counted the restarts.
+    """
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    reservations = dependencies.get_reservation_manager(config)
+    reservation = reservations.create(0)
+    device = reservation.device_id
+    monkeypatch.setitem(
+        manager.active, device, NetworkStatus(interface=device, active=True, subnet="192.0.2.0/24"),
+    )
+    tick = {"now": 0.0, "alive": True, "enabled": True, "dhcp": True}
+    pending = iter(ticks)
+
+    def wait(_timeout):
+        try:
+            tick["now"], tick["alive"], tick["enabled"], tick["dhcp"] = next(pending)
+        except StopIteration:
+            return True
+        return False
+
+    monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: tick["now"])
+    monkeypatch.setattr(manager.watchdog.stopping, "wait", wait)
+    monkeypatch.setattr(manager.hostapd_manager, "is_running", lambda _device: tick["alive"])
+    monkeypatch.setattr(manager.hostapd_manager, "is_enabled", lambda _device: tick["enabled"])
+    monkeypatch.setattr(manager.dhcp_server, "is_running", lambda _device: tick["dhcp"])
+    monkeypatch.setattr(manager, "verify_network", verify or Mock(return_value=([], False)))
+
+    def restore_dhcp(_reservations, res, _status):
+        if dhcp_restart_works:
+            manager.watchdog.states.pop(device, None)
+        else:
+            manager.watchdog.states[device] = (res, "dhcp_failed")
+
+    monkeypatch.setattr(manager.watchdog, "_restore_dhcp", restore_dhcp)
+    monkeypatch.setattr(manager.watchdog, "_restore_ap", Mock())
+    manager.watchdog._watch(reservations, device)
+    monkeypatch.delitem(manager.active, device)   # GET .../network then reads only the reservation
+    return reservation
+
+
+_HEALTHY = (True, True, True)
+
+
+@pytest.mark.parametrize(("ticks", "options", "expected"), [
+    ([(0.0, False, False, True)], {}, (1, 0, "hostapd_not_running")),
+    ([(0.0, True, False, True), (5.0, True, False, True), (10.0, True, False, True)], {},
+     (1, 0, "hostapd_not_enabled")),
+    ([(0.0, True, True, False)], {}, (0, 1, "dnsmasq_not_running")),
+    ([(0.0, True, True, False), (5.0, *_HEALTHY)], {"dhcp_restart_works": False}, (1, 1, "dhcp_failed")),
+    ([(5.0 * i, *_HEALTHY) for i in range(watchdog_module.VERIFY_EVERY + 1)],
+     {"verify": Mock(return_value=(["gateway address"], True))}, (1, 0, "network_check_failed")),
+], ids=["hostapd_not_running", "hostapd_not_enabled", "dnsmasq_not_running", "dhcp_failed",
+        "network_check_failed"])
+def test_every_restart_reason_reaches_get_network(monkeypatch, ticks, options, expected):
+    """unit-test-14 (b): each value of restarts.last_reason, from the watch loop to GET .../network."""
+    reservation = _watch_until_a_restart(monkeypatch, ticks, **options)
+    config = dependencies.get_config()
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    with TestClient(create_app()) as client:
+        restarts = client.get(
+            f"/api/v2/reservations/{reservation.reservation_id}/network", headers=headers,
+        ).json()["restarts"]
+    assert (restarts["ap"], restarts["dhcp"], restarts["last_reason"]) == expected
+    assert restarts["last_at"].endswith("Z")
+
+
+@pytest.fixture
+def scripted_creates(monkeypatch):
+    """The API with a scripted start_network: `go` lets a start finish, `fail` makes it start_failed."""
+    from wilab.api.routes import network as network_routes
+
+    monkeypatch.setattr(network_routes, "CREATE_RETRY_DELAYS", (0, 0))
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    monkeypatch.setattr(dependencies.get_channel_manager(), "validate_network", Mock())
+    monkeypatch.setattr(manager.recovery, "schedule", Mock())
+    script = {"go": threading.Event(), "fail": False}
+    script["go"].set()
+
+    def start_network(device, req, *args, cancelled=None, **kwargs):
+        while not script["go"].wait(0.01):
+            if cancelled is not None and cancelled():
+                raise StartupFailure("AP start cancelled", stage="hostapd")
+        if script["fail"]:
+            raise StartupFailure("dnsmasq refused the configuration", stage="dhcp")
+        manager.active[device] = NetworkStatus(interface=device, active=True)
+        return manager.active[device]
+
+    monkeypatch.setattr(manager, "start_network", start_network)
+    monkeypatch.setattr(
+        manager, "get_status",
+        lambda device: manager.active.get(device) or NetworkStatus(interface=device, active=False),
+    )
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    with TestClient(create_app()) as client:
+        yield client, headers, manager, script
+        script["go"].set()
+        with manager.start_jobs_lock:
+            threads = [job.thread for job in manager.start_jobs.values() if job.thread is not None]
+        for thread in threads:
+            thread.join(timeout=5)
+        manager.active.clear()
+
+
+def _until(predicate, timeout: float = 5.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if value := predicate():
+            return value
+        time.sleep(0.01)
+    raise AssertionError("condition not reached")
+
+
+def test_restart_counters_live_as_long_as_the_reservation(scripted_creates):
+    """unit-test-14 (b): restarts in the 202 body and every runtime_state; kept across creates, zero when new."""
+    client, headers, manager, script = scripted_creates
+    reservations = dependencies.get_reservation_manager(dependencies.get_config())
+    rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300}).json()[
+        "reservation_id"]
+    url = f"/api/v2/reservations/{rid}/network"
+    reservation = reservations.get(rid)
+    reservation.record_restart("ap", "hostapd_not_running")
+    reservation.record_restart("dhcp", "dnsmasq_not_running")
+    counted = client.get(url, headers=headers).json()["restarts"]
+    assert (counted["ap"], counted["dhcp"], counted["last_reason"]) == (1, 1, "dnsmasq_not_running")
+    body = network_body(ssid="counters", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)
+
+    def state():
+        return client.get(url, headers=headers).json()
+
+    script["go"].clear()
+    created = client.post(url, headers=headers, json=body)
+    assert created.status_code == 202 and created.json()["restarts"] == counted
+    assert state()["runtime_state"] == "starting" and state()["restarts"] == counted
+    script["go"].set()
+    assert _until(lambda: state()["active"])
+    assert state()["restarts"] == counted
+    assert client.delete(url, headers=headers).status_code == 200
+    assert state()["restarts"] == counted
+    assert create_network(client, headers, url, body)[1].json()["restarts"] == counted   # a new create
+    assert client.delete(url, headers=headers).status_code == 200
+    script["fail"] = True
+    failed = create_network(client, headers, url, body)[1].json()
+    assert failed["runtime_state"] == "start_failed" and failed["restarts"] == counted
+    assert client.delete(url, headers=headers).status_code == 200
+    for repair in ("restoring_ap", "restoring_dhcp"):
+        manager.watchdog.states[reservation.device_id] = (reservation, repair)
+        repaired = state()
+        assert repaired["runtime_state"] == repair and repaired["restarts"] == counted
+    manager.watchdog.states.pop(reservation.device_id)
+    assert client.delete(f"/api/v2/reservations/{rid}", headers=headers).status_code == 200
+    fresh = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300}).json()
+    zero = client.get(f"/api/v2/reservations/{fresh['reservation_id']}/network", headers=headers).json()
+    assert zero["restarts"] == {"ap": 0, "dhcp": 0, "last_at": None, "last_reason": None}

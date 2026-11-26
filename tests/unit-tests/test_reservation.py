@@ -4,6 +4,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -1218,3 +1219,126 @@ class TestGoneReasons:
                         "reservation_released", "reservation_expired",
                         "reservation_invalidated", "reservation_not_found",
                     }, path
+
+    def test_first_reason_wins_and_reasons_end_after_the_ttl(self, monkeypatch):
+        """unit-test-11 (a): the first reason stays; delete_all is released; ENDED_TTL forgets them."""
+        from wilab import reservation as module
+        clock = {"now": 1000.0}
+        monkeypatch.setattr(module, "time", SimpleNamespace(time=time.time, monotonic=lambda: clock["now"]))
+        cleanup = Mock(side_effect=RuntimeError("hostapd stuck"))
+        mgr = ReservationManager(["dev0", "dev1", "dev2"], cleanup=cleanup)
+        stuck = mgr.create(60)
+        assert mgr.delete(stuck.reservation_id)            # cleanup failed: the ID is gone all the same
+        assert "dev0" in mgr.snapshot()                    # the antenna stays held
+        cleanup.side_effect = None
+        mgr.expire()                                       # the background cleanup now succeeds, as EXPIRED
+        assert cleanup.call_count == 2 and "dev0" not in mgr.snapshot()
+        assert mgr.ended_reason(stuck.reservation_id) == module.RELEASED
+        others = [mgr.create(60), mgr.create(60)]
+        assert mgr.delete_all() == 2
+        assert [mgr.ended_reason(r.reservation_id) for r in others] == [module.RELEASED] * 2
+        clock["now"] += module.ENDED_TTL - 1
+        assert mgr.ended_reason(stuck.reservation_id) == module.RELEASED   # not yet
+        clock["now"] += 2
+        for rid in (stuck.reservation_id, *(r.reservation_id for r in others)):
+            assert mgr.ended_reason(rid) == module.NOT_FOUND
+        assert mgr._ended == {}
+
+
+# ======================================================================
+# unit-test-16: reserve with `interface` through the API, two antennas
+# ======================================================================
+
+
+@pytest.fixture
+def two_antennas(tmp_path, monkeypatch):
+    """The test configuration with a second antenna; the API on top of it."""
+    from conftest import TEST_CONFIG_PATH
+    path = tmp_path / "two-antennas.yaml"
+    path.write_text(Path(TEST_CONFIG_PATH).read_text() + (
+        '  - interface: "wls17"\n    display_name: "bench-antenna-2"\n    show_dfs: false\n'
+    ))
+    monkeypatch.setenv("CONFIG_PATH", str(path))
+    config = dependencies.get_config()
+    assert [n.interface for n in config.antennas] == ["wls16", "wls17"]
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    with TestClient(create_app()) as client:
+        yield client, headers, dependencies.get_manager(config), dependencies.get_reservation_manager(config)
+
+
+def _reserve_on(client, headers, interface=None, **extra):
+    body = {"duration_seconds": 300, **extra}
+    if interface is not None:
+        body["interface"] = interface
+    return client.post("/api/v2/reservations", headers=headers, json=body)
+
+
+def _not_in_the_past(timestamp: str, since: float) -> bool:
+    return datetime.fromisoformat(timestamp).timestamp() >= since
+
+
+class TestReserveGivenInterfaceWithTwoAntennas:
+    """unit-test-16: POST /reservations with `interface`, the other antenna is never touched."""
+
+    def test_taken_antenna_is_409_1005_and_the_other_stays_free(self, two_antennas):
+        client, headers, _manager, _reservations = two_antennas
+        first = _reserve_on(client, headers, "wls16").json()
+        since = time.time()
+        taken = _reserve_on(client, headers, "wls16")
+        assert (taken.status_code, taken.json()["detail"]["code"]) == (409, 1005)
+        assert taken.json()["detail"]["next_available_at"] == first["expires_at"]
+        assert _not_in_the_past(taken.json()["detail"]["next_available_at"], since)
+        other = _reserve_on(client, headers)
+        assert other.status_code == 200 and other.json()["interface"] == "wls17"
+
+    def test_recovering_antenna_is_503_1002_with_retry_after_10(self, two_antennas):
+        client, headers, _manager, reservations = two_antennas
+        owner = reservations.create(300, "wls16")
+        reservations.quarantine(owner, recovering=True)
+        resp = _reserve_on(client, headers, "wls16")
+        assert (resp.status_code, resp.json()["detail"]["code"]) == (503, 1002)
+        assert resp.headers["Retry-After"] == "10"
+        assert _reserve_on(client, headers, "wls17").status_code == 200
+
+    def test_unavailable_antenna_is_503_1003_without_retry_after(self, two_antennas):
+        client, headers, _manager, reservations = two_antennas
+        owner = reservations.create(300, "wls16")
+        reservations.quarantine(owner, recovering=False)
+        resp = _reserve_on(client, headers, "wls16")
+        assert (resp.status_code, resp.json()["detail"]["code"]) == (503, 1003)
+        assert "Retry-After" not in resp.headers
+        assert _reserve_on(client, headers, "wls17").status_code == 200
+
+    def test_expired_owner_is_cleaned_up_first(self, two_antennas, monkeypatch):
+        client, headers, manager, reservations = two_antennas
+        owner = reservations.create(300, "wls16")
+        monkeypatch.setitem(manager.active, "wls16", NetworkStatus(interface="wls16", active=True))
+        stopped = []
+        monkeypatch.setattr(manager, "stop_network", lambda device: stopped.append(device) or manager.active.pop(device))
+        owner.expires_at = time.time() - 1
+        resp = _reserve_on(client, headers, "wls16")
+        assert resp.status_code == 200 and resp.json()["interface"] == "wls16"
+        assert stopped == ["wls16"] and "wls16" not in manager.active
+        assert reservations.ended_reason(owner.reservation_id) == "reservation_expired"
+        assert _reserve_on(client, headers).json()["interface"] == "wls17"   # untouched
+
+    def test_expired_owner_whose_cleanup_fails_is_409_never_in_the_past(self, two_antennas, monkeypatch):
+        client, headers, manager, reservations = two_antennas
+        owner = reservations.create(300, "wls16")
+        monkeypatch.setitem(manager.active, "wls16", NetworkStatus(interface="wls16", active=True))
+        monkeypatch.setattr(manager, "stop_network", Mock(side_effect=RuntimeError("hostapd stuck")))
+        owner.expires_at = time.time() - 1
+        for _ in range(2):   # the cleanup attempt, then while its backoff runs
+            since = time.time()
+            resp = _reserve_on(client, headers, "wls16")
+            assert (resp.status_code, resp.json()["detail"]["code"]) == (409, 1005)
+            assert _not_in_the_past(resp.json()["detail"]["next_available_at"], since)
+            assert resp.json()["detail"]["next_available_in"] >= 0
+        assert manager.stop_network.call_count == 1   # a request never repeats a cleanup that backs off
+        assert _reserve_on(client, headers, "wls17").status_code == 200
+
+    def test_misspelt_field_is_422_with_its_name(self, two_antennas):
+        client, headers, _manager, _reservations = two_antennas
+        resp = _reserve_on(client, headers, interfac="wls16")
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["message"].startswith("interfac: ")

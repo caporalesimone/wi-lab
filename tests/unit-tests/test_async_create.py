@@ -19,7 +19,8 @@ from fastapi.testclient import TestClient
 from wilab.api import create_app, dependencies
 from wilab.api.routes import network
 from wilab.models import NetworkStatus
-from wilab.wifi.manager import StartupFailure
+from wilab.wifi.hostapd import HostapdError
+from wilab.wifi.manager import NetworkManager, StartupFailure
 
 RESERVE = "/api/v2/reservations"
 BODY = network_body(ssid="async-test", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)
@@ -273,3 +274,214 @@ def test_stop_releases_what_a_failed_start_left(real_start):
     assert not manager.has_leftovers(device)
     again = client.delete(f"{url}/network", headers=headers)
     assert (again.status_code, again.json()["detail"]["code"]) == (409, 1007)
+
+
+# --------------------------------------------------------------------------- unit-test-7
+
+
+def test_a_cancel_that_times_out_is_503_then_the_real_state_and_a_working_stop(api, monkeypatch):
+    """unit-test-7: a start that ignores the cancel; DELETE .../network answers 503 / 1006, then works."""
+    client, headers, url, _script, manager = api
+    monkeypatch.setattr(NetworkManager.cancel_start, "__defaults__", (0.05,))   # CANCEL_TIMEOUT
+    finish = threading.Event()
+
+    def start_ignoring_the_cancel(device, req, *args, cancelled=None, **kwargs):
+        finish.wait(5)
+        manager.active[device] = NetworkStatus(interface=device, active=True)
+        return manager.active[device]
+
+    monkeypatch.setattr(manager, "start_network", start_ignoring_the_cancel)
+    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    job = next(iter(manager.start_jobs.values()))
+    device = job.reservation.device_id
+    busy = client.delete(f"{url}/network", headers=headers)
+    assert (busy.status_code, busy.json()["detail"]["code"]) == (503, 1006)
+    assert busy.headers["Retry-After"] == "2"
+    finish.set()
+    job.thread.join(5)
+    assert not job.thread.is_alive()
+    state = _state(client, headers, url)
+    assert state.status_code == 200
+    assert (state.json()["active"], state.json()["runtime_state"]) == (True, None)
+    assert client.delete(f"{url}/network", headers=headers).status_code == 200
+    assert device not in manager.active
+    assert manager.start_jobs == {}
+    after = _state(client, headers, url).json()
+    assert (after["active"], after["runtime_state"]) == (False, None)
+
+
+# --------------------------------------------------------------------------- unit-test-9
+
+
+@pytest.fixture
+def tracked_start(real_start, monkeypatch):
+    """real_start, with dnsmasq tracked too, so a DHCP server left running is a leftover."""
+    client, headers, url, manager, stop = real_start
+    running: set[str] = set()
+    monkeypatch.setattr(
+        manager.dhcp_server, "start", Mock(side_effect=lambda net_id, **_kwargs: running.add(net_id) or {}),
+    )
+    monkeypatch.setattr(manager.dhcp_server, "stop", Mock(side_effect=running.discard))
+    monkeypatch.setattr(manager.dhcp_server, "list_active", lambda: sorted(running))
+    return client, headers, url, manager, stop
+
+
+def _block_until_cancelled(monkeypatch, manager, phase, entered):
+    """Make *phase* of the real start wait for the cancel, like a slow step (a DFS check, a slow dnsmasq)."""
+    if phase == "hostapd":
+        instances = manager.hostapd_manager._instances
+
+        def hostapd_start(*, net_id, cancelled=None, **_kwargs):
+            instances[net_id] = Mock()   # the process runs; hostapd waits for the radio
+            entered.set()
+            end = time.monotonic() + 5
+            while not cancelled() and time.monotonic() < end:
+                time.sleep(0.01)
+            raise HostapdError(f"AP start on {net_id} cancelled")
+
+        monkeypatch.setattr(manager.hostapd_manager, "start", hostapd_start)
+        return
+    owner, name = {"dhcp": (manager.dhcp_server, "start"), "nat": (manager.nat_manager, "enable_nat")}[phase]
+    real = getattr(owner, name)
+
+    def slow_step(*args, **kwargs):
+        with manager.start_jobs_lock:
+            job = next(iter(manager.start_jobs.values()))
+        entered.set()
+        job.cancel.wait(5)   # this step does not check the cancel: it ends, and the start goes on
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(owner, name, slow_step)
+
+
+@pytest.mark.parametrize("phase", ["hostapd", "dhcp", "nat"])
+def test_release_during_each_phase_of_the_real_start_leaves_nothing(tracked_start, monkeypatch, phase):
+    """unit-test-9: release while the real _start_network is blocked in hostapd, dnsmasq or NAT."""
+    client, headers, url, manager, stop = tracked_start
+    entered = threading.Event()
+    _block_until_cancelled(monkeypatch, manager, phase, entered)
+    body = network_body(
+        ssid="phases", channel=6, encryption="open", band="2.4ghz", tx_power_level=4,
+        internet_enabled=True, captive_portal=True,
+    )
+    assert client.post(f"{url}/network", headers=headers, json=body).status_code == 202
+    assert entered.wait(5)
+    job = next(iter(manager.start_jobs.values()))
+    device = job.reservation.device_id
+    # hostapd runs: something to clean up. (Not has_leftovers: NAT blocks under the firewall lock.)
+    assert device in manager.hostapd_manager._instances
+    if phase == "nat":
+        assert device in manager.captive_portals and device in manager.dhcp_server.list_active()
+    began = time.monotonic()
+    released = client.delete(url, headers=headers)
+    assert released.status_code == 200
+    assert time.monotonic() - began < 3   # released while blocked, not after the step timed out
+    job.thread.join(5)
+    assert not job.thread.is_alive()
+    assert manager.active == {}
+    stop.assert_called_with(device)
+    assert not manager.has_leftovers(device)   # hostapd, dnsmasq, portal, NAT and host guard
+    assert not manager.host_guard.has(device)
+    assert manager.isolation_manager.get_active_subnets() == []
+    assert not manager.nat_manager.has_pending_network(device)
+    assert manager.captive_portals == {}
+    assert manager.start_jobs == {}
+    assert _state(client, headers, url).json()["detail"]["reason"] == "reservation_released"
+    again = client.post(RESERVE, headers=headers, json={"duration_seconds": 300, "interface": device})
+    assert again.status_code == 200 and again.json()["interface"] == device
+
+
+# --------------------------------------------------------------------------- unit-test-10
+
+
+def test_release_during_the_pause_between_two_starts_returns_at_once(api, monkeypatch):
+    """unit-test-10: radio failure, release during the 5 s pause: no second start, no quarantine."""
+    client, headers, url, script, manager = api
+    monkeypatch.setattr(network, "CREATE_RETRY_DELAYS", (5, 10))
+    pauses: list[float] = []
+    pausing = threading.Event()
+    real_pause = network._pause
+
+    def pause(cancel, seconds):
+        pauses.append(seconds)
+        pausing.set()
+        return real_pause(cancel, seconds)   # cancel.wait: the release must wake it
+
+    monkeypatch.setattr(network, "_pause", pause)
+    script["outcome"] = "radio"
+    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    job = next(iter(manager.start_jobs.values()))
+    assert pausing.wait(5)
+    began = time.monotonic()
+    assert client.delete(url, headers=headers).status_code == 200
+    assert time.monotonic() - began < 1
+    assert job.done.is_set()
+    assert pauses == [5]
+    assert script["calls"] == 1   # no second start
+    reservations = dependencies.get_reservation_manager(dependencies.get_config())
+    assert reservations.recovery_snapshot() == {}   # no quarantine
+    manager.recovery.schedule.assert_not_called()
+    assert _state(client, headers, url).json()["detail"]["reason"] == "reservation_released"
+    assert manager.start_jobs == {}
+
+
+# --------------------------------------------------------------------------- unit-test-11 (b)
+
+
+def test_start_failed_does_not_pass_to_the_next_reservation_after_an_expiry(api):
+    """unit-test-11 (b): start_failed, then expiry and cleanup (not a release), then a new reservation."""
+    client, headers, url, script, manager = api
+    script["outcome"] = "stage"
+    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    _wait_until(lambda: _state(client, headers, url).json()["runtime_state"] == "start_failed")
+    reservations = dependencies.get_reservation_manager(dependencies.get_config())
+    rid = url.rsplit("/", 1)[1]
+    old = reservations.get(rid)
+    old.expires_at = time.time() - 1
+    reservations.expire()   # the background sweep
+    assert reservations.ended_reason(rid) == "reservation_expired"
+    new = client.post(RESERVE, headers=headers, json={"duration_seconds": 300})
+    assert new.status_code == 200 and new.json()["interface"] == old.device_id
+    status = client.get("/api/v2/status", headers=headers).json()
+    entry = next(a for a in status["antennas"] if a["interface"] == old.device_id)
+    assert "runtime_state" not in entry
+    state = _state(client, headers, f"{RESERVE}/{new.json()['reservation_id']}")
+    assert state.status_code == 200
+    assert (state.json()["runtime_state"], state.json()["error"]) == (None, None)
+    assert manager.start_jobs == {}
+
+
+# --------------------------------------------------------------------------- unit-test-12
+
+
+def test_reservation_expiring_during_the_start(real_start, monkeypatch):
+    """unit-test-12: the reservation expires while the start runs; the sweep then frees everything."""
+    client, headers, url, manager, _stop = real_start
+    instances = manager.hostapd_manager._instances
+    entered, finish = threading.Event(), threading.Event()
+
+    def slow_hostapd(*, net_id, **_kwargs):
+        instances[net_id] = Mock()
+        entered.set()
+        finish.wait(5)
+
+    monkeypatch.setattr(manager.hostapd_manager, "start", slow_hostapd)
+    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert entered.wait(5)
+    job = next(iter(manager.start_jobs.values()))
+    device = job.reservation.device_id
+    job.reservation.expires_at = time.time() - 1
+    gone = _state(client, headers, url)
+    assert (gone.status_code, gone.json()["detail"]["reason"]) == (404, "reservation_expired")
+    taken = client.post(RESERVE, headers=headers, json={"duration_seconds": 300})
+    assert (taken.status_code, taken.json()["detail"]["code"]) == (409, 1005)
+    finish.set()
+    job.thread.join(5)
+    assert not job.thread.is_alive()
+    dependencies.get_reservation_manager(dependencies.get_config()).expire()
+    assert device not in manager.active
+    assert device not in instances
+    assert not manager.has_leftovers(device)
+    assert manager.start_jobs == {}
+    free = client.post(RESERVE, headers=headers, json={"duration_seconds": 300})
+    assert free.status_code == 200 and free.json()["interface"] == device

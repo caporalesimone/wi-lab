@@ -25,6 +25,8 @@ All notable changes to Wi-Lab are documented in this file.
 
 - New tests for unexpected start errors (REV-1), failed firewall checks (REV-3), a missing host guard chain (REV-4) and a stop failing in each phase (REV-7).
 - The e2e watchdog tests that block dnsmasq take UDP port 67 after the failure they cause: dnsmasq of the running network already held it, so the three tests failed before testing anything.
+- New unit tests from the 2026-11-26 review: cancel timeout, `404` reasons on every operation, cancel in each start phase and during the pause, tombstones, expiry during a start, stop retry budget, `restarts` counters, reserve by `interface`, cleanup backoff (unit-test-7 … 17).
+- New e2e tests: `start_failed`, stop and release during a start, reserve by `interface`, `404` reasons, `restarts` counters, create during a repair, expiry, captive portal, lost host guard, Internet kept disabled (e2e-test-1 … 12, except 8).
 - Unit tests create networks through the real asynchronous path (`202`, then polling) with the `create_network` helper (REV-16).
 
 ### 🔌 API changes from 4.0.0 (client migration)
