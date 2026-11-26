@@ -12,7 +12,7 @@ All notable changes to Wi-Lab are documented in this file.
 |---|---:|
 | 🐛 Bug fixes | 25 |
 | ⚠️ Breaking changes | 6 |
-| 🔧 Maintenance changes | 7 |
+| 🔧 Maintenance changes | 8 |
 | ✨ New features | 1 |
 | ✅ Test changes | 7 |
 | 📦 Commits since 4.0.0 | 62 |
@@ -73,6 +73,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - A command timeout is the value passed: `execute_command` no longer raises any timeout below 5 s to 5 s in silence, and `exact_timeout` is gone (Fable PERF-5).
 - Dead code removed with its tests: `NatManager.flush_all_rules` (it would have emptied the whole host NAT table, Docker's included) and `disable_ip_forwarding`, `IsolationManager.flush_all`, `execute_pkill`, `stop_all` of hostapd and DHCP, `NetworkManager.get_summary`, `check_ip_forwarding`, commented frontend paths and a `pid_file` leftover. The startup notice about host changes is one `INFO` line instead of nine `WARNING` lines about Docker host networking (Fable ARCH-9).
 - Internet, TX power and QoS requests no longer run `iw station dump`, `iw info` and read the lease file only to check that the network runs, and the client list is reused for 1.5 s between two reads of `GET .../network` (Fable PERF-2).
+- dnsmasq runs as a foreground child of the service, like hostapd, instead of a daemon tracked through PID files: a start that fails at once (bad option, address in use) reports dnsmasq's exit code and message, a stop ends exactly the process the service started, and `/run/wilab/dnsmasq/pids` is gone (Fable ARCH-6).
 
 ### ✅ Tests
 

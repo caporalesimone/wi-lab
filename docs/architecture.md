@@ -206,8 +206,7 @@ existing antennas, so it does not disturb running APs.
 processes whose arguments point into `/run/wilab/hostapd` or
 `/run/wilab/dnsmasq` (or the `/tmp/wilab-*` directories used before 4.1.0;
 they survive only when the service is not run by systemd), empties those
-directories (and removes the old `/tmp` ones), so a stale dnsmasq PID file can no longer
-fail every start with "Existing dnsmasq PID file", and deletes `wilab-ifbN`
+directories (and removes the old `/tmp` ones), and deletes `wilab-ifbN`
 devices. QoS names its upload devices `wilab-ifbN` for this reason; plain
 `ifbN` devices may belong to other software and are left alone. When discovery
 adds an antenna, `reset_interface()` takes its device lock once and brings it
@@ -292,7 +291,7 @@ flowchart TB
     end
     subgraph Children["Child processes"]
         HP["hostapd (foreground child, one per AP)"]
-        DQ["dnsmasq (daemon, PID file)"]
+        DQ["dnsmasq (foreground child, one per AP)"]
         SC["short commands: ip, iw, hostapd_cli,<br/>iptables, tc, udevadm, usbreset"]
     end
     EL --> Pool
@@ -425,7 +424,7 @@ sequenceDiagram
     end
     HA-->>NM: AP enabled on this interface
     NM->>OS: ip addr add gateway
-    NM->>DH: start: write config, dnsmasq --test, launch, read PID
+    NM->>DH: start: write config, dnsmasq --test, spawn dnsmasq in foreground, check it did not exit
     opt captive_portal
         NM->>FW: install portal chains, then start the portal web server
     end
@@ -1147,7 +1146,7 @@ device lock for a 60 s radar check.
 |---|---|---|
 | Reservations, quarantine, active networks, watchdog states | Process memory | Lost on restart. |
 | hostapd configuration and control socket | `/run/wilab/hostapd/ap-*/` (private: `RuntimeDirectory=wilab`, mode 0700; Fable STAB-2) | Removed at teardown. Contains the WPA passphrase. |
-| dnsmasq configuration, leases, PID | `/run/wilab/dnsmasq/` | Removed at teardown, leases included, so the next user of the adapter never inherits the previous clients; a watchdog restart of dnsmasq alone keeps the leases (Fable NET-7). If a launch timed out before the PID file existed, teardown finds the daemon by its unique `--conf-file` argument in `/proc`, or concludes none was started (Fable NET-6). |
+| dnsmasq configuration and leases | `/run/wilab/dnsmasq/` | Removed at teardown, leases included, so the next user of the adapter never inherits the previous clients; a watchdog restart of dnsmasq alone keeps the leases (Fable NET-7). dnsmasq runs as a foreground child of the service (`--keep-in-foreground`), like hostapd, with no PID file: teardown terminates and reaps the child it owns (Fable ARCH-6). |
 | NAT and isolation rules | iptables `nat` and `FORWARD` | Removed at teardown. Leftovers are reported at startup. |
 | Captive portal chains and sign-ins | iptables `wilab-cp-<interface>` chains; sign-ins in process memory | Removed at teardown and at startup. |
 | Host guard | iptables and ip6tables `wilab-in-<interface>` chains, jumped to from `INPUT` | Removed at teardown and at startup. |

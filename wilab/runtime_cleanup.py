@@ -5,11 +5,11 @@ Firewall rules and captive portal chains are removed elsewhere at startup
 handles the rest:
 
 - hostapd and dnsmasq processes started by a previous Wi-Lab (recognised by
-  their configuration path under the Wi-Lab runtime directories). Under
-  systemd they die with the service; when the service runs by hand they can
-  survive it;
-- files in the runtime directories, including a dnsmasq PID file that would
-  make every later start on that adapter fail with "Existing dnsmasq PID file";
+  their configuration path under the Wi-Lab runtime directories). Both are
+  foreground children of the service (ARCH-6): under systemd they die with
+  it; when the service runs by hand and crashes they survive, reparented to
+  init;
+- files in the runtime directories (configurations, leases);
 - `wilab-ifbN` devices created for QoS upload shaping.
 
 Radios are reset (down, managed, no address, no traffic control) when
@@ -22,7 +22,7 @@ import shutil
 from pathlib import Path
 
 from .network.commands import CommandError, execute_command, stop_process
-from .network.dhcp import DNSMASQ_CONFIG_DIR, DNSMASQ_PID_DIR
+from .network.dhcp import DNSMASQ_CONFIG_DIR
 from .network.qos import IFB_PREFIX
 from .paths import LEGACY_RUNTIME_DIRS
 from .wifi.hostapd import HOSTAPD_CONFIG_DIR
@@ -93,8 +93,6 @@ def cleanup_runtime() -> None:
             logger.warning("Removed %d stale entries from %s", removed, directory)
     for legacy in LEGACY_RUNTIME_DIRS:
         shutil.rmtree(legacy, ignore_errors=True)   # emptied above; the directory goes too
-    # The DHCP server created this directory at startup and expects it to exist.
-    os.makedirs(DNSMASQ_PID_DIR, mode=0o700, exist_ok=True)
     for name in _stale_ifbs():
         try:
             execute_command(["ip", "link", "del", name])

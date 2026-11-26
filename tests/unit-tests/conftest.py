@@ -279,6 +279,12 @@ Band 2:
     monkeypatch.setattr(hostapd, "HOSTAPD_CONFIG_DIR", str(tmp_path / "hostapd"))
     monkeypatch.setattr(hostapd, "start_foreground", reject_real_hostapd)
     monkeypatch.setattr(dhcp, "execute_command", mock_execute_command)
+    # dnsmasq is a foreground child (ARCH-6): never launch the real one from tests.
+    def reject_real_dnsmasq(*args, **kwargs) -> None:
+        raise commands.CommandError("dnsmasq must be mocked in tests")
+
+    monkeypatch.setattr(dhcp, "DNSMASQ_CONFIG_DIR", str(tmp_path / "dnsmasq"))
+    monkeypatch.setattr(dhcp, "start_foreground", reject_real_dnsmasq)
     monkeypatch.setattr(nat, "execute_command", mock_execute_command)
     from wilab.network import host_guard
     monkeypatch.setattr(host_guard, "execute_command", mock_execute_command)  # ip6tables

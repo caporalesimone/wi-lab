@@ -127,68 +127,23 @@ class TestStopProcess:
             stop_process(123)
         assert calls == [["kill", "123"], ["kill", "-9", "123"]]
 
-    @pytest.mark.parametrize(
-        ("module_name", "manager_name", "error_name"),
-        [
-            ("wilab.network.dhcp", "DhcpServer", "DhcpServerError"),
-        ],
-    )
-    def test_failed_daemon_stop_preserves_tracking_for_retry(
-        self, module_name, manager_name, error_name, tmp_path, monkeypatch
-    ):
-        import importlib
+    def test_failed_dnsmasq_stop_preserves_tracking_for_retry(self, tmp_path):
+        from wilab.network.dhcp import DhcpServer, DhcpServerError
 
-        module = importlib.import_module(module_name)
-        manager = getattr(module, manager_name).__new__(getattr(module, manager_name))
-        pid_file = tmp_path / "daemon.pid"
+        manager = DhcpServer.__new__(DhcpServer)
         config_file = tmp_path / "daemon.conf"
-        pid_file.write_text("123", encoding="utf-8")
         config_file.write_text("", encoding="utf-8")
-        manager._instances = {
-            "dev0": {"pid": 123, "pid_file": str(pid_file), "config_file": str(config_file)}
-        }
-        monkeypatch.setattr(manager, "_owns_process", lambda instance: instance["pid"] == 123)
-
-        def fail(pid):
-            raise CommandError("permission denied")
-
-        monkeypatch.setattr(module, "stop_process", fail)
-        with pytest.raises(getattr(module, error_name)):
+        process = MagicMock()
+        process.stop.side_effect = [CommandError("permission denied"), None]
+        manager._instances = {"dev0": {"process": process, "config_file": str(config_file)}}
+        with pytest.raises(DhcpServerError):
             manager.stop("dev0")
         assert "dev0" in manager._instances
-        assert pid_file.exists()
+        assert config_file.exists()
 
-        monkeypatch.setattr(module, "stop_process", lambda pid: None)
         manager.stop("dev0")
         assert "dev0" not in manager._instances
-
-    @pytest.mark.parametrize(
-        ("module_name", "manager_name"),
-        [
-            ("wilab.network.dhcp", "DhcpServer"),
-        ],
-    )
-    def test_retry_removes_pid_file_without_signalling_stopped_process(
-        self, module_name, manager_name, tmp_path, monkeypatch
-    ):
-        import importlib
-
-        module = importlib.import_module(module_name)
-        manager = getattr(module, manager_name).__new__(getattr(module, manager_name))
-        pid_file = tmp_path / "daemon.pid"
-        config_file = tmp_path / "daemon.conf"
-        pid_file.write_text("123", encoding="utf-8")
-        config_file.write_text("", encoding="utf-8")
-        manager._instances = {
-            "dev0": {
-                "pid_file": str(pid_file), "config_file": str(config_file),
-                "process_stopped": True,
-            }
-        }
-        monkeypatch.setattr(module, "stop_process", lambda pid: pytest.fail("unexpected signal"))
-        manager.stop("dev0")
-        assert not pid_file.exists()
-        assert "dev0" not in manager._instances
+        assert process.stop.call_count == 2
 
 
 class TestHostapdInterfaceCleanup:

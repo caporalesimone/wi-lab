@@ -183,7 +183,7 @@ class TestNetworkLifecycle:
 
         def start_dhcp(**kwargs):
             events.append("dhcp")
-            mgr.dhcp_server._instances[device] = {"process_stopped": True}
+            mgr.dhcp_server._instances[device] = {"process": None}
             raise DhcpServerError("DHCP failed")
 
         def stop_dhcp(device_id):

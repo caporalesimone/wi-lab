@@ -1,9 +1,11 @@
 import os
+import sys
 from ipaddress import IPv4Network
 from pathlib import Path
 
 import pytest
 
+from wilab.network import commands
 from wilab.network.commands import CommandError
 from wilab.network.dhcp import DhcpServer, DhcpServerError
 
@@ -118,23 +120,22 @@ class TestDhcpServerStart:
     
     def test_start_does_not_change_interface(self, monkeypatch, tmp_path):
         monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_CONFIG_DIR", str(tmp_path))
-        monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_PID_DIR", str(tmp_path))
-        commands = []
+        ran = []
+        monkeypatch.setattr("wilab.network.dhcp.execute_command", lambda cmd: ran.append(cmd[0]))
+        monkeypatch.setattr("wilab.network.dhcp.STARTUP_CHECK", 0.0)
 
-        def run(cmd):
-            commands.append(cmd[0])
-            if any(arg.startswith("--pid-file=") for arg in cmd):
-                (tmp_path / "dnsmasq-ap-01.pid").write_text("123")
+        class Running:
+            def poll(self):
+                return None
 
-        monkeypatch.setattr("wilab.network.dhcp.execute_command", run)
+        monkeypatch.setattr("wilab.network.dhcp.start_foreground", lambda cmd, **kwargs: Running())
         info = DhcpServer().start("ap-01", "wlan0", "192.168.10.0/24", "192.0.2.1")
         assert info["gateway"] == "192.168.10.1"
-        assert commands == ["dnsmasq", "dnsmasq"]  # --test and launch; no --version (PERF-1)
+        assert ran == ["dnsmasq"]  # only --test; no --version (PERF-1)
 
     def test_start_server_not_installed(self, monkeypatch, tmp_path):
         """Test starting server fails gracefully when dnsmasq not installed."""
         monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_CONFIG_DIR", str(tmp_path))
-        monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_PID_DIR", str(tmp_path))
         dhcp = DhcpServer()
         monkeypatch.setattr("wilab.network.dhcp.execute_command", lambda *args, **kwargs: (_ for _ in ()).throw(CommandError("missing")))
         with pytest.raises(DhcpServerError, match="dnsmasq not installed|Failed|Permission"):
@@ -196,72 +197,67 @@ class TestDhcpIntegration:
             assert gateway == str(net[1])
 
 
-class TestLaunchTimeoutCleanup:
-    """NET-6: a dnsmasq launch that timed out before its PID file can still be cleaned up."""
+class TestForegroundDnsmasq:
+    """ARCH-6: dnsmasq is a directly owned child, like hostapd, with no PID file."""
 
     @pytest.fixture
-    def timed_out(self, monkeypatch, tmp_path):
-        from wilab.network.commands import CommandTimeout
-
+    def launch(self, monkeypatch, tmp_path):
+        """Start a Python stand-in for dnsmasq with the real start_foreground."""
         monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_CONFIG_DIR", str(tmp_path))
-        monkeypatch.setattr("wilab.network.dhcp.DNSMASQ_PID_DIR", str(tmp_path))
+        monkeypatch.setattr("wilab.network.dhcp.execute_command", lambda cmd: "")
+        launched: list[list[str]] = []
 
-        def run(cmd):
-            if any(arg.startswith("--pid-file=") for arg in cmd):
-                raise CommandTimeout("Command timed out: dnsmasq")
-            return ""
+        def use(script: str) -> list[list[str]]:
+            def start(cmd, **kwargs):
+                launched.append(cmd)
+                return commands.start_foreground([sys.executable, "-c", script], **kwargs)
 
-        monkeypatch.setattr("wilab.network.dhcp.execute_command", run)
+            monkeypatch.setattr("wilab.network.dhcp.start_foreground", start)
+            return launched
+
+        return use
+
+    def test_start_runs_dnsmasq_in_the_foreground_and_stop_ends_it(self, launch):
+        launched = launch("import time; time.sleep(30)")
         server = DhcpServer()
-        with pytest.raises(DhcpServerError):
+        info = server.start("ap-01", "wlan0", "192.168.10.0/24", "192.0.2.1")
+        conf = info["config_file"]
+        assert launched == [["dnsmasq", "--keep-in-foreground", "--pid-file=", f"--conf-file={conf}"]]
+        assert "process" not in server.get_subnet_info("ap-01")
+        assert server.is_running("ap-01")
+        process = server._instances["ap-01"]["process"]
+        server.stop("ap-01")
+        assert process.poll() is not None
+        assert not server.is_running("ap-01")
+        assert not os.path.exists(conf)
+
+    def test_dnsmasq_exiting_at_once_raises_with_code_and_output(self, launch):
+        launch("import sys; print('dnsmasq: failed to create listening socket for 192.168.10.1: "
+               "Address already in use', flush=True); sys.exit(2)")
+        server = DhcpServer()
+        with pytest.raises(DhcpServerError, match=r"exited at once with code 2: .*Address already in use"):
             server.start("ap-01", "wlan0", "192.168.10.0/24", "192.0.2.1")
-        return server
+        assert not server.is_running("ap-01")
+        server.stop("ap-01")  # the rollback of the failed start completes
+        assert "ap-01" not in server.list_active()
 
-    def test_stop_without_pid_file_and_no_process_completes(self, timed_out, monkeypatch):
-        stopped = []
-        monkeypatch.setattr("wilab.network.dhcp.stop_process", stopped.append)
-        monkeypatch.setattr(DhcpServer, "_find_process", staticmethod(lambda config_file: None))
-        timed_out.stop("ap-01")  # previously: "Missing dnsmasq PID file" on every attempt
-        assert stopped == []
-        assert "ap-01" not in timed_out.list_active()
-
-    def test_stop_without_pid_file_kills_the_daemon_found_by_conf_file(self, timed_out, monkeypatch):
-        stopped = []
-        monkeypatch.setattr("wilab.network.dhcp.stop_process", stopped.append)
-        monkeypatch.setattr(DhcpServer, "_find_process", staticmethod(lambda config_file: 4321))
-        timed_out.stop("ap-01")
-        assert stopped == [4321]
-        assert "ap-01" not in timed_out.list_active()
+    def test_dnsmasq_dying_later_is_not_running(self, launch):
+        launch("import time; time.sleep(0.6)")
+        server = DhcpServer()
+        server.start("ap-01", "wlan0", "192.168.10.0/24", "192.0.2.1")
+        process = server._instances["ap-01"]["process"]
+        process._process.wait(timeout=5)
+        assert not server.is_running("ap-01")
+        server.stop("ap-01")
 
     @pytest.mark.parametrize("keep_leases", [False, True])
-    def test_leases_end_with_the_network(self, timed_out, monkeypatch, keep_leases):
+    def test_leases_end_with_the_network(self, launch, keep_leases):
         """NET-7: the next user of the adapter never inherits the previous clients;
         a watchdog restart of dnsmasq on the same network keeps them."""
-        monkeypatch.setattr("wilab.network.dhcp.stop_process", lambda pid: None)
-        monkeypatch.setattr(DhcpServer, "_find_process", staticmethod(lambda config_file: None))
-        leases = Path(timed_out._instances["ap-01"]["lease_file"])
+        launch("import time; time.sleep(30)")
+        server = DhcpServer()
+        server.start("ap-01", "wlan0", "192.168.10.0/24", "192.0.2.1")
+        leases = Path(server._instances["ap-01"]["lease_file"])
         leases.write_text("1700000000 aa:bb:cc:dd:ee:ff 192.168.10.50 phone *\n")
-        timed_out.stop("ap-01", keep_leases=keep_leases)
+        server.stop("ap-01", keep_leases=keep_leases)
         assert leases.exists() is keep_leases
-
-    def test_find_process_matches_name_and_conf_file(self, tmp_path):
-        import subprocess
-        import sys
-
-        fake = tmp_path / "dnsmasq"
-        fake.symlink_to(sys.executable)
-        conf = tmp_path / "dnsmasq-ap-01.conf"
-        child = subprocess.Popen(
-            [str(fake), "-c", "import time; time.sleep(30)", f"--conf-file={conf}"],
-        )
-        try:
-            for _ in range(50):
-                if DhcpServer._find_process(str(conf)) == child.pid:
-                    break
-                import time
-                time.sleep(0.05)
-            assert DhcpServer._find_process(str(conf)) == child.pid
-            assert DhcpServer._find_process(str(tmp_path / "other.conf")) is None
-        finally:
-            child.kill()
-            child.wait()

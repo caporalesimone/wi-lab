@@ -2,7 +2,7 @@
 
 systemd creates the private directory (`RuntimeDirectory=wilab`, mode 0700) and
 exports it as RUNTIME_DIRECTORY. Not /tmp: tmpfiles cleans files untouched for
-days there (dnsmasq's PID file of a long-running network), and a fixed name in a
+days there (the configuration of a long-running network), and a fixed name in a
 world-writable directory lets a local user prepare it for root to write into.
 """
 

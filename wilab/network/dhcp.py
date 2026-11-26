@@ -1,17 +1,26 @@
 import logging
 import os
+import time
 from ipaddress import IPv4Network
-from pathlib import Path
+from typing import Any
 
-from .commands import CommandError, CommandTimeout, execute_command, stop_process
+from .commands import CommandError, ForegroundProcess, execute_command, start_foreground
 
 logger = logging.getLogger(__name__)
 
 from ..paths import DNSMASQ_RUNTIME_DIR, make_private_dir
 
-# dnsmasq configuration, leases and PID files (STAB-2: private, not /tmp).
+# dnsmasq configuration and leases (STAB-2: private, not /tmp).
 DNSMASQ_CONFIG_DIR = DNSMASQ_RUNTIME_DIR
-DNSMASQ_PID_DIR = os.path.join(DNSMASQ_RUNTIME_DIR, "pids")
+# A configuration or bind error ends dnsmasq before it serves (it checks and binds
+# before its main loop): a start waits this long to see such an exit (ARCH-6).
+STARTUP_CHECK = 0.3
+OUTPUT_TAIL_LINES = 20      # dnsmasq output kept to explain an early exit
+
+
+def _no_event(line: bytes) -> str | None:
+    """dnsmasq output has no events to classify; it is only drained and kept."""
+    return None
 
 
 class DhcpServerError(Exception):
@@ -26,14 +35,13 @@ class DhcpServer:
     
     def __init__(self):
         """Initialize DHCP server manager."""
-        self._instances: dict[str, dict] = {}  # net_id -> {interface, subnet, config_file, gateway, pid_file}
+        self._instances: dict[str, dict] = {}  # net_id -> {interface, subnet, config_file, gateway, process}
         self._ensure_config_dir()
     
     def _ensure_config_dir(self) -> None:
-        """Ensure config and pid directories exist."""
+        """Ensure the config directory exists."""
         try:
             make_private_dir(DNSMASQ_CONFIG_DIR)
-            os.makedirs(DNSMASQ_PID_DIR, mode=0o700, exist_ok=True)
         except OSError as e:
             logger.warning(f"Could not create dnsmasq dir: {e}")
     
@@ -151,8 +159,6 @@ class DhcpServer:
             # Parse subnet
             network_addr, gateway_addr, dhcp_range = self._parse_subnet(subnet)
             
-            # Paths for pid and leases
-            pid_file = os.path.join(DNSMASQ_PID_DIR, f"dnsmasq-{net_id}.pid")
             lease_file = os.path.join(DNSMASQ_CONFIG_DIR, f"leases-{net_id}.db")
             
             # Generate config
@@ -166,18 +172,16 @@ class DhcpServer:
             
             # Write config to file
             config_file = os.path.join(DNSMASQ_CONFIG_DIR, f"dnsmasq-{net_id}.conf")
-            if os.path.lexists(pid_file):
-                raise DhcpServerError(f"Existing dnsmasq PID file for {net_id}")
-            instance = {
+            # Registered before the launch, so stop() cleans up after a failed start.
+            instance: dict[str, Any] = {
                 "interface": interface,
                 "subnet": subnet,
                 "gateway": gateway_addr,
                 "config_file": config_file,
-                "pid_file": pid_file,
                 "lease_file": lease_file,
                 "network_addr": network_addr,
                 "dhcp_range": dhcp_range,
-                "process_stopped": True,
+                "process": None,
             }
             self._instances[net_id] = instance
             with open(config_file, "w") as f:
@@ -197,27 +201,17 @@ class DhcpServer:
             except CommandError as e:
                 raise DhcpServerError(f"dnsmasq config test failed: {e}") from e
             
-            # Start dnsmasq for this interface (daemonizes by default)
-            instance["process_stopped"] = False
-            try:
-                execute_command([
-                    "dnsmasq",
-                    f"--conf-file={config_file}",
-                    f"--pid-file={pid_file}",
-                ])
-            except CommandTimeout:
-                # The launcher may already have forked.
-                raise
-            except CommandError as e:
-                instance["process_stopped"] = not os.path.exists(pid_file)
-                raise DhcpServerError(f"dnsmasq failed to start: {e}") from e
-            
-            if not os.path.isfile(pid_file):
-                raise DhcpServerError(f"Missing dnsmasq PID file for {net_id}")
-            pid = int(Path(pid_file).read_text().strip())
-            if pid <= 0:
-                raise DhcpServerError(f"Invalid dnsmasq PID for {net_id}")
-            instance["pid"] = pid
+            # A directly owned child, like hostapd (ARCH-6): no PID file to trust or
+            # clean up. An empty --pid-file stops dnsmasq writing its default
+            # /run/dnsmasq.pid, which every instance (and a system dnsmasq) would share.
+            # The --conf-file argument stays: startup cleanup recognises a dnsmasq
+            # orphaned by a crashed service by it (STAB-4).
+            process = start_foreground(
+                ["dnsmasq", "--keep-in-foreground", "--pid-file=", f"--conf-file={config_file}"],
+                classify_output=_no_event, keep_lines=OUTPUT_TAIL_LINES,
+            )
+            instance["process"] = process
+            self._check_started(process, net_id)
             logger.info(f"dnsmasq started for {net_id} on {interface}")
             
             logger.info(f"DHCP server started for {net_id}: {subnet} (gateway: {gateway_addr})")
@@ -226,6 +220,21 @@ class DhcpServer:
         
         except Exception as e:
             raise DhcpServerError(f"Failed to start DHCP server for {net_id}: {e}") from e
+
+    @staticmethod
+    def _check_started(process: ForegroundProcess, net_id: str) -> None:
+        """Raise if dnsmasq exits during STARTUP_CHECK (bad option, address in use)."""
+        deadline = time.monotonic() + STARTUP_CHECK
+        while process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        code = process.poll()
+        if code is None:
+            return
+        # dnsmasq output holds no secrets (DHCP options, addresses, its own errors).
+        tail = "; ".join(line for line in process.output_tail(exited=True) if line.strip())
+        raise DhcpServerError(
+            f"dnsmasq for {net_id} exited at once with code {code}" + (f": {tail}" if tail else ""),
+        )
     
     def stop(self, net_id: str, *, keep_leases: bool = False) -> None:
         """
@@ -247,34 +256,10 @@ class DhcpServer:
         try:
             instance = self._instances[net_id]
             config_file = instance["config_file"]
-            pid_file = instance.get("pid_file")
-            
-            # Stop dnsmasq process if pid file exists
-            if not instance.get("process_stopped"):
-                pid = instance.get("pid")
-                if pid is not None:
-                    if self._owns_process(instance):
-                        stop_process(pid)
-                elif not pid_file or not os.path.exists(pid_file):
-                    # The launch timed out before dnsmasq wrote its PID file (NET-6):
-                    # find it by its --conf-file, which is unique per network. None
-                    # found means the killed launcher never started a daemon.
-                    found = self._find_process(config_file)
-                    if found is not None:
-                        logger.warning("Stopping dnsmasq for %s found without a PID file (pid %d)", net_id, found)
-                        stop_process(found)
-                    else:
-                        logger.info("No dnsmasq process for %s; the launch never started one", net_id)
-                else:
-                    pid = int(Path(pid_file).read_text().strip())
-                    if self._owns_process({**instance, "pid": pid}):
-                        stop_process(pid)
-                instance["process_stopped"] = True
-            if pid_file:
-                try:
-                    os.remove(pid_file)
-                except FileNotFoundError:
-                    pass
+            process = instance.get("process")
+            if process is not None:
+                process.stop()
+                instance["process"] = None
             
             # Remove config file
             if os.path.exists(config_file):
@@ -306,41 +291,13 @@ class DhcpServer:
         instance = self._instances.get(net_id)
         if instance is None:
             return None
-        return {key: value for key, value in instance.items() if key != "pid"}
-
-    @staticmethod
-    def _find_process(config_file: str) -> int | None:
-        """PID of the dnsmasq started with this configuration file, if any (NET-6)."""
-        wanted = os.fsencode(f"--conf-file={config_file}")
-        for entry in Path("/proc").iterdir():
-            if not entry.name.isdigit():
-                continue
-            try:
-                args = (entry / "cmdline").read_bytes().split(b"\0")
-            except OSError:
-                continue
-            if args and Path(os.fsdecode(args[0])).name == "dnsmasq" and wanted in args[1:]:
-                return int(entry.name)
-        return None
-
-    @staticmethod
-    def _owns_process(instance: dict) -> bool:
-        pid = instance.get("pid")
-        if not isinstance(pid, int) or pid <= 0:
-            return False
-        try:
-            args = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
-        except FileNotFoundError:
-            return False
-        return (
-            Path(os.fsdecode(args[0])).name == "dnsmasq"
-            and os.fsencode(f"--conf-file={instance['config_file']}") in args[1:]
-        )
+        return {key: value for key, value in instance.items() if key != "process"}
 
     def is_running(self, net_id: str) -> bool:
-        """Check the tracked DHCP daemon, not just its PID file."""
+        """Whether the dnsmasq child of this network is alive."""
         instance = self._instances.get(net_id)
-        return instance is not None and not instance.get("process_stopped") and self._owns_process(instance)
+        process = instance.get("process") if instance is not None else None
+        return process is not None and process.poll() is None
     
     def list_active(self) -> list[str]:
         """Get list of active DHCP server net_ids."""
@@ -350,13 +307,9 @@ class DhcpServer:
         """Return minimal status for dnsmasq instances."""
         instances = []
         for net_id, data in self._instances.copy().items():
-            pid_file = data.get("pid_file")
             instances.append({
                 "net_id": net_id,
                 "interface": data.get("interface"),
-                "pid_file": pid_file,
-                "pid_file_exists": bool(pid_file and os.path.exists(pid_file)),
-                # The process, not the PID file (BUG-2).
                 "running": self.is_running(net_id),
             })
         return {
