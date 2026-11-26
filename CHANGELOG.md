@@ -6,12 +6,26 @@ All notable changes to Wi-Lab are documented in this file.
 
 ## [4.1.0] - Unreleased
 
+### 📊 Statistics
+
+| Item | Count |
+|---|---:|
+| 🐛 Bug fixes | 4 |
+| ⚠️ Breaking changes | 0 |
+| 🔧 Maintenance changes | 1 |
+| ✨ New features | 0 |
+| ✅ Test changes | 5 |
+| 📦 Commits since 4.0.0 | 14 |
+
+Counts are the entries of the sections below and `git rev-list --count aca248e..HEAD` (`aca248e` is the last 4.0.0 commit), as of 2026-11-26.
+
 ### ⚠️ Breaking Changes
 
 ### ✨ Features
 
 ### 🐛 Bug Fixes
 
+- A create on an antenna that disappeared just before it no longer answers a generic `500` when the channel list was not cached: it is accepted (`202`) and ends like any lost antenna, retried by the server and then `404 reservation_invalidated`.
 - A start that fails with an unexpected error (for example too many open files) is rolled back like any other failure: the AP no longer keeps transmitting after `start_failed`, `DELETE .../network` stops whatever a failed start left, and the watchdog reports such a failed restore as `restore_failed` and retries it (Fable REV-1).
 - A stop that cannot stop hostapd keeps the host guard and the isolation rules until a repeated stop succeeds, so clients of an AP still transmitting cannot reach the host or other networks (Fable REV-7).
 - A firewall check that fails (xtables lock held by another tool, timeout) no longer counts as a missing rule: the watchdog skips that round instead of adding the Internet block again or restoring a healthy network, and stopping a network removes every copy of its Internet block (Fable REV-3).
@@ -24,6 +38,7 @@ All notable changes to Wi-Lab are documented in this file.
 ### ✅ Tests
 
 - New tests for unexpected start errors (REV-1), failed firewall checks (REV-3), a missing host guard chain (REV-4) and a stop failing in each phase (REV-7).
+- The e2e re-probe test waits for the first re-probe (30 s after the quarantine) instead of reading the journal at once.
 - The e2e watchdog tests that block dnsmasq take UDP port 67 after the failure they cause: dnsmasq of the running network already held it, so the three tests failed before testing anything.
 - New unit tests from the 2026-11-26 review: cancel timeout, `404` reasons on every operation, cancel in each start phase and during the pause, tombstones, expiry during a start, stop retry budget, `restarts` counters, reserve by `interface`, cleanup backoff (unit-test-7 … 17).
 - New e2e tests: `start_failed`, stop and release during a start, reserve by `interface`, `404` reasons, `restarts` counters, create during a repair, expiry, captive portal, lost host guard, Internet kept disabled (e2e-test-1 … 12, except 8).

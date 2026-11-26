@@ -31,6 +31,7 @@ from ...models import (
     StartError,
     body_error,
 )
+from ...network.commands import CommandError
 from ...reservation import EXPIRED, Reservation, ReservationManager
 from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager, FieldError
@@ -419,6 +420,11 @@ def start_network(
         raise HTTPException(status_code=422, detail=body_error(e.field, str(e)))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except CommandError as e:
+        # The channel list cannot be read (`iw` fails, usually because the antenna
+        # just disappeared): not a refusal. The start checks again and treats a
+        # missing antenna as a radio fault, retried by the server.
+        logger.warning("Cannot check the channel of %s before the start: %s", device_id, e)
 
     with manager.start_jobs_lock:
         running = manager.start_jobs.get(device_id)

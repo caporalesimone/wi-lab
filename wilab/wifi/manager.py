@@ -470,10 +470,17 @@ class NetworkManager:
 
         # The route checked the same before (422); this picks the channel block
         # and covers starts that do not come from the API (watchdog restore).
-        layout = self._channel_manager.validate_network(
-            cfg_net.interface, req.band, req.channel, req.channel_width, req.wifi_generation,
-            req.encryption,
-        )
+        try:
+            layout = self._channel_manager.validate_network(
+                cfg_net.interface, req.band, req.channel, req.channel_width, req.wifi_generation,
+                req.encryption,
+            )
+        except CommandError as e:
+            # `iw` could not read the channels: a radio fault if the antenna is gone.
+            raise StartupFailure(
+                f"Cannot read the channels of {cfg_net.interface}: {e}",
+                radio=not interface_present(cfg_net.interface), stage="interface",
+            ) from e
 
         # Best-effort: prevent NetworkManager/wpa_supplicant from contending AP interface.
         self._configure_networkmanager_unmanaged(cfg_net.interface)

@@ -144,9 +144,15 @@ def test_unavailable_antenna_is_reprobed_without_restart(
         lambda: wilab.device(first_interface).get("recovery_state") == "unavailable",
         timeout=RECOVERY_WINDOW + 60, interval=15,
     )
-    journal = server.journal(start)
-    assert "USB recovery exhausted" in journal
-    assert "re-probe skipped" in journal or "still unavailable after re-probe" in journal
+    assert "USB recovery exhausted" in server.journal(start)
+    # The first re-probe comes REPROBE_DELAYS[0] (30 s) after the quarantine, not at once.
+    assert wait_for(
+        lambda: any(
+            line in server.journal(start)
+            for line in ("re-probe skipped", "still unavailable after re-probe")
+        ),
+        timeout=60, interval=5,
+    )
 
     server.set_usb_authorized(port, 1)
     assert server.wait_interface(first_interface)

@@ -485,3 +485,43 @@ def test_reservation_expiring_during_the_start(real_start, monkeypatch):
     assert manager.start_jobs == {}
     free = client.post(RESERVE, headers=headers, json={"duration_seconds": 300})
     assert free.status_code == 200 and free.json()["interface"] == device
+
+
+def test_create_when_the_channel_list_cannot_be_read_is_not_a_500(api, monkeypatch):
+    """An antenna that disappears just before the create: `iw` fails, the route must not answer 500.
+
+    Found by the USB e2e test on 2026-11-26 with an empty channel cache: the start
+    is accepted (202) and the server decides with its own retries.
+    """
+    from wilab.network.commands import CommandError
+
+    client, headers, url, _script, _manager = api
+    monkeypatch.setattr(
+        dependencies.get_channel_manager(), "validate_network",
+        Mock(side_effect=CommandError("Command 'iw' failed with code 1: ", returncode=1)),
+    )
+    created = client.post(f"{url}/network", headers=headers, json=BODY)
+    assert created.status_code == 202, created.text
+
+
+def test_start_whose_channels_cannot_be_read_is_a_radio_fault_when_the_antenna_is_gone(monkeypatch):
+    from wilab.config import load_config
+    from wilab.models import NetworkCreateRequest
+    from wilab.network.commands import CommandError
+    from wilab.wifi import manager as manager_module
+    from wilab.wifi.manager import NetworkManager
+
+    mgr = NetworkManager(load_config())
+    monkeypatch.setattr(
+        mgr._channel_manager, "validate_network", Mock(side_effect=CommandError("iw failed", returncode=1)),
+    )
+    present = {"value": True}
+    monkeypatch.setattr(manager_module, "interface_present", lambda _iface: present["value"])
+    req = NetworkCreateRequest(ssid="x", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)
+    device = mgr.config.antennas[0].device_id
+    for gone in (False, True):
+        present["value"] = not gone
+        with pytest.raises(StartupFailure, match="Cannot read the channels") as failure:
+            mgr.start_network(device, req)
+        assert failure.value.radio is gone
+        assert failure.value.stage == "interface"
