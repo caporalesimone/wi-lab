@@ -1,150 +1,70 @@
-# Fable Notes - revisione del backend di Wi-Lab
+# Fable Notes - lavoro aperto su Wi-Lab
 
-- **Branch analizzato:** `fix/reservation-lifecycle` al commit `94c74b5` (31 commit avanti rispetto a `main`), versione 4.0.0.
-- **Ambito:** tutti i file sotto `wilab/`, `main.py`, il template dell'unit systemd e i commit del branch.
-  Frontend, installer e test sono stati letti solo dove spiegano il comportamento del backend.
-- **Metodo:** sola lettura statica. Non è stato eseguito nulla: le dipendenze del backend non si sono
-  potute installare su questa postazione (l'indice dei pacchetti ha rifiutato il download). Nessun test
-  e nessun esperimento sostiene queste note, e nessuna macchina reale è stata toccata.
-- **Criterio di priorità:** il servizio ha poco carico ma deve restare acceso 24 ore su 24, e una rete
-  creata deve continuare a funzionare. Riavviarla è accettabile, lasciarla rotta no.
-- **Le patch** riportate nelle schede sono proposte scritte leggendo il codice, **non provate**. Sono
-  pensate per essere applicate da una persona o da un modello che poi esegue `ruff`, `mypy` e i test.
-
-<a id="file-controllati-idx"></a>
-## File controllati
-
-Tutti i 39 file tracciati da git sotto `wilab/` sono stati letti per intero.
-
-| Cartella | File |
-|---|---|
-| `wilab/` | `__init__.py`, `config.py`, `config_validation.py`, `models.py`, `reservation.py`, `timestamps.py`, `version.py` |
-| `wilab/api/` | `__init__.py`, `auth.py`, `dependencies.py`, `errors.py` |
-| `wilab/api/routes/` | `__init__.py`, `internet.py`, `network.py`, `qos_profile.py`, `recovery_responses.py`, `reservation.py`, `status.py`, `txpower.py` |
-| `wilab/network/` | `__init__.py`, `captive.py`, `commands.py`, `dhcp.py`, `isolation.py`, `nat.py`, `qos.py`, `qos_profile.py`, `safety.py`, `subnet.py`, `unmanaged.py` |
-| `wilab/wifi/` | `channels.py`, `discovery.py`, `hostapd.py`, `interface.py`, `manager.py`, `recovery.py`, `watchdog.py` |
-| `wilab/data/qos-profiles/` | `default.json`, `profile.schema.json` |
-
-Nota di trasparenza: nella prima stesura i due file JSON non erano stati letti. Sono stati controllati
-in questa revisione e hanno prodotto un punto nuovo (BUG-9).
-
-<a id="come-leggere-idx"></a>
-## Come leggere il documento
-
-Ogni punto ha un identificativo, una gravità e una confidenza.
-
-| Gravità | Significato |
-|---|---|
-| Critica | Esposizione di sicurezza o perdita dell'intero servizio |
-| Alta | Una rete o un adattatore si perde, o resta rotto, senza che il client lo sappia |
-| Media | Comportamento sbagliato in un caso realistico ma meno frequente |
-| Bassa | Rumore, estetica, o un caso che richiede una configurazione insolita |
-
-| Confidenza | Significato |
-|---|---|
-| Confermato | Segue direttamente dal codice letto |
-| Probabile | Segue dal codice più il comportamento documentato di uno strumento esterno (hostapd, iptables, systemd, pydantic, CPython) |
-| Ipotesi | Plausibile, ma serve una prova su macchina reale prima di agire |
-
-Prefissi degli identificativi: `SEC` sicurezza, `STAB` stabilità a lungo termine, `WD` watchdog e
-recovery, `HAP` avvio di hostapd, `NET` firewall / DHCP / QoS, `BUG` errori logici, `RACE` concorrenza,
-`PERF` prestazioni, `API` disegno delle API, `ARCH` struttura del codice, `REV` punti trovati dalla
-revisione del 2026-11-26 sul lavoro fatto dopo queste note. I test mancanti trovati dalla stessa
-revisione si chiamano `unit-test-N` ed `e2e-test-N` (paragrafo 5.5).
-
-Il documento è ordinato per priorità: la tabella del capitolo 2 e le schede del capitolo 4 seguono
-lo stesso ordine, da 1 (più urgente) in poi. L'indice completo è in fondo.
-
-**Aggiornamento del 2026-11-25.** I 41 punti completati sono stati tolti dal documento: la loro storia è
-nei commit e nel CHANGELOG della 4.0.0. Restano 46 punti, di cui 6 corretti in parte: la loro scheda
-inizia con un riquadro **Stato** che dice cosa è fatto e cosa manca. Sono stati tolti anche i capitoli
-sulle correlazioni, sul piano delle API e sull'ordine di lavoro, ormai eseguiti.
-
-**Aggiornamento del 2026-11-26.** L'elenco delle attività (`fable-todo.md`) è stato unito a questo
-documento: la tabella del capitolo 2 e le schede seguono ora l'ordine di priorità di quell'elenco, e il
-suo piano di prova è il paragrafo 5.4.
-
-**Revisione del 2026-11-26.** È stato rivisto tutto il lavoro fatto dal commit `0cee4e4` (il primo di
-queste note) a `f537ed8`: 89 commit, 145 file. La revisione ha coperto qualità del codice, bug
-introdotti dalla catena di modifiche, documentazione, CHANGELOG della 4.0.0, test unit ed e2e e
-frontend. I bug piccoli sono stati corretti subito (elenco nel paragrafo 6.3); il resto è nelle 18
-schede `REV` e nei test mancanti del paragrafo 5.5. I punti aperti sono quindi 64: 46 delle note
-originali e 18 della revisione.
-
-**Aggiornamento del 2026-11-26 (sera), versione 4.1.0.** Corretti e tolti dal documento REV-1, REV-3,
-REV-4, REV-7 e REV-16, con i test unit-test-1, unit-test-3 e unit-test-6. I punti aperti sono 59: 46
-delle note originali e 13 della revisione.
-
----
+Solo ciò che serve per lavorare sui punti ancora aperti. Quello che è fatto è nel codice, nei test,
+nel [CHANGELOG](CHANGELOG.md) e in [docs/](docs/): qui non si ripete.
 
 <a id="cap-1"></a>
-## 1. Sintesi
+## 1. Come lavorare
 
-Lo stato al 2026-11-25. I punti che facevano perdere o lasciare rotta una rete sono stati corretti:
-il server ritenta da solo i guasti radio (anche nel watchdog, con un budget orario), la quarantena ha
-un'uscita, il watchdog verifica e ripara la rete e non solo i processi, `/status` dice il vero, i cicli
-di background sono supervisionati e la create è asincrona. Restano aperti:
+### 1.1 Da dove ripartire (stato del 2026-11-26)
 
-- **sicurezza:** SEC-1 (la route del frontend) e BUG-8 (confronto del token);
-- **stabilità e recupero:** BUG-5, STAB-2, STAB-5, STAB-7, STAB-8, STAB-9, WD-8, WD-10, HAP-9, NET-7,
-  NET-8, NET-9, BUG-6, BUG-7, e le parti mancanti di WD-5 e WD-7;
-- **esperimenti sull'hardware:** HAP-5, HAP-6, HAP-7 e la parte mancante di HAP-8;
-- **QoS**, ancora sperimentale: BUG-9, NET-11, NET-12, NET-13, RACE-3, WD-8;
-- **prestazioni, API e struttura:** PERF-1 (parte), PERF-2, PERF-4…7, API-6 (parte), API-7, ARCH-1…11.
+- Versione in corso: **4.1.0**, non rilasciata. Branch `fix/reservation-lifecycle`.
+- Test unit tutti verdi; un `xfail` stretto segna REV-11 punto 5.
+- E2E verdi sull'hardware: suite standard, test lunghi, riavvio sporco e distacco USB. I 5 `xfail`
+  noti sono SEC-1, BUG-7 e PERF-6, che diventano verdi con la correzione. Mai eseguito:
+  `test_antenna_gone_with_active_network` (`WILAB_E2E_USB_ACTIVE_AP=1`, il caso che il 23/11 ha
+  bloccato la VM).
 
-La revisione del 2026-11-26 ha aggiunto 18 punti sul codice nuovo:
+In quest'ordine:
 
-- **avvio, annullamento e stop** (priorità 1): REV-2, REV-5, REV-6 (REV-1, REV-3, REV-4 e REV-7 sono
-  stati corretti il 2026-11-26, versione 4.1.0);
-- **casi rari del contratto e gare minori:** REV-8…REV-12;
-- **frontend:** REV-13 (polling della create), REV-14 (difetti precedenti, tra cui la perdita degli ID
-  a una ricarica), REV-15 (funzioni della 4.0.0 non usate);
-- **struttura e test:** REV-17, REV-18, più 14 test unit e 12 test e2e mancanti (paragrafo 5.5).
+1. REV-2, REV-5, REV-6 (priorità 1 della tabella 2), ciascuno con il suo test del paragrafo 4.6.
+2. Gli altri punti della tabella 2 in ordine di priorità.
+3. RELEASE-API, solo alla fine.
+
+### 1.2 Regole
+
+- **CHANGELOG:** ogni correzione aggiunge una riga breve nella sezione `[4.1.0]`, nello stesso commit,
+  con l'ID tra parentesi; ciò che cambia per i client va anche nel capitolo "API changes from 4.0.0".
+  Prima del rilascio aggiornare la tabella Statistics della 4.1.0.
+- **Una scheda chiusa si toglie** da questo documento: riga della tabella 2, scheda del capitolo 3 e
+  test del capitolo 4. Una scheda fatta in parte passa a `parz.` con un riquadro **Stato** che dice
+  solo cosa manca.
+- **Verifiche a ogni correzione:** `make test-local-quick`, `make lint` (89 errori già presenti:
+  non aggiungerne), `make type-check`.
+- **E2E solo dopo conferma** e su un sistema libero (nessuna attività nel journal del servizio).
+  Il servizio gira da questa cartella: una modifica è attiva solo dopo `systemctl restart wi-lab`.
+  Il budget del watchdog (3 ripristini AP e 3 DHCP all'ora per antenna) si azzera al riavvio: i test
+  che lo usano si saltano da soli se è finito. Flag: `WILAB_E2E_SLOW`, `WILAB_E2E_RESTART`,
+  `WILAB_E2E_USB` ([docs/e2e-testing.md](docs/e2e-testing.md)).
+- **Distacco USB simulato:** con un AP attivo può bloccare la VM per circa 60 s e staccare la USB
+  dalla VM (23/11); serve poi un ricollegamento fisico.
+- `copilot.md` resta fuori dai commit.
+
+### 1.3 Decisioni aperte
+
+- **CHANGELOG 4.0.0:** confermare la rimozione di RACE-2 (giudicato mai rilasciato) e della voce
+  "Prevent concurrent reservations…" (la 3.0.0 aveva già un lock); la data dell'intestazione è ancora
+  2026-11-20.
+- **REV-11, punto 4:** rendere stretti i tipi (`strict=True`) cambia ciò che i client possono inviare.
+- **Frontend (REV-13, REV-14, REV-15):** non si può compilare senza pubblicare in `frontend/dist`;
+  serve prima un target di sola compilazione (unit-test-15).
+- **e2e-test-2:** se un annullamento va oltre i 30 s di `cancel_start`, la `DELETE .../network` risponde
+  `503 / 1006` e la ripetuta può rispondere `409 / 1007` invece di `200` (lettura del codice, non visto
+  sulla macchina). Decidere se è il comportamento voluto; si lega a REV-8.
+- `config.yaml` della macchina ha ancora la `protected_commands_password` di esempio.
+
+Gravità: **Critica** sicurezza o perdita del servizio · **Alta** una rete o un adattatore resta rotto
+senza che il client lo sappia · **Media** comportamento sbagliato in un caso realistico · **Bassa**
+rumore o casi insoliti. Confidenza: **Confermato** dal codice · **Probabile** codice più comportamento
+noto di uno strumento esterno · **Ipotesi** da provare sulla macchina prima di agire.
 
 ---
 
 <a id="cap-2"></a>
 ## 2. Punti aperti, in ordine di priorità
 
-La priorità 1 raccoglie i bug concreti che compromettono creazione, avvio, perdita o ripristino delle
-reti. Le ipotesi da verificare, i refactoring e le ottimizzazioni seguono, numerati da 2 in poi; i
-numeri mancanti sono quelli dei punti completati. La colonna **Stato** segna `parz.` i punti corretti
-in parte: la descrizione dice cosa è fatto e cosa manca. Le schede del capitolo 4 seguono lo stesso
-ordine.
-
-### 2.0 Da fare alla ripresa (stato del 2026-11-26, sera)
-
-Versione 4.1.0 aperta (`dd524d3`); le modifiche nuove vanno nella sezione 4.1.0 del CHANGELOG. Fatto:
-REV-1, REV-3, REV-4, REV-7 e REV-16 corretti, con i test unit-test-1, unit-test-3 e unit-test-6; i
-messaggi di iptables con la catena assente sono annotati in [e2e-test-11](#e2e-test-11).
-
-**E2E del 2026-11-26** (`make test-e2e`, servizio riavviato su `2353c9a`): 52 passati, 5 xfail noti
-(SEC-1, BUG-7, PERF-6), 8 saltati di proposito (distacco USB, test lunghi, riavvio sporco, lock xtables
-che con nf_tables non esiste). Il primo giro aveva 3 fallimenti nei test del watchdog che bloccano
-dnsmasq: era il test, che provava a occupare la porta 67 mentre il dnsmasq della rete la teneva già;
-corretto in `2353c9a`. Non ancora eseguiti: `make test-e2e-usb`, `WILAB_E2E_SLOW=1`,
-`WILAB_E2E_RESTART=1`, e l'[e2e-test-11](#e2e-test-11) (non esiste ancora come test).
-
-Alla ripresa, in quest'ordine:
-
-1. Gli e2e non ancora eseguiti, sopra, su un sistema libero e dopo conferma (il distacco USB con un AP
-   attivo può bloccare la VM).
-2. Gli altri test del paragrafo 5.5, con REV-18 (fixture comuni).
-3. Poi gli altri punti della tabella 2.1 in ordine di priorità: REV-2, REV-5, REV-6 per primi.
-
-Decisioni ancora aperte:
-
-- **CHANGELOG 4.0.0:** confermare la rimozione di RACE-2 (giudicato mai rilasciato) e la voce
-  "Prevent concurrent reservations…" (la 3.0.0 aveva già un lock); la data dell'intestazione è ancora
-  2026-11-20; il contatore dei commit va aggiornato all'ultimo commit prima del rilascio.
-- **REV-11, punto 4:** rendere stretti i tipi (`strict=True`) cambia ciò che i client possono inviare:
-  da decidere prima del rilascio.
-- **Frontend (REV-13, REV-14, REV-15):** qui non si può compilare senza pubblicare in `frontend/dist`;
-  serve un target di sola compilazione (unit-test-15) prima di modificarlo.
-- `config.yaml` della macchina ha ancora la `protected_commands_password` di esempio.
-- `copilot.md` resta fuori dai commit.
-
-### 2.1 Punti aperti
+La priorità 1 raccoglie i bug che compromettono creazione, avvio, perdita o ripristino delle reti; seguono ipotesi da verificare,
+refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` = corretto in parte: la descrizione dice cosa manca.
 
 | Prio | Id | Gravità | Stato | Cosa fare |
 |---:|---|---|:---:|---|
@@ -165,7 +85,7 @@ Decisioni ancora aperte:
 | 3 | [REV-8](#rev-8) | Bassa |  | Non togliere da `start_jobs` un job il cui thread gira ancora dopo il timeout dell'annullamento. |
 | 4 | [REV-9](#rev-9) | Bassa |  | Impostare `stop_failed` solo per lo stop chiesto dal client; rispondere `1012` a Internet, TX power e QoS su una rete fermata a metà. |
 | 5 | [REV-10](#rev-10) | Bassa |  | Non chiedere un reset USB quando il watchdog fallisce un cleanup senza guasto radio. |
-| 6 | [REV-11](#rev-11) | Bassa |  | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, tipi accettati per sbaglio. |
+| 6 | [REV-11](#rev-11) | Bassa |  | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, tipi accettati per sbaglio, `next_available_in` troncato. |
 | 7 | [REV-12](#rev-12) | Bassa |  | Piccole gare e casi limite: cache dei canali, radar DFS nel watchdog, `runtime_cleanup` che può sollevare, scadenza dentro `_get_status`. |
 | 8 | [STAB-5](#stab-5) | Media |  | Usare scadenze monotone per misurare il tempo trascorso. |
 | 9 | [REV-13](#rev-13) | Media |  | Frontend: correggere il polling della create (avvio annullato dato per riuscito, polling che si ferma o non finisce, stati incoerenti). |
@@ -181,7 +101,7 @@ Decisioni ancora aperte:
 | 19 | [BUG-8](#bug-8) | Bassa |  | Usare un confronto constant-time per il token. |
 | 21 | [REV-17](#rev-17) | Bassa |  | Togliere i residui della catena di modifiche: percorso `1004` morto, metodi usati solo dai test, duplicati, testi vecchi. |
 | 22 | [HAP-7](#hap-7) | Bassa |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
-| 23 | [REV-18](#rev-18) | Bassa |  | Riordinare i test: fixture condivise e collegate come in produzione, poi i test mancanti del paragrafo 5.5. |
+| 23 | [REV-18](#rev-18) | Bassa |  | Riordinare i test: fixture condivise e collegate come in produzione, poi i test dei paragrafi 4.6 e 4.7. |
 | 26 | [PERF-1](#perf-1) | Bassa | parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. **Fatto:** validazioni `iw`, `dnsmasq --version`, `nmcli --version`. **Manca**, non fatto di proposito: `iptables-restore` in blocco (cambierebbe come si installano e tolgono tutte le regole). |
 | 27 | [PERF-2](#perf-2) | Bassa |  | Separare i controlli di stato attivo dalle query dettagliate. |
 | 28 | [PERF-5](#perf-5) | Bassa |  | Rispettare il timeout richiesto senza imporre un minimo nascosto. |
@@ -219,43 +139,7 @@ stato finale del codice.
 ---
 
 <a id="cap-3"></a>
-## 3. Contesto: cosa ha cambiato il branch
-
-*Stato del branch al momento dell'analisi (commit `94c74b5`), oggi superato dalla 4.0.0.*
-
-I commit rilevanti per i crash di hostapd, dal più vecchio:
-
-| Commit | Cosa fa |
-|---|---|
-| `c7cf83b` harden Wi-Fi lifecycle | Lock per dispositivo, rollback degli avvii parziali, watchdog, quarantena e recovery USB. |
-| `6803551` continuous antenna discovery | I dispositivi sono scoperti a runtime; la configurazione li nomina soltanto. |
-| `6a2d0b6`, `8fcc25e`, `168ae39`, `8fc241c` | Firewall: regole vecchie rimosse all'avvio, masquerade limitato alla subnet dell'AP, la disattivazione di Internet taglia i flussi esistenti. |
-| `f5dcad5`, `87c3ce1` | Tiene NetworkManager e systemd-networkd lontani dalle radio, senza ricaricare NetworkManager. |
-| `3f70cf9` fail fast on startup exit | I probe `hostapd_cli` durano al massimo 1 s e il processo è controllato tra un probe e l'altro; l'uscita dopo un beacon fallito diventa `HostapdInitFailure`. |
-| `94c74b5` retry inside the create request | Fino a 3 avvii, a 1 s di distanza, entro 15 s. |
-
-Sintomi documentati: `SIGSEGV` di hostapd all'avvio, "Failed to set beacon parameters" seguito da
-"Interface initialization failed", timeout di readiness, e un adattatore `mt7921u` in una macchina KVM
-che non si poteva più attivare (`RTNETLINK answers: Connection timed out`) fino a un reset USB.
-
-**Cosa è solido nell'avvio.**
-
-- hostapd gira in primo piano come figlio (`start_foreground`): codice di uscita e segnale sono noti
-  subito e nessun file PID può mentire.
-- Ogni istanza ha una cartella di controllo privata creata con `mkdtemp` (permessi 0700).
-- "Pronto" significa "stato ENABLED sull'interfaccia giusta", non "il processo è partito".
-- L'ordine è AP, poi indirizzo del gateway, poi DHCP; ogni guasto passa da `release_device`.
-- L'ordine dei lock è corretto e non ho trovato deadlock: il lock del dispositivo viene sempre preso
-  prima di quello dello store delle reservation, il lock del firewall è una foglia, watchdog e ciclo di
-  scadenza non si bloccano mai su un lock di dispositivo.
-
-**Cosa manca.** Il branch non ha cercato cosa fa fallire il driver più del necessario (schede HAP-5,
-HAP-6, HAP-7) e ha applicato la strategia di retry solo alla richiesta di creazione, non al watchdog.
-
----
-
-<a id="cap-4"></a>
-## 4. Schede di dettaglio, in ordine di priorità
+## 3. Schede, in ordine di priorità
 
 Ogni scheda ha la stessa struttura: **Problema**, **Come si riproduce**, **Come correggerlo**. Dove è
 utile c'è codice o una patch. I percorsi dei file sono relativi alla radice del repository.
@@ -880,13 +764,18 @@ ripristini è finito per guasti radio.
    uno per antenna, non visibile ai client.
 4. **Tipi accettati per sbaglio.** pydantic in modalità non stretta accetta `radio.channel: true`
    (canale 1), `"6"`, `duration_seconds: "120"` e `level: true`.
+5. **`next_available_in` arrotondato in modo diverso.** Per un'antenna con il cleanup fallito il reserve
+   (`409 / 1005`) dà `next_available_in` troncato (`int` di una differenza di orari), mentre `/status`
+   arrotonda per eccesso (`ceil`) la stessa attesa: 4 contro 5 s. Trovato dal test del 2026-11-26.
 
 **Come correggerlo.** (1) Costruire il `200` senza lock del dispositivo, oppure documentare `1006`
 anche sulla create. (2) `422` o `503` per i casi raggiungibili; togliere i rami morti. (3) Chiamare
 `cancel_start` anche alla scadenza. (4) `strict=True` su quegli interi (è una modifica visibile ai
-client: decidere prima del rilascio).
+client: decidere prima del rilascio). (5) Calcolare `next_available_in` come `/status`, con `ceil`.
 
-Test: [unit-test-8](#unit-test-8), [unit-test-11](#unit-test-11).
+Test: `test_error_codes.py::test_every_operation_with_a_reservation_id_answers_404_with_the_exact_reason`
+(i motivi della reservation; il punto 2 manca), `test_cleanup_backoff.py::test_reserve_next_available_in_equals_the_cleanup_wait`
+(`xfail` stretto finché il punto 5 non è corretto).
 
 ---
 
@@ -1449,7 +1338,7 @@ utile, soprattutto con HAP-8.
 
 **Come correggerlo.** REV-16 è fatto (i test usano la create asincrona tramite `create_network`): ora
 una sola fixture `client` con i manager collegati come in produzione, una fixture `running_network`,
-poi i test mancanti del paragrafo 5.5.
+poi i test dei paragrafi 4.6 e 4.7.
 
 ---
 
@@ -2286,15 +2175,13 @@ il profilo riparte dal primo passo.
 
 ---
 
-<a id="cap-5"></a>
-## 5. Test da aggiungere
+<a id="cap-4"></a>
+## 4. Test e prove da fare
 
-Restano solo i test dei punti aperti e quelli generali (T-20, T-21, H-12): i test dei punti completati
-sono stati scritti con le correzioni e sono in `tests/unit-tests/` e `tests/e2e-tests/`. I test proposti
-seguono le regole del progetto: nessun hardware reale, indipendenti dal sistema operativo, tutti i
-comandi sostituiti.
+Solo test di punti aperti o generali. I test unit vanno in `tests/unit-tests/` (hardware simulato), gli e2e in
+`tests/e2e-tests/` ([docs/e2e-testing.md](docs/e2e-testing.md)). Un test che oggi fallirebbe si scrive insieme alla correzione.
 
-### 5.1 Tre strumenti di prova da costruire prima
+### 4.1 Tre strumenti di prova da costruire prima
 
 Molti dei test sotto diventano semplici con tre aiuti condivisi, da mettere in `tests/helpers.py` o in
 `tests/conftest.py`.
@@ -2357,7 +2244,7 @@ class CommandRecorder:
         return ""
 ```
 
-### 5.2 Test automatici
+### 4.2 Test automatici
 
 | Id | Cosa verifica | Schede | File proposto |
 |---|---|---|---|
@@ -2408,7 +2295,7 @@ dimensioni di `manager.active`, `hostapd_manager._instances`, `dhcp_server._inst
 `nat_manager._blocked_rules`, `captive_portals`, `watchdog.states` e il numero di thread
 (`threading.active_count()`) sono uguali a quelle iniziali.
 
-### 5.3 Prove su hardware (manuali o con marker `hardware`)
+### 4.3 Prove su hardware (manuali o con marker `hardware`)
 
 Non possono girare in CI. Vanno eseguite sulla macchina di laboratorio, una volta per confermare i
 punti "Probabile" e "Ipotesi", e poi a ogni cambio di kernel, driver o adattatore. Conviene raccoglierle
@@ -2428,38 +2315,14 @@ H-12 è la prova di accettazione: nessuna delle correzioni vale se una rete non 
 settimana. Va lasciata girare in permanenza su un adattatore dedicato, con un piccolo client che ogni
 minuto si collega, ottiene un indirizzo, raggiunge Internet e registra l'esito.
 
-### 5.4 Piano di prova sul sistema reale
-
-Il tester lavora da una macchina esterna e usa solo le API. Per questo il piano è diviso in due:
-
-- **Test per il tester:** solo chiamate API, eseguibili da remoto.
-- **Test con root o intervento fisico:** staccare la USB, `kill`, `systemctl`, file di root.
-  Non li può fare il tester. Li eseguo io se mi viene dato `sudo`, altrimenti chi è vicino alla macchina.
-
-I test automatici li eseguo io a ogni fix e non sono elencati qui; gli esiti sono nel messaggio di commit.
-
-- `tests/unit-tests/`: hardware simulato, girano a ogni modifica e in CI.
-- `tests/e2e-tests/`: girano sulla macchina contro il servizio attivo e uniscono chiamate API e azioni
-  sul server (journal, `iw`, `kill`, distacco USB simulato). Li lancio solo su un sistema libero e dopo
-  conferma. Vedi [docs/e2e-testing.md](docs/e2e-testing.md).
-
-La colonna **E2E** indica i test già automatizzati in `tests/e2e-tests/`:
-
-- ✅ coperto da un test e2e: il tester può saltarlo (resta utile nella run lunga);
-- 🧪 test e2e già scritto ma ID non ancora fixato: il test è `xfail` e diventa verde con il fix.
-
-I test dei punti completati sono stati tolti con i punti stessi. Per ogni test live raccogliere: ora
-UTC, `display_name` e `interface` presi da `/status` (non dedotti dall'ordine), banda e canale, status
-HTTP con `detail.code` o `detail.reason` e header `Retry-After`.
-
-#### Test per il tester (solo API)
+### 4.4 Prove sulla macchina: tester (solo API)
 
 Prerequisito: il servizio deve girare con l'ultimo commit (`GET /api/v2/status` → `version`, e il
 journal all'avvio). Ogni modifica è attiva solo dopo un riavvio del servizio successivo al suo commit.
 Il contratto delle API è in [docs/ap-creation-procedure.md](docs/ap-creation-procedure.md) e
 [docs/error-codes.md](docs/error-codes.md).
 
-##### Monitoraggio continuo, da tenere attivo in ogni run
+#### Monitoraggio continuo, da tenere attivo in ogni run
 
 | # | Passi | Esito atteso | E2E |
 |---|---|---|---|
@@ -2467,7 +2330,7 @@ Il contratto delle API è in [docs/ap-creation-procedure.md](docs/ap-creation-pr
 | M2 | Per ogni create che finisce con `404` e `reason: reservation_invalidated`, annotare l'antenna e seguirla in `/status`. | L'antenna torna senza `recovery_state` da sola: entro circa 11 minuti se `recovering`, entro il backoff (al massimo 15 minuti) se `unavailable`. | ✅ [test_e2e_device_loss.py](tests/e2e-tests/test_e2e_device_loss.py) |
 | M3 | Leggere `GET .../network` prima e dopo ogni test e confrontare `restarts`. | Ogni aumento di `restarts.ap` corrisponde a un `restoring_ap` visto in M1; `last_reason` dice il motivo. |  |
 
-##### Run di regressione (SOAK)
+#### Run di regressione (SOAK)
 
 Rieseguire la run completa (sameres, parallel, herd, chaos, mix) con entrambe le antenne per
 almeno 90 minuti, con M1–M3 attivi.
@@ -2479,16 +2342,7 @@ Atteso:
 - nessuna antenna `unavailable` alla fine;
 - create con SSID non validi → `422`.
 
-##### Verifiche del contratto 4.0.0
-
-| Cosa | Passi | Esito atteso | E2E |
-|---|---|---|---|
-| Create asincrona | `POST .../network`, poi `GET .../network` ogni 1–2 s. | `202` subito con `runtime_state: starting`, poi la rete; lo stesso body di nuovo: `202` durante l'avvio, `200` dopo. | ✅ [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
-| Annullamento | `DELETE /reservations/{id}` subito dopo una create, anche su un canale DFS. | `200` in pochi secondi; poi `404` con `reason: reservation_released`. Con `DELETE .../network`: `200` e la reservation resta. | ✅ rilascio: [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
-| `404` con `reason` | Chiamate con un ID rilasciato, scaduto e inventato, su reservation, network, Internet, TX power. | `reason` `reservation_released`, `reservation_expired`, `reservation_not_found`; un rilascio con `404` è "già rilasciata". |  |
-| `409 / 1012` | Create su una reservation la cui ultima stop ha risposto `503 / 1012` (solo se capita). | `409 / 1012`; dopo la `DELETE` riuscita la create parte. |  |
-
-##### Test previsti per gli ID aperti
+#### Test previsti per gli ID aperti
 
 | ID | Test via API | Esito atteso dopo il fix | E2E |
 |---|---|---|---|
@@ -2502,7 +2356,7 @@ Atteso:
 | HAP-5, HAP-6, HAP-7 | Run SOAK identiche con la configurazione cambiata sulla macchina tra una run e l'altra. | Confronto del numero di `404 reservation_invalidated` e di `restarts.ap` tra le run. |  |
 | ARCH-1 … ARCH-11 | Run SOAK di regressione. | Nessuna differenza rispetto alla run precedente. |  |
 
-#### Test con root o intervento fisico
+### 4.5 Prove sulla macchina: root o intervento fisico
 
 Non eseguibili dal tester. Li eseguo io con `sudo` (distacco USB simulato via sysfs,
 `kill`, `systemctl`); le prove con un telefono e il ricollegamento fisico di un'antenna che la VM
@@ -2525,31 +2379,16 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 | PERF-1, PERF-2, PERF-4, PERF-5 | `strace -f -e trace=execve` sui processi del servizio durante create, `GET .../network` e a riposo. | Come descritto nelle schede. |  |
 | Telefono | Connessione reale: SSID `Caffè ☕` e `my"net\` visibili; rete nascosta non ASCII; password di 8 e 63 caratteri; `wpa2-wpa3` con client WPA3 e WPA2 e `wpa1` annotando avvisi o rifiuti dei client recenti; velocità a 20, 40 e 80 MHz sui 5 GHz con un client Wi-Fi 5 e uno Wi-Fi 6; `nslookup` (NET-8); `/docs` e `ssh` verso il gateway rifiutati; isolamento tra reti; captive portal su `http://<gateway>:8081/`. | Connessione e DHCP funzionanti; host non raggiungibile dalla rete di test. | ✅ regole dell'host: [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
 
-### 5.5 Test mancanti rilevati dalla revisione del 2026-11-26
-
-Elenco dei test che la revisione ha trovato mancanti, in ordine di utilità. I test unit vanno in
-`tests/unit-tests/` con hardware simulato; gli e2e in `tests/e2e-tests/` e si lanciano solo su un
-sistema libero e dopo conferma. I test che oggi fallirebbero sono legati alla scheda che corregge il
-difetto: si scrivono insieme alla correzione.
-
-#### Test unit
+### 4.6 Test unit da scrivere
 
 | Id | Cosa verifica | Schede | File proposto |
 |---|---|---|---|
 | [unit-test-2](#unit-test-2) | Annullamento con rollback fallito: nessuna quarantena | REV-2 | `test_async_create.py` |
 | [unit-test-4](#unit-test-4) | Un avvio riuscito non fallisce per il budget dei tentativi | REV-5 | `test_startup_classification.py` |
 | [unit-test-5](#unit-test-5) | Rilascio durante un ripristino del watchdog; arresto con una create in corso | REV-6 | `test_watchdog.py`, `test_startup.py` |
-| [unit-test-7](#unit-test-7) | Annullamento che va in timeout | REV-8 | `test_async_create.py` |
-| [unit-test-8](#unit-test-8) | `404` con `reason` su ogni operazione con `{reservation_id}` | REV-11 | `test_error_codes.py` |
-| [unit-test-9](#unit-test-9) | Annullamento in ogni fase con il vero `_start_network` | - | `test_async_create.py` |
-| [unit-test-10](#unit-test-10) | Annullamento durante la pausa tra due tentativi | - | `test_async_create.py` |
-| [unit-test-11](#unit-test-11) | Tombstone e `start_failed` che non passa alla reservation successiva | REV-11 | `test_reservation.py`, `test_async_create.py` |
-| [unit-test-12](#unit-test-12) | La reservation scade mentre l'avvio è in corso | - | `test_async_create.py` |
-| [unit-test-13](#unit-test-13) | Budget dei tentativi di stop, con orologio finto | - | `test_api.py` |
-| [unit-test-14](#unit-test-14) | Rami di guasto del watchdog e contatori `restarts` dalle API | REV-10 | `test_watchdog.py` |
+| [unit-test-7](#unit-test-7) | Annullamento in timeout: il job resta finché il thread gira | REV-8 | `test_async_create.py` |
+| [unit-test-14](#unit-test-14) | Rami di guasto del watchdog | REV-10 | `test_watchdog.py` |
 | [unit-test-15](#unit-test-15) | Frontend: compilazione e spec di `startNetwork` | REV-13, REV-15 | `frontend/src/app/services/*.spec.ts` |
-| [unit-test-16](#unit-test-16) | Reserve con `interface` dalle API, con due antenne | - | `test_reservation.py` |
-| [unit-test-17](#unit-test-17) | Backoff del cleanup attraverso il collegamento reale | - | `test_cleanup_backoff.py` |
 
 <a id="unit-test-2"></a>
 **unit-test-2 - Annullamento con rollback fallito.** Avvio bloccato; lo stop di hostapd nel rollback
@@ -2570,58 +2409,15 @@ rispetta `cancelled`; `DELETE /reservations/{id}`: atteso ritorno entro 1 s e ne
 tracciata. Oggi fallisce (REV-6).
 
 <a id="unit-test-7"></a>
-**unit-test-7 - Annullamento in timeout.** `CANCEL_TIMEOUT=0.05` e un avvio che ignora
-l'annullamento. `DELETE .../network`: atteso `503 / 1006` con `Retry-After: 2`. Lasciare finire
-l'avvio: la `GET` mostra lo stato reale; una seconda `DELETE` risponde `200` e nulla resta attivo.
-Dopo REV-8: il job è ancora in `start_jobs` finché il thread non finisce.
-
-<a id="unit-test-8"></a>
-**unit-test-8 - `404` con `reason` ovunque.** Ricavare l'elenco delle operazioni con
-`{reservation_id}` da `/openapi.json`. Per ognuna, quattro ID: rilasciato, scaduto (prima e dopo la
-pulizia), invalidato con `quarantine`, mai esistito. Atteso: `404` e il `reason` esatto. Oggi sono
-coperte 7 operazioni per 2 motivi; mancano `/internet/disable`, `POST /txpower`, `/qos` e
-`/qos/profile`.
-
-<a id="unit-test-9"></a>
-**unit-test-9 - Annullamento in ogni fase.** Con il vero `_start_network`: bloccare prima in
-`hostapd.start`, poi in `dhcp_server.start`, poi in `nat.enable_nat`, e rilasciare la reservation
-durante il blocco. Atteso: `200`; poi `active` vuoto, `hostapd.stop` chiamato, nessun host guard,
-isolamento, NAT o portale, `start_jobs == {}`, `reason: reservation_released`, antenna riservabile. I
-test attuali sostituiscono `manager.start_network`, quindi un annullamento che lascia processi o
-regole non si vede.
-
-<a id="unit-test-10"></a>
-**unit-test-10 - Annullamento durante la pausa.** Guasto radio, `CREATE_RETRY_DELAYS=(5, 10)`,
-`cancel.wait` bloccante. Rilasciare durante la prima pausa. Atteso: ritorno immediato, nessun secondo
-avvio, nessuna quarantena, job rimosso.
-
-<a id="unit-test-11"></a>
-**unit-test-11 - Tombstone e job residui.** (a) Vince il primo motivo: rilascio con cleanup fallito,
-poi pulizia riuscita, il motivo resta `reservation_released`; `delete_all` dà `released`; dopo
-`ENDED_TTL` (con `time.monotonic` sostituito) il motivo è `reservation_not_found` e `_ended` è vuoto.
-(b) `start_failed`, poi scadenza e pulizia (non rilascio), poi nuova reservation: la `GET` ha
-`runtime_state: null` e `error: null`, l'antenna in `/status` non ha `runtime_state`, `start_jobs` è
-vuoto.
-
-<a id="unit-test-12"></a>
-**unit-test-12 - Scadenza durante l'avvio.** Avvio bloccato, `expires_at` nel passato. Atteso: la
-`GET` risponde `404 reservation_expired`; `POST /reservations` risponde `409 / 1005`; finito l'avvio
-ed eseguito `expire()`, la rete è fermata, hostapd non c'è, l'antenna è libera e `start_jobs` è vuoto.
-
-<a id="unit-test-13"></a>
-**unit-test-13 - Budget della stop.** `monotonic` e `sleep` sostituiti; la stop fallisce sempre.
-Atteso: 8 tentativi, pause `[2] * 7`, poi `503 / 1012` con `Retry-After: 5`; il lock del dispositivo è
-libero (la `GET` risponde `200` con `stop_failed`). Una stop che riesce al terzo tentativo risponde
-`200` dopo due pause. Il test attuale usa un budget reale di 0,05 s e non fissa né numero né durata.
+**unit-test-7 - Annullamento in timeout, dopo REV-8.** Il caso base (`503 / 1006`, poi lo stato reale e
+una stop che riesce) è in `test_async_create.py`. Resta da aggiungere con REV-8: il job resta in
+`start_jobs` finché il thread non finisce.
 
 <a id="unit-test-14"></a>
-**unit-test-14 - Watchdog: guasti e contatori.** (a) `dhcp_server.stop` che solleva in
-`_restore_dhcp`; cleanup che fallisce in `_retry_pending`; rilascio subito dopo un nuovo tentativo
-riuscito. Atteso: `release_device` chiamato, quarantena con `radio_fault=False`, `404
-reservation_invalidated`, antenna `unavailable`. (b) Ogni valore di `last_reason`; i contatori
-sopravvivono a `DELETE .../network` più una nuova create sulla stessa reservation; sono zero su una
-reservation nuova; sono presenti nel body `202` e negli stati `starting`, `start_failed` e
-`restoring_*`.
+**unit-test-14 - Watchdog: rami di guasto.** `dhcp_server.stop` che solleva in `_restore_dhcp`; cleanup
+che fallisce in `_retry_pending`; rilascio subito dopo un nuovo tentativo riuscito. Atteso:
+`release_device` chiamato, quarantena con `radio_fault=False`, `404 reservation_invalidated`, antenna
+`unavailable`. Oggi fallisce (REV-10). I contatori `restarts` dalle API sono già in `test_watchdog.py`.
 
 <a id="unit-test-15"></a>
 **unit-test-15 - Frontend.** Un target che compila il frontend in una directory temporanea senza
@@ -2629,73 +2425,11 @@ pubblicare, e alcune spec di `startNetwork` con un `HttpClient` finto: `202` →
 `start_failed`; `404` per ognuno dei quattro `reason`; errore a metà polling; avvio annullato
 (`active: false`, `runtime_state: null`); `unsubscribe`.
 
-<a id="unit-test-16"></a>
-**unit-test-16 - Reserve con `interface`.** Configurazione di prova con due antenne. Atteso: antenna
-occupata → `409 / 1005` e l'altra resta libera; in recupero → `503 / 1002` con `Retry-After: 10`;
-non disponibile → `503 / 1003` senza l'header; proprietario scaduto → pulito prima; `{"interfac":
-...}` → `422` con il nome del campo; `next_available_at` mai nel passato.
+### 4.7 Test e2e da scrivere
 
-<a id="unit-test-17"></a>
-**unit-test-17 - Backoff del cleanup.** Rilascio con stop che fallisce, poi tick di `_expiry_loop` con
-orologio finto. Atteso: tentativi a +5, +15, +60, +300 s; `/status` riporta `cleanup_failed` con
-numero e attesa; `next_available_in` del reserve è uguale all'attesa; dopo il successo il motivo
-sparisce e l'antenna è riservabile.
-
-#### Test e2e
-
-| Id | Cosa verifica | Schede | Accesso |
-|---|---|---|---|
-| [e2e-test-1](#e2e-test-1) | `start_failed` sul servizio reale | - | root |
-| [e2e-test-2](#e2e-test-2) | `DELETE .../network` durante un avvio | - | API, più `iw` |
-| [e2e-test-3](#e2e-test-3) | Il rilascio durante un avvio non lascia nulla | - | root |
-| [e2e-test-4](#e2e-test-4) | Reserve con `interface` | - | API |
-| [e2e-test-5](#e2e-test-5) | Motivi del `404` sul servizio reale | - | API |
-| [e2e-test-6](#e2e-test-6) | Contatori `restarts` | - | root |
-| [e2e-test-7](#e2e-test-7) | Create durante una riparazione: `409 / 1009` | - | root |
-| [e2e-test-8](#e2e-test-8) | Stop incompleto: `1012` | - | root, difficile da provocare |
-| [e2e-test-9](#e2e-test-9) | Scadenza di una rete attiva | - | API, più `iw` |
-| [e2e-test-10](#e2e-test-10) | Captive portal sulla porta 8081 | - | root o un client |
-| [e2e-test-11](#e2e-test-11) | Host guard con la catena già assente | - | root |
-| [e2e-test-12](#e2e-test-12) | Internet disabilitato resta disabilitato | - | root |
-
-<a id="e2e-test-1"></a>
-**e2e-test-1 - `start_failed`.** Occupare la porta UDP 67 con `server.hold_dhcp_port`, creare, fare
-polling. Atteso: `runtime_state: start_failed`, `error.code` 1013, `error.stage: dhcp`; reservation
-ancora `200`; nessun hostapd, tipo `iw` diverso da AP, nessuna regola `wilab-*`; `/status` non
-`degraded`; `DELETE .../network` `200`; una nuova create funziona. Oggi nessun test verifica l'esito
-principale di un guasto non radio.
-
-<a id="e2e-test-2"></a>
-**e2e-test-2 - Stop durante un avvio.** Su un canale DFS, se offerto, per allargare la finestra.
-Atteso: `200` (o `503 / 1006` e poi `200`), reservation ancora `200`, `GET` non attiva con
-`runtime_state: null`, nessun AP sull'interfaccia, nessuna regola, la create successiva riesce.
-
-<a id="e2e-test-3"></a>
-**e2e-test-3 - Rilascio durante un avvio.** Estendere il test esistente, che controlla solo la
-risposta HTTP. Atteso: nessun PID di `hostapd` o `dnsmasq` per l'interfaccia, nessuna regola
-`wilab-nat`, `wilab-forward` o `wilab-in`, nessun indirizzo IPv4; reserve e create immediati sulla
-stessa interfaccia riescono.
-
-<a id="e2e-test-4"></a>
-**e2e-test-4 - Reserve con `interface`.** Atteso: viene restituita l'antenna richiesta; un secondo
-reserve della stessa risponde `409 / 1005` con l'`expires_at` della prima; l'altra antenna resta
-riservabile; un'interfaccia sconosciuta risponde `422` con `interface: ...`.
-
-<a id="e2e-test-5"></a>
-**e2e-test-5 - Motivi del `404`.** ID rilasciato, scaduto (reservation di 60 s, poi attesa) e mai
-esistito, su `GET`, `DELETE`, `/network`, `/txpower` e `/internet/enable`. Atteso: `404` con il motivo
-giusto. Il caso `reservation_invalidated` si aggiunge dentro `_quarantine_while_gone`.
-
-<a id="e2e-test-6"></a>
-**e2e-test-6 - Contatori `restarts`.** `kill` di hostapd una volta e di dnsmasq una volta. Atteso:
-`restarts.ap == 1` con `last_reason: hostapd_not_running`, poi `dhcp == 1`; `last_at` dentro la
-finestra del test; contatori invariati dopo `DELETE .../network` più create; zero su una reservation
-nuova. I test del watchdog oggi controllano solo il journal.
-
-<a id="e2e-test-7"></a>
-**e2e-test-7 - Create durante una riparazione.** `kill` di hostapd e subito, in ciclo, una `POST` con
-un altro body. Atteso: almeno un `409 / 1009` o un `restoring_ap` osservato, mai un secondo AP; lo
-stesso body dopo la riparazione risponde `200`.
+| Id | Cosa verifica | Accesso |
+|---|---|---|
+| [e2e-test-8](#e2e-test-8) | Stop incompleto: `1012` | root, difficile da provocare |
 
 <a id="e2e-test-8"></a>
 **e2e-test-8 - Stop incompleto.** `SIGSTOP` al PID di hostapd, poi `DELETE .../network`. Atteso:
@@ -2703,207 +2437,3 @@ risposta entro circa 15-17 s, `200` oppure `503 / 1012` con `Retry-After: 5`; co
 mostra `stop_failed`, la create risponde `409 / 1012`, e dopo `SIGCONT` la `DELETE` risponde `200`.
 Provare prima su una VM sacrificabile: un processo fermato con un segnale può comportarsi in modo
 diverso da uno bloccato nel kernel.
-
-<a id="e2e-test-9"></a>
-**e2e-test-9 - Scadenza.** Reservation di 60 s con rete attiva. Atteso: entro circa 10 s dalla
-scadenza la `GET` risponde `404 reservation_expired`, il tipo `iw` non è AP, le regole non ci sono e
-`/status` mostra `reservation: null` e `network_active: false`.
-
-<a id="e2e-test-10"></a>
-**e2e-test-10 - Captive portal.** Atteso: `captive_portal.url` finisce con `:8081/`; la catena nat
-manda la porta 80 a gateway:8081; l'API sulla 8080 non è raggiungibile dal lato AP; due portali su due
-antenne partono insieme.
-
-<a id="e2e-test-11"></a>
-**e2e-test-11 - Host guard senza catena.** Con una rete attiva, cancellare a mano il salto e la catena
-`wilab-in-<if>` (IPv4 e IPv6). Atteso: il watchdog ripristina la rete (`restarts.ap` aumenta), nessuna
-quarantena; lo stop successivo risponde `200`. Annotare il messaggio di `iptables -D` con la catena
-assente sui due backend: già annotato il 2026-11-26 (`-D` risponde codice 2, "Chain 'x' does not exist"
-con nf_tables e "Couldn't load target" con legacy; `-F`, `-X`, `-S` codice 1 "No chain/target/match by
-that name"), e `HostGuard.remove` ora controlla lo stato invece del testo. Resta da provare il recupero
-sulla macchina.
-
-<a id="e2e-test-12"></a>
-**e2e-test-12 - Internet disabilitato.** Create con Internet, `POST .../internet/disable`, attesa di
-40 s (un giro di verifica del watchdog è ogni 30 s). Atteso: nessuna regola `MASQUERADE` per la
-subnet, le regole `wilab-block-<if>` presenti, `internet.enabled: false`, nessuna riga "repaired in
-place" nel journal. È il test e2e del difetto corretto il 2026-11-26 (il watchdog ridava Internet a
-una rete a cui il client lo aveva tolto).
-
----
-
-<a id="cap-6"></a>
-## 6. Limiti dell'analisi e correzioni fatte al documento
-
-### 6.1 Cosa non ho potuto verificare
-
-- Non è stato eseguito nulla. SEC-1, BUG-1 e HAP-1 dipendono dal comportamento di Starlette, pydantic e
-  hostapd per come lo conosco; ognuno si conferma con un test di poche righe (T-01, T-02, H-02).
-- NET-1 conta solo con il backend `iptables` legacy; STAB-2 solo dove `/tmp` viene pulito per età.
-  Entrambi dipendono dalla distribuzione della macchina di destinazione, che non conosco.
-- STAB-1 descrive un blocco lato kernel. Il caso osservato `RTNETLINK ... timed out` mostra che il
-  driver può fermarsi; che si fermi in modo non interrompibile è un'ipotesi.
-- HAP-5, HAP-6 e HAP-7 sono esperimenti da fare, non difetti accertati.
-- Le patch non sono state applicate né provate. I numeri di riga si riferiscono al commit `94c74b5`.
-- Frontend e test non sono stati revisionati; ho solo verificato che nessun test copra i validatori di
-  BUG-1, gli SSID non ASCII e la gestione dei percorsi del frontend.
-
-### 6.2 Errori corretti rispetto alle stesure precedenti
-
-| Punto | Cosa diceva | Cosa era sbagliato | Ora |
-|---|---|---|---|
-| File controllati | "Tutti i file di `wilab/`" | I due file JSON dei profili QoS non erano stati letti. | Letti; ne è nato BUG-9. |
-| STAB-2 | La pulizia di `/tmp` cancella il socket di controllo di hostapd e il watchdog riavvia l'AP. | La pulizia di systemd salta i socket ancora in uso. | Gravità Media; effetto: stato `degraded` falso. |
-| PERF-4 | "Circa un milione di processi all'anno" per il watchdog. | Un comando ogni 5 s sono circa 6,3 milioni all'anno. | Corretto. |
-| BUG-5 | Confidenza "Confermato". | Il codice è certo; che esistano host con `ID_NET_NAME` diverso dal nome reale è un'inferenza. | Confidenza "Probabile". |
-| BUG-4 | Presentato come difetto certo. | La mancata invalidazione è certa; che la cache venga riempita prima del dominio regolatorio è un'ipotesi. | Confidenza distinta nei due aspetti. |
-| WD-6 | "Due traceback ogni 5 s". | Il traceback c'è solo finché la reservation esiste. | Riformulato. |
-| WD-5 | "Non si può mai ripulire". | Vero solo finché l'interfaccia manca. | Aggiunto il caso del ritorno con lo stesso nome. |
-| NET-1 | Presentato come frequente. | Una collisione richiede una sovrapposizione di millisecondi. | "Rara per evento, certa nel tempo". |
-| STAB-1 | Confidenza "Probabile". | Il `wait()` bloccante è certo, l'innesco no. | Confidenza divisa in due. |
-| Conteggio | "Sessanta difetti". | I punti erano 85; con BUG-9 e ARCH-12 sono 87; tolto un punto non più pertinente, sono 86; con HAP-11 sono 87. | Corretto. |
-
-### 6.3 Revisione del 2026-11-26: metodo e correzioni fatte subito
-
-La revisione è stata fatta da sei letture indipendenti (API e reservation, wifi e network,
-documentazione, CHANGELOG, test, frontend), poi riviste. I punti "Confermato" sono stati riprodotti
-con il TestClient o con mock dei test unit; gli altri vengono dalla sola lettura. **Non è stato
-eseguito alcun test e2e e nulla è stato provato sull'hardware**; il frontend non è stato compilato.
-
-Corretti subito, con la suite unit verde (872 test):
-
-| Cosa | Dove | Test |
-|---|---|---|
-| Dopo `internet/disable` il watchdog "riparava" il NAT entro 30 s e ridava Internet alla rete, mentre l'API continuava a dire disabilitato. Era il difetto più grave trovato. | `NatManager.disable_nat` | `test_verify_leaves_a_network_with_internet_disabled_alone` |
-| Due create identiche inviate insieme: una riceveva `409 / 1008` invece di `202`. | route `start_network` | `test_the_same_create_sent_twice_at_once_...` |
-| `start_failed` poteva avere `error.code` 500 o 1008: ora è sempre 1013, con `stage: null` se la fase non è nota. | `_run_job` | `test_start_failed_always_carries_1013_...` |
-| Un cleanup fallito veniva ripetuto dentro le richieste (reserve, chiamate con l'ID scaduto), saltando il backoff. | `ReservationManager.get`, `create`, `_create_on` | `test_requests_never_repeat_a_cleanup_that_is_backing_off` |
-| Reserve con `interface`: `next_available_at` poteva essere nel passato. | `_create_on` | stesso test |
-| `503 / 1002` e `1003` senza `message` e con il campo residuo `reservation_invalidated`. | `recovery_responses.py` | `test_one_create_retries_radio_failures_then_quarantines` |
-| La verifica del watchdog si interrompeva con un traceback quando mancava la rotta di default. | `Watchdog._verify` | - |
-| Testi OpenAPI e commenti rimasti da passaggi intermedi (`1001`, `503 / 1003` sulla create, `500` per il portale, `1006` sulla `GET .../network`). | route e `wilab/api/__init__.py` | - |
-
-Nei test: 2 doppioni tolti, test che non potevano fallire riscritti, thread di background fermati a
-fine test (erano 415 a fine suite), `/status` non esegue più comandi reali sull'host durante i test,
-quattro test QoS con attese reali resi 20 volte più veloci. L'helper e2e `WiLab.create()` restituiva
-`200` anche per un avvio finito in `start_failed`: ora quel caso è un errore. Queste modifiche agli e2e
-sono controllate da lint e tipi ma **non eseguite**.
-
-La documentazione in `docs/`, il README e `config.example.yaml` sono stati allineati al codice. Il
-CHANGELOG della 4.0.0 è stato riscritto come differenza tra 3.0.0 e lo stato finale: le correzioni
-sono passate da 54 a 35, perché sono state tolte quelle a difetti mai rilasciati e i doppioni.
-
----
-
-<a id="cap-7"></a>
-## 7. Fonti consultate
-
-Lette solo per capire il comportamento di componenti esterni. Nessuna istruzione proveniente da queste
-pagine è stata eseguita.
-
-- [Segnalazioni su MT7921U in modalità AP](https://github.com/morrownr/USB-WiFi/issues/384)
-- [Discussione sui crash di mt7921u in modalità AP](https://forum.openwrt.org/t/mt7921u-ap-mode-crashes-on-23-05-0/175472)
-- [Patch di hostapd sul timeout dell'aggiornamento della lista canali](https://lists.infradead.org/pipermail/hostap/2014-January/029416.html)
-- [dnsmasq: bind-dynamic contro bind-interfaces](https://lists.thekelleys.org.uk/pipermail/dnsmasq-discuss/2012q4/006524.html)
-
----
-
-<a id="cap-8"></a>
-## 8. Indice
-
-### Capitoli
-
-- [File controllati](#file-controllati-idx)
-- [Come leggere il documento](#come-leggere-idx)
-- [1. Sintesi](#cap-1)
-- [2. Punti aperti, in ordine di priorità](#cap-2)
-- [3. Contesto: cosa ha cambiato il branch](#cap-3)
-- [4. Schede di dettaglio, in ordine di priorità](#cap-4)
-- [5. Test da aggiungere](#cap-5)
-  - 5.1 Tre strumenti di prova da costruire prima
-  - 5.2 Test automatici
-  - 5.3 Prove su hardware
-  - 5.4 Piano di prova sul sistema reale
-  - 5.5 Test mancanti rilevati dalla revisione del 2026-11-26 (`unit-test-N`, `e2e-test-N`)
-- [6. Limiti dell'analisi e correzioni fatte al documento](#cap-6)
-  - 6.3 Revisione del 2026-11-26: metodo e correzioni fatte subito
-- [7. Fonti consultate](#cap-7)
-- [8. Indice](#cap-8)
-
-### Schede in ordine di priorità
-
-| Prio | Id | Titolo |
-|---:|---|---|
-| 1 | [REV-2](#rev-2) | Annullare un avvio il cui rollback fallisce mette l'antenna in quarantena |
-| 1 | [REV-5](#rev-5) | Il budget di 20 s dei tentativi interni è un residuo della create sincrona |
-| 1 | [REV-6](#rev-6) | Gli avvii che non passano dal job della create non si possono annullare |
-| 1 | [WD-5](#wd-5) | Un adattatore che sparisce non si può ripulire né rimuovere (parziale) |
-| 1 | [WD-7](#wd-7) | Il watchdog controlla due processi, non la rete (parziale) |
-| 1 | [BUG-5](#bug-5) | La discovery può ignorare un adattatore per sempre |
-| 1 | [STAB-9](#stab-9) | Il rilascio da NetworkManager è solo a runtime |
-| 1 | [STAB-8](#stab-8) | L'arresto ordinato può superare `TimeoutStopSec=30s` |
-| 1 | [WD-10](#wd-10) | Tre probe lenti riavviano un AP forse sano |
-| 1 | [HAP-9](#hap-9) | Canali DFS con controllo radar di 10 minuti |
-| 1 | [BUG-6](#bug-6) | `validate_interface_ap_mode` non dimostra nulla |
-| 1 | [NET-9](#net-9) | Le subnet non sono stabili tra un riavvio e l'altro |
-| 1 | [NET-7](#net-7) | I file dei lease sopravvivono alla reservation |
-| 2 | [SEC-1](#sec-1) | Lettura di file senza autenticazione dalla route del frontend |
-| 3 | [REV-8](#rev-8) | `cancel_start` dimentica il job dopo 30 s anche se il thread gira ancora |
-| 4 | [REV-9](#rev-9) | `stop_failed` segna anche stop che non sono del client |
-| 5 | [REV-10](#rev-10) | Il watchdog chiede un reset USB per un cleanup fallito |
-| 6 | [REV-11](#rev-11) | Risposte delle API fuori dal contratto in casi rari |
-| 7 | [REV-12](#rev-12) | Piccole gare e casi limite in wifi e network |
-| 8 | [STAB-5](#stab-5) | Le scadenze usano l'orologio di sistema |
-| 9 | [REV-13](#rev-13) | Frontend: errori nel polling della create |
-| 10 | [STAB-2](#stab-2) | File di runtime in `/tmp` |
-| 11 | [STAB-7](#stab-7) | Dipendenze non bloccate |
-| 12 | [REV-14](#rev-14) | Frontend: difetti già presenti prima di questo ciclo |
-| 13 | [HAP-8](#hap-8) | L'output di hostapd non viene conservato (parziale) |
-| 14 | [HAP-5](#hap-5) | Ipotesi: avvii senza assestamento e senza serializzazione tra radio |
-| 15 | [HAP-6](#hap-6) | Ipotesi: il TX power viene cambiato subito dopo l'avvio |
-| 16 | [NET-8](#net-8) | `dns_server` ha come default un indirizzo di laboratorio |
-| 17 | [REV-15](#rev-15) | Frontend: funzioni dell'API 4.0.0 non usate |
-| 18 | [BUG-7](#bug-7) | TX power: stato incoerente dopo un mismatch |
-| 19 | [BUG-8](#bug-8) | Confronto del token non a tempo costante |
-| 21 | [REV-17](#rev-17) | Residui della catena di modifiche |
-| 22 | [HAP-7](#hap-7) | Ipotesi: `hostapd -d` per tutta la vita dell'AP |
-| 23 | [REV-18](#rev-18) | Struttura dei test |
-| 26 | [PERF-1](#perf-1) | L'avvio di una rete esegue circa 20 comandi (parziale) |
-| 27 | [PERF-2](#perf-2) | `GET .../network` costa due o tre comandi a chiamata |
-| 28 | [PERF-5](#perf-5) | Timeout minimo di 5 s imposto in silenzio |
-| 29 | [PERF-6](#perf-6) | Il cambio di TX power blocca per 3 secondi |
-| 30 | [PERF-4](#perf-4) | Costo fisso del polling in background |
-| 31 | [PERF-7](#perf-7) | Memoria e descrittori: nessuna crescita trovata |
-| 40 | [API-6](#api-6) | Nomi incoerenti (parziale) |
-| 41 | [API-7](#api-7) | Azioni modellate come percorsi |
-| 42 | [ARCH-2](#arch-2) | Classificazione dei guasti sparsa in quattro posti |
-| 43 | [ARCH-1](#arch-1) | `NetworkManager` fa troppe cose |
-| 44 | [ARCH-4](#arch-4) | Il registro dei dispositivi esiste in quattro copie |
-| 45 | [ARCH-3](#arch-3) | Il modello dell'API è anche lo stato interno (parziale) |
-| 46 | [ARCH-5](#arch-5) | Singleton collegati per effetto collaterale |
-| 47 | [ARCH-6](#arch-6) | Tre modi di gestire un processo figlio |
-| 48 | [ARCH-7](#arch-7) | Tre implementazioni di "rilascia da NetworkManager" |
-| 49 | [ARCH-10](#arch-10) | Il logging non ha una regola |
-| 50 | [ARCH-9](#arch-9) | Codice morto |
-| 51 | [ARCH-8](#arch-8) | Attributi privati usati tra classi |
-| 53 | [ARCH-11](#arch-11) | Il layout di questo branch diverge dall'altro |
-| 54 | [BUG-9](#bug-9) | Un profilo QoS personalizzato può impedire l'avvio del servizio |
-| 55 | [NET-13](#net-13) | QoS: lo stop del profilo può far fallire lo stop della rete |
-| 56 | [RACE-3](#race-3) | Lo stato di `QosManager` non ha lock |
-| 57 | [NET-12](#net-12) | QoS: gara alla fine di un profilo `once` |
-| 58 | [NET-11](#net-11) | QoS inline: `upload_quality` ignorato |
-| 59 | [WD-8](#wd-8) | Una rete ripristinata perde il profilo QoS |
-
-### Schede per area
-
-- **Revisione del 2026-11-26:** [REV-2](#rev-2), [REV-5](#rev-5), [REV-6](#rev-6), [REV-8](#rev-8), [REV-9](#rev-9), [REV-10](#rev-10), [REV-11](#rev-11), [REV-12](#rev-12), [REV-13](#rev-13), [REV-14](#rev-14), [REV-15](#rev-15), [REV-17](#rev-17), [REV-18](#rev-18)
-- **Sicurezza:** [SEC-1](#sec-1)
-- **Watchdog e recovery:** [WD-5](#wd-5), [WD-7](#wd-7), [WD-8](#wd-8), [WD-10](#wd-10)
-- **Avvio di hostapd:** [HAP-5](#hap-5), [HAP-6](#hap-6), [HAP-7](#hap-7), [HAP-8](#hap-8), [HAP-9](#hap-9)
-- **Stabilità a lungo termine:** [STAB-2](#stab-2), [STAB-5](#stab-5), [STAB-7](#stab-7), [STAB-8](#stab-8), [STAB-9](#stab-9)
-- **Firewall, DHCP, captive portal, QoS:** [NET-7](#net-7), [NET-8](#net-8), [NET-9](#net-9), [NET-11](#net-11), [NET-12](#net-12), [NET-13](#net-13)
-- **Errori logici:** [BUG-5](#bug-5), [BUG-6](#bug-6), [BUG-7](#bug-7), [BUG-8](#bug-8), [BUG-9](#bug-9)
-- **Concorrenza:** [RACE-3](#race-3)
-- **Prestazioni:** [PERF-1](#perf-1), [PERF-2](#perf-2), [PERF-4](#perf-4), [PERF-5](#perf-5), [PERF-6](#perf-6), [PERF-7](#perf-7)
-- **Disegno delle API:** [API-6](#api-6), [API-7](#api-7)
-- **Struttura del codice:** [ARCH-1](#arch-1), [ARCH-2](#arch-2), [ARCH-3](#arch-3), [ARCH-4](#arch-4), [ARCH-5](#arch-5), [ARCH-6](#arch-6), [ARCH-7](#arch-7), [ARCH-8](#arch-8), [ARCH-9](#arch-9), [ARCH-10](#arch-10), [ARCH-11](#arch-11)
