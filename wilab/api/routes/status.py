@@ -47,7 +47,7 @@ router = APIRouter(
                 "standby": {
                     "summary": "standby - no network active, every adapter healthy",
                     "value": {
-                        "version": "4.0.0", "status": "standby", "degraded_reasons": [], "active_networks": 0,
+                        "version": "4.1.0", "status": "standby", "degraded_reasons": [], "active_networks": 0,
                         "antennas": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reservation": None,
                              "network_active": False},
@@ -60,7 +60,7 @@ router = APIRouter(
                 "ok": {
                     "summary": "ok - networks active and healthy",
                     "value": {
-                        "version": "4.0.0", "status": "ok", "degraded_reasons": [], "active_networks": 1,
+                        "version": "4.1.0", "status": "ok", "degraded_reasons": [], "active_networks": 1,
                         "antennas": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540},
                              "network_active": True},
@@ -73,7 +73,7 @@ router = APIRouter(
                 "degraded_quarantine": {
                     "summary": "degraded - one adapter quarantined, another being repaired",
                     "value": {
-                        "version": "4.0.0", "status": "degraded", "active_networks": 1,
+                        "version": "4.1.0", "status": "degraded", "active_networks": 1,
                         "degraded_reasons": [
                             {"code": "antenna_quarantined", "interface": "wlan0",
                              "message": "Antenna quarantined (unavailable)"},

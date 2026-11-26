@@ -4,6 +4,24 @@ All notable changes to Wi-Lab are documented in this file.
 
 ---
 
+## [4.1.0] - Unreleased
+
+### ⚠️ Breaking Changes
+
+### ✨ Features
+
+### 🐛 Bug Fixes
+
+### 🔧 Maintenance
+
+### ✅ Tests
+
+### 🔌 API changes from 4.0.0 (client migration)
+
+No API changes yet.
+
+---
+
 ## [4.0.0] - 2026-11-20
 
 ### 📊 Statistics
