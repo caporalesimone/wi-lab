@@ -417,15 +417,10 @@ class TestNetworkLifecycle:
 
     def test_partial_offline_block_is_cleaned_before_ap_start(self, monkeypatch):
         mgr = NetworkManager(load_config())
-        calls = []
         ap_started = []
-
-        def iptables(args, **kwargs):
-            calls.append(args)
-            if len(calls) == 2:
-                raise CommandError("block failed")
-
-        monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
+        fw = _BlockFirewall()
+        calls = fw.calls
+        monkeypatch.setattr("wilab.network.nat.execute_iptables", fw)
         monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *args, **kwargs: ap_started.append(True))
         monkeypatch.setattr(mgr.hostapd_manager, 'stop', lambda *args: None)
         monkeypatch.setattr(mgr.dhcp_server, 'stop', lambda *args: None)
@@ -1131,3 +1126,25 @@ def test_is_enabled_ignores_escaped_ssid(monkeypatch, status, enabled):
     monkeypatch.setattr(mgr, "is_running", lambda net_id: True)
     monkeypatch.setattr(hostapd, "execute_command", lambda cmd, **kw: status)
     assert mgr.is_enabled("wlan0") is enabled
+
+
+class _BlockFirewall:
+    """FORWARD only, in memory: the second change fails."""
+
+    def __init__(self):
+        self.rules: list[list[str]] = []
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args, **kwargs):
+        if args[0] == "-S":
+            return "\n".join("-A " + " ".join(r) for r in self.rules)
+        if args[0] == "-C":
+            raise CommandError("Bad rule", returncode=1)
+        self.calls.append(args)
+        if len(self.calls) == 2:
+            raise CommandError("block failed", returncode=1)
+        if args[0] == "-I":
+            self.rules.insert(0, [args[1], *args[3:]])
+        elif args[0] == "-D":
+            self.rules.remove(args[1:])
+        return ""

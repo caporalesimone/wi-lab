@@ -13,7 +13,15 @@ logger = logging.getLogger(__name__)
 
 
 class CommandError(Exception):
-    """Exception raised when shell command execution fails."""
+    """Exception raised when shell command execution fails.
+
+    `returncode` is the exit code of a command that ran and failed; None when
+    the command did not run or did not finish (not found, timeout, OSError).
+    """
+
+    def __init__(self, message: str = "", *, returncode: int | None = None) -> None:
+        super().__init__(message)
+        self.returncode = returncode
 
 
 class CommandTimeout(CommandError):
@@ -264,7 +272,8 @@ def execute_command(
                 "Command failed: %s\nstderr: %s", " ".join(cmd), stderr,
             )
             raise CommandError(
-                f"Command '{cmd[0]}' failed with code {returncode}: {stderr}"
+                f"Command '{cmd[0]}' failed with code {returncode}: {stderr}",
+                returncode=returncode,
             )
 
         return stdout
@@ -282,6 +291,34 @@ IPTABLES_LOCK_WAIT = "5"
 def execute_iptables(args: list[str], *, quiet: bool = False) -> str:
     """Execute iptables, waiting for the xtables lock. Every iptables call must go through here."""
     return execute_command(["iptables", "-w", IPTABLES_LOCK_WAIT, *args], quiet=quiet)
+
+
+def rule_exists(run: Callable[..., str], check: list[str], chain: list[str] | None = None) -> bool:
+    """Whether an iptables rule is installed, given its `-C` arguments (REV-3).
+
+    `run` is execute_iptables or the ip6tables equivalent (with `quiet`). The
+    answer is False only when iptables says the rule is absent (exit code 1).
+    A rule that jumps to a chain that does not exist fails with exit code 2:
+    pass the chain (`chain=[*table_prefix, name]`) and a missing chain also
+    counts as an absent rule. Any other failure (xtables lock held, timeout)
+    raises CommandError: the caller must not read it as "absent" and add the
+    rule again, nor restore a network for it.
+    """
+    try:
+        run(["-C", *check], quiet=True)   # a missing rule is a normal answer (NET-5)
+        return True
+    except CommandError as exc:
+        if exc.returncode == 1:
+            return False
+        if exc.returncode != 2 or chain is None:
+            raise
+        try:
+            run(["-S", *chain], quiet=True)
+        except CommandError as listing:
+            if listing.returncode == 1:   # "No chain/target/match by that name"
+                return False
+            raise
+        raise
 
 
 def execute_ip(args: list[str]) -> str:

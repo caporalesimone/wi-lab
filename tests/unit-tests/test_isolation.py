@@ -87,7 +87,7 @@ class TestAddNetwork:
             calls.append(args)
             # Fail on the third rule: two rules were added for 192.168.12.0/24.
             if args[0] == "-A" and len([c for c in calls if c[0] == "-A"]) == 3:
-                raise CommandError("iptables failed", 1)
+                raise CommandError("iptables failed", returncode=1)
             return ""
 
         mock_iptables.side_effect = iptables
@@ -135,7 +135,7 @@ class TestRemoveNetwork:
         mock_iptables.reset_mock()
         
         # Make iptables fail
-        mock_iptables.side_effect = CommandError("Rule not found", 1)
+        mock_iptables.side_effect = CommandError("Rule not found", returncode=1)
         
         manager.remove_network('192.168.10.0/24')
         
@@ -232,6 +232,6 @@ class TestAnyPrivateRange:
 
         def missing_on_check(args, **kwargs):
             if args[0] == "-C":
-                raise CommandError("rule missing")
+                raise CommandError("rule missing", returncode=1)
         mock_iptables.side_effect = missing_on_check
         assert manager.verify() == ["isolation 10.20.0.0/24 -> 10.20.1.0/24", "isolation 10.20.1.0/24 -> 10.20.0.0/24"]

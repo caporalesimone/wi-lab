@@ -247,7 +247,7 @@ Band 2:
         if cmd[:4] == ["ip", "route", "show", "default"]:
             return "default via 192.0.2.1 dev eth0"
         if cmd[0] == "iptables" and "-C" in cmd:
-            raise commands.CommandError("Rule not found")
+            raise commands.CommandError("Rule not found", returncode=1)
         if cmd[0] == "ip":
             return mock_execute_ip(cmd[1:])
         # For other commands, return empty string

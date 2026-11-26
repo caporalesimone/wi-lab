@@ -15,9 +15,10 @@ Forwarded traffic (Internet, isolation) is not affected: it uses `FORWARD`.
 
 import logging
 import shlex
+from collections.abc import Callable
 from itertools import pairwise
 
-from .commands import CommandError, execute_command, execute_iptables
+from .commands import CommandError, execute_command, execute_iptables, rule_exists
 
 logger = logging.getLogger(__name__)
 
@@ -85,22 +86,42 @@ class HostGuard:
         logger.info("Host guard installed for %s (%s)", net_id, interface)
 
     def remove(self, net_id: str) -> None:
-        """Remove the guard of one network; missing rules are not an error."""
+        """Remove the guard of one network; missing rules are not an error.
+
+        A failed `-D`, `-F` or `-X` is checked against the firewall instead of
+        its message (REV-4): iptables answers a missing chain with a different
+        text on each backend ("Chain ... does not exist" with nf_tables,
+        "Couldn't load target" with legacy). The work is done when neither the
+        jump nor the chain is left.
+        """
         interface = self._guarded.get(net_id)
         if interface is None:
             return
         name = chain(net_id)
         failed: list[str] = []
-        for run in (execute_iptables, _ip6tables):
+        for family, run in (("IPv4", execute_iptables), ("IPv6", _ip6tables)):
+            errors: list[str] = []
             for args in (["-D", *_jump(interface, net_id)], ["-F", name], ["-X", name]):
                 try:
-                    run(args)
+                    run(args, quiet=True)
                 except CommandError as exc:
-                    if "No chain" not in str(exc) and "does a matching rule exist" not in str(exc):
-                        failed.append(f"{' '.join(args[:2])}: {exc}")
+                    errors.append(f"{' '.join(args[:2])}: {exc}")
+            if errors and not self._gone(run, interface, net_id):
+                failed.append(f"{family} {'; '.join(errors)}")
         if failed:
             raise CommandError(f"Cannot remove host guard for {net_id}: {'; '.join(failed)}")
         self._guarded.pop(net_id, None)
+
+    @staticmethod
+    def _gone(run: Callable[..., str], interface: str, net_id: str) -> bool:
+        """Whether neither the jump nor the chain of a guard is left; False when unsure."""
+        try:
+            if rule_exists(run, _jump(interface, net_id), chain=[chain(net_id)]):
+                return False
+            run(["-S", chain(net_id)], quiet=True)
+            return False   # the chain is still there
+        except CommandError as exc:
+            return exc.returncode == 1   # "No chain/target/match by that name"
 
     def problems(self, net_id: str) -> list[str]:
         """What is missing from the guard of a running network (WD-7)."""
@@ -109,9 +130,9 @@ class HostGuard:
             return []
         found = []
         for family, run in (("IPv4", execute_iptables), ("IPv6", _ip6tables)):
-            try:
-                run(["-C", *_jump(interface, net_id)], quiet=True)   # missing is normal (NET-5)
-            except CommandError:
+            # A failed check raises (REV-3): the watchdog skips this round instead
+            # of restoring a network whose guard may be in place.
+            if not rule_exists(run, _jump(interface, net_id), chain=[chain(net_id)]):
                 found.append(f"{family} host guard")
         return found
 

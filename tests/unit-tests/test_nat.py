@@ -13,7 +13,7 @@ def _recording_iptables(calls, listing=lambda args: ""):
         if "-S" in args:
             return listing(args)
         if "-C" in args:
-            raise CommandError("iptables: Bad rule (does a matching rule exist in that chain?)")
+            raise CommandError("iptables: Bad rule (does a matching rule exist in that chain?)", returncode=1)
         calls.append(args)
         return ""
 
@@ -74,7 +74,7 @@ def test_nat_rules_use_only_the_selected_network_subnet(monkeypatch):
 
     def iptables(args, **kwargs):
         if "-C" in args:
-            raise CommandError("missing")
+            raise CommandError("missing", returncode=1)
         if "-S" in args:
             chain = args[-1]
             return "\n".join(
@@ -98,18 +98,10 @@ def test_nat_rules_use_only_the_selected_network_subnet(monkeypatch):
 
 
 def test_internet_block_precedes_protection_and_is_removed_on_reenable(monkeypatch):
-    calls = []
     monkeypatch.setattr("wilab.network.nat.execute_sysctl", lambda *args: None)
-
-    def iptables(args, **kwargs):
-        if "-S" in args:
-            return "-P FORWARD DROP"
-        if "-C" in args:
-            raise CommandError("missing")
-        calls.append(args)
-        return ""
-
-    monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
+    fw = _Firewall(drop_policy=True)
+    calls = fw.calls
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", fw)
     nat = NatManager("eth0")
     nat.disable_nat("wlan0", "a", "192.168.120.0/24")
     assert calls[0][:3] == ["-I", "FORWARD", "1"]
@@ -124,42 +116,67 @@ def test_internet_block_precedes_protection_and_is_removed_on_reenable(monkeypat
     nat.enable_nat("wlan0", "a", "192.168.120.0/24")
     assert calls[-1][:2] == ["-D", "FORWARD"]
     assert not nat._blocked_rules
+    assert not [r for _t, r in fw.rules if "wilab-block-a" in r]
 
 
 def test_partial_internet_block_never_reports_success_and_can_be_cleaned(monkeypatch):
-    calls = []
-
-    def iptables(args, **kwargs):
-        calls.append(args)
-        if len(calls) == 2:
-            raise CommandError("failed")
-
-    monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
+    fw = _Firewall(fail=2)
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", fw)
     nat = NatManager("eth0")
     with pytest.raises(RuntimeError, match="Cannot block"):
         nat.block_internet("wlan0", "a")
     with pytest.raises(RuntimeError, match="Incomplete"):
         nat.block_internet("wlan0", "a")
     nat.unblock_internet("a")
-    assert calls[-1][:2] == ["-D", "FORWARD"]
+    assert fw.calls[-1][:2] == ["-D", "FORWARD"]
     assert not nat._blocked_rules
+    assert not fw.rules
 
 
 def test_unblock_failure_restores_previously_removed_rule(monkeypatch):
-    calls = []
-
-    def iptables(args, **kwargs):
-        calls.append(args)
-        if len(calls) == 5:
-            raise CommandError("delete failed")
-
-    monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
+    fw = _Firewall(fail=5)   # 3 inserts, then the second delete fails
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", fw)
     nat = NatManager("eth0")
     nat.block_internet("wlan0", "a")
+    before = list(fw.rules)
     with pytest.raises(RuntimeError, match="Cannot remove Internet block"):
         nat.unblock_internet("a")
     assert len(nat._blocked_rules["a"]) == 3
-    assert calls[-1][:3] == ["-I", "FORWARD", "1"]
+    assert fw.calls[-1][:3] == ["-I", "FORWARD", "1"]
+    assert fw.rules == before   # the block is whole again, in its order
+
+
+def test_failed_rule_check_is_not_read_as_a_missing_rule(monkeypatch):
+    """REV-3 (unit-test-3): a failed `-C` raises; no duplicate block is left after the release."""
+    fw = _Firewall()
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", fw)
+    nat = NatManager("eth0")
+    nat.disable_nat("wlan0", "a", "192.168.120.0/24")
+    blocked = list(fw.rules)
+
+    def lock_held(args, **kwargs):
+        if args[:1] == ["-C"]:
+            raise CommandError("Another app is currently holding the xtables lock", returncode=4)
+        return fw(args, **kwargs)
+
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", lock_held)
+    with pytest.raises(CommandError, match="xtables lock"):
+        nat.verify("wlan0", "a", "192.168.120.0/24")
+    assert fw.rules == blocked   # nothing added
+    nat.release_network("wlan0", "a")
+    assert not fw.rules
+
+
+def test_release_removes_duplicate_block_rules(monkeypatch):
+    """REV-3: block rules are removed by their comment, so a duplicate goes too."""
+    fw = _Firewall()
+    monkeypatch.setattr("wilab.network.nat.execute_iptables", fw)
+    nat = NatManager("eth0")
+    nat.disable_nat("wlan0", "a", "192.168.120.0/24")
+    fw.rules += list(fw.rules)   # an earlier repair inserted the block twice
+    nat.release_network("wlan0", "a")
+    assert not fw.rules
+    assert not nat.has_pending_network("a")
 
 
 class TestNatManagerInit:
@@ -484,10 +501,18 @@ class TestFlushRules:
 
 
 class _Firewall:
-    """In-memory iptables for NatManager: -A/-I add, -D removes, -C checks, -S lists."""
+    """In-memory iptables for NatManager: -A/-I add, -D removes, -C checks, -S lists.
 
-    def __init__(self):
+    `calls` records the changes (not -C or -S); `fail` makes the change with that
+    number (1-based, counting changes only) raise; `drop_policy` lists FORWARD with
+    a DROP policy.
+    """
+
+    def __init__(self, *, fail: int | None = None, drop_policy: bool = False):
         self.rules: list[tuple[str, list[str]]] = []
+        self.calls: list[list[str]] = []
+        self.fail = fail
+        self.drop_policy = drop_policy
 
     def __call__(self, args, **kwargs):
         table = "filter"
@@ -496,15 +521,22 @@ class _Firewall:
         op = args[0]
         if op == "-S":
             chain = args[1] if len(args) > 1 else None
-            return "\n".join(
+            policy = ["-P FORWARD DROP"] if self.drop_policy and table == "filter" and chain == "FORWARD" else []
+            return "\n".join(policy + [
                 "-A " + " ".join(r) for t, r in self.rules if t == table and (chain is None or r[0] == chain)
-            )
+            ])
         rule = args[1:] if op != "-I" else [args[1], *args[3:]]
         if op == "-C":
             if (table, rule) not in self.rules:
-                raise CommandError("Bad rule")
-        elif op in ("-A", "-I"):
+                raise CommandError("Bad rule", returncode=1)
+            return ""
+        self.calls.append(args)
+        if len(self.calls) == self.fail:
+            raise CommandError("failed", returncode=1)
+        if op == "-A":
             self.rules.append((table, rule))
+        elif op == "-I":
+            self.rules.insert(int(args[2]) - 1, (table, rule))
         elif op == "-D":
             self.rules.remove((table, rule))
         return ""

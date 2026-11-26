@@ -12,6 +12,9 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- A firewall check that fails (xtables lock held by another tool, timeout) no longer counts as a missing rule: the watchdog skips that round instead of adding the Internet block again or restoring a healthy network, and stopping a network removes every copy of its Internet block (Fable REV-3).
+- Removing a network's host guard no longer fails when the firewall already lost its chain (a host firewall reload, or a guard that failed half-way): the antenna is no longer quarantined for it (Fable REV-4).
+
 ### 🔧 Maintenance
 
 ### ✅ Tests

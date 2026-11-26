@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import IPv4Address
 from itertools import pairwise
 
-from .commands import CommandError, execute_iptables
+from .commands import CommandError, execute_iptables, rule_exists
 
 logger = logging.getLogger(__name__)
 
@@ -151,9 +151,11 @@ class CaptivePortal:
         chain = _chain(self.net_id)
         jump = ["-i", self.interface, "-m", "comment", "--comment", f"{JUMP_COMMENT_PREFIX}{self.net_id}"]
         for prefix, parent in ((["-t", "nat"], "PREROUTING"), ([], "FORWARD")):
-            try:
-                execute_iptables([*prefix, "-C", parent, *jump, "-j", chain], quiet=True)
-            except CommandError:
+            # A failed check raises (REV-3): the watchdog skips this round.
+            def run(args: list[str], *, quiet: bool = False, table: list[str] = prefix) -> str:
+                return execute_iptables([*table, *args], quiet=quiet)
+
+            if not rule_exists(run, [parent, *jump, "-j", chain], chain=[chain]):
                 found.append(f"captive portal {parent} rule")
         return found
 

@@ -35,7 +35,7 @@ class FakeFirewall:
         key = (table, tuple(rest))
         if op == "-C":
             if key not in self.rules:
-                raise CommandError("Bad rule")
+                raise CommandError("Bad rule", returncode=1)
             return ""
         self.changes.append(args)
         if op == "-A":
@@ -209,3 +209,37 @@ def test_watchdog_checks_every_sixth_healthy_tick_and_restores_on_request(monkey
     mgr.watchdog._watch(reservations, device)
     assert verify.call_count == 2  # ticks 6 and 12
     restore.assert_called_once()  # tick 13, after the captive portal check failed
+
+
+def test_failed_rule_checks_raise_instead_of_repairing(monkeypatch, firewall):
+    """REV-3 (unit-test-3): `-C` that fails for another reason (xtables lock) is not "missing"."""
+    iso = IsolationManager()
+    iso.add_network("192.168.10.0/24")
+    iso.add_network("192.168.11.0/24")
+    portal = captive.CaptivePortal(
+        interface="wlan0", net_id="wlan0", gateway="192.168.10.1",
+        context=dict, lookup_mac=lambda ip: None, firewall_lock=threading.Lock(),
+    )
+    before = list(firewall.rules)
+
+    def locked(args, **kwargs):
+        if "-C" in args:
+            raise CommandError("Another app is currently holding the xtables lock", returncode=4)
+        return firewall(args, **kwargs)
+
+    for module in (isolation, captive):
+        monkeypatch.setattr(module, "execute_iptables", locked)
+    with pytest.raises(CommandError):
+        iso.verify()
+    with pytest.raises(CommandError):
+        portal.problems()
+    assert firewall.rules == before
+
+
+def test_failed_check_skips_the_watchdog_round(monkeypatch):
+    """The watchdog reads a failed check as "cannot verify now", never as a broken network."""
+    config = dependencies.get_config()
+    mgr = dependencies.get_manager(config)
+    watchdog = watchdog_module.NetworkWatchdog(mgr)
+    monkeypatch.setattr(mgr, "verify_network", Mock(side_effect=CommandError("lock", returncode=4)))
+    assert watchdog._verify("wls16") == ""

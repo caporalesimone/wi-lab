@@ -30,19 +30,25 @@ class FakeTable:
         elif op == "-I":
             self.chains[args[1]].insert(int(args[2]) - 1, args[3:])
         elif op in ("-D", "-C"):
+            target = args[args.index("-j") + 1] if "-j" in args else None
+            if target is not None and target.startswith("wilab-") and target not in self.chains:
+                # What iptables (nf_tables) answers for a jump to a missing chain (REV-4).
+                raise CommandError(f"Chain '{target}' does not exist", returncode=2)
             if args[2:] not in self.chains.get(args[1], []):
-                raise CommandError("Bad rule (does a matching rule exist in that chain?)")
+                raise CommandError("Bad rule (does a matching rule exist in that chain?)", returncode=1)
             if op == "-D":
                 self.chains[args[1]].remove(args[2:])
         elif op == "-F":
             if args[1] not in self.chains:
-                raise CommandError("No chain/target/match by that name.")
+                raise CommandError("No chain/target/match by that name.", returncode=1)
             self.chains[args[1]] = []
         elif op == "-X":
             if args[1] not in self.chains:
-                raise CommandError("No chain/target/match by that name.")
+                raise CommandError("No chain/target/match by that name.", returncode=1)
             del self.chains[args[1]]
         elif op == "-S":
+            if len(args) > 1 and args[1] not in self.chains:
+                raise CommandError("No chain/target/match by that name.", returncode=1)
             chains = [args[1]] if len(args) > 1 else list(self.chains)
             lines = [] if len(args) > 1 else [f"-N {c}" for c in self.chains if c != "INPUT"]
             for c in chains:
@@ -143,10 +149,10 @@ def test_guard_failure_fails_the_startup_and_rolls_back(manager, tables, monkeyp
     v4, _ = tables
     device = manager.config.antennas[0].device_id
 
-    def broken(args):
+    def broken(args, **kwargs):
         if args[:1] == ["-N"]:
-            raise CommandError("iptables: Permission denied")
-        return v4(args)
+            raise CommandError("iptables: Permission denied", returncode=4)
+        return v4(args, **kwargs)
 
     monkeypatch.setattr(host_guard, "execute_iptables", broken)
     with pytest.raises(StartupFailure, match="protect host") as failure:
@@ -154,3 +160,60 @@ def test_guard_failure_fails_the_startup_and_rolls_back(manager, tables, monkeyp
     assert not failure.value.radio
     assert device not in manager.active
     assert not manager.host_guard.has(device)
+
+
+# --------------------------------------------------------------------------- REV-3, REV-4
+
+
+def test_remove_when_the_chains_are_already_gone(tables):
+    """REV-4: a host firewall reload deleted jump and chain; `-D` fails with "Chain ... does not exist"."""
+    v4, v6 = tables
+    guard = HostGuard()
+    guard.add("wlan0", "wlan0")
+    for table in (v4, v6):
+        table.chains = {"INPUT": []}
+    guard.remove("wlan0")
+    assert not guard.has("wlan0")
+
+
+def test_remove_still_fails_when_the_guard_is_left(tables, monkeypatch):
+    """REV-4: an error is accepted only when the firewall shows nothing left."""
+    v4, _ = tables
+    guard = HostGuard()
+    guard.add("wlan0", "wlan0")
+
+    def locked(args, **kwargs):
+        if args[:1] in (["-D"], ["-F"], ["-X"]):
+            raise CommandError("Another app is currently holding the xtables lock", returncode=4)
+        return v4(args, **kwargs)
+
+    monkeypatch.setattr(host_guard, "execute_iptables", locked)
+    with pytest.raises(CommandError, match="IPv4"):
+        guard.remove("wlan0")
+    assert guard.has("wlan0")
+    assert "wilab-in-wlan0" in v4.chains
+
+
+def test_problems_reports_a_missing_chain(tables):
+    """The jump check answers exit code 2 when its chain is gone: still a missing guard."""
+    v4, _ = tables
+    guard = HostGuard()
+    guard.add("wlan0", "wlan0")
+    v4.chains = {"INPUT": []}
+    assert guard.problems("wlan0") == ["IPv4 host guard"]
+
+
+def test_problems_raises_when_the_check_fails(tables, monkeypatch):
+    """REV-3 (unit-test-3): a failed `-C` is not a missing guard, so no restore is asked for."""
+    v4, _ = tables
+    guard = HostGuard()
+    guard.add("wlan0", "wlan0")
+
+    def locked(args, **kwargs):
+        if args[:1] == ["-C"]:
+            raise CommandError("Another app is currently holding the xtables lock", returncode=4)
+        return v4(args, **kwargs)
+
+    monkeypatch.setattr(host_guard, "execute_iptables", locked)
+    with pytest.raises(CommandError, match="xtables lock"):
+        guard.problems("wlan0")

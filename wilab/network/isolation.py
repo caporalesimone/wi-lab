@@ -2,7 +2,7 @@
 
 import logging
 
-from .commands import CommandError, execute_iptables
+from .commands import CommandError, execute_iptables, rule_exists
 
 logger = logging.getLogger(__name__)
 
@@ -135,9 +135,8 @@ class IsolationManager:
                     "FORWARD", "-s", source, "-d", destination, "-j", "DROP",
                     "-m", "comment", "--comment", "wilab-isolation",
                 ]
-                try:
-                    execute_iptables(["-C", *rule], quiet=True)   # missing is normal (NET-5)
-                except CommandError:
+                # Raises when iptables cannot tell: never add a rule that may exist (REV-3).
+                if not rule_exists(execute_iptables, rule):
                     execute_iptables(["-A", *rule])
                     repaired.append(f"isolation {source} -> {destination}")
         return repaired

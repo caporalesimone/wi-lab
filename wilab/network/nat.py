@@ -4,7 +4,7 @@ import logging
 import shlex
 from itertools import pairwise
 
-from .commands import CommandError, execute_command, execute_iptables, execute_sysctl
+from .commands import CommandError, execute_command, execute_iptables, execute_sysctl, rule_exists
 
 logger = logging.getLogger(__name__)
 
@@ -126,22 +126,13 @@ class NatManager:
             logger.warning(f"Failed to disable IP forwarding: {e}")
     
     def _rule_exists(self, table: str | None, args: list) -> bool:
-        """
-        Check if an iptables rule exists.
-        
-        Args:
-            table: Table name (e.g., "nat") or None for filter
-            args: Rule arguments to check
-            
-        Returns:
-            True if rule exists, False otherwise
-        """
-        try:
-            # A missing rule is the normal answer: not logged as an error (NET-5).
-            execute_iptables([*(["-t", table] if table else []), "-C", *args], quiet=True)
-        except CommandError:
-            return False
-        return True
+        """Whether a rule is installed; raises CommandError when iptables cannot tell (REV-3)."""
+        prefix = ["-t", table] if table else []
+
+        def run(more: list[str], *, quiet: bool = False) -> str:
+            return execute_iptables([*prefix, *more], quiet=quiet)
+
+        return rule_exists(run, args)
 
     def block_internet(self, wifi_interface: str, net_id: str) -> None:
         """Block forwarded traffic for an AP, including established flows."""
@@ -167,24 +158,37 @@ class NatManager:
         return net_id in self._blocked_rules or net_id in self._nat_networks
 
     def unblock_internet(self, net_id: str) -> None:
-        """Remove tracked blocks, retaining failed rules for another cleanup."""
-        rules = self._blocked_rules.get(net_id, [])
+        """Remove the Internet block of a network, retaining it for another cleanup on failure.
+
+        Removes every FORWARD rule with the network's block comment, not only the
+        tracked ones, so a duplicate left by an earlier repair goes too (REV-3).
+        """
+        if net_id not in self._blocked_rules:
+            return
+        comment = f"wilab-block-{net_id}"
+        try:
+            rules = [
+                tokens[1:] for tokens in map(shlex.split, execute_iptables(["-S", "FORWARD"]).splitlines())
+                if tokens[:2] == ["-A", "FORWARD"]
+                and comment in [value for option, value in pairwise(tokens) if option == "--comment"]
+            ]
+        except (CommandError, ValueError) as exc:
+            raise RuntimeError(f"Cannot remove Internet block for {net_id}: {exc}") from exc
         removed: list[list[str]] = []
-        while rules:
-            rule = rules[-1]
+        for rule in rules:
             try:
                 execute_iptables(["-D", *rule])
             except CommandError as exc:
+                # All or nothing: put back what was removed, so the block stays whole.
                 for removed_rule in reversed(removed):
                     try:
                         execute_iptables(["-I", removed_rule[0], "1", *removed_rule[1:]])
-                        rules.append(removed_rule)
                     except CommandError as restore_exc:
                         logger.error("Cannot restore Internet block for %s: %s", net_id, restore_exc)
                 raise RuntimeError(f"Cannot remove Internet block for {net_id}: {exc}") from exc
-            removed.append(rules.pop())
+            removed.append(rule)
         self._blocked_rules.pop(net_id, None)
-    
+
     @staticmethod
     def _nat_rules(
         wifi_interface: str, net_id: str, subnet: str, upstream: str,
