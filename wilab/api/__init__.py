@@ -191,8 +191,8 @@ async def lifespan(app: FastAPI):
         mgr = get_manager(cfg)
         mgr.shutdown_all()
     except Exception:
-        # Ignore shutdown errors to not block app teardown
-        pass
+        # Never block the teardown, but never hide why the cleanup failed (STAB-8).
+        logger.exception("Shutdown cleanup failed")
 
 
 def create_app() -> FastAPI:

@@ -16,7 +16,9 @@ ExecStart=VENV_PATH/bin/python WILAB_DIR/main.py
 Restart=always
 RestartSec=10s
 TimeoutStartSec=60s
-TimeoutStopSec=30s
+# Stop budget: 10 s for running requests, up to 10 s for discovery, up to 20 s
+# to release every antenna in parallel (STAB-8).
+TimeoutStopSec=60s
 Environment="CONFIG_PATH=WILAB_DIR/config.yaml"
 StandardOutput=journal
 StandardError=journal

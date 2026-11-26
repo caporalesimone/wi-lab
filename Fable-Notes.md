@@ -79,7 +79,7 @@ refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` =
 | 1 | [WD-7](#wd-7) | Media | parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. **Fatto:** gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca:** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware. |
 | 1 | [BUG-5](#bug-5) | Media | ✅ | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
 | 1 | [STAB-9](#stab-9) | Bassa | ✅ | Ripristinare le impostazioni unmanaged se NetworkManager si riavvia. |
-| 1 | [STAB-8](#stab-8) | Bassa |  | Limitare il lavoro di arresto entro il timeout di systemd. |
+| 1 | [STAB-8](#stab-8) | Bassa | ✅ | Limitare il lavoro di arresto entro il timeout di systemd. |
 | 1 | [WD-10](#wd-10) | Bassa |  | Non considerare guasto un access point solo per probe lenti. |
 | 1 | [HAP-9](#hap-9) | Bassa |  | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. |
 | 1 | [BUG-6](#bug-6) | Bassa |  | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
@@ -441,7 +441,7 @@ Il file elenca solo i nomi delle radio di Wi-Lab, quindi non può toccare l'inte
 ---
 
 <a id="stab-8"></a>
-### 1. STAB-8 - L'arresto ordinato può superare `TimeoutStopSec=30s`
+### 1. STAB-8 - L'arresto ordinato può superare `TimeoutStopSec=30s` ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:768-779](wilab/wifi/manager.py#L768-L779), [install/systemd/wi-lab.service.template](install/systemd/wi-lab.service.template)
 

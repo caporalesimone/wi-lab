@@ -64,6 +64,10 @@ CANCEL_TIMEOUT = 30.0
 # Channel of the recovery probe when the last one is DFS: a probe never waits for a
 # 60 s radar check under the device lock (REV-6).
 PROBE_5GHZ_CHANNEL = 36
+# Longest time shutdown_all spends cancelling creates and releasing antennas. With
+# uvicorn's 10 s graceful shutdown and the 10 s discovery join it stays inside
+# TimeoutStopSec=60s of the unit (STAB-8).
+SHUTDOWN_TIMEOUT = 20.0
 
 
 @dataclass
@@ -1072,6 +1076,7 @@ class NetworkManager:
         self.recovery.stop()
         self.watchdog.stopping.set()
         logger.info("Shutting down all networks")
+        deadline = time.monotonic() + SHUTDOWN_TIMEOUT
         # Cancel every create first, all at once: each rolls back in parallel instead
         # of holding its device lock through its retries and pauses (REV-6).
         with self.start_jobs_lock:
@@ -1079,14 +1084,33 @@ class NetworkManager:
             for job in self.start_jobs.values():
                 job.cancel.set()
         for device_id in starting:
-            self.cancel_start(device_id)
-        device_ids = {n.device_id for n in self.config.antennas} | self.active.keys()
-        for device_id in device_ids:
-            try:
-                self.release_device(device_id)
-            except Exception as e:
-                logger.error(f"Error stopping {device_id}: {e}")
-        logger.info("All networks shut down")
+            self.cancel_start(device_id, timeout=max(0.0, deadline - time.monotonic()))
+        # Antennas are released in parallel: one after the other, a pool of ten
+        # could pass systemd's stop timeout and be killed half-way (STAB-8).
+        device_ids = sorted({n.device_id for n in self.config.antennas} | self.active.keys())
+        threads = [
+            threading.Thread(
+                target=self._release_quietly, args=(device_id,), name=f"shutdown-{device_id}", daemon=True,
+            )
+            for device_id in device_ids
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
+        left = [thread.name.removeprefix("shutdown-") for thread in threads if thread.is_alive()]
+        if left:
+            logger.error(
+                "Shutdown: %s not released within %.0f s", ", ".join(left), SHUTDOWN_TIMEOUT,
+            )
+        else:
+            logger.info("All networks shut down")
+
+    def _release_quietly(self, device_id: str) -> None:
+        try:
+            self.release_device(device_id)
+        except Exception:
+            logger.exception("Error stopping %s during shutdown", device_id)
 
     # ---- TX power management ----
 

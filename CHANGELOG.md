@@ -34,6 +34,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - Releasing a reservation while the watchdog restarts its AP is immediate, as during a create, instead of waiting for the restart (up to 75 s on DFS); the service shutdown cancels running creates instead of waiting for them, and the recovery probe of a reset antenna no longer uses a DFS channel (60 s radar check under the device lock) (Fable REV-6).
 - An adapter whose name differs from the one udev suggests is no longer ignored forever with nothing in the log: after 3 scans without a rename it is used as it is, with a warning (Fable BUG-5).
 - A NetworkManager restart (for example a package upgrade) no longer takes back the radios of running APs: a runtime file under `/run/NetworkManager/conf.d` keeps them unmanaged, without ever reloading NetworkManager (Fable STAB-9).
+- The service stop no longer risks being killed by systemd half-way through the cleanup (leaving APs and rules behind): antennas are released in parallel within 20 s, running requests get 10 s, and the unit's `TimeoutStopSec` is 60 s. Reinstall the systemd unit to apply the new timeout (Fable STAB-8).
 
 ### 🔧 Maintenance
 
@@ -46,7 +47,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The e2e watchdog tests that block dnsmasq take UDP port 67 after the failure they cause: dnsmasq of the running network already held it, so the three tests failed before testing anything.
 - New unit tests from the 2026-11-26 review: cancel timeout, `404` reasons on every operation, cancel in each start phase and during the pause, tombstones, expiry during a start, stop retry budget, `restarts` counters, reserve by `interface`, cleanup backoff (unit-test-7 … 17).
 - New e2e tests: `start_failed`, stop and release during a start, reserve by `interface`, `404` reasons, `restarts` counters, create during a repair, expiry, captive portal, lost host guard, Internet kept disabled (e2e-test-1 … 12, except 8).
-- Unit tests for retries without a time budget (REV-5) and for cancelling watchdog restores, creates at shutdown and the DFS-free probe (REV-6); an adapter udev never renames (BUG-5); the NetworkManager runtime rule (STAB-9).
+- Unit tests for retries without a time budget (REV-5) and for cancelling watchdog restores, creates at shutdown and the DFS-free probe (REV-6); an adapter udev never renames (BUG-5); the NetworkManager runtime rule (STAB-9); parallel shutdown within its budget (STAB-8).
 - Unit tests create networks through the real asynchronous path (`202`, then polling) with the `create_network` helper (REV-16).
 
 ### 🔌 API changes from 4.0.0 (client migration)

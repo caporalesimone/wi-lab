@@ -1102,12 +1102,17 @@ sequenceDiagram
     end
 ```
 
-On shutdown (`SIGTERM` from systemd) the lifespan stops device discovery, waits
-briefly for it and calls `shutdown_all()`: it stops the recovery
-worker and the watchdogs, cancels every running create at once (each rolls back
-in parallel instead of holding its device lock through retries and pauses), then
-runs `release_device()` for every antenna so that no hostapd, dnsmasq, iptables
-or tc state is left behind.
+On shutdown (`SIGTERM` from systemd) uvicorn gives running requests 10 s
+(`timeout_graceful_shutdown`), then the lifespan stops device discovery, waits up
+to 10 s for it and calls `shutdown_all()`: it stops the recovery worker and the
+watchdogs, cancels every running create at once (each rolls back in parallel
+instead of holding its device lock through retries and pauses), then runs
+`release_device()` for every antenna, all antennas in parallel, so that no
+hostapd, dnsmasq, iptables or tc state is left behind. `shutdown_all()` takes at
+most 20 s (`SHUTDOWN_TIMEOUT`) and logs the antennas it could not release; the
+whole stop stays inside the unit's `TimeoutStopSec=60s`, so systemd never kills
+the service half-way (Fable STAB-8). A failure of the cleanup is logged with its
+traceback, never hidden.
 
 A watchdog restore is cancellable like a create: a release, the reservation
 expiry or the shutdown stops its wait for the AP within a fraction of a second

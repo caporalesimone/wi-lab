@@ -35,7 +35,12 @@ def main():
     logger.info("Starting REST API server on 0.0.0.0:%s", config.api_port)
     logger.info("Visit http://localhost:%s/docs for Swagger UI", config.api_port)
     
-    uvicorn.run(app, host="0.0.0.0", port=config.api_port, server_header=False, headers=[("x-app-version", __version__)])
+    # Requests still running at shutdown get 10 s, so the cleanup that follows
+    # stays inside the unit's TimeoutStopSec (STAB-8).
+    uvicorn.run(
+        app, host="0.0.0.0", port=config.api_port, server_header=False,
+        headers=[("x-app-version", __version__)], timeout_graceful_shutdown=10,
+    )
 
 
 if __name__ == "__main__":

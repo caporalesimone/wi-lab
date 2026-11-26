@@ -111,3 +111,56 @@ def test_recovery_probe_avoids_dfs_channels(monkeypatch):
     assert start.call_args.kwargs["channel"] == 149
     manager.probe_recovered_radio(device, "2.4ghz", 6)
     assert start.call_args.kwargs["channel"] == 6
+
+
+def _three_antennas(monkeypatch, manager) -> list[str]:
+    """The configured antenna plus two with an active network: shutdown_all releases all of them."""
+    for extra in ("wlx-b", "wlx-c"):
+        monkeypatch.setitem(manager.active, extra, NetworkStatus(interface=extra, active=True))
+    return sorted({n.device_id for n in manager.config.antennas} | manager.active.keys())
+
+
+def test_shutdown_releases_the_antennas_in_parallel(monkeypatch):
+    """STAB-8: slow releases overlap, so the shutdown fits the unit's stop timeout."""
+    manager = dependencies.get_manager(dependencies.get_config())
+    devices = _three_antennas(monkeypatch, manager)
+    released: list[str] = []
+
+    def slow_release(device):
+        time.sleep(0.3)
+        released.append(device)
+
+    monkeypatch.setattr(manager, "release_device", slow_release)
+    begin = time.monotonic()
+    manager.shutdown_all()
+    assert time.monotonic() - begin < 0.3 * len(devices) - 0.1
+    assert sorted(released) == sorted(devices)
+
+
+def test_shutdown_gives_up_on_a_stuck_release(monkeypatch, caplog):
+    """A release that never ends is logged, and the shutdown still returns in time."""
+    manager = dependencies.get_manager(dependencies.get_config())
+    stuck = threading.Event()
+    monkeypatch.setattr(manager_module, "SHUTDOWN_TIMEOUT", 0.2)
+    monkeypatch.setattr(manager, "release_device", lambda device: stuck.wait(5))
+    begin = time.monotonic()
+    manager.shutdown_all()
+    stuck.set()
+    assert time.monotonic() - begin < 1.0
+    assert any("not released within" in r.getMessage() for r in caplog.records)
+
+
+def test_a_failed_release_does_not_stop_the_others(monkeypatch, caplog):
+    manager = dependencies.get_manager(dependencies.get_config())
+    devices = _three_antennas(monkeypatch, manager)
+    released: list[str] = []
+
+    def release(device):
+        if device == devices[0]:
+            raise RuntimeError("hostapd did not stop")
+        released.append(device)
+
+    monkeypatch.setattr(manager, "release_device", release)
+    manager.shutdown_all()
+    assert sorted(released) == devices[1:]
+    assert any(devices[0] in r.getMessage() and r.exc_info for r in caplog.records)
