@@ -49,8 +49,7 @@ from .recovery_responses import (
     recovery_example,
 )
 
-# After a radio failure the create starts the AP again after these pauses, inside
-# the same request (the client no longer gets 409 / 1001 to do it itself).
+# After a radio failure the create job starts the AP again after these pauses.
 CREATE_RETRY_DELAYS = (5, 10)
 # The create answers 202 and the start runs in a thread; unit tests set it to
 # False to run the same start in the request and read its outcome directly.
@@ -372,7 +371,8 @@ def start_network(
     rejected. Sign-in releases only that client (MAC and IP); there is no API to
     sign a client in. Afterwards the network's `internet.enabled` setting applies.
     Sign-ins are cleared when the AP stops or is restored by the watchdog. A
-    portal startup failure is rolled back like any other startup error (`500`).
+    portal startup failure is rolled back like any other startup error
+    (`start_failed`, `error.stage: captive_portal`).
 
     **Encryption, channel width and Wi-Fi generation:** `wifi.security.encryption` is one of
     `open`, `wpa2`, `wpa3`, `wpa2-wpa3` or `wpa1` (legacy WPA/TKIP, only on antennas
@@ -430,6 +430,9 @@ def start_network(
     with manager.start_jobs_lock:
         running = manager.start_jobs.get(device_id)
         if running is not None and not running.done.is_set():
+            if running.reservation is reservation and running.request == req:
+                # The same create sent twice at once: one start, both answers 202.
+                return _json(202, _state_response(reservation, "starting"))
             raise HTTPException(status_code=409, detail=domain_error(
                 ApiErrorCode.NETWORK_ALREADY_ACTIVE, f"A network is starting on {device_id}",
             ))
@@ -537,10 +540,14 @@ def _run_job(
             logger.warning("AP start on %s ended its reservation (%s)", device_id, detail["reason"])
         else:
             logger.warning("AP start on %s failed: %s", device_id, detail.get("message"))
+            if detail["code"] != ApiErrorCode.STARTUP_FAILED:
+                # start_failed always carries 1013; the stage is null when it is not known.
+                detail = domain_error(ApiErrorCode.STARTUP_FAILED, str(detail.get("message")), stage=None)
             job.state, job.error, keep = "start_failed", detail, True
     except Exception:  # the outcome must always be readable, never a dead "starting"
         logger.exception("AP start on %s failed unexpectedly", device_id)
-        job.state, job.error, keep = "start_failed", error_detail(500, None), True
+        job.state, keep = "start_failed", True
+        job.error = domain_error(ApiErrorCode.STARTUP_FAILED, "Unexpected error during the start", stage=None)
     finally:
         if not keep:
             with manager.start_jobs_lock:
@@ -608,6 +615,9 @@ def stop_network(
     Stop an active WiFi network and clean up all resources.
 
     Requires a valid reservation token.
+    During `runtime_state: starting` this cancels the start and rolls it back;
+    with `start_failed` it clears the error. Both return 200 and keep the
+    reservation.
     With `runtime_state: restore_failed` (the watchdog could not restart the AP
     and keeps retrying), this stops the retries and returns 200; the
     reservation stays valid.
@@ -618,9 +628,6 @@ def stop_network(
     fails the answer is `503 / 1012` with `Retry-After`: the network is half
     stopped, reported as `runtime_state: stop_failed`, and repeating the
     DELETE finishes it.
-
-    Returns:
-        dict: Confirmation with stopped device_id.
     """
     job = manager.start_job(reservation)
     if job is not None:

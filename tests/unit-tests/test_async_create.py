@@ -70,6 +70,10 @@ def api(monkeypatch):
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
         yield client, headers, f"{RESERVE}/{rid}", script, manager
         script["release"].set()
+        with manager.start_jobs_lock:
+            threads = [job.thread for job in manager.start_jobs.values() if job.thread is not None]
+        for thread in threads:
+            thread.join(timeout=5)  # never leave a start running into the next test
         manager.active.clear()
 
 
@@ -169,3 +173,43 @@ def test_create_during_a_watchdog_repair_is_1009(api, monkeypatch, watchdog_stat
     monkeypatch.setattr(manager.watchdog, "state", lambda _reservation: watchdog_state)
     resp = client.post(f"{url}/network", headers=headers, json=BODY)
     assert (resp.status_code, resp.json()["detail"]["code"]) == (409, 1009)
+
+
+def test_the_same_create_sent_twice_at_once_starts_one_ap_and_both_get_202(api):
+    client, headers, url, script, manager = api
+    script["release"].clear()
+    inside, go = threading.Event(), threading.Event()
+
+    def slow_validation(*_args, **_kwargs):
+        inside.set()
+        go.wait(5)
+
+    dependencies.get_channel_manager().validate_network.side_effect = slow_validation
+    answers = []
+    first = threading.Thread(
+        target=lambda: answers.append(client.post(f"{url}/network", headers=headers, json=BODY).status_code),
+    )
+    first.start()
+    assert inside.wait(5)  # the first request is past the job check, not yet registered
+    dependencies.get_channel_manager().validate_network.side_effect = None
+    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    go.set()
+    first.join(5)
+    assert answers == [202]
+    script["release"].set()
+    _wait_until(lambda: _state(client, headers, url).json()["active"])
+    assert script["calls"] == 1
+
+
+def test_start_failed_always_carries_1013_also_for_an_unexpected_error(api):
+    client, headers, url, script, manager = api
+    for error in (ValueError("No available /24 AP subnet"), KeyError("boom")):
+        def start_network(*_args, _error=error, **_kwargs):
+            raise _error
+        manager.start_network = start_network
+        assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+        failed = _wait_until(
+            lambda: (r := _state(client, headers, url).json())["runtime_state"] == "start_failed" and r,
+        )
+        assert (failed["error"]["code"], failed["error"]["reason"]) == (1013, "startup_failed")
+        assert failed["error"]["stage"] is None and failed["error"]["message"]

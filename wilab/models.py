@@ -408,12 +408,12 @@ class RestartsInfo(BaseModel):
 class StartError(BaseModel):
     """Why an asynchronous create failed (`runtime_state: start_failed`)."""
 
-    code: int = Field(description="Error code, e.g. 1013 (startup_failed)")
-    reason: str = Field(description="Stable reason, e.g. startup_failed")
+    code: int = Field(description="Error code: 1013 (startup_failed)")
+    reason: str = Field(description="Stable reason: startup_failed")
     message: str = Field(description="For display")
     stage: str | None = Field(None, description=(
-        "With 1013, what failed: hostapd, interface, gateway, dhcp, captive_portal, nat, "
-        "internet_block, isolation or host_guard"
+        "What failed: hostapd, interface, gateway, dhcp, captive_portal, nat, "
+        "internet_block, isolation or host_guard; null after an unexpected error"
     ))
 
 

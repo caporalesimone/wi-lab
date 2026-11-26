@@ -80,7 +80,7 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 | Release `200` | Always, even if the cleanup failed: the server then keeps the adapter out of the pool and repeats the cleanup itself (`GET /status`: `cleanup_failed`). |
 | `409`, `detail.code: 1007` | The reservation is valid but has no running network (Internet, TX power, QoS profile, stop). Create a network first. A `404` always means the reservation itself is gone. |
 | `409`, `detail.code: 1010` / `1011` | A QoS profile is already running / no QoS profile is running. |
-| `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Never on the create, `GET .../network` or a release. |
+| `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Never on the create or a release. |
 
 A transport timeout is not a recovery code. For a lost create response, send
 the same create again (same ID and body) or poll `GET .../network`: the same
@@ -119,7 +119,7 @@ OPENAPI_TAGS = [
     {"name": "Reservation", "description": "Allocate or release an adapter. Use the returned reservation ID for device operations."},
     {"name": "Antennas", "description": "The managed radios and what a network on each can use "
      "(encryptions, Wi-Fi generations, channel widths, channels): fill a create form from here. No reservation needed."},
-    {"name": "Network", "description": "Create, stop and inspect an AP. The creation response describes when to retry with the same reservation."},
+    {"name": "Network", "description": "Create, stop and inspect an AP. The create is asynchronous: poll `GET .../network` for the outcome."},
     {"name": "Internet", "description": "Enable or disable Internet access for a reserved network."},
     {"name": "TX Power", "description": "Inspect or request transmit power. Hardware support is not guaranteed."},
     {"name": "QoS Profiles", "description": "Inspect and manage traffic shaping profiles for a reserved network."},

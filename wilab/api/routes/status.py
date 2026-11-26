@@ -28,7 +28,6 @@ _CHECKS_OK_EXAMPLE = {
 
 router = APIRouter(
     tags=["System"],
-    responses={503: {"description": "An expired device could not be cleaned up"}},
 )
 
 
@@ -132,8 +131,8 @@ def system_status(
     command and answers at once. A network with a start, stop or restore in
     progress is not judged, so a create or delete never makes the status flap.
 
-    The former owner of a quarantined antenna is told once, by `503 / 1003` on
-    the create (or `404` afterwards). What a network on each antenna can use is
+    The former owner of a quarantined antenna is told by `404` with
+    `reason: reservation_invalidated` on every call with its ID. What a network on each antenna can use is
     in `GET /antennas/{interface}`.
     """
     return _system_status(manager, config, reservation_mgr)
