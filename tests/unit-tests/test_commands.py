@@ -32,11 +32,11 @@ class TestCommandExecution:
             execute_command(['echo', 'hello'])
             assert mock_run.call_args.args[1] == 8.0
 
-    def test_execute_command_enforces_min_timeout(self):
-        """Test timeout lower than 5 seconds is clamped to 5."""
+    def test_the_timeout_given_is_the_timeout_used(self):
+        """PERF-5: no silent 5 s minimum."""
         with patch('wilab.network.commands._run', return_value=(0, 'ok', '')) as mock_run:
             execute_command(['echo', 'hello'], timeout=1.0)
-            assert mock_run.call_args.args[1] == 5.0
+            assert mock_run.call_args.args[1] == 1.0
 
     def test_deadline_clamps_timeout_and_does_not_leak(self, monkeypatch):
         from wilab.network import commands
@@ -501,7 +501,7 @@ class TestStuckCommands:
         monkeypatch.setattr(commands, "KILL_GRACE", 0.2)
         start = time.monotonic()
         with pytest.raises(CommandStuck, match="stuck in the kernel: ip link set wlan0 down"):
-            execute_command(["ip", "link", "set", "wlan0", "down"], timeout=0.1, exact_timeout=True)
+            execute_command(["ip", "link", "set", "wlan0", "down"], timeout=0.1)
         assert time.monotonic() - start < 2
         assert children[0].killed
         assert stuck_commands() == 1
@@ -514,7 +514,7 @@ class TestStuckCommands:
 
     def test_killed_command_that_exits_is_a_plain_timeout(self):
         with pytest.raises(CommandTimeout) as info:
-            execute_command(["sleep", "5"], timeout=0.2, exact_timeout=True)
+            execute_command(["sleep", "5"], timeout=0.2)
         assert not isinstance(info.value, CommandStuck)
         assert stuck_commands() == 0
 
@@ -596,3 +596,4 @@ def test_failed_command_carries_its_exit_code():
     with pytest.raises(CommandError) as failure:
         execute_command([sys.executable, "-c", "import sys; sys.exit(3)"])
     assert failure.value.returncode == 3
+

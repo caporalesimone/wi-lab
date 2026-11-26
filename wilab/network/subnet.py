@@ -9,7 +9,7 @@ from .commands import CommandError, execute_command
 def host_ipv4_networks() -> set[IPv4Network]:
     """Include host addresses and routed networks, but not the default route."""
     try:
-        routes = json.loads(execute_command(["ip", "-j", "-4", "route", "show", "table", "all"], timeout=2))
+        routes = json.loads(execute_command(["ip", "-j", "-4", "route", "show", "table", "all"], timeout=5.0))
         if not isinstance(routes, list):
             raise TypeError("route output is not a list")
         networks = set()

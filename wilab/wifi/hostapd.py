@@ -440,7 +440,6 @@ class HostapdManager:
                     try:
                         status = execute_command(
                             command, check=False, timeout=min(remaining, STATUS_PROBE_TIMEOUT),
-                            exact_timeout=True,
                         )
                     except CommandTimeout as e:
                         probe = "timed_out"
@@ -592,7 +591,7 @@ class HostapdManager:
         try:
             status = execute_command(
                 ["hostapd_cli", "-p", instance["control_dir"], "-i", interface, "status"],
-                check=False, timeout=1.0, exact_timeout=True,
+                check=False, timeout=1.0,
             )
         except CommandTimeout:
             return None

@@ -235,7 +235,7 @@ def stop_process(pid: int) -> None:
 
 
 def execute_command(
-    cmd: list[str], check: bool = True, timeout: float = 8.0, *, exact_timeout: bool = False,
+    cmd: list[str], check: bool = True, timeout: float = 8.0, *,
     quiet: bool = False,
 ) -> str:
     """
@@ -244,8 +244,7 @@ def execute_command(
     Args:
         cmd: List of command arguments
         check: Raise CommandError if return code is non-zero
-        timeout: Command timeout in seconds (minimum enforced to 5)
-        exact_timeout: Honor the supplied timeout without applying the minimum
+        timeout: Command timeout in seconds, used as given (PERF-5)
         quiet: The failure is an expected answer (a missing rule, nothing to
             delete, an unsupported setting): log it at debug level, not as an
             error (NET-5). CommandError is raised all the same.
@@ -261,9 +260,7 @@ def execute_command(
     if not cmd:
         raise CommandError("Empty command")
     try:
-        effective_timeout = bounded_timeout(
-            timeout if exact_timeout else max(5.0, timeout)
-        )
+        effective_timeout = bounded_timeout(timeout)
 
         returncode, stdout, stderr = _run(cmd, effective_timeout)
 

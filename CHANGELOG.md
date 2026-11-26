@@ -12,7 +12,7 @@ All notable changes to Wi-Lab are documented in this file.
 |---|---:|
 | 🐛 Bug fixes | 25 |
 | ⚠️ Breaking changes | 6 |
-| 🔧 Maintenance changes | 4 |
+| 🔧 Maintenance changes | 5 |
 | ✨ New features | 1 |
 | ✅ Test changes | 7 |
 | 📦 Commits since 4.0.0 | 62 |
@@ -70,6 +70,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - `validate_interface_wireless`, `validate_interface_ap_mode` and `validate_interface` are gone: the AP-mode check was a substring search that proved nothing, and no start used them any more; discovery already establishes wireless and AP capability (Fable BUG-6).
 - Dependencies: the installer no longer requires or installs `jq` (unused), `network-manager` (not supported any more, see Breaking Changes) and the system `python3-pip` (the venv has its own); it now checks `ip6tables`, `hostapd_cli`, `networkctl` and `usbreset` (package `usbutils`, needed by the USB recovery and so far never installed). `uvicorn[standard]` becomes `uvicorn` with `uvloop` and `httptools`, without the unused `watchfiles`, `websockets` and `python-dotenv`; `pytest-asyncio` leaves the development requirements. Docker stays: it builds the frontend.
 - Exact dependency versions in `requirements.lock`, used by the installer, the Makefile venv and CI; `requirements.txt` keeps the direct dependencies and their ranges. A reinstall gets the versions that were tested. `make lock` regenerates the file on purpose (Fable STAB-7).
+- A command timeout is the value passed: `execute_command` no longer raises any timeout below 5 s to 5 s in silence, and `exact_timeout` is gone (Fable PERF-5).
 
 ### ✅ Tests
 

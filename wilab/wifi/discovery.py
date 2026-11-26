@@ -127,7 +127,7 @@ def _ready_radio(
         ifindex = (path / "ifindex").read_text().strip()
         output = execute_command(
             ["udevadm", "info", "--query=property", "--path", str(path)],
-            timeout=1.0, exact_timeout=True,
+            timeout=1.0,
         )
         props = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
         if (
