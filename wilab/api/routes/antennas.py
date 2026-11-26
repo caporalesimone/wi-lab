@@ -48,7 +48,7 @@ class BandOptions(BaseModel):
     wifi_generations: list[GenerationOption]
     channels: list[ChannelOption] = Field(
         description="Only channels a create can use: disabled ones, and DFS ones when "
-        "`show_dfs` is false, are not listed",
+        "`show_dfs_channels` is false, are not listed",
     )
 
 
@@ -153,7 +153,7 @@ def get_antenna(
     `wpa1` is the exception: only 802.11n (`wifi_generation` 4) at 20 MHz.
 
     DFS channels (5 GHz 52-144) are listed, with `dfs: true`, only when the
-    antenna has `show_dfs: true` in the configuration. The data comes from the
+    antenna has `show_dfs_channels: true` in the configuration. The data comes from the
     radio and is cached; no reservation is needed.
     """
     entry = next((n for n in config.antennas if n.interface == interface), None)

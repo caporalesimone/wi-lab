@@ -189,11 +189,11 @@ def test_load_config_starts_empty_and_scan_applies_labels(monkeypatch, tmp_path,
         "antennas:\n"
         "  - interface: wlx-b\n"
         "    display_name: Bench B\n"
-        "    show_dfs: false\n"
+        "    show_dfs_channels: false\n"
         "    usb_recovery_port: '9-9'\n"
         "  - interface: wlx-missing\n"
         "    display_name: Missing\n"
-        "    show_dfs: false\n",
+        "    show_dfs_channels: false\n",
     )
 
     cfg = load_config(path)
@@ -202,7 +202,7 @@ def test_load_config_starts_empty_and_scan_applies_labels(monkeypatch, tmp_path,
 
     added = config_module.scan_new_networks(cfg, path)
 
-    assert [(n.interface, n.display_name, n.usb_recovery_port, n.show_dfs) for n in added] == [
+    assert [(n.interface, n.display_name, n.usb_recovery_port, n.show_dfs_channels) for n in added] == [
         ("wlx-b", "Bench B", "2-2", False),
         ("wlx-a", "wlx-a", "2-1", True),   # not listed: DFS channels are offered
     ]
@@ -216,7 +216,7 @@ def test_scan_skips_disabled_entry_without_display_name(monkeypatch, tmp_path):
         DiscoveredRadio("wlx-a", "phy1", "2-1"),
         DiscoveredRadio("wlx-b", "phy2", "2-2"),
     ])
-    path = _write_config(tmp_path, "antennas:\n  - interface: wlx-a\n    disable: true\n    show_dfs: false\n")
+    path = _write_config(tmp_path, "antennas:\n  - interface: wlx-a\n    disable: true\n    show_dfs_channels: false\n")
 
     added = config_module.scan_new_networks(load_config(path), path)
 
@@ -297,10 +297,10 @@ def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
         "antennas:\n"
         "  - interface: wlx-a\n"
         "    display_name: Antenna A\n"
-        "    show_dfs: false\n"
+        "    show_dfs_channels: false\n"
         "  - interface: wlx-off\n"
         "    disable: true\n"
-        "    show_dfs: false\n"
+        "    show_dfs_channels: false\n"
     )
     path.write_text(base)
     monkeypatch.setenv("CONFIG_PATH", str(path))
@@ -320,7 +320,7 @@ def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
         radios[:] = [DiscoveredRadio("wlx-a", "phy0", "2-1"), DiscoveredRadio("wlx-off", "phy1", "2-2")]
         _wait_for(lambda: managed() == [("wlx-a", "Antenna A")])
         # A label added after startup must be read by the next scan.
-        path.write_text(base + "  - interface: wlx-new\n    display_name: Antenna New\n    show_dfs: true\n")
+        path.write_text(base + "  - interface: wlx-new\n    display_name: Antenna New\n    show_dfs_channels: true\n")
         radios.append(DiscoveredRadio("wlx-new", "phy2", "2-3"))
         _wait_for(lambda: len(managed()) == 2)
         final = managed()

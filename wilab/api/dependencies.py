@@ -149,7 +149,7 @@ def get_channel_manager() -> ChannelManager:
     with _singleton_lock:
         if _channel_manager is None:
             # Read through get_config(): discovery replaces `antennas` as it adds radios.
-            _channel_manager = ChannelManager(show_dfs=lambda interface: get_config().show_dfs_for(interface))
+            _channel_manager = ChannelManager(show_dfs_channels=lambda interface: get_config().show_dfs_channels_for(interface))
         return _channel_manager
 
 

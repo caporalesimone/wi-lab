@@ -86,7 +86,7 @@ internet_enabled_by_default: true
 antennas:  # Optional: names and DFS choice; interfaces are discovered automatically
   - interface: "wlx782051245264"
     display_name: "bench-antenna-1"
-    show_dfs: false
+    show_dfs_channels: false
 ```
 
 ---

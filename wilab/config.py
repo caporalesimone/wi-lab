@@ -17,7 +17,7 @@ class NetworkEntry(BaseModel):
     disable: bool = False
     # DFS channels (5 GHz 52-144, radar detection) are listed and accepted only
     # when true. Required in config.yaml; radios not listed there get true.
-    show_dfs: bool = True
+    show_dfs_channels: bool = True
     # Detected at startup from sysfs; set only for USB adapters.
     usb_recovery_port: str | None = Field(default=None, pattern=r"^\d+-\d+(\.\d+)*$")
 
@@ -57,9 +57,9 @@ class AppConfig(BaseModel):
                     "For development, add frontend URLs like ['http://localhost:4200', 'http://192.168.1.100:4200']"
     )
 
-    def show_dfs_for(self, interface: str) -> bool:
-        """`show_dfs` of an antenna; true for a discovered radio not in `antennas`."""
-        return next((n.show_dfs for n in self.antennas if n.interface == interface), True)
+    def show_dfs_channels_for(self, interface: str) -> bool:
+        """`show_dfs_channels` of an antenna; true for a discovered radio not in `antennas`."""
+        return next((n.show_dfs_channels for n in self.antennas if n.interface == interface), True)
 
     @field_validator('country_code')
     @classmethod
@@ -128,12 +128,15 @@ class AppConfig(BaseModel):
 
     @field_validator('antennas', mode='before')
     @classmethod
-    def require_show_dfs(cls, value: Any) -> Any:
-        """Every `antennas` entry states `show_dfs`: there is no silent default."""
+    def require_show_dfs_channels(cls, value: Any) -> Any:
+        """Every `antennas` entry states `show_dfs_channels`: there is no silent default."""
         if isinstance(value, list):
             for index, entry in enumerate(value):
-                if isinstance(entry, dict) and "show_dfs" not in entry:
-                    raise ValueError(f"antennas[{index}].show_dfs is required (true or false)")
+                if isinstance(entry, dict) and "show_dfs" in entry:
+                    # Renamed in 4.1.0 without an alias: say so instead of "required".
+                    raise ValueError(f"antennas[{index}].show_dfs was renamed show_dfs_channels")
+                if isinstance(entry, dict) and "show_dfs_channels" not in entry:
+                    raise ValueError(f"antennas[{index}].show_dfs_channels is required (true or false)")
         return value
 
     @field_validator('antennas')
@@ -185,7 +188,7 @@ def resolve_networks(
         info("Skipping %s: disabled in configuration", interface)
     radios = [r for r in radios if r.phy not in disabled_phys]
     names = {label.interface: label.display_name for label in labels}
-    show_dfs = {label.interface: label.show_dfs for label in labels}
+    show_dfs_channels = {label.interface: label.show_dfs_channels for label in labels}
     by_interface = {r.interface: r for r in radios if r.interface not in excluded}
     for r in radios:
         if r.interface in excluded:
@@ -209,7 +212,7 @@ def resolve_networks(
         networks.append(NetworkEntry(
             interface=r.interface,
             display_name=names.get(r.interface, r.interface),
-            show_dfs=show_dfs.get(r.interface, True),
+            show_dfs_channels=show_dfs_channels.get(r.interface, True),
             usb_recovery_port=r.usb_port,
         ))
     return networks

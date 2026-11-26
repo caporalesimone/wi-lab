@@ -35,7 +35,7 @@ def test_config_validation_warns_about_ignored_fields_and_example_token(tmp_path
         "antennas:\n"
         "  - interface: wlan0\n"
         "    disable: true\n"
-        "    show_dfs: false\n"
+        "    show_dfs_channels: false\n"
         "    capabilities: [5ghz]\n"
         "    usb_recovery_port: legacy\n"
     )
@@ -77,10 +77,10 @@ _PARITY_CASES = [
     {"dns_server": "foo"},
     {"auth_token": "   "},
     {"antennas": ""},
-    {"antennas": [{"interface": "wlan0", "display_name": "A"}]},     # show_dfs missing
+    {"antennas": [{"interface": "wlan0", "display_name": "A"}]},     # show_dfs_channels missing
     {"dhcp_base_network": "10.20.0.0/16"},
     {"country_code": "EU"},
-    {"antennas": [{"interface": "wlan0", "disable": True, "show_dfs": False, "usb_recovery_port": "1-1"}]},
+    {"antennas": [{"interface": "wlan0", "disable": True, "show_dfs_channels": False, "usb_recovery_port": "1-1"}]},
 ]
 
 
@@ -129,9 +129,20 @@ def test_model_errors_name_the_fields_without_values(tmp_path):
     assert errors == ["Invalid configuration: Value error, max_timeout must be positive and at least min_timeout"]
 
 
-def test_every_antenna_entry_states_show_dfs(tmp_path):
+def test_every_antenna_entry_states_show_dfs_channels(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text("auth_token: t\ndhcp_base_network: 192.168.120.0/24\ndns_server: 8.8.8.8\n"
                     "antennas:\n  - interface: wlan0\n    disable: true\n")
     errors, _ = validate_config_file(str(path))
     assert errors == ["Invalid configuration field: antennas"]
+
+
+def test_the_old_show_dfs_key_is_refused_with_its_new_name(tmp_path):
+    """show_dfs became show_dfs_channels in 4.1.0, with no alias."""
+    from wilab.config import load_config
+
+    path = tmp_path / "config.yaml"
+    path.write_text("auth_token: t\ndhcp_base_network: 192.168.120.0/24\ndns_server: 8.8.8.8\n"
+                    "antennas:\n  - interface: wlan0\n    show_dfs: true\n")
+    with pytest.raises(SystemExit, match="renamed show_dfs_channels"):
+        load_config(str(path))

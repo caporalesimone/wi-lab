@@ -66,7 +66,7 @@ class TestChannelManagerParsing:
           DFS state: available
         * 5745 MHz [149]
           Maximum TX power: 23.0 dBm"""
-        channels = ChannelManager._parse_iw_phy_output(output, show_dfs=False)
+        channels = ChannelManager._parse_iw_phy_output(output, show_dfs_channels=False)
         assert [(ch.channel, ch.disabled, ch.max_power_dbm) for ch in channels] == [
             (52, True, 0.0),
             (56, True, 0.0),
@@ -115,7 +115,7 @@ class TestChannelManagerParsing:
           Channel widths: 20MHz HT40- HT40+ VHT80
           DFS state: usable (for 1000 sec)
           DFS CAC time: 60000 ms"""
-        channels = ChannelManager._parse_iw_phy_output(output, show_dfs=True)
+        channels = ChannelManager._parse_iw_phy_output(output, show_dfs_channels=True)
         assert len(channels) == 1
         ch = channels[0]
         assert ch.channel == 52
@@ -250,9 +250,9 @@ class TestChannelManagerResolve:
 # API tests – GET /api/v2/antennas
 # ---------------------------------------------------------------------------
 
-def _set_show_dfs(value: bool) -> None:
+def _set_show_dfs_channels(value: bool) -> None:
     config = dependencies.get_config()
-    config.antennas = [n.model_copy(update={"show_dfs": value}) for n in config.antennas]
+    config.antennas = [n.model_copy(update={"show_dfs_channels": value}) for n in config.antennas]
     dependencies.get_channel_manager().invalidate()
 
 
@@ -301,7 +301,7 @@ class TestAntennasAPI:
 
     def test_every_listed_choice_is_accepted_by_the_create_check(self, client, valid_token):
         """The lists and the create use the same rules: no combination is refused."""
-        _set_show_dfs(True)
+        _set_show_dfs_channels(True)
         data = client.get('/api/v2/antennas/wls16', headers={'Authorization': valid_token}).json()
         mgr = dependencies.get_channel_manager()
         checked = 0
@@ -467,11 +467,11 @@ class TestValidateChannel:
 class TestNetworkCreationChannelValidation:
     """Test that POST /network rejects invalid/disabled channels."""
 
-    @pytest.mark.parametrize("show_dfs", [False, True])
-    def test_show_dfs_applies_to_listing_and_creation(
-        self, client, valid_token, reservation_id, monkeypatch, show_dfs,
+    @pytest.mark.parametrize("show_dfs_channels", [False, True])
+    def test_show_dfs_channels_applies_to_listing_and_creation(
+        self, client, valid_token, reservation_id, monkeypatch, show_dfs_channels,
     ):
-        _set_show_dfs(show_dfs)
+        _set_show_dfs_channels(show_dfs_channels)
         config = dependencies.get_config()
         start_network = Mock()
         monkeypatch.setattr(dependencies.get_manager(config), "start_network", start_network)
@@ -481,8 +481,8 @@ class TestNetworkCreationChannelValidation:
         listing = client.get("/api/v2/antennas/wls16", headers=headers)
         assert listing.status_code == 200
         channels = {ch["channel"]: ch for ch in listing.json()["bands"]["5ghz"]["channels"]}
-        assert (52 in channels) is show_dfs
-        if show_dfs:
+        assert (52 in channels) is show_dfs_channels
+        if show_dfs_channels:
             assert channels[52]["dfs"] is True and channels[52]["max_power_dbm"] == 20.0
         assert channels[36]["dfs"] is False
 
@@ -491,10 +491,10 @@ class TestNetworkCreationChannelValidation:
             "band": "5ghz", "tx_power_level": 4,
         }
         response = create_network(client, headers, url, network_body(**request))[1]
-        if not show_dfs:
+        if not show_dfs_channels:
             assert response.status_code == 422
             assert response.json()["detail"]["message"].startswith("radio.channel: DFS channel 52")
-            assert "show_dfs: false" in response.json()["detail"]["message"]
+            assert "show_dfs_channels: false" in response.json()["detail"]["message"]
             start_network.assert_not_called()
             response = create_network(client, headers, url, network_body(**{**request, "channel": 36}))[1]
         assert response.status_code == 200
@@ -587,15 +587,15 @@ class TestWeatherRadarChannels:
             f"* {5000 + 5 * ch} MHz [{ch}]\n  Maximum TX power: 23.0 dBm\n  Radar detection"
             for ch in (116, 120, 124, 128, 132)
         )
-        parsed = {c.channel: c.disabled for c in ChannelManager._parse_iw_phy_output(output, show_dfs=True)}
+        parsed = {c.channel: c.disabled for c in ChannelManager._parse_iw_phy_output(output, show_dfs_channels=True)}
         assert parsed == {116: False, 120: True, 124: True, 128: True, 132: False}
 
     @pytest.mark.parametrize("channel", [120, 124, 128])
     def test_create_check_refuses_them_with_the_reason(self, channel):
         with pytest.raises(FieldError, match="10-minute radar check") as exc:
-            ChannelManager(show_dfs=lambda _i: True).validate_network("wls16", "5ghz", channel, 20, 5, "wpa2")
+            ChannelManager(show_dfs_channels=lambda _i: True).validate_network("wls16", "5ghz", channel, 20, 5, "wpa2")
         assert exc.value.field == "channel"
 
     def test_not_listed_as_usable(self):
-        info = ChannelManager(show_dfs=lambda _i: True).get_channels("wls16")
+        info = ChannelManager(show_dfs_channels=lambda _i: True).get_channels("wls16")
         assert all(c.disabled for c in info.channels_5ghz if c.channel in (120, 124, 128))

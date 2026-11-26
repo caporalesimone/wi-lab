@@ -11,7 +11,7 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 17 |
-| ⚠️ Breaking changes | 4 |
+| ⚠️ Breaking changes | 5 |
 | 🔧 Maintenance changes | 4 |
 | ✨ New features | 1 |
 | ✅ Test changes | 7 |
@@ -29,6 +29,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - Request bodies of the reservation, the create and `POST .../txpower` take only the JSON types they document: `"6"`, `true` or `6.0` for an integer, and `"false"` or `0` for a boolean, are now a `422` instead of being converted (Fable REV-11).
 - `POST .../txpower` takes `tx_power_level` instead of `level`, the name of `radio.tx_power_level` in the create (Fable API-6).
 - `dns_server` is required in `config.yaml`: its default was `192.168.10.21`, a laboratory address, so a configuration without the key gave Wi-Fi clients a DNS server that does not exist elsewhere ("connected, no Internet"). Without it the service does not start and names the key (Fable NET-8).
+- `antennas[].show_dfs` is renamed `show_dfs_channels` in `config.yaml`, with no alias: the old name stops the service with `antennas[N].show_dfs was renamed show_dfs_channels`. Rename the key in every `antennas` entry before upgrading.
 
 ### ✨ Features
 

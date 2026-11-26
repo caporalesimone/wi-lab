@@ -118,7 +118,7 @@ class TestMinTimeoutConstraint:
             "antennas:\n"
             "  - interface: wlan0\n"
             "    display_name: test\n"
-            "    show_dfs: false\n"
+            "    show_dfs_channels: false\n"
         )
         with pytest.raises(SystemExit, match="min_timeout"):
             load_config(str(cfg_file))
@@ -134,7 +134,7 @@ class TestMinTimeoutConstraint:
             "antennas:\n"
             "  - interface: wlan0\n"
             "    display_name: test\n"
-            "    show_dfs: false\n"
+            "    show_dfs_channels: false\n"
         )
         cfg = load_config(str(cfg_file))
         assert cfg.min_timeout == 10

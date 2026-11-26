@@ -147,7 +147,7 @@ class NetworkManager:
         self.host_guard = HostGuard()  # SEC-3: AP clients cannot reach the host
         self.captive_portals: dict[str, CaptivePortal] = {}
         # One channel cache for the whole service (BUG-4): the API passes its own.
-        self._channel_manager = channel_manager or ChannelManager(show_dfs=config.show_dfs_for)
+        self._channel_manager = channel_manager or ChannelManager(show_dfs_channels=config.show_dfs_channels_for)
         self.qos_manager: QosManager | None = None
         self.qos_profile_manager: QosProfileManager | None = None
         self._device_locks = {n.device_id: threading.RLock() for n in config.antennas}

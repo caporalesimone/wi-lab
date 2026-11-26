@@ -11,7 +11,7 @@ Design decision – disabled channels:
     disabled because they cannot be used in AP mode.
     Both cases are stored with ``max_power_dbm = 0.0`` and
     ``    disabled = True``. The same applies to radar-detection (DFS) channels of
-    an antenna with ``show_dfs: false``.  Consumers should check the ``disabled`` flag
+    an antenna with ``show_dfs_channels: false``.  Consumers should check the ``disabled`` flag
     before using ``max_power_dbm``.
 """
 
@@ -300,7 +300,7 @@ class BandOptions:
 def band_options(info: InterfaceChannels, band: str) -> BandOptions:
     """The choices :meth:`ChannelManager.validate_network` accepts on *band*.
 
-    A channel is listed when it is enabled (DFS channels only with ``show_dfs``);
+    A channel is listed when it is enabled (DFS channels only with ``show_dfs_channels``);
     a width when every 20 MHz channel of one of its layouts is enabled. The rules
     match the create's, so a choice built from these lists is not refused.
     """
@@ -345,9 +345,9 @@ class ChannelManager:
     concurrent API requests don't trigger duplicate ``iw`` queries.
     """
 
-    def __init__(self, *, show_dfs: Callable[[str], bool] | None = None) -> None:
-        # Per antenna (`antennas[].show_dfs`): whether its DFS channels are usable.
-        self._show_dfs = show_dfs or (lambda interface: True)
+    def __init__(self, *, show_dfs_channels: Callable[[str], bool] | None = None) -> None:
+        # Per antenna (`antennas[].show_dfs_channels`): whether its DFS channels are usable.
+        self._show_dfs_channels = show_dfs_channels or (lambda interface: True)
         self._cache: dict[str, InterfaceChannels] = {}
         self._lock = threading.Lock()
 
@@ -396,7 +396,7 @@ class ChannelManager:
         """Check a network against the radio (HAP-10, HAP-11) and return its channel layout.
 
         Every 20 MHz channel of a 40 or 80 MHz channel must be usable, so DFS
-        channels inside a wide channel follow the antenna's ``show_dfs``. Like
+        channels inside a wide channel follow the antenna's ``show_dfs_channels``. Like
         :meth:`validate_channel`, a refusal is checked again on a fresh reading.
         """
         try:
@@ -442,9 +442,9 @@ class ChannelManager:
                 "channel", f"Channel {channel} is not supported on {interface} for band {band}"
             )
         if match.disabled:
-            if match.requires_dfs and not self._show_dfs(interface):
+            if match.requires_dfs and not self._show_dfs_channels(interface):
                 raise FieldError(
-                    "channel", f"DFS channel {channel} is not offered on {interface} (show_dfs: false)",
+                    "channel", f"DFS channel {channel} is not offered on {interface} (show_dfs_channels: false)",
                 )
             raise FieldError(
                 "channel", f"Channel {channel} is disabled on {interface} for band {band}"
@@ -466,7 +466,7 @@ class ChannelManager:
 
     @staticmethod
     def _parse_iw_phy_output(
-        output: str, *, show_dfs: bool = False,
+        output: str, *, show_dfs_channels: bool = False,
     ) -> list[ChannelInfo]:
         """Parse the output of ``iw phy<N> channels`` into a list of channels.
 
@@ -491,7 +491,7 @@ class ChannelManager:
             nonlocal current_power, current_no_ir, current_dfs
             if current_freq is not None and current_chan is not None:
                 disabled = (
-                    current_disabled or current_no_ir or (current_dfs and not show_dfs)
+                    current_disabled or current_no_ir or (current_dfs and not show_dfs_channels)
                     or _long_cac(current_chan, current_freq)
                 )
                 channels.append(ChannelInfo(
@@ -531,7 +531,7 @@ class ChannelManager:
         """Query ``iw`` and split results into 2.4 GHz / 5 GHz bands."""
         phy = self._get_phy_for_interface(interface)
         output = execute_iw(["phy" + phy, "channels"])
-        all_channels = self._parse_iw_phy_output(output, show_dfs=self._show_dfs(interface))
+        all_channels = self._parse_iw_phy_output(output, show_dfs_channels=self._show_dfs_channels(interface))
 
         ch_24: list[ChannelInfo] = []
         ch_5: list[ChannelInfo] = []

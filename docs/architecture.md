@@ -185,7 +185,7 @@ flowchart TD
 Each scan (`scan_devices()`):
 
 1. Serializes with the scan lock.
-2. Re-reads `antennas` from `config.yaml`, so new display names, `disable` and `show_dfs`
+2. Re-reads `antennas` from `config.yaml`, so new display names, `disable` and `show_dfs_channels`
    flags apply to antennas found later.
 3. Discovers radios and keeps only those not already managed (by interface and
    by phy), not disabled and not upstream.
@@ -710,7 +710,7 @@ sequenceDiagram
     Note over C,EX: Antenna options (no reservation)
     C->>A: GET /antennas/{interface}
     A->>CM: get_channels(interface)
-    CM->>CM: cached, else iw phy channels and iw phy info (6 GHz dropped,<br/>DFS disabled when antennas[].show_dfs is false)
+    CM->>CM: cached, else iw phy channels and iw phy info (6 GHz dropped,<br/>DFS disabled when antennas[].show_dfs_channels is false)
     alt read fails
         A-->>C: 503
     else

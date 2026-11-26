@@ -1256,7 +1256,7 @@ def two_antennas(tmp_path, monkeypatch):
     from conftest import TEST_CONFIG_PATH
     path = tmp_path / "two-antennas.yaml"
     path.write_text(Path(TEST_CONFIG_PATH).read_text() + (
-        '  - interface: "wls17"\n    display_name: "bench-antenna-2"\n    show_dfs: false\n'
+        '  - interface: "wls17"\n    display_name: "bench-antenna-2"\n    show_dfs_channels: false\n'
     ))
     monkeypatch.setenv("CONFIG_PATH", str(path))
     config = dependencies.get_config()

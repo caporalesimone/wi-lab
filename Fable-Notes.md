@@ -80,6 +80,8 @@ staccare la USB (23/11): serve chi la ricollega.
 - **SEC-1:** resta aperto finché non si rifà il frontend; avviso nel paragrafo 2.1, nel README e nel
   CHANGELOG.
 - **NET-8:** `dns_server` sempre obbligatoria.
+- **`show_dfs` → `show_dfs_channels`:** cambio netto nella 4.1.0, senza alias (il vecchio nome dà un errore
+  che dice il nuovo). Nelle schede più vecchie di questo file il nome `show_dfs` è quello di allora.
 - **STAB-7:** lockfile con pip; uv eventualmente dopo la 4.1.0.
 - **TX power: da debuggare.** Non si è mai riusciti a controllare la potenza sugli adattatori in uso.
   Dichiarato non stabile nella 4.1.0 come il QoS (stessi documenti). Il campo `radio.tx_power_level`

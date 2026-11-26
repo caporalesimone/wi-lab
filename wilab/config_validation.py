@@ -31,7 +31,7 @@ def validate_config_file(path: str) -> tuple[list[str], list[str]]:
             if not isinstance(entry, dict):
                 continue
             for key in entry:
-                if key not in {"interface", "display_name", "disable", "show_dfs"}:
+                if key not in {"interface", "display_name", "disable", "show_dfs_channels"}:
                     warnings.append(f"Unknown or ignored key in antennas[{index}]: {key!s}")
 
     try:

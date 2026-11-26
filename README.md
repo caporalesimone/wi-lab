@@ -46,7 +46,7 @@ cd wi-lab
 
 # 2. Copy and edit configuration
 cp config.example.yaml config.yaml
-nano config.yaml          # set auth_token, antennas[] (interface, display_name, show_dfs), dhcp_base_network, dns_server
+nano config.yaml          # set auth_token, antennas[] (interface, display_name, show_dfs_channels), dhcp_base_network, dns_server
 
 # 3. Install (creates venv, installs deps, builds frontend, enables systemd service)
 sudo bash install.sh
@@ -106,15 +106,15 @@ country_code: "IT"                      # WiFi regulatory domain
 antennas:
   - interface: "wlxbc071dc527d6"
     display_name: "bench-antenna-1"
-    show_dfs: false                     # required: offer the DFS channels (5 GHz 52-144)?
+    show_dfs_channels: false                     # required: offer the DFS channels (5 GHz 52-144)?
   - interface: "wlx7820512451b4"
     display_name: "bench-antenna-2"
-    show_dfs: false
+    show_dfs_channels: false
 ```
 
-Wi-Lab discovers Wi-Fi interfaces automatically (USB or built-in) and manages every radio that supports AP mode, except the upstream interface and any interface carrying a default route. `antennas` assigns display names and, with the required `show_dfs`, whether the antenna offers DFS channels (5 GHz 52–144, which need about a minute of radar listening before the AP starts); unlisted interfaces are shown by interface name and offer DFS channels, and a listed interface that is missing does not stop the service. Set `disable: true` on an entry (`display_name` is then optional) to keep that radio out of Wi-Lab. USB adapters are detected automatically and are eligible for automatic port reset after repeated radio faults (see [Architecture](docs/architecture.md#8-quarantine-and-automatic-usb-recovery)).
+Wi-Lab discovers Wi-Fi interfaces automatically (USB or built-in) and manages every radio that supports AP mode, except the upstream interface and any interface carrying a default route. `antennas` assigns display names and, with the required `show_dfs_channels`, whether the antenna offers DFS channels (5 GHz 52–144, which need about a minute of radar listening before the AP starts); unlisted interfaces are shown by interface name and offer DFS channels, and a listed interface that is missing does not stop the service. Set `disable: true` on an entry (`display_name` is then optional) to keep that radio out of Wi-Lab. USB adapters are detected automatically and are eligible for automatic port reset after repeated radio faults (see [Architecture](docs/architecture.md#8-quarantine-and-automatic-usb-recovery)).
 
-Wi-Lab starts without antennas and a discovery service adds them: the first scan runs as soon as the API starts, then it repeats every 5 seconds while no antenna is available and every 30 seconds afterwards, for the whole life of the service. Antennas plugged in later are therefore added automatically within about 30 seconds, without a restart. Each scan re-reads `antennas` from `config.yaml` (display names, `disable` and `show_dfs`) and only adds new AP-capable radios; antennas already in the pool are never removed or renamed and their reservations are not affected. Disabling or renaming an antenna that is already in use requires a service restart.
+Wi-Lab starts without antennas and a discovery service adds them: the first scan runs as soon as the API starts, then it repeats every 5 seconds while no antenna is available and every 30 seconds afterwards, for the whole life of the service. Antennas plugged in later are therefore added automatically within about 30 seconds, without a restart. Each scan re-reads `antennas` from `config.yaml` (display names, `disable` and `show_dfs_channels`) and only adds new AP-capable radios; antennas already in the pool are never removed or renamed and their reservations are not affected. Disabling or renaming an antenna that is already in use requires a service restart.
 
 Wi-Lab skips `/24` subnets that overlap the host network when starting an AP.
 

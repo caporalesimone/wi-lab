@@ -108,7 +108,7 @@ class TestValidateNetwork:
     def test_80mhz_needs_every_channel_of_the_block(self):
         # The mock lists 100 but not 104-112.
         with pytest.raises(ValueError, match="80 MHz on channel 100 is not available"):
-            ChannelManager(show_dfs=lambda interface: True).validate_network("wls16", "5ghz", 100, 80, 5, "wpa2")
+            ChannelManager(show_dfs_channels=lambda interface: True).validate_network("wls16", "5ghz", 100, 80, 5, "wpa2")
 
     def test_165_at_80mhz_needs_169_to_177(self):
         # The mock lists 169 as disabled, as most regulatory domains do.
@@ -116,8 +116,8 @@ class TestValidateNetwork:
             ChannelManager().validate_network("wls16", "5ghz", 165, 80, 5, "wpa2")
 
     def test_dfs_channels_inside_a_wide_channel_follow_the_policy(self):
-        with pytest.raises(ValueError, match="show_dfs: false"):
-            ChannelManager(show_dfs=lambda interface: False).validate_network("wls16", "5ghz", 56, 40, 4, "wpa2")
+        with pytest.raises(ValueError, match="show_dfs_channels: false"):
+            ChannelManager(show_dfs_channels=lambda interface: False).validate_network("wls16", "5ghz", 56, 40, 4, "wpa2")
 
     def test_24ghz_40mhz_falls_back_to_secondary_below(self):
         # Channel 12 is No IR in the mock: channel 8 uses 4 below it.

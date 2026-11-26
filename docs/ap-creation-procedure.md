@@ -151,14 +151,14 @@ extra rule is `wpa1`: 802.11n (`wifi_generation` 4) at 20 MHz only.
   (`2-1.3`) or the PCI address (`0000:02:00.0`); `driver` is the kernel driver.
   It is `null` when sysfs does not show the device.
 - **DFS channels** (5 GHz 52–144, shared with radar) are listed, with
-  `dfs: true`, only when the antenna has `show_dfs: true` in `config.yaml`
-  (`antennas[].show_dfs`, required for every listed antenna; antennas not
+  `dfs: true`, only when the antenna has `show_dfs_channels: true` in `config.yaml`
+  (`antennas[].show_dfs_channels`, required for every listed antenna; antennas not
   listed in the configuration behave as `true`). When `false` they are not
   listed and a create asking for one returns `422`. Before transmitting on a
   DFS channel the radio listens for radar (CAC), usually about 60 seconds;
   Wi-Lab's startup timeout for 5 GHz channels 52–144 is 75 seconds.
 - **Weather-radar channels 120, 124 and 128** are never offered, also with
-  `show_dfs: true`: in Europe they need a 10-minute radar check before the AP
+  `show_dfs_channels: true`: in Europe they need a 10-minute radar check before the AP
   may transmit. A create asking for one, or for a 40/80 MHz block that contains
   one, returns `422`.
 - **`404`**: no managed antenna has this interface. **`503`**: the radio
@@ -245,7 +245,7 @@ points to `wpa2` (same network as before) or `wpa1` (real legacy WPA).
   132–144, 149–161, 165–177. `channel` is the primary channel inside the block.
   **Every channel of the block** must be enabled on the antenna: 165 at 80 MHz
   usually returns `422` because 169–177 are not allowed, and a block with DFS
-  channels follows the antenna's `show_dfs`.
+  channels follows the antenna's `show_dfs_channels`.
 - On 2.4 GHz `channel_width: 40` is accepted: the second channel is 4 above
   (or 4 below when above is not available). It occupies most of the band, and
   hostapd falls back to 20 MHz when it sees neighbouring networks (20/40

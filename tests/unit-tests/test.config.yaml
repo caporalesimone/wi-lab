@@ -13,4 +13,4 @@ internet_enabled_by_default: true
 antennas:
   - interface: "wls16"
     display_name: "bench-antenna-1"
-    show_dfs: false
+    show_dfs_channels: false
