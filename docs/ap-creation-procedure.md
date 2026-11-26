@@ -254,14 +254,14 @@ outcome with `GET .../network`:
 
 A start normally takes about 0.5 s, so the first read often already shows the
 AP. If the radio fails (for example a hostapd crash), Wi-Lab rolls the start
-back and starts again by itself, still in `starting`: up to 3 starts 1 s apart
-within 20 s, then one more after a 5 s pause and a last one after a 10 s pause.
+back and starts again by itself, still in `starting`: up to 3 starts 1 s apart,
+then one more after a 5 s pause and a last one after a 10 s pause.
 **The client does nothing during these starts.** Expected time to the outcome:
 
 | Channel | Usual | Worst case |
 |---|---|---|
 | 2.4 GHz and non-DFS 5 GHz | 0.5–6 s | about 80 s |
-| DFS 5 GHz (52–144) | about 60 s (radar check) | about 4 min |
+| DFS 5 GHz (52–144) | about 60 s (radar check) | about 7 min |
 
 Every request is short, so normal HTTP timeouts (10–30 s) are enough. You may
 not see every intermediate state: a state is what the server is doing at the
@@ -600,7 +600,7 @@ sequenceDiagram
     C->>W: POST /reservations/{id}/network {radio, wifi, internet, captive_portal}
     alt 202 runtime_state starting
         W-->>C: accepted, same schema as GET .../network
-        Note over W: In the background: prepares the radio, starts hostapd, waits for the AP<br/>(10 s, 75 s on DFS), gateway, DHCP, NAT, isolation. Radio failure: up to<br/>3 starts within 20 s, then one after 5 s, then one after 10 s
+        Note over W: In the background: prepares the radio, starts hostapd, waits for the AP<br/>(10 s, 75 s on DFS), gateway, DHCP, NAT, isolation. Radio failure: up to<br/>3 starts 1 s apart, then one after 5 s, then one after 10 s
         loop every 1-2 s while runtime_state is starting
             C->>W: GET /reservations/{id}/network
             alt runtime_state starting
@@ -779,7 +779,7 @@ driver firmware timeout, unplugged adapter): the answer code is enough. What
 happens, from the most to the least common case:
 
 1. **The server absorbs it: WAIT.** Wi-Lab starts the AP again by itself
-   during the create: up to 3 times within 20 s, then after 5 s and after
+   during the create: up to 3 times 1 s apart, then after 5 s and after
    10 s. The polling just shows `starting` a little longer, then the network.
    The same holds for a watchdog restart of a running AP: `GET .../network`
    shows `restoring_ap`, then `runtime_state: null`, and `restarts.ap` grows.

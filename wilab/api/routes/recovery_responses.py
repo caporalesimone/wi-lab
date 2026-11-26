@@ -33,7 +33,7 @@ def device_busy_detail() -> dict:
 DEVICE_BUSY_RESPONSE = {
     "description": (
         "`detail.code: 1006` (`device_busy`): another operation on the same adapter, such "
-        "as a network start (up to 20 s, 75 s on a DFS channel), still held it after 5 s. "
+        "as a network start (up to about 40 s, several minutes on a DFS channel), still held it after 5 s. "
         "Nothing was changed. Repeat the same request after `Retry-After` (2 s)."
     ),
     "headers": {

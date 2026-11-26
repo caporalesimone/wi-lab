@@ -80,7 +80,7 @@ def test_non_ap_stage_after_a_radio_retry_is_not_radio(monkeypatch, manager) -> 
     assert not failure.value.radio
 
 
-# --------------------------------------------------------------------------- HAP-4
+# --------------------------------------------------------------------------- REV-5
 
 
 @pytest.fixture
@@ -91,45 +91,77 @@ def clock(monkeypatch):
     return now
 
 
-def _timed_start(clock, durations, budgets):
-    """hostapd start that records its remaining budget, then fails after `durations[i]` s."""
+def _deadline(clock) -> float | None:
     from wilab.network import commands
 
-    calls = iter(durations)
+    deadline = commands._command_deadline.get()
+    return None if deadline is None else round(deadline - clock["t"], 2)
+
+
+def _timed_start(clock, outcomes, budgets):
+    """hostapd start that records its command deadline, takes `seconds`, then fails or succeeds."""
+    calls = iter(outcomes)
 
     def start(*args, **kwargs):
-        deadline = commands._command_deadline.get()
-        budgets.append(None if deadline is None else round(deadline - clock["t"], 2))
-        clock["t"] += next(calls)
-        raise HostapdRadioFailure("AP not ready on wlan0 (hostapd state: COUNTRY_UPDATE)")
+        budgets.append(_deadline(clock))
+        seconds, ok = next(calls)
+        clock["t"] += seconds
+        if not ok:
+            raise HostapdRadioFailure("AP not ready on wlan0 (hostapd state: COUNTRY_UPDATE)")
 
     return start
 
 
-def test_every_internal_retry_gets_at_least_four_seconds(monkeypatch, manager, clock):
+def test_internal_retries_have_no_time_budget(monkeypatch, manager, clock):
+    """REV-5: the three attempts all run, however long each one takes, without a command deadline."""
     device = manager.config.antennas[0].device_id
     monkeypatch.setattr(manager_module, "STARTUP_RETRY_DELAY", 1.0)
     budgets: list[float | None] = []
-    # First start: 10 s readiness timeout plus 2 s of rollback. With the old values
-    # (15 s budget, 0.75 s minimum) the retry started with 2 s left.
-    monkeypatch.setattr(manager.hostapd_manager, "start", _timed_start(clock, [12.0, 4.0, 4.0], budgets))
+    monkeypatch.setattr(
+        manager.hostapd_manager, "start", _timed_start(clock, [(12.0, False)] * 3, budgets),
+    )
     with pytest.raises(StartupFailure) as failure:
         manager.start_network(device, _request(), allow_internal_retry=True)
     assert failure.value.radio
-    assert budgets[0] is None  # the first start is not cut by the retry budget
-    assert len(budgets) >= 2
-    assert all(b is not None and b >= 4.0 for b in budgets[1:]), budgets
+    assert budgets == [None, None, None]
 
 
-def test_no_retry_is_started_without_enough_time(monkeypatch, manager, clock):
-    """Before HAP-4 a retry could start with 0.75 s and add an artificial radio failure."""
+def test_a_retry_that_succeeds_late_stays_active(monkeypatch, manager, clock):
+    """REV-5 (unit-test-4): a retry that brings the AP up after 20 s is not torn down,
+    and the later phases (DHCP) never run under an expired deadline."""
     device = manager.config.antennas[0].device_id
     monkeypatch.setattr(manager_module, "STARTUP_RETRY_DELAY", 1.0)
     budgets: list[float | None] = []
-    # 16 s used: 4 s left, less than the 1 s wait plus a 4 s attempt.
-    monkeypatch.setattr(manager.hostapd_manager, "start", _timed_start(clock, [16.0], budgets))
+    dhcp_budgets: list[float | None] = []
+    monkeypatch.setattr(
+        manager.hostapd_manager, "start",
+        _timed_start(clock, [(12.0, False), (15.0, True)], budgets),
+    )
+    monkeypatch.setattr(
+        manager.dhcp_server, "start",
+        Mock(side_effect=lambda *a, **k: dhcp_budgets.append(_deadline(clock)) or {}),
+    )
+    status = manager.start_network(device, _request(), allow_internal_retry=True)
+    assert status.active
+    assert device in manager.active
+    assert budgets == [None, None]
+    assert dhcp_budgets == [None]
+
+
+def test_no_retry_after_the_reservation_expires(monkeypatch, manager, clock):
+    """The reservation expiry still stops the retries."""
+    device = manager.config.antennas[0].device_id
+    budgets: list[float | None] = []
+    expires_at = manager_module.time.time() + 5.0
+
+    def start(*args, **kwargs):
+        budgets.append(None)
+        monkeypatch.setattr(manager_module.time, "time", lambda: expires_at + 1.0)
+        raise HostapdRadioFailure("AP not ready on wlan0 (hostapd state: COUNTRY_UPDATE)")
+
+    monkeypatch.setattr(manager.hostapd_manager, "start", start)
     with pytest.raises(StartupFailure) as failure:
-        manager.start_network(device, _request(), allow_internal_retry=True)
+        manager.start_network(device, _request(), expires_at, allow_internal_retry=True)
     assert failure.value.radio
     assert len(budgets) == 1
 

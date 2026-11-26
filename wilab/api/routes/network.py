@@ -346,7 +346,7 @@ def start_network(
 
     **Radio failures are retried by the server, never by the client:** after a
     hostapd crash, beacon setup failure, radio or readiness timeout the server
-    rolls back and starts again, up to 3 times 1 s apart within 20 s, then after
+    rolls back and starts again, up to 3 times 1 s apart, then after
     5 s and after 10 s. A normal start takes about 0.5 s; with every retry about
     80 s, several minutes on DFS channels (radar check). Expiry is not extended.
 

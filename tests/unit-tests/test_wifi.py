@@ -264,7 +264,7 @@ class TestNetworkLifecycle:
             ("second_crash", "2.4ghz", 3),
             ("retry_timeout", "2.4ghz", 2),
             ("cleanup_failed", "2.4ghz", 1),
-            ("budget_exhausted", "2.4ghz", 1),
+            ("expired_during_start", "2.4ghz", 1),
             ("reservation_expired", "2.4ghz", 1),
             ("non_segfault", "2.4ghz", 1),
             ("recover", "5ghz", 2),
@@ -317,7 +317,7 @@ class TestNetworkLifecycle:
             events.append("ap")
             code = None
             if events.count("ap") == 1 or scenario == "second_crash":
-                now += 14.0 if scenario == "budget_exhausted" else 1.5
+                now += 14.0 if scenario == "expired_during_start" else 1.5
                 code = 1 if scenario in ("non_segfault", "init_failure") else -signal.SIGSEGV
             init_events = (
                 "state_country_update", "beacon_failed", "beacon_failed", "interface_init_failed",
@@ -362,8 +362,9 @@ class TestNetworkLifecycle:
             assert "gateway" not in events and "dhcp" not in events
             assert (device in mgr.hostapd_manager._instances) == (scenario == "cleanup_failed")
             if scenario == "retry_timeout":
-                # The second attempt runs until the reservation expires (t=10), so no third one.
-                assert now == 10.0
+                # The second attempt has no time budget (REV-5): it runs its whole readiness
+                # timeout; the reservation expired meanwhile (t=10), so no third one.
+                assert now > 10.0
                 assert events == ["ap", "stop", "rollback", "wait", "ap", "stop", "rollback"]
                 assert not list(tmp_path.glob("ap-*"))
         assert events.count("ap") == expected_attempts

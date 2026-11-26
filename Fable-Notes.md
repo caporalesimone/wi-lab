@@ -73,7 +73,7 @@ refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` =
 | Prio | Id | Gravità | Stato | Cosa fare |
 |---:|---|---|:---:|---|
 | 1 | [REV-2](#rev-2) | Media |  | Un annullamento il cui rollback fallisce non deve finire in quarantena né far rispondere `404` al rilascio. |
-| 1 | [REV-5](#rev-5) | Media |  | Togliere il budget di 20 s dai tentativi interni di avvio: è un residuo della create sincrona e fa fallire avvii riusciti. |
+| 1 | [REV-5](#rev-5) | Media | ✅ | Togliere il budget di 20 s dai tentativi interni di avvio: è un residuo della create sincrona e fa fallire avvii riusciti. |
 | 1 | [REV-6](#rev-6) | Media |  | Rendere annullabili gli avvii del watchdog e del probe, e annullare le create in `shutdown_all`. |
 | 1 | [WD-5](#wd-5) | Alta | parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. **Fatto:** stop e cleanup con l'interfaccia sparita (punti 1–2), classificazione come guasto radio. **Manca:** ritirare la voce di un'antenna che ricompare con un nome diverso (punto 3); dipende da ARCH-4. |
 | 1 | [WD-7](#wd-7) | Media | parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. **Fatto:** gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca:** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware. |
@@ -174,7 +174,7 @@ Test: [unit-test-2](#unit-test-2).
 ---
 
 <a id="rev-5"></a>
-### 1. REV-5 - Il budget di 20 s dei tentativi interni è un residuo della create sincrona
+### 1. REV-5 - Il budget di 20 s dei tentativi interni è un residuo della create sincrona ✅
 
 **Gravità:** Media · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`STARTUP_RETRY_BUDGET`, `_start_network`)
 
@@ -1258,7 +1258,7 @@ ricavare il token misurando i tempi.
 - **Usati solo dai test:** `heartbeat.forget`, `NetworkManager.get_summary`, `services_status`,
   `execute_pkill` (con una logica `signal` sbagliata), `NatManager.disable_ip_forwarding` e
   `flush_all_rules`, `IsolationManager.flush_all` e `get_active_subnets`, `stop_all` in hostapd e
-  dhcp, `check_ip_forwarding`, `validate_interface*` tranne `_exists`.
+  dhcp, `check_ip_forwarding`, `validate_interface*` tranne `_exists`, `command_deadline` (non più usato dopo REV-5).
 - **Duplicati:** `unhandled_api_exception` ripete il middleware `answer_unexpected_errors`; "elenca
   con `-S`, trova il commento, cancella" è scritto quattro volte (nat ×2, captive, host guard); il
   test DFS `52 <= c <= 144` è in hostapd e nella route invece di `requires_dfs`; la ricerca
@@ -2388,7 +2388,7 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 | Id | Cosa verifica | Schede | File proposto |
 |---|---|---|---|
 | [unit-test-2](#unit-test-2) | Annullamento con rollback fallito: nessuna quarantena | REV-2 | `test_async_create.py` |
-| [unit-test-4](#unit-test-4) | Un avvio riuscito non fallisce per il budget dei tentativi | REV-5 | `test_startup_classification.py` |
+| ✅ [unit-test-4](#unit-test-4) | Un avvio riuscito non fallisce per il budget dei tentativi | REV-5 | `test_startup_classification.py` |
 | [unit-test-5](#unit-test-5) | Rilascio durante un ripristino del watchdog; arresto con una create in corso | REV-6 | `test_watchdog.py`, `test_startup.py` |
 | [unit-test-7](#unit-test-7) | Annullamento in timeout: il job resta finché il thread gira | REV-8 | `test_async_create.py` |
 | [unit-test-14](#unit-test-14) | Rami di guasto del watchdog | REV-10 | `test_watchdog.py` |

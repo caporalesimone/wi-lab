@@ -393,7 +393,6 @@ sequenceDiagram
     R-->>C: 202 starting, the rest runs in the create job thread
     R->>RM: (job) hold_reservation: take device lock, re-check (404)
     R->>NM: (job) start_network(allow_internal_retry = first round, cancelled)
-    NM->>NM: retry deadline = now + 20 s, capped by expiry
     NM->>NM: known antenna, not already active (409)
     NM->>NM: release_device: clear leftovers of a failed start
     NM->>NM: select available subnet, gateway .1
@@ -582,11 +581,11 @@ flowchart TD
     S["POST create: 202, create job"] --> ST["start AP (round 1)"]
     ST --> OUT{"outcome"}
     OUT -->|success| OK["job dropped, GET: the network"]
-    OUT -->|"radio failure while starting the AP (segfault, beacon/init failure,<br/>radio or readiness timeout), round 1, fewer than 3 starts,<br/>at least 5 s of the 20 s budget left"| IR["layer 1: rollback, wait 1 s,<br/>start again inside the same request"]
+    OUT -->|"radio failure while starting the AP (segfault, beacon/init failure,<br/>radio or readiness timeout), round 1, fewer than 3 starts,<br/>reservation valid after the 1 s wait"| IR["layer 1: rollback, wait 1 s,<br/>start again inside the same request"]
     IR --> OUT2{"retry outcome"}
     OUT2 -->|success| OK
-    OUT2 -->|"AP start failed again, starts or budget left"| IR
-    OUT2 -->|"AP start failed again, no starts or budget left"| CL
+    OUT2 -->|"AP start failed again, starts left"| IR
+    OUT2 -->|"AP start failed again, no starts left or reservation expired"| CL
     OUT2 -->|"gateway or DHCP failed"| G
     OUT -->|"unclassified: exit code, gateway, DHCP,<br/>NAT, isolation, host guard, interface validation"| G["start_failed, error 1013 with stage<br/>reservation kept"]
     OUT -->|"interface vanished (any stage)"| CL
@@ -605,7 +604,7 @@ flowchart TD
 
 | Layer | Where | Trigger | Limit |
 |---|---|---|---|
-| 1. Internal retry | Inside one request (`NetworkManager`) | Radio failure while starting the AP, on either band: hostapd segfault, beacon setup and interface initialization failure (`HostapdInitFailure`), radio preparation or readiness timeout. First round of the request only. | Up to 3 starts, 1 s apart, within 20 s from the request start, capped by expiry. A start begins only with at least 4 s left (`MIN_RETRY_ATTEMPT_TIME`, Fable HAP-4), so a start cut short by the budget never counts as a radio failure. If the last start fails, the round counts as **one** radio failure. |
+| 1. Internal retry | Inside one request (`NetworkManager`) | Radio failure while starting the AP, on either band: hostapd segfault, beacon setup and interface initialization failure (`HostapdInitFailure`), radio preparation or readiness timeout. First round of the request only. | Up to 3 starts, 1 s apart, while the reservation is valid. There is no time budget (Fable REV-5): each start has its whole readiness timeout, and a start that reaches the end is never failed for time. If the last start fails, the round counts as **one** radio failure. |
 | 2. Paused retry | Same create job (route, `CREATE_RETRY_DELAYS`) | Classified radio failure of a round | 3 rounds per create, pauses 5 s and 10 s, each only if the reservation has time for the pause plus one start (`AP_READY_TIMEOUT` or `DFS_READY_TIMEOUT`, plus `START_MARGIN`). The device lock is held during the pauses: other calls on the reservation get `503 / 1006`. |
 | 3. Quarantine and USB recovery | Background worker | 3rd classified failure, unsafe rollback, or a failed watchdog restart | 10 rounds at least 60 s apart, USB antennas only. Then, and for every other quarantine, a periodic re-probe ([8.1](#81-re-probe-of-unavailable-antennas)). |
 
@@ -738,7 +737,7 @@ sequenceDiagram
         NM->>RM: quarantine the antenna, invalidate the reservation
         Note over J: job dropped, GET answers 404 reservation_invalidated
     end
-    loop Layer 1: up to 3 starts within 20 s (round 1 only)
+    loop Layer 1: up to 3 starts, no time budget (round 1 only)
         NM->>NM: subnet, interface validation, NetworkManager unmanaged
         NM->>H: ip link down, iw set type managed, hostapd -d hostapd.conf
         H-->>NM: output events, control socket, state ENABLED (timeout 10 s, 75 s on DFS)

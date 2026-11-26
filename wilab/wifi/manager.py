@@ -20,7 +20,6 @@ from ..models import ClientInfo, NetworkCreateRequest, NetworkStatus, NetworkTxP
 from ..network.captive import CaptivePortal, CaptivePortalError
 from ..network.commands import (
     CommandError,
-    command_deadline,
     execute_command,
     execute_ip,
     execute_iw,
@@ -53,12 +52,9 @@ logger = logging.getLogger(__name__)
 # Transient radio failures usually clear on an immediate new start, so the
 # server retries during the create instead of handing the retry to the client.
 STARTUP_ATTEMPTS = 3
-# A retry starts only with at least MIN_RETRY_ATTEMPT_TIME left, so it is a real
-# attempt: a start cut short by the budget would count as one more radio
-# failure towards quarantine without giving the radio a chance (HAP-4).
-STARTUP_RETRY_BUDGET = 20.0
+# The attempts have no time budget (REV-5): the create runs in the background,
+# so only the number of attempts and the reservation expiry limit them.
 STARTUP_RETRY_DELAY = 1.0
-MIN_RETRY_ATTEMPT_TIME = 4.0
 # Delay before the next background cleanup of a device whose cleanup failed, by
 # number of consecutive failures; the last value repeats (WD-6). A client's
 # explicit DELETE is never delayed.
@@ -119,7 +115,6 @@ UNKNOWN_ANTENNA = "The antenna of this reservation is not managed"
 # Stable names of the startup stages, shown as `error.stage` with start_failed (1013).
 STARTUP_STAGES = {
     "start AP": "hostapd",
-    "complete startup retry": "hostapd",
     "block Internet": "internet_block",
     "assign gateway IP": "gateway",
     "configure DHCP": "dhcp",
@@ -415,12 +410,6 @@ class NetworkManager:
         Returns:
             NetworkStatus with active network details
         """
-        retry_deadline = time.monotonic() + STARTUP_RETRY_BUDGET
-        if expires_at_timestamp is not None:
-            retry_deadline = min(
-                retry_deadline,
-                time.monotonic() + (expires_at_timestamp - time.time()),
-            )
         # Validate device_id exists in config
         cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         if not cfg_net:
@@ -492,82 +481,75 @@ class NetworkManager:
             retrying = attempt > 1
             stage = "start AP"
             try:
-                with command_deadline(retry_deadline if retrying else None):
-                    if not internet_enabled:
-                        stage = "block Internet"
-                        try:
-                            with self._firewall_lock:
-                                self.nat_manager.block_internet(cfg_net.interface, device_id)
-                        except RuntimeError as exc:
-                            raise CommandError(str(exc)) from exc
-                    stage = "start AP"
-                    self.hostapd_manager.start(
-                        net_id=device_id,
-                        interface=cfg_net.interface,
-                        ssid=req.ssid,
-                        channel=req.channel,
-                        encryption=req.encryption,
-                        password=req.password,
-                        hidden=req.hidden,
-                        band=req.band,
-                        country_code=self.config.country_code,
-                        channel_width=req.channel_width,
-                        wifi_generation=req.wifi_generation,
-                        layout=layout,
-                        **({"cancelled": cancelled} if cancelled is not None else {}),
+                if not internet_enabled:
+                    stage = "block Internet"
+                    try:
+                        with self._firewall_lock:
+                            self.nat_manager.block_internet(cfg_net.interface, device_id)
+                    except RuntimeError as exc:
+                        raise CommandError(str(exc)) from exc
+                stage = "start AP"
+                self.hostapd_manager.start(
+                    net_id=device_id,
+                    interface=cfg_net.interface,
+                    ssid=req.ssid,
+                    channel=req.channel,
+                    encryption=req.encryption,
+                    password=req.password,
+                    hidden=req.hidden,
+                    band=req.band,
+                    country_code=self.config.country_code,
+                    channel_width=req.channel_width,
+                    wifi_generation=req.wifi_generation,
+                    layout=layout,
+                    **({"cancelled": cancelled} if cancelled is not None else {}),
+                )
+                stage = "assign gateway IP"
+                execute_ip(["addr", "add", gateway, "dev", cfg_net.interface])
+                logger.info("Gateway IP %s assigned to %s", gateway, cfg_net.interface)
+                stage = "configure DHCP"
+                self.dhcp_server.start(
+                    net_id=device_id,
+                    interface=cfg_net.interface,
+                    subnet=subnet,
+                    dns_server=self.config.dns_server,
+                    **({"captive_dns": True} if req.captive_portal else {}),
+                )
+                if req.captive_portal:
+                    stage = "start captive portal"
+                    portal = CaptivePortal(
+                        interface=cfg_net.interface, net_id=device_id, gateway=str(net[1]),
+                        context=lambda: self._portal_context(device_id),
+                        lookup_mac=lambda ip: self._client_mac(device_id, ip),
+                        firewall_lock=self._firewall_lock,
+                        port=self.config.captive_portal_port,
                     )
-                    stage = "assign gateway IP"
-                    execute_ip(["addr", "add", gateway, "dev", cfg_net.interface])
-                    logger.info("Gateway IP %s assigned to %s", gateway, cfg_net.interface)
-                    stage = "configure DHCP"
-                    self.dhcp_server.start(
-                        net_id=device_id,
-                        interface=cfg_net.interface,
-                        subnet=subnet,
-                        dns_server=self.config.dns_server,
-                        **({"captive_dns": True} if req.captive_portal else {}),
+                    # Tracked before start so a rollback removes partial rules.
+                    self.captive_portals[device_id] = portal
+                    portal.start()
+                # NAT and isolation are part of the startup (NET-2): a network
+                # never reports success without the firewall it claims.
+                if internet_enabled:
+                    stage = "enable Internet"
+                    try:
+                        with self._firewall_lock:
+                            self.nat_manager.enable_nat(cfg_net.interface, device_id, subnet)
+                    except RuntimeError as exc:
+                        raise CommandError(str(exc)) from exc
+                    logger.info("NAT enabled for %s", device_id)
+                stage = "isolate network"
+                with self._firewall_lock:
+                    self.isolation_manager.add_network(subnet)
+                logger.info("Isolation rules applied for %s (%s)", device_id, subnet)
+                # The host itself is off limits to AP clients (SEC-3); part of the
+                # startup like NAT and isolation, so it is never silently missing.
+                stage = "protect host"
+                running_portal = self.captive_portals.get(device_id)
+                with self._firewall_lock:
+                    self.host_guard.add(
+                        cfg_net.interface, device_id,
+                        running_portal.port if running_portal is not None else None,
                     )
-                    if req.captive_portal:
-                        stage = "start captive portal"
-                        portal = CaptivePortal(
-                            interface=cfg_net.interface, net_id=device_id, gateway=str(net[1]),
-                            context=lambda: self._portal_context(device_id),
-                            lookup_mac=lambda ip: self._client_mac(device_id, ip),
-                            firewall_lock=self._firewall_lock,
-                            port=self.config.captive_portal_port,
-                        )
-                        # Tracked before start so a rollback removes partial rules.
-                        self.captive_portals[device_id] = portal
-                        portal.start()
-                    # NAT and isolation are part of the startup (NET-2): a network
-                    # never reports success without the firewall it claims.
-                    if internet_enabled:
-                        stage = "enable Internet"
-                        try:
-                            with self._firewall_lock:
-                                self.nat_manager.enable_nat(cfg_net.interface, device_id, subnet)
-                        except RuntimeError as exc:
-                            raise CommandError(str(exc)) from exc
-                        logger.info("NAT enabled for %s", device_id)
-                    stage = "isolate network"
-                    with self._firewall_lock:
-                        self.isolation_manager.add_network(subnet)
-                    logger.info("Isolation rules applied for %s (%s)", device_id, subnet)
-                    # The host itself is off limits to AP clients (SEC-3); part of the
-                    # startup like NAT and isolation, so it is never silently missing.
-                    stage = "protect host"
-                    running_portal = self.captive_portals.get(device_id)
-                    with self._firewall_lock:
-                        self.host_guard.add(
-                            cfg_net.interface, device_id,
-                            running_portal.port if running_portal is not None else None,
-                        )
-                    if retrying and (
-                        time.monotonic() >= retry_deadline
-                        or (expires_at_timestamp is not None and time.time() >= expires_at_timestamp)
-                    ):
-                        stage = "complete startup retry"
-                        raise CommandError("Startup retry deadline expired")
             except (HostapdError, CommandError, DhcpServerError, CaptivePortalError) as e:
                 logger.error("Failed to %s for %s: %s", stage, device_id, e)
                 radio_seen = radio_seen or isinstance(e, HostapdRadioFailure)
@@ -599,13 +581,14 @@ class NetworkManager:
                     and allow_internal_retry
                     and stage == "start AP"
                     and isinstance(e, HostapdRadioFailure)
-                    and retry_deadline - time.monotonic()
-                    >= STARTUP_RETRY_DELAY + MIN_RETRY_ATTEMPT_TIME
+                    and (
+                        expires_at_timestamp is None
+                        or time.time() + STARTUP_RETRY_DELAY < expires_at_timestamp
+                    )
                 ):
                     time.sleep(STARTUP_RETRY_DELAY)
                     if (
                         not (cancelled is not None and cancelled())
-                        and retry_deadline - time.monotonic() >= MIN_RETRY_ATTEMPT_TIME
                         and (expires_at_timestamp is None or time.time() < expires_at_timestamp)
                     ):
                         logger.info(
