@@ -259,7 +259,7 @@ class Server:
     def hostapd_config(self, interface: str) -> dict[str, str]:
         """`hostapd_cli get_config` of the AP on `interface` (HAP-10)."""
         socket = self.sudo_output(
-            ["find", "/tmp/wilab-hostapd", "-type", "s", "-name", interface],
+            ["find", "/run/wilab/hostapd", "-type", "s", "-name", interface],
         ).split()[0]
         out = self.sudo_output(
             ["hostapd_cli", "-p", str(Path(socket).parent), "-i", interface, "get_config"],

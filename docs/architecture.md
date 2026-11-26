@@ -203,9 +203,10 @@ existing antennas, so it does not disturb running APs.
 
 **Cleanup of an unclean shutdown (Fable STAB-4).** At startup, before discovery,
 `cleanup_runtime()` (`wilab/runtime_cleanup.py`) stops hostapd and dnsmasq
-processes whose arguments point into `/tmp/wilab-hostapd` or
-`/tmp/wilab-dnsmasq` (they survive only when the service is not run by
-systemd), empties those directories, so a stale dnsmasq PID file can no longer
+processes whose arguments point into `/run/wilab/hostapd` or
+`/run/wilab/dnsmasq` (or the `/tmp/wilab-*` directories used before 4.1.0;
+they survive only when the service is not run by systemd), empties those
+directories (and removes the old `/tmp` ones), so a stale dnsmasq PID file can no longer
 fail every start with "Existing dnsmasq PID file", and deletes `wilab-ifbN`
 devices. QoS names its upload devices `wilab-ifbN` for this reason; plain
 `ifbN` devices may belong to other software and are left alone. When discovery
@@ -1063,7 +1064,7 @@ hardware.
   `iw dev`). Keep console access (for example KVM) in case the management
   connection is lost.
 - Do not share tokens, reservation IDs, WPA passwords, configuration files or
-  unredacted logs. `/tmp/wilab-hostapd/` may contain a passphrase.
+  unredacted logs. `/run/wilab/hostapd/` may contain a passphrase.
 
 **Procedure** (the interface name is an example):
 
@@ -1141,8 +1142,8 @@ device lock for a 60 s radar check.
 | State | Location | Lifetime |
 |---|---|---|
 | Reservations, quarantine, active networks, watchdog states | Process memory | Lost on restart. |
-| hostapd configuration and control socket | `/tmp/wilab-hostapd/ap-*/` | Removed at teardown. Contains the WPA passphrase. |
-| dnsmasq configuration, leases, PID | `/tmp/wilab-dnsmasq/` | Removed at teardown, leases included, so the next user of the adapter never inherits the previous clients; a watchdog restart of dnsmasq alone keeps the leases (Fable NET-7). If a launch timed out before the PID file existed, teardown finds the daemon by its unique `--conf-file` argument in `/proc`, or concludes none was started (Fable NET-6). |
+| hostapd configuration and control socket | `/run/wilab/hostapd/ap-*/` (private: `RuntimeDirectory=wilab`, mode 0700; Fable STAB-2) | Removed at teardown. Contains the WPA passphrase. |
+| dnsmasq configuration, leases, PID | `/run/wilab/dnsmasq/` | Removed at teardown, leases included, so the next user of the adapter never inherits the previous clients; a watchdog restart of dnsmasq alone keeps the leases (Fable NET-7). If a launch timed out before the PID file existed, teardown finds the daemon by its unique `--conf-file` argument in `/proc`, or concludes none was started (Fable NET-6). |
 | NAT and isolation rules | iptables `nat` and `FORWARD` | Removed at teardown. Leftovers are reported at startup. |
 | Captive portal chains and sign-ins | iptables `wilab-cp-<interface>` chains; sign-ins in process memory | Removed at teardown and at startup. |
 | Host guard | iptables and ip6tables `wilab-in-<interface>` chains, jumped to from `INPUT` | Removed at teardown and at startup. |

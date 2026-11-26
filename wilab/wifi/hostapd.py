@@ -18,12 +18,13 @@ from ..network.commands import (
     execute_iw,
     start_foreground,
 )
+from ..paths import HOSTAPD_RUNTIME_DIR, make_private_dir
 from .channels import ChannelLayout, channel_layouts
 from .interface import interface_present
 
 logger = logging.getLogger(__name__)
 
-HOSTAPD_CONFIG_DIR = "/tmp/wilab-hostapd"
+HOSTAPD_CONFIG_DIR = HOSTAPD_RUNTIME_DIR   # configuration and control sockets (STAB-2)
 AP_READY_TIMEOUT = 10.0
 # hostapd_cli waits for a reply that never comes if hostapd exits meanwhile,
 # so each status probe is short and the process is checked between probes.
@@ -185,7 +186,7 @@ class HostapdManager:
     def _ensure_dirs(self) -> None:
         """Ensure the config directory exists."""
         try:
-            os.makedirs(HOSTAPD_CONFIG_DIR, exist_ok=True)
+            make_private_dir(HOSTAPD_CONFIG_DIR)
         except OSError as e:
             logger.warning(f"Could not create hostapd dirs: {e}")
     

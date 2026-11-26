@@ -24,11 +24,13 @@ from pathlib import Path
 from .network.commands import CommandError, execute_command, stop_process
 from .network.dhcp import DNSMASQ_CONFIG_DIR, DNSMASQ_PID_DIR
 from .network.qos import IFB_PREFIX
+from .paths import LEGACY_RUNTIME_DIRS
 from .wifi.hostapd import HOSTAPD_CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
-RUNTIME_DIRS = (HOSTAPD_CONFIG_DIR, DNSMASQ_CONFIG_DIR)
+# The current directories, and those used before 4.1.0 (/tmp) for an upgrade.
+RUNTIME_DIRS = (HOSTAPD_CONFIG_DIR, DNSMASQ_CONFIG_DIR, *LEGACY_RUNTIME_DIRS)
 _PROGRAMS = {"hostapd", "dnsmasq"}
 
 
@@ -89,8 +91,10 @@ def cleanup_runtime() -> None:
                 logger.error("Could not remove stale runtime file %s: %s", child, exc)
         if removed:
             logger.warning("Removed %d stale entries from %s", removed, directory)
+    for legacy in LEGACY_RUNTIME_DIRS:
+        shutil.rmtree(legacy, ignore_errors=True)   # emptied above; the directory goes too
     # The DHCP server created this directory at startup and expects it to exist.
-    os.makedirs(DNSMASQ_PID_DIR, exist_ok=True)
+    os.makedirs(DNSMASQ_PID_DIR, mode=0o700, exist_ok=True)
     for name in _stale_ifbs():
         try:
             execute_command(["ip", "link", "del", name])

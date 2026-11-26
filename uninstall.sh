@@ -149,7 +149,7 @@ done
 for dev in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1 | grep '^wilab-ifb'); do
     ip link del "$dev" 2>/dev/null || true
 done
-rm -rf /tmp/wilab-hostapd /tmp/wilab-dnsmasq
+rm -rf /run/wilab /tmp/wilab-hostapd /tmp/wilab-dnsmasq   # /tmp: before 4.1.0
 if [ -f /run/systemd/network/00-wilab-unmanaged.network ]; then
     rm -f /run/systemd/network/00-wilab-unmanaged.network
     networkctl reload 2>/dev/null || true

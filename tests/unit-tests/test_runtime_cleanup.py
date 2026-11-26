@@ -32,7 +32,11 @@ def runtime(monkeypatch, tmp_path):
     (dnsmasq_dir / "pids").mkdir(parents=True)
     (dnsmasq_dir / "pids" / "dnsmasq-wlan0.pid").write_text("4242")
     (dnsmasq_dir / "dnsmasq-wlan0.conf").write_text("interface=wlan0")
-    monkeypatch.setattr(runtime_cleanup, "RUNTIME_DIRS", (str(hostapd_dir), str(dnsmasq_dir)))
+    legacy = tmp_path / "tmp-wilab-hostapd"
+    (legacy / "ap-x").mkdir(parents=True)
+    monkeypatch.setattr(runtime_cleanup, "RUNTIME_DIRS", (str(hostapd_dir), str(dnsmasq_dir), str(legacy)))
+    # Never the real /tmp/wilab-* of a running service (STAB-2).
+    monkeypatch.setattr(runtime_cleanup, "LEGACY_RUNTIME_DIRS", (str(legacy),))
     monkeypatch.setattr(runtime_cleanup, "DNSMASQ_PID_DIR", str(dnsmasq_dir / "pids"))
     stopped: list[int] = []
     commands: list[list[str]] = []
@@ -135,3 +139,22 @@ def test_a_stale_gateway_address_does_not_shift_the_subnet(monkeypatch, reset_wo
     dependencies.scan_devices(config)
     subnet = IPv4Network(manager._get_subnet(radio.device_id))
     assert (subnet == natural) is reset_works
+
+
+def test_the_pre_4_1_directories_in_tmp_are_removed(runtime, tmp_path):
+    """STAB-2: after an upgrade, startup empties and removes /tmp/wilab-*."""
+    runtime_cleanup.cleanup_runtime()
+    assert not (tmp_path / "tmp-wilab-hostapd").exists()
+
+
+def test_runtime_files_live_in_the_private_directory_systemd_creates():
+    from pathlib import Path
+
+    from wilab import paths
+
+    # The tests point hostapd to tmp_path: check the defaults the service uses.
+    assert paths.HOSTAPD_RUNTIME_DIR.startswith(paths.RUNTIME_DIR)
+    assert paths.DNSMASQ_RUNTIME_DIR.startswith(paths.RUNTIME_DIR)
+    assert not paths.RUNTIME_DIR.startswith("/tmp")
+    unit = (Path(__file__).resolve().parents[2] / "install/systemd/wi-lab.service.template").read_text()
+    assert "RuntimeDirectory=wilab" in unit and "RuntimeDirectoryMode=0700" in unit

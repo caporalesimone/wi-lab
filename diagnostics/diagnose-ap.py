@@ -228,14 +228,14 @@ def main() -> int:
         findings.append("Interface cannot be brought UP: kernel reports 'Device or resource busy'.")
         suggestions.append("Reset/replug the USB adapter of this interface and retry.")
 
-    hostapd_conf = Path(f"/tmp/wilab-hostapd/hostapd-{args.net_id}.conf")
+    hostapd_conf = Path(f"/run/wilab/hostapd/hostapd-{args.net_id}.conf")
     print_header("Hostapd Config")
     if hostapd_conf.exists():
         print(f"config_path: {hostapd_conf}")
         print(hostapd_conf.read_text(encoding="utf-8"))
     else:
         print(f"config file not found: {hostapd_conf}")
-        findings.append("hostapd config file for this net_id is missing in /tmp/wilab-hostapd.")
+        findings.append("hostapd config file for this net_id is missing in /run/wilab/hostapd.")
 
     hostapd_debug: Optional[CmdResult] = None
     if not args.skip_hostapd_debug and hostapd_conf.exists():

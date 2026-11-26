@@ -20,6 +20,10 @@ RestartSec=10s
 # Exit 78: a startup precheck failed (not root, missing command). Restarting
 # does not fix it: leave the unit failed with the reason in the journal (NM-1).
 RestartPreventExitStatus=78
+# Private runtime files (STAB-2): hostapd and dnsmasq configuration, sockets,
+# leases and PID files, readable by root only and removed when the service stops.
+RuntimeDirectory=wilab
+RuntimeDirectoryMode=0700
 TimeoutStartSec=60s
 # Stop budget: 10 s for running requests, up to 10 s for discovery, up to 20 s
 # to release every antenna in parallel (STAB-8).

@@ -7,9 +7,11 @@ from .commands import CommandError, CommandTimeout, execute_command, stop_proces
 
 logger = logging.getLogger(__name__)
 
-# Directory for dnsmasq config files
-DNSMASQ_CONFIG_DIR = "/tmp/wilab-dnsmasq"
-DNSMASQ_PID_DIR = "/tmp/wilab-dnsmasq/pids"
+from ..paths import DNSMASQ_RUNTIME_DIR, make_private_dir
+
+# dnsmasq configuration, leases and PID files (STAB-2: private, not /tmp).
+DNSMASQ_CONFIG_DIR = DNSMASQ_RUNTIME_DIR
+DNSMASQ_PID_DIR = os.path.join(DNSMASQ_RUNTIME_DIR, "pids")
 
 
 class DhcpServerError(Exception):
@@ -30,8 +32,8 @@ class DhcpServer:
     def _ensure_config_dir(self) -> None:
         """Ensure config and pid directories exist."""
         try:
-            os.makedirs(DNSMASQ_CONFIG_DIR, exist_ok=True)
-            os.makedirs(DNSMASQ_PID_DIR, exist_ok=True)
+            make_private_dir(DNSMASQ_CONFIG_DIR)
+            os.makedirs(DNSMASQ_PID_DIR, mode=0o700, exist_ok=True)
         except OSError as e:
             logger.warning(f"Could not create dnsmasq dir: {e}")
     
