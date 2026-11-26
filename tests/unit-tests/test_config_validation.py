@@ -18,7 +18,7 @@ from wilab.config_validation import validate_config_file
     ],
 )
 def test_optional_config_validation_reports_errors_without_values(tmp_path, changes, message):
-    config = {"auth_token": "private-token", "dhcp_base_network": "192.168.120.0/24", **changes}
+    config = {"auth_token": "private-token", "dhcp_base_network": "192.168.120.0/24", "dns_server": "8.8.8.8", **changes}
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(config))
     errors, warnings = validate_config_file(str(path))
@@ -31,6 +31,7 @@ def test_config_validation_warns_about_ignored_fields_and_example_token(tmp_path
     path.write_text(
         "auth_token: secret-token-12345\n"
         "dhcp_base_network: 192.168.120.0/24\n"
+        "dns_server: 8.8.8.8\n"
         "antennas:\n"
         "  - interface: wlan0\n"
         "    disable: true\n"
@@ -87,7 +88,7 @@ _PARITY_CASES = [
 def test_offline_validation_and_startup_agree(tmp_path, changes):
     from wilab.config import load_config
 
-    config = {"auth_token": "private-token", "dhcp_base_network": "192.168.120.0/24", **changes}
+    config = {"auth_token": "private-token", "dhcp_base_network": "192.168.120.0/24", "dns_server": "8.8.8.8", **changes}
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(config))
     errors, _ = validate_config_file(str(path))
@@ -108,9 +109,21 @@ def test_startup_refuses_an_invalid_dns_server(tmp_path):
         load_config(str(path))
 
 
+def test_startup_refuses_a_config_without_dns_server(tmp_path):
+    """NET-8: no default DNS server; the service says which key is missing."""
+    from wilab.config import load_config
+
+    path = tmp_path / "config.yaml"
+    path.write_text("auth_token: t\ndhcp_base_network: 192.168.120.0/24\n")
+    with pytest.raises(SystemExit, match="dns_server"):
+        load_config(str(path))
+    errors, _ = validate_config_file(str(path))
+    assert any("dns_server" in error for error in errors)
+
+
 def test_model_errors_name_the_fields_without_values(tmp_path):
     path = tmp_path / "config.yaml"
-    path.write_text("auth_token: private-token\ndhcp_base_network: 192.168.120.0/24\n"
+    path.write_text("auth_token: private-token\ndhcp_base_network: 192.168.120.0/24\ndns_server: 8.8.8.8\n"
                     "min_timeout: 100\nmax_timeout: 60\n")
     errors, _ = validate_config_file(str(path))
     assert errors == ["Invalid configuration: Value error, max_timeout must be positive and at least min_timeout"]
@@ -118,7 +131,7 @@ def test_model_errors_name_the_fields_without_values(tmp_path):
 
 def test_every_antenna_entry_states_show_dfs(tmp_path):
     path = tmp_path / "config.yaml"
-    path.write_text("auth_token: t\ndhcp_base_network: 192.168.120.0/24\n"
+    path.write_text("auth_token: t\ndhcp_base_network: 192.168.120.0/24\ndns_server: 8.8.8.8\n"
                     "antennas:\n  - interface: wlan0\n    disable: true\n")
     errors, _ = validate_config_file(str(path))
     assert errors == ["Invalid configuration field: antennas"]

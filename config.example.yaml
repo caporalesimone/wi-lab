@@ -91,11 +91,10 @@ dhcp_base_network: "192.168.120.0/24"
 #   - "eth0", "ens18", etc.: Force specific interface by name
 upstream_interface: "auto"
 
-# DNS server IP address for WiFi clients
-# Clients will use this DNS for domain resolution
+# DNS server IP address for WiFi clients (REQUIRED: the service does not start without it)
+# Clients will use this DNS for domain resolution. It must answer from this host's network.
 # Options:
-#   - Use your local gateway: "192.168.10.1"
-#   - Use local DNS server: "192.168.10.21"
+#   - Use your local gateway or DNS server, e.g. "192.168.10.1"
 #   - Use public google DNS: "8.8.8.8"
 #   - Use public open DNS: "208.67.222.222"
 dns_server: "208.67.222.222"

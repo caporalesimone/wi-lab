@@ -45,7 +45,9 @@ class AppConfig(BaseModel):
     # Diagnostics: save the `hostapd -d` output and configuration of every failed
     # hostapd start in this directory (None: off).
     hostapd_debug_dir: str | None = None
-    dns_server: str = "192.168.10.21"
+    # Required (NET-8): the DNS server handed to Wi-Fi clients. No default: any
+    # address chosen here would be wrong on some network.
+    dns_server: str
     internet_enabled_by_default: bool = True
     # Optional display names and settings of the discovered radios (`antennas:`).
     antennas: list[NetworkEntry] = Field(default_factory=list)

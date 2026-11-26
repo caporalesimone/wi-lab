@@ -849,7 +849,7 @@ class TestReservationAPIDeleteAll:
 
     def test_disabled_without_a_configured_password(self, client, valid_token):
         from wilab.config import AppConfig
-        blank = AppConfig(auth_token="t", dhcp_base_network="192.168.120.0/24", protected_commands_password="  ")
+        blank = AppConfig(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", protected_commands_password="  ")
         assert blank.protected_commands_password is None
         dependencies.get_config().protected_commands_password = None
         self._reserve(client, valid_token)

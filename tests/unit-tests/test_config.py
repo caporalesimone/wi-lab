@@ -113,6 +113,7 @@ class TestMinTimeoutConstraint:
         cfg_file.write_text(
             "auth_token: test\n"
             "dhcp_base_network: '192.168.120.0/24'\n"
+            "dns_server: '8.8.8.8'\n"
             "min_timeout: 5\n"
             "antennas:\n"
             "  - interface: wlan0\n"
@@ -128,6 +129,7 @@ class TestMinTimeoutConstraint:
         cfg_file.write_text(
             "auth_token: test\n"
             "dhcp_base_network: '192.168.120.0/24'\n"
+            "dns_server: '8.8.8.8'\n"
             "min_timeout: 10\n"
             "antennas:\n"
             "  - interface: wlan0\n"
@@ -153,14 +155,14 @@ def test_invalid_regulatory_country_is_rejected(country):
     from wilab.config import AppConfig
 
     with pytest.raises(ValidationError, match="country_code"):
-        AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", country_code=country)
+        AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", country_code=country)
 
 
 @pytest.mark.parametrize("country", ["IT", "JP", "US", "XY"])
 def test_country_code_shape_and_valid_japan(country):
     from wilab.config import AppConfig
 
-    config = AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", country_code=country)
+    config = AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", country_code=country)
     assert config.country_code == country
 
 
@@ -169,9 +171,9 @@ def test_country_code_shape_and_valid_japan(country):
 def test_captive_portal_port_must_not_clash(port):
     """NET-10: the portal port differs from the API (on every address), DNS and DHCP."""
     with pytest.raises(ValidationError, match="captive_portal_port"):
-        AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", captive_portal_port=port)
+        AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", captive_portal_port=port)
 
 
 def test_captive_portal_port_defaults_to_8081_so_the_api_can_use_80():
-    config = AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", api_port=80)
+    config = AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", api_port=80)
     assert config.captive_portal_port == 8081

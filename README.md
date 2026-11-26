@@ -92,7 +92,7 @@ allow_unlimited_reservation: false      # allow duration_seconds=0
 # Networking
 dhcp_base_network: "192.168.120.0/24"   # Starting subnet for AP allocation
 upstream_interface: "auto"
-dns_server: "208.67.222.222"
+dns_server: "208.67.222.222"           # required: DNS handed to Wi-Fi clients
 internet_enabled_by_default: true
 country_code: "IT"                      # WiFi regulatory domain
 
