@@ -158,7 +158,7 @@ class ReservationManager:
                 return self._reserve(device_id, duration_seconds)
 
         # A failed cleanup keeps its device held; the background sweep repeats it.
-        self._purge_expired(continue_on_error=True)
+        self._purge_expired(continue_on_error=True, background=True)
         with self._lock:
             device_id = self._first_available()
             if device_id is not None:
@@ -183,12 +183,14 @@ class ReservationManager:
                 if not owner.is_expired:
                     raise NoDeviceAvailableError(owner.expires_at)
             try:
-                # Returns at once if another call holds the device.
-                self._cleanup_expired(owner)
+                # Returns at once if another call holds the device, or if a failed
+                # cleanup is waiting for its next background attempt.
+                self._cleanup_expired(owner, background=True)
             except ReservationCleanupError:
                 # Held until the background sweep cleans it: try again then.
                 raise NoDeviceAvailableError(time.time() + self._cleanup_wait(device_id)) from None
-        raise NoDeviceAvailableError(owner.expires_at)
+        # Still held by the expired owner: free at its next cleanup, never in the past.
+        raise NoDeviceAvailableError(time.time() + self._cleanup_wait(device_id))
 
     def quarantine(self, reservation: Reservation, *, recovering: bool) -> None:
         """Invalidate an owner and exclude its antenna in one store operation."""
@@ -259,7 +261,8 @@ class ReservationManager:
             if r is None or not r.is_expired:
                 return r
         try:
-            self._cleanup_expired(r)
+            # A cleanup that already failed is repeated by the background sweep only.
+            self._cleanup_expired(r, background=True)
         except ReservationCleanupError:
             pass  # logged by _release; the background sweep repeats it
         return None

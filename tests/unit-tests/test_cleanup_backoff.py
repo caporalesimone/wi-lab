@@ -1,13 +1,14 @@
 """WD-6: a cleanup that keeps failing is retried with backoff in the background."""
 
 import logging
+import time
 from unittest.mock import Mock
 
 import pytest
 
 from wilab.config import load_config
 from wilab.models import NetworkStatus
-from wilab.reservation import ReservationManager
+from wilab.reservation import NoDeviceAvailableError, ReservationManager
 from wilab.wifi import manager as manager_module
 from wilab.wifi.manager import NetworkManager
 
@@ -89,3 +90,20 @@ def test_reservation_sweep_skips_a_device_backing_off_but_delete_does_not(caplog
     # An explicit release ignores the backoff; the expired ID is gone (nothing to release).
     assert store.delete(reservation.reservation_id) is False
     assert cleanup.call_count == 3
+
+
+def test_requests_never_repeat_a_cleanup_that_is_backing_off():
+    """Only the background sweep and an explicit release retry a failed cleanup."""
+    cleanup = Mock(side_effect=RuntimeError("stop failed"))
+    store = ReservationManager(
+        ["dev0"], cleanup=cleanup, cleanup_due=lambda _d: False, cleanup_wait=lambda _d: 42.0,
+    )
+    reservation = store.create(60)
+    reservation.expires_at = 1.0
+    assert store.get(reservation.reservation_id) is None  # a call with the expired ID
+    for kwargs in ({}, {"device_id": "dev0"}):  # a reserve, with and without the antenna
+        with pytest.raises(NoDeviceAvailableError) as busy:
+            store.create(60, **kwargs)
+        # Free at the next background attempt, never a time in the past.
+        assert 40 < busy.value.next_available_at - time.time() <= 42
+    assert cleanup.call_count == 0
