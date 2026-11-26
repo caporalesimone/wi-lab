@@ -11,7 +11,7 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 13 |
-| ⚠️ Breaking changes | 1 |
+| ⚠️ Breaking changes | 3 |
 | 🔧 Maintenance changes | 3 |
 | ✨ New features | 0 |
 | ✅ Test changes | 7 |
@@ -22,6 +22,8 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 ### ⚠️ Breaking Changes
 
 - NetworkManager is no longer supported: Wi-Lab requires Ubuntu Server with the host network on systemd-networkd and no longer releases radios from NetworkManager (`nmcli` is never run; the runtime file under `/run/NetworkManager/conf.d` is gone). On hosts where NetworkManager runs, check that it manages no interface (`nmcli device status`), then `sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager` (Fable NM-1).
+- Request bodies of the reservation, the create and `POST .../txpower` take only the JSON types they document: `"6"`, `true` or `6.0` for an integer, and `"false"` or `0` for a boolean, are now a `422` instead of being converted (Fable REV-11).
+- `POST .../txpower` takes `tx_power_level` instead of `level`, the name of `radio.tx_power_level` in the create (Fable API-6).
 
 ### ✨ Features
 
@@ -59,6 +61,9 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ### 🔌 API changes from 4.0.0 (client migration)
 
+- Strict types: send integers and booleans as JSON numbers and booleans. A string such as `"6"`, `true` for a number or `6.0` is now `422` in `POST /reservations`, `POST .../network` and `POST .../txpower` (REV-11).
+- `POST .../txpower`: the body is `{"tx_power_level": 2}`; `{"level": 2}` is now `422` (API-6).
+- **Not stable in 4.1:** TX power is under debugging (the drivers in use do not apply it reliably) and QoS profiles are experimental. Both may change in any release; the rest of the API is frozen for 4.1.
 - `DELETE .../network` on a network that is not running now stops what a failed start may have left (hostapd, rules) before answering `200`; if that cleanup fails it answers `503 / 1012` with `Retry-After`, like any incomplete stop (REV-1). Before it answered `200` and left them.
 
 ---

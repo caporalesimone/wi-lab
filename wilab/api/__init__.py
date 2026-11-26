@@ -54,6 +54,14 @@ Set `"captive_portal": {"enabled": true}` when creating a network to hold each
 client behind a simulated captive portal until it presses **Sign in** on the
 portal page; see the network creation operation. Omitted, it is disabled.
 
+Request bodies take only the JSON types they document: a number sent as a
+string (`"6"`), `true` for a number, or a number for a boolean is a `422`.
+
+**Not stable in 4.1.** **TX Power** is under debugging: the drivers in use do
+not apply the requested power reliably, so a request may answer `422` or report
+another level. **QoS Profiles** is experimental and untested. Both may change in
+any release: do not build client logic on them.
+
 Operations under **Maintenance** are not part of the client workflow. Each one
 requires the `X-Confirm-Password` header matching `protected_commands_password`
 in the server configuration, and is disabled when that setting is missing.
@@ -121,8 +129,11 @@ OPENAPI_TAGS = [
      "(encryptions, Wi-Fi generations, channel widths, channels): fill a create form from here. No reservation needed."},
     {"name": "Network", "description": "Create, stop and inspect an AP. The create is asynchronous: poll `GET .../network` for the outcome."},
     {"name": "Internet", "description": "Enable or disable Internet access for a reserved network."},
-    {"name": "TX Power", "description": "Inspect or request transmit power. Hardware support is not guaranteed."},
-    {"name": "QoS Profiles", "description": "Inspect and manage traffic shaping profiles for a reserved network."},
+    {"name": "TX Power", "description": "**Under debugging, not stable:** the drivers in use do not "
+     "apply the requested power reliably. Inspect or request transmit power with `tx_power_level` 1-4, "
+     "the name of the create field."},
+    {"name": "QoS Profiles", "description": "**Experimental, not stable:** untested, may change in any "
+     "release. Inspect and manage traffic shaping profiles for a reserved network."},
     {"name": "Maintenance", "description": "Operator-only commands, not for clients; they may be "
      "removed in the future. Every one requires the X-Confirm-Password header matching "
      "protected_commands_password, besides the token. The detailed health checks are in "

@@ -108,7 +108,7 @@ def set_tx_power(
 
     Requires a valid reservation token.
     """
-    if req.level not in VALID_TX_POWER_LEVELS:
+    if req.tx_power_level not in VALID_TX_POWER_LEVELS:
         raise HTTPException(
             status_code=422,
             detail=f"Requested power out of range. Valid values are {VALID_TX_POWER_LEVELS_TEXT}.",
@@ -116,7 +116,7 @@ def set_tx_power(
 
     with hold_reservation(reservation_mgr, reservation):
         try:
-            return manager.set_tx_power_level(reservation.device_id, req.level)
+            return manager.set_tx_power_level(reservation.device_id, req.tx_power_level)
         except TxPowerMismatchError as e:
             raise HTTPException(status_code=422, detail=str(e))
         except NetworkNotActive:

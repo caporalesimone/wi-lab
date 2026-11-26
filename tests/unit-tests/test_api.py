@@ -761,7 +761,7 @@ class TestTxPowerPostEndpoint:
         resp = client.post(
             f'/api/v2/reservations/{reservation_id}/txpower',
             headers={'Authorization': valid_token},
-            json={'level': 2},
+            json={'tx_power_level': 2},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -785,7 +785,7 @@ class TestTxPowerPostEndpoint:
         resp = client.post(
             f'/api/v2/reservations/{reservation_id}/txpower',
             headers={'Authorization': valid_token},
-            json={'level': 2},
+            json={'tx_power_level': 2},
         )
 
         assert resp.status_code == 422
@@ -797,7 +797,7 @@ class TestTxPowerPostEndpoint:
         resp = client.post(
             f'/api/v2/reservations/{reservation_id}/txpower',
             headers={'Authorization': valid_token},
-            json={'level': 9},
+            json={'tx_power_level': 9},
         )
 
         assert resp.status_code == 422

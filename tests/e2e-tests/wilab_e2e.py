@@ -446,7 +446,7 @@ class WiLab:
             "POST network": lambda: self.http.post(f"{base}/network", json=create),
             "DELETE network": lambda: self.http.delete(f"{base}/network"),
             "GET txpower": lambda: self.http.get(f"{base}/txpower"),
-            "POST txpower": lambda: self.http.post(f"{base}/txpower", json={"level": 2}),
+            "POST txpower": lambda: self.http.post(f"{base}/txpower", json={"tx_power_level": 2}),
             "POST internet/enable": lambda: self.http.post(f"{base}/internet/enable"),
             "DELETE": lambda: self.http.delete(base),
         }

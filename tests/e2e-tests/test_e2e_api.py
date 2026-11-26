@@ -182,7 +182,7 @@ def test_actions_without_a_network_share_one_status_code(wilab: WiLab) -> None:
         "qos/profile": wilab.http.post(
             f"/reservations/{rid}/qos/profile", json={"profile_id": first_profile},
         ).status_code,
-        "txpower": wilab.http.post(f"/reservations/{rid}/txpower", json={"level": 2}).status_code,
+        "txpower": wilab.http.post(f"/reservations/{rid}/txpower", json={"tx_power_level": 2}).status_code,
     }
     assert set(codes.values()) == {409}, codes  # 409 / 1007 network_not_active (API-2)
 
@@ -272,7 +272,7 @@ def test_txpower_reports_what_the_radio_applied(wilab: WiLab, server: Server) ->
     assert wilab.create(antenna).status_code == 200
     rid = antenna.reservation_id
     for level in (1, 2, 3, 4):
-        assert wilab.http.post(f"/reservations/{rid}/txpower", json={"level": level}).status_code == 200
+        assert wilab.http.post(f"/reservations/{rid}/txpower", json={"tx_power_level": level}).status_code == 200
         reported = wilab.http.get(f"/reservations/{rid}/txpower").json()["tx_power"]["reported_dbm"]
         on_air = server.iw_txpower_dbm(antenna.interface)
         assert reported is not None and on_air is not None
@@ -284,7 +284,7 @@ def test_txpower_change_is_fast(wilab: WiLab) -> None:
     antenna = wilab.reserve()
     assert wilab.create(antenna).status_code == 200
     start = time.monotonic()
-    response = wilab.http.post(f"/reservations/{antenna.reservation_id}/txpower", json={"level": 3})
+    response = wilab.http.post(f"/reservations/{antenna.reservation_id}/txpower", json={"tx_power_level": 3})
     assert response.status_code == 200
     assert time.monotonic() - start < 3
 

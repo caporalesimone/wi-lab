@@ -250,7 +250,7 @@ def body_error(field: str | None, message: str) -> str:
 
 class RadioSettings(BaseModel):
     # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     band: str = Field(pattern=r"^(2\.4ghz|5ghz)$", description="`2.4ghz` or `5ghz`")
     channel: int = Field(description="Primary channel; must be valid for `band` and enabled on the antenna")
@@ -261,7 +261,7 @@ class RadioSettings(BaseModel):
 
 class SecuritySettings(BaseModel):
     # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     # Checked by NetworkCreateRequest, which explains a refused `wpa`.
     encryption: str = Field(description=_doc("encryption"), json_schema_extra={"enum": _ENCRYPTIONS})
@@ -270,7 +270,7 @@ class SecuritySettings(BaseModel):
 
 class WifiSettings(BaseModel):
     # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     ssid: str = Field(description=_doc("ssid"))
     hidden: bool = Field(False, description="Hide the SSID from scans; clients must know it")
@@ -279,7 +279,7 @@ class WifiSettings(BaseModel):
 
 class InternetSettings(BaseModel):
     # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     enabled: bool | None = Field(
         None, description="NAT to the upstream network; omitted means the server default "
@@ -289,7 +289,7 @@ class InternetSettings(BaseModel):
 
 class CaptivePortalSettings(BaseModel):
     # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     enabled: bool = Field(False, description=_doc("captive_portal"))
 
@@ -298,7 +298,7 @@ class NetworkCreateBody(BaseModel):
     """Body of `POST .../network`. Only `radio` and `wifi` are required."""
 
     # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     radio: RadioSettings
     wifi: WifiSettings
@@ -479,9 +479,12 @@ class NetworkResponse(BaseModel):
 
 
 class TxPowerRequest(BaseModel):
-    level: int = Field(..., description="TX power level 1 (low) to 4 (max)")
+    # Same name as `radio.tx_power_level` of the create (API-6).
+    tx_power_level: int = Field(..., description="TX power level 1 (low) to 4 (max)")
 
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"examples": [{"level": 2}]})
+    model_config = ConfigDict(
+        extra="forbid", strict=True, json_schema_extra={"examples": [{"tx_power_level": 2}]},
+    )
 
 
 class TxPowerInfo(BaseModel):

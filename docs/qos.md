@@ -1,5 +1,8 @@
 # QoS Profiles
 
+> **Experimental in 4.1:** untested, and its API and behaviour may change in any release. Do not
+> build client logic on it.
+
 QoS lets you simulate real-world network conditions on a per-reservation basis. You can apply a **profile** from the built-in catalogue or provide **inline QoS parameters** that are applied as a static configuration.
 
 > **Prerequisite:** the network must be **active** on the reservation before applying a QoS profile.

@@ -21,7 +21,7 @@ def idle_reservation():
     ("post", "/internet/enable", None),
     ("post", "/internet/disable", None),
     ("get", "/txpower", None),
-    ("post", "/txpower", {"level": 2}),
+    ("post", "/txpower", {"tx_power_level": 2}),
     ("post", "/qos/profile", {"download_speed_kbit": 1000}),
     ("get", "/qos/profile", None),
     ("delete", "/qos/profile", None),

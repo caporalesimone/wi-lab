@@ -35,8 +35,9 @@ maintenance_router = protected_router(prefix="/reservations")
 # ---- Request / Response models ----
 
 class ReservationCreateRequest(BaseModel):
-    # API-10: an unknown field is a 422, not ignored.
-    model_config = ConfigDict(extra="forbid")
+    # API-10: an unknown field is a 422, not ignored. Strict types (REV-11):
+    # "120" or true is a 422, not a number.
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     duration_seconds: int = Field(
         ..., description="Reservation duration in seconds. 0 = unlimited, accepted only when "

@@ -75,7 +75,7 @@ def busy_adapter(valid_token, monkeypatch):
     ("delete", "/network", None),
     ("post", "/internet/enable", None),
     ("get", "/txpower", None),
-    ("post", "/txpower", {"level": 2}),
+    ("post", "/txpower", {"tx_power_level": 2}),
     ("get", "/qos/profile", None),
 ])
 def test_busy_adapter_answers_503_1006_with_retry_after(busy_adapter, method, path, body):

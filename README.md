@@ -10,7 +10,7 @@ Typical use-cases: automated wireless testing, RF/antenna benchmarking, classroo
 
 1. **Multiple WiFi interfaces** — every AP-capable adapter is discovered automatically (`config.yaml` can give it a display name) and managed independently.
 2. **Reservation system** — before touching an interface you acquire a time-limited (or unlimited) reservation token via the API. The token is an 8-char hex string; when it expires the AP is torn down automatically. A device is not reassigned until cleanup succeeds. If cleanup fails, the device stays held for retry; other free devices remain available.
-3. **One AP per interface** — while reserved, you can create a WiFi network (hostapd), configure DHCP (dnsmasq), enable/disable Internet (iptables NAT), and adjust TX power — all via REST calls.
+3. **One AP per interface** — while reserved, you can create a WiFi network (hostapd), configure DHCP (dnsmasq), enable/disable Internet (iptables NAT), and adjust TX power (under debugging, not stable yet) — all via REST calls.
 4. **Web frontend** — an Angular SPA shows every interface as a card (available / owned / occupied), lets you reserve, configure, and monitor networks from the browser. The auth token is entered at runtime via a login dialog.
 5. **Web API** — every operation is also available programmatically (`/api/v2/…`), with full Swagger UI at `http://<host>:8080/docs`. Useful for scripting, SDKs, or CI integration.
 
@@ -200,7 +200,7 @@ Detailed guides live in the `docs/` folder:
 | [swagger.md](docs/swagger.md) | API exploration via Swagger UI |
 | [error-codes.md](docs/error-codes.md) | Every API error code (`detail.code`), its HTTP status and the client action |
 | [networking.md](docs/networking.md) | Subnet layout, iptables, NAT internals |
-| [qos.md](docs/qos.md) | QoS profiles: catalogue, playback modes, API |
+| [qos.md](docs/qos.md) | QoS profiles (experimental): catalogue, playback modes, API |
 | [unit-testing.md](docs/unit-testing.md) | Test suite structure and pytest usage |
 | [e2e-testing.md](docs/e2e-testing.md) | End-to-end tests against the running service on real adapters |
 | [troubleshooting.md](docs/troubleshooting.md) | Common issues, diagnostics scripts, debugging |

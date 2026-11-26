@@ -23,6 +23,19 @@ failures such as a hostapd crash are explained in
 Every error code, with its HTTP status and action, is also listed in
 [Error codes](error-codes.md).
 
+Request bodies take only the JSON types they document: a number sent as a
+string (`"6"`), `true` for a number, or a number for a boolean is a `422`.
+
+**Not stable in 4.1:**
+
+- **TX power** (`GET`/`POST .../txpower`, and `radio.tx_power_level` beyond its
+  validation) is under debugging: the drivers in use do not apply the requested
+  power reliably, so a change may answer `422` or report another level. The
+  field of `POST .../txpower` is `tx_power_level`, as in the create.
+- **QoS profiles** ([QoS](qos.md)) are experimental and untested.
+
+Both may change in any release: do not build client logic on them.
+
 ## 1. Reservation
 
 An AP always runs on a reserved antenna. The reservation decides **which**
