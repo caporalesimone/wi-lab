@@ -14,6 +14,12 @@ SYS_CLASS_NET = Path("/sys/class/net")
 USB_PORT_PATTERN = re.compile(r"^\d+-\d+(\.\d+)*$")
 NAME_CHECK_ATTEMPTS = 5
 NAME_CHECK_INTERVAL = 0.25
+# Scans (calls of discover_radios) an interface may keep a name other than the one
+# udev suggests before it is used as it is (BUG-5): on hosts where a custom udev
+# rule or naming policy keeps another name, the rename never comes.
+RENAME_GRACE_SCANS = 3
+# Consecutive scans each interface has waited for a rename that did not come.
+_rename_waits: dict[str, int] = {}
 
 
 @dataclass(frozen=True)
@@ -105,7 +111,17 @@ def default_route_interfaces() -> set[str]:
     return devices
 
 
-def _ready_radio(phy: str, interface: str) -> DiscoveredRadio | None:
+@dataclass(frozen=True)
+class _Renaming:
+    """An interface that is ready except for its name: udev suggests `suggested`."""
+
+    phy: str
+    suggested: str
+
+
+def _ready_radio(
+    phy: str, interface: str, *, trust_name: bool = False,
+) -> DiscoveredRadio | _Renaming | None:
     path = SYS_CLASS_NET / interface
     try:
         ifindex = (path / "ifindex").read_text().strip()
@@ -118,9 +134,10 @@ def _ready_radio(phy: str, interface: str) -> DiscoveredRadio | None:
             not props.get("USEC_INITIALIZED")
             or props.get("INTERFACE") != interface
             or props.get("IFINDEX") != ifindex
-            or props.get("ID_NET_NAME", interface) != interface
         ):
             return None
+        if not trust_name and props.get("ID_NET_NAME", interface) != interface:
+            return _Renaming(phy, props["ID_NET_NAME"])
         port = detect_usb_port(interface)
         if (path / "ifindex").read_text().strip() == ifindex:
             return DiscoveredRadio(interface, phy, port)
@@ -135,17 +152,44 @@ def discover_radios(*, quiet: bool = False) -> list[DiscoveredRadio]:
     `quiet` logs problems at debug level, for periodic scans.
     """
     for attempt in range(NAME_CHECK_ATTEMPTS):
-        radios, pending = _discover_snapshot(quiet)
-        if not pending or attempt == NAME_CHECK_ATTEMPTS - 1:
-            if pending:
-                logger.debug("Skipping Wi-Fi interfaces not yet initialized by udev: %s", ", ".join(pending))
+        radios, pending, renaming = _discover_snapshot(quiet)
+        if not (pending or renaming) or attempt == NAME_CHECK_ATTEMPTS - 1:
+            radios += _accept_unrenamed(renaming)
+            waiting = pending + [name for name in renaming if name not in {r.interface for r in radios}]
+            if waiting:
+                (logger.debug if quiet else logger.info)(
+                    "Skipping Wi-Fi interfaces not yet initialized by udev: %s", ", ".join(waiting),
+                )
             return radios
         # A rename invalidates the old name; enumerate again rather than retrying it.
         sleep(NAME_CHECK_INTERVAL)
     return []
 
 
-def _discover_snapshot(quiet: bool) -> tuple[list[DiscoveredRadio], list[str]]:
+def _accept_unrenamed(renaming: dict[str, _Renaming]) -> list[DiscoveredRadio]:
+    """Interfaces that kept their name for RENAME_GRACE_SCANS scans, accepted as they are."""
+    for name in [name for name in _rename_waits if name not in renaming]:
+        del _rename_waits[name]
+    accepted: list[DiscoveredRadio] = []
+    for interface, wait in renaming.items():
+        waits = _rename_waits[interface] = _rename_waits.get(interface, 0) + 1
+        if waits <= RENAME_GRACE_SCANS:
+            continue
+        radio = _ready_radio(wait.phy, interface, trust_name=True)
+        if not isinstance(radio, DiscoveredRadio):
+            continue
+        if waits == RENAME_GRACE_SCANS + 1:
+            logger.warning(
+                "Using Wi-Fi interface %s although udev suggests the name %s: it was not renamed "
+                "in %d scans", interface, wait.suggested, RENAME_GRACE_SCANS,
+            )
+        accepted.append(radio)
+    return accepted
+
+
+def _discover_snapshot(
+    quiet: bool,
+) -> tuple[list[DiscoveredRadio], list[str], dict[str, _Renaming]]:
     info = logger.debug if quiet else logger.info
     warning = logger.debug if quiet else logger.warning
     error = logger.debug if quiet else logger.error
@@ -153,10 +197,11 @@ def _discover_snapshot(quiet: bool) -> tuple[list[DiscoveredRadio], list[str]]:
         pairs = _list_wifi_interfaces()
     except CommandError as e:
         error("Wi-Fi discovery failed: %s", e)
-        return [], []
+        return [], [], {}
     ap_capable: dict[str, bool] = {}
     radios: list[DiscoveredRadio] = []
     pending: list[str] = []
+    renaming: dict[str, _Renaming] = {}
     for phy, interface in pairs:
         if phy not in ap_capable:
             try:
@@ -168,8 +213,10 @@ def _discover_snapshot(quiet: bool) -> tuple[list[DiscoveredRadio], list[str]]:
             info("Skipping %s: %s does not support AP mode", interface, phy)
             continue
         radio = _ready_radio(phy, interface)
-        if radio is None:
+        if isinstance(radio, _Renaming):
+            renaming[interface] = radio
+        elif radio is None:
             pending.append(interface)
         else:
             radios.append(radio)
-    return radios, pending
+    return radios, pending, renaming

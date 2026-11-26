@@ -221,7 +221,11 @@ flowchart TD
 ```
 
 An interface still being renamed by udev is skipped, never saved under its
-temporary kernel name; the next scan picks it up with its final name.
+temporary kernel name; the next scan picks it up with its final name. If only
+the name differs from the one udev suggests (`ID_NET_NAME`) for 3 scans in a
+row, the rename is not coming (a custom udev rule or naming policy keeps the
+kernel name): the interface is used as it is, with one warning in the log
+(Fable BUG-5). Interfaces skipped by a startup scan are logged at `INFO`.
 
 **Wi-Fi interfaces used by the host.** `disable: true` excludes a radio on every
 scan, whatever its state. Without it, a Wi-Fi interface the host uses as a

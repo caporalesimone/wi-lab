@@ -348,3 +348,24 @@ def test_added_antenna_gets_a_watchdog(monkeypatch):
         assert watchdog._watched == started | {"wlx-late"}
     finally:
         watchdog.stopping.set()
+
+
+def test_interface_that_udev_never_renames_is_accepted(monkeypatch, tmp_path, real_discovery, caplog):
+    """BUG-5: an ID_NET_NAME that never comes no longer hides the adapter forever."""
+    _sysfs(tmp_path, "wlan0", "usb2/2-2/2-2:1.0", "usb")
+    monkeypatch.setattr(discovery, "SYS_CLASS_NET", tmp_path / "class" / "net")
+    monkeypatch.setattr(discovery, "_rename_waits", {})
+    monkeypatch.setattr(discovery, "execute_iw", lambda args: (
+        "phy#0\n\tInterface wlan0\n" if args == ["dev"] else PHY_INFO["phy0"]
+    ))
+    monkeypatch.setattr(
+        discovery, "execute_command",
+        lambda cmd, **kwargs: _udev_properties(cmd) + "ID_NET_NAME=wlx00c0ca112233\n",
+    )
+    monkeypatch.setattr(discovery, "sleep", lambda _: None)
+
+    scans = [discovery.discover_radios(quiet=True) for _ in range(discovery.RENAME_GRACE_SCANS + 2)]
+    assert scans[: discovery.RENAME_GRACE_SCANS] == [[]] * discovery.RENAME_GRACE_SCANS
+    assert scans[-2:] == [[DiscoveredRadio("wlan0", "phy0", "2-2")]] * 2
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len([w for w in warnings if "wlx00c0ca112233" in w]) == 1

@@ -77,7 +77,7 @@ refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` =
 | 1 | [REV-6](#rev-6) | Media | ✅ | Rendere annullabili gli avvii del watchdog e del probe, e annullare le create in `shutdown_all`. |
 | 1 | [WD-5](#wd-5) | Alta | parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. **Fatto:** stop e cleanup con l'interfaccia sparita (punti 1–2), classificazione come guasto radio. **Manca:** ritirare la voce di un'antenna che ricompare con un nome diverso (punto 3); dipende da ARCH-4. |
 | 1 | [WD-7](#wd-7) | Media | parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. **Fatto:** gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca:** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware. |
-| 1 | [BUG-5](#bug-5) | Media |  | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
+| 1 | [BUG-5](#bug-5) | Media | ✅ | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
 | 1 | [STAB-9](#stab-9) | Bassa |  | Ripristinare le impostazioni unmanaged se NetworkManager si riavvia. |
 | 1 | [STAB-8](#stab-8) | Bassa |  | Limitare il lavoro di arresto entro il timeout di systemd. |
 | 1 | [WD-10](#wd-10) | Bassa |  | Non considerare guasto un access point solo per probe lenti. |
@@ -352,7 +352,7 @@ beacon in quel contatore.
 ---
 
 <a id="bug-5"></a>
-### 1. BUG-5 - La discovery può ignorare un adattatore per sempre
+### 1. BUG-5 - La discovery può ignorare un adattatore per sempre ✅
 
 **Gravità:** Media · **Confidenza:** Probabile · **File:** [wilab/wifi/discovery.py:82-119](wilab/wifi/discovery.py#L82-L119)
 
