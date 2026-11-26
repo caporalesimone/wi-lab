@@ -29,44 +29,6 @@ class TestNetworkManagerInit:
         assert hasattr(mgr, 'dhcp_server')
         assert mgr.dhcp_server is not None
 
-    def test_configure_networkmanager_unmanaged_when_nmcli_available(self, monkeypatch):
-        """Test unmanaged setup triggers nmcli commands when available."""
-        cfg = load_config()
-        mgr = NetworkManager(cfg)
-        calls = []
-
-        def mock_execute_command(cmd, check=True):
-            calls.append((cmd, check))
-            return ""
-
-        monkeypatch.setattr('wilab.wifi.manager.execute_command', mock_execute_command)
-        monkeypatch.setattr('wilab.wifi.manager._nmcli_available', lambda: True)
-
-        mgr._configure_networkmanager_unmanaged('wlan0')
-
-        # PERF-1: availability is looked up once, not by running `nmcli --version` each start.
-        assert not any(c[0] == ['nmcli', '--version'] for c in calls)
-        assert any(c[0] == ['nmcli', 'device', 'set', 'wlan0', 'managed', 'no'] for c in calls)
-        assert any(c[0] == ['nmcli', 'device', 'disconnect', 'wlan0'] for c in calls)
-
-    def test_configure_networkmanager_unmanaged_when_nmcli_missing(self, monkeypatch):
-        """Test unmanaged setup is skipped cleanly when nmcli is unavailable."""
-        cfg = load_config()
-        mgr = NetworkManager(cfg)
-
-        calls = []
-
-        def mock_execute_command(cmd, check=True):
-            calls.append(cmd)
-            raise CommandError("Command not found: nmcli")
-
-        monkeypatch.setattr('wilab.wifi.manager.execute_command', mock_execute_command)
-        monkeypatch.setattr('wilab.wifi.manager._nmcli_available', lambda: False)
-
-        # Should not raise, and runs nothing
-        mgr._configure_networkmanager_unmanaged('wlan0')
-        assert calls == []
-
 
 class TestSubnetResolution:
     """Tests for subnet resolution (explicit vs calculated)."""
@@ -283,7 +245,6 @@ class TestNetworkLifecycle:
         events = []
         now = 0.0
         expires_at = 110.0
-        monkeypatch.setattr(mgr, "_configure_networkmanager_unmanaged", lambda _: None)
         monkeypatch.setattr(hostapd, "HOSTAPD_CONFIG_DIR", str(tmp_path))
 
         def wait(seconds: float) -> None:

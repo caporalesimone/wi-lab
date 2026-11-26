@@ -80,18 +80,18 @@ sudo ip6tables -S INPUT | grep wilab-guard
 
 ### 6. Host Network Manager Exclusion
 
-**What:** NetworkManager releases each Wi-Lab radio (`nmcli device set ... managed no`), and a
-runtime NetworkManager file keeps them unmanaged after a NetworkManager restart; a
-runtime systemd-networkd rule marks the radios unmanaged  
+**What:** A runtime systemd-networkd rule marks the Wi-Lab radios unmanaged  
 **When:** Antennas are added by discovery  
-**Impact:** Only Wi-Lab radios; NetworkManager's configuration is never reloaded (the runtime file is read only when NetworkManager starts)  
-**Reversible:** Yes - runtime state and the `/run` file disappear on reboot
+**Impact:** Only Wi-Lab radios  
+**Reversible:** Yes - the `/run` file disappears on reboot
 
 ```bash
-cat /run/NetworkManager/conf.d/00-wilab-unmanaged.conf
 cat /run/systemd/network/00-wilab-unmanaged.network
-nmcli device status; networkctl list
+networkctl list
 ```
+
+NetworkManager is not supported: Wi-Lab never talks to it, and while it runs it can take a radio
+back and bring an AP down. Wi-Lab requires Ubuntu Server with the host network on systemd-networkd.
 
 Recommended: do not connect the Wi-Lab host via Wi-Fi, and do not use Wi-Fi adapters
 outside Wi-Lab on it. If one is needed, list it with `disable: true`.
@@ -100,7 +100,7 @@ outside Wi-Lab on it. If one is needed, list it with `disable: true`.
 
 **What:** Interface switched to AP mode  
 **When:** Network is created  
-**Impact:** Interface unavailable for other applications (e.g., NetworkManager)  
+**Impact:** Interface unavailable for other applications  
 **Reversible:** Yes - restored to managed mode and left down when network stops.
 On the next start, only hostapd brings up the radio. Wi-Lab verifies that
 hostapd has enabled the expected AP via its private control socket before

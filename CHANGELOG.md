@@ -10,8 +10,8 @@ All notable changes to Wi-Lab are documented in this file.
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 14 |
-| ⚠️ Breaking changes | 0 |
+| 🐛 Bug fixes | 13 |
+| ⚠️ Breaking changes | 1 |
 | 🔧 Maintenance changes | 3 |
 | ✨ New features | 0 |
 | ✅ Test changes | 7 |
@@ -20,6 +20,8 @@ All notable changes to Wi-Lab are documented in this file.
 Counts are the entries of the sections below and `git rev-list --count aca248e..HEAD` (`aca248e` is the last 4.0.0 commit), as of 2026-11-26.
 
 ### ⚠️ Breaking Changes
+
+- NetworkManager is no longer supported: Wi-Lab requires Ubuntu Server with the host network on systemd-networkd and no longer releases radios from NetworkManager (`nmcli` is never run; the runtime file under `/run/NetworkManager/conf.d` is gone). On hosts where NetworkManager runs, check that it manages no interface (`nmcli device status`), then `sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager` (Fable NM-1).
 
 ### ✨ Features
 
@@ -33,7 +35,6 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - A retry of a failed AP start is no longer cut by a 20 s budget left over from the synchronous create: a retry that brings the AP up is kept instead of being reported as `start_failed`, and later phases (DHCP, NAT) are no longer blamed for the expired budget. Only the 3 attempts and the reservation expiry limit the retries (Fable REV-5).
 - Releasing a reservation while the watchdog restarts its AP is immediate, as during a create, instead of waiting for the restart (up to 75 s on DFS); the service shutdown cancels running creates instead of waiting for them, and the recovery probe of a reset antenna no longer uses a DFS channel (60 s radar check under the device lock) (Fable REV-6).
 - An adapter whose name differs from the one udev suggests is no longer ignored forever with nothing in the log: after 3 scans without a rename it is used as it is, with a warning (Fable BUG-5).
-- A NetworkManager restart (for example a package upgrade) no longer takes back the radios of running APs: a runtime file under `/run/NetworkManager/conf.d` keeps them unmanaged, without ever reloading NetworkManager (Fable STAB-9).
 - The service stop no longer risks being killed by systemd half-way through the cleanup (leaving APs and rules behind): antennas are released in parallel within 20 s, running requests get 10 s, and the unit's `TimeoutStopSec` is 60 s. Reinstall the systemd unit to apply the new timeout (Fable STAB-8).
 - On a loaded host, slow answers of `hostapd_cli` no longer restart a healthy AP (disconnecting every client and using one of the 3 restores of the hour): a probe without an answer in 1 s counts half a miss, so the watchdog restarts the AP after 3 real "not ENABLED" answers or 6 probes without an answer (Fable WD-10).
 - The DHCP lease file of a network is deleted when the network ends: the next user of the adapter no longer inherits the previous session's clients (MAC addresses) for up to 12 hours. A watchdog restart of dnsmasq alone keeps the leases, so connected clients keep their addresses (Fable NET-7).
@@ -44,7 +45,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 - The create job reports its outcome as a value instead of HTTP exceptions that no client received, and the synchronous create used only by the unit tests is gone; the create and network OpenAPI examples are module constants, and every error code is in one enum. The API contract is unchanged (Fable REV-16).
 - `validate_interface_wireless`, `validate_interface_ap_mode` and `validate_interface` are gone: the AP-mode check was a substring search that proved nothing, and no start used them any more; discovery already establishes wireless and AP capability (Fable BUG-6).
-- Dependencies: the installer no longer requires or installs `jq` (unused), `network-manager` (the service only releases radios from it when present) and the system `python3-pip` (the venv has its own); it now checks `ip6tables`, `hostapd_cli`, `networkctl` and `usbreset` (package `usbutils`, needed by the USB recovery and so far never installed). `uvicorn[standard]` becomes `uvicorn` with `uvloop` and `httptools`, without the unused `watchfiles`, `websockets` and `python-dotenv`; `pytest-asyncio` leaves the development requirements. Docker stays: it builds the frontend.
+- Dependencies: the installer no longer requires or installs `jq` (unused), `network-manager` (not supported any more, see Breaking Changes) and the system `python3-pip` (the venv has its own); it now checks `ip6tables`, `hostapd_cli`, `networkctl` and `usbreset` (package `usbutils`, needed by the USB recovery and so far never installed). `uvicorn[standard]` becomes `uvicorn` with `uvloop` and `httptools`, without the unused `watchfiles`, `websockets` and `python-dotenv`; `pytest-asyncio` leaves the development requirements. Docker stays: it builds the frontend.
 
 ### ✅ Tests
 
@@ -53,7 +54,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The e2e watchdog tests that block dnsmasq take UDP port 67 after the failure they cause: dnsmasq of the running network already held it, so the three tests failed before testing anything.
 - New unit tests from the 2026-11-26 review: cancel timeout, `404` reasons on every operation, cancel in each start phase and during the pause, tombstones, expiry during a start, stop retry budget, `restarts` counters, reserve by `interface`, cleanup backoff (unit-test-7 … 17).
 - New e2e tests: `start_failed`, stop and release during a start, reserve by `interface`, `404` reasons, `restarts` counters, create during a repair, expiry, captive portal, lost host guard, Internet kept disabled (e2e-test-1 … 12, except 8).
-- Unit tests for retries without a time budget (REV-5) and for cancelling watchdog restores, creates at shutdown and the DFS-free probe (REV-6); an adapter udev never renames (BUG-5); the NetworkManager runtime rule (STAB-9); parallel shutdown within its budget (STAB-8); slow watchdog probes (WD-10); a stale gateway address no longer shifts the subnet after an unclean restart, already fixed by the discovery reset (NET-9); leases deleted at the end of a network and kept by a DHCP repair (NET-7).
+- Unit tests for retries without a time budget (REV-5) and for cancelling watchdog restores, creates at shutdown and the DFS-free probe (REV-6); an adapter udev never renames (BUG-5); parallel shutdown within its budget (STAB-8); slow watchdog probes (WD-10); a stale gateway address no longer shifts the subnet after an unclean restart, already fixed by the discovery reset (NET-9); leases deleted at the end of a network and kept by a DHCP repair (NET-7).
 - Unit tests create networks through the real asynchronous path (`202`, then polling) with the `create_network` helper (REV-16).
 
 ### 🔌 API changes from 4.0.0 (client migration)

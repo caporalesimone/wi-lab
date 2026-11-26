@@ -51,16 +51,12 @@ def _require_not_upstream(interface: str) -> None:
 
 
 def _quiesce(interface: str) -> None:
-    """Take the radio back from host network managers and bring it down.
+    """Bring the radio down before a check.
 
-    A USB re-enumeration creates a new device, which NetworkManager or
-    systemd-networkd may manage and bring up again.
+    A USB re-enumeration creates a new device; systemd-networkd leaves it alone
+    through the rule of ``wilab.network.unmanaged``, but it may come up again.
     """
     _require_not_upstream(interface)
-    try:
-        execute_command(["nmcli", "device", "set", interface, "managed", "no"], check=False)
-    except CommandError:
-        logger.debug("nmcli unavailable while quiescing %s", interface)
     execute_command(["ip", "link", "set", "dev", interface, "down"])
 
 

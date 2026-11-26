@@ -1,9 +1,7 @@
-import functools
 import logging
 import os
 import re
 import secrets
-import shutil
 import threading
 import time
 from _thread import RLock
@@ -20,7 +18,6 @@ from ..models import ClientInfo, NetworkCreateRequest, NetworkStatus, NetworkTxP
 from ..network.captive import CaptivePortal, CaptivePortalError
 from ..network.commands import (
     CommandError,
-    execute_command,
     execute_ip,
     execute_iw,
 )
@@ -86,12 +83,6 @@ class StartJob:
     state: str = "starting"
     error: dict[str, Any] | None = None
     thread: threading.Thread | None = None
-
-
-@functools.lru_cache(maxsize=1)
-def _nmcli_available() -> bool:
-    """Whether nmcli is installed; looked up once instead of running it on every start (PERF-1)."""
-    return shutil.which("nmcli") is not None
 
 
 class NetworkNotActive(ValueError):
@@ -185,21 +176,6 @@ class NetworkManager:
     def channel_manager(self) -> ChannelManager:
         """The service-wide channel and capability cache."""
         return self._channel_manager
-
-    def _configure_networkmanager_unmanaged(self, interface: str) -> None:
-        """Best-effort: ask NetworkManager to stop managing AP interface."""
-        if not _nmcli_available():
-            logger.debug("nmcli not available, skipping NetworkManager unmanaged setup")
-            return
-
-        try:
-            execute_command(["nmcli", "device", "set", interface, "managed", "no"])
-            # Drop any active NM connection on the device to release control quickly.
-            execute_command(["nmcli", "device", "disconnect", interface], check=False)
-            time.sleep(0.2)
-            logger.info(f"Configured {interface} as unmanaged in NetworkManager")
-        except CommandError as e:
-            logger.warning(f"Could not configure NetworkManager unmanaged for {interface}: {e}")
 
     def _get_subnet(self, device_id: str) -> str:
         """Allocate or reuse a non-overlapping /24 before a new AP start."""
@@ -480,9 +456,6 @@ class NetworkManager:
                 radio=not interface_present(cfg_net.interface), stage="interface",
             ) from e
 
-        # Best-effort: prevent NetworkManager/wpa_supplicant from contending AP interface.
-        self._configure_networkmanager_unmanaged(cfg_net.interface)
-        
         # A classified radio failure happened in this request (HAP-3): a later
         # attempt that fails while starting the AP keeps that classification.
         radio_seen = False

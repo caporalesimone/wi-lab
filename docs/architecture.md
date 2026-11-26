@@ -44,7 +44,7 @@ flowchart LR
         DNSMASQ["dnsmasq"]
         IPT["iptables"]
         TC["tc / ifb"]
-        IPIW["ip / iw / nmcli / udevadm"]
+        IPIW["ip / iw / udevadm / networkctl"]
         USB["usbreset / sysfs"]
     end
 
@@ -278,7 +278,7 @@ flowchart TB
     subgraph Children["Child processes"]
         HP["hostapd (foreground child, one per AP)"]
         DQ["dnsmasq (daemon, PID file)"]
-        SC["short commands: ip, iw, hostapd_cli,<br/>iptables, tc, nmcli, udevadm, usbreset"]
+        SC["short commands: ip, iw, hostapd_cli,<br/>iptables, tc, udevadm, usbreset"]
     end
     EL --> Pool
     Pool --> Children
@@ -401,7 +401,6 @@ sequenceDiagram
     NM->>NM: release_device: clear leftovers of a failed start
     NM->>NM: select available subnet, gateway .1
     NM->>OS: validate interface exists
-    NM->>OS: nmcli device set unmanaged (best effort)
     NM->>HA: start(ssid, channel, band, encryption, ...)
     HA->>HA: write hostapd.conf (ssid2 in hex) in a private temp dir with ctrl socket
     HA->>OS: ip link down, iw set type managed, ip addr flush
@@ -742,7 +741,7 @@ sequenceDiagram
         Note over J: job dropped, GET answers 404 reservation_invalidated
     end
     loop Layer 1: up to 3 starts, no time budget (round 1 only)
-        NM->>NM: subnet, interface validation, NetworkManager unmanaged
+        NM->>NM: subnet, interface validation
         NM->>H: ip link down, iw set type managed, hostapd -d hostapd.conf
         H-->>NM: output events, control socket, state ENABLED (timeout 10 s, 75 s on DFS)
         alt radio failure (segfault, beacon or init failure, readiness timeout)
@@ -970,7 +969,7 @@ sequenceDiagram
     RT->>WK: schedule(antenna, port, band, channel)
     loop up to 10 rounds, at least 60 s apart
         WK->>NM: take device lock, release_device
-        WK->>K: release from NetworkManager, bring down
+        WK->>K: bring down
         WK->>K: precheck: managed, DOWN, no default route
         WK->>K: map interface to port: function port:1.0, not a hub,<br/>single function, single netdev
         WK->>K: same MAC as the first round
@@ -987,10 +986,9 @@ sequenceDiagram
 ```
 
 - A failed precheck skips the reset for that round.
-- After a USB reset the adapter is a new device. NetworkManager or
-  systemd-networkd could bring it up, so the worker releases it from
-  NetworkManager and brings it down again before each check. See
-  [section 10](#10-host-state-and-files) for how both managers are kept away.
+- After a USB reset the adapter is a new device that could come up again, so
+  the worker brings it down before each check. See
+  [section 10](#10-host-state-and-files) for how systemd-networkd is kept away.
 - The probe is a server-side check only: it does not prove that a real station
   can associate and get a lease.
 - Other antennas stay fully available during recovery.
@@ -1078,9 +1076,7 @@ sudo systemctl start wi-lab.service
 - Select the device by bus/device number, never by vendor/product ID: identical
   adapters share them. Bus/device numbers change after a reconnection.
 - While Wi-Lab is stopped, its rule in `/run` still keeps systemd-networkd away
-  from the adapter (until reboot). NetworkManager may take a re-enumerated
-  adapter again: before testing the link run
-  `sudo nmcli device set "$IFACE" managed no`. The interface keeps its
+  from the adapter (until reboot). The interface keeps its
   `wlx<MAC>` name; if it comes back with another name, discovery adds it as a
   new antenna.
 - If bringing the link up still times out, the adapter is not recovered: start
@@ -1137,27 +1133,19 @@ device lock for a 60 s radar check.
 | Captive portal chains and sign-ins | iptables `wilab-cp-<interface>` chains; sign-ins in process memory | Removed at teardown and at startup. |
 | Host guard | iptables and ip6tables `wilab-in-<interface>` chains, jumped to from `INPUT` | Removed at teardown and at startup. |
 | Traffic shaping | tc qdiscs, IFB devices | Removed at teardown. |
-| Host network manager exclusion | NetworkManager runtime device state; `/run/NetworkManager/conf.d/00-wilab-unmanaged.conf`; `/run/systemd/network/00-wilab-unmanaged.network` | Applied when antennas are added; cleared on reboot. |
+| Host network manager exclusion | `/run/systemd/network/00-wilab-unmanaged.network` | Applied when antennas are added; cleared on reboot. |
 
-When discovery adds antennas, Wi-Lab keeps the host's network managers away
-from **only those interfaces**. Otherwise they bring Wi-Lab radios up after a
-reboot or a USB reset and start wpa_supplicant or DHCP on them.
+When discovery adds antennas, Wi-Lab keeps systemd-networkd away from **only
+those interfaces**: a rule matching only the radios' names sets `Unmanaged=yes`.
+`networkctl reload` reconfigures only links whose matching configuration
+changed, so other interfaces are not touched.
 
-- **NetworkManager:** `nmcli device set <radio> managed no` for each radio.
-  NetworkManager forgets it when it restarts (a package upgrade), so Wi-Lab also
-  writes `/run/NetworkManager/conf.d/00-wilab-unmanaged.conf`: a device section
-  that matches only the radios' names (`interface-name:=`) with `managed=0`,
-  read when NetworkManager starts (Fable STAB-9). It is a device section, not
-  `keyfile.unmanaged-devices`, because distributions ship
-  `unmanaged-devices=*,except:type:wifi`, whose `except` would win. Wi-Lab never
-  reloads NetworkManager: a reload re-reads the settings of every interface, and
-  a wrong rule once handed the management interface to NetworkManager, which
-  obtained a different DHCP address. A radio that re-enumerates is new to
-  NetworkManager; the recovery worker releases it again, and so does every AP
-  start.
-- **systemd-networkd:** a rule matching only the radios' names sets
-  `Unmanaged=yes`. `networkctl reload` reconfigures only links whose matching
-  configuration changed, so other interfaces are not touched.
+**NetworkManager is not supported.** Wi-Lab requires Ubuntu Server with the
+host network on systemd-networkd, and never talks to NetworkManager. If
+NetworkManager runs, it can take a radio back (after its own restart or a USB
+reset) and bring a running AP down. Disable it after checking that it manages
+no interface (`nmcli device status`):
+`sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager`.
 
 Recommended host setup: the Wi-Lab host should not use Wi-Fi for its own
 connectivity, and every Wi-Fi adapter on it should belong to Wi-Lab. Keep any

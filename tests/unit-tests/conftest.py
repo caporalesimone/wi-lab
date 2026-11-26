@@ -252,7 +252,6 @@ Band 2:
         monkeypatch.setattr(module, "interface_present", lambda iface: True)
     monkeypatch.setattr(manager, "execute_iw", mock_execute_iw)
     monkeypatch.setattr(manager, "execute_ip", mock_execute_ip)
-    monkeypatch.setattr(manager, "execute_command", mock_execute_command)
     monkeypatch.setattr(hostapd, "execute_command", mock_execute_command)
     monkeypatch.setattr(hostapd, "execute_iw", mock_execute_iw)
     def reject_real_hostapd(*args, **kwargs) -> None:

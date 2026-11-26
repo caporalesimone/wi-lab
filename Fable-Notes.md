@@ -2450,11 +2450,11 @@ diverso da uno bloccato nel kernel.
 **Gravità:** Media · **Confidenza:** Confermato (codice, installer e stato della macchina letti il
 2026-11-26) · **Stato:** in parte. Comprende `wpa_supplicant` (5.4 bis).
 
-> **Stato (2026-11-26).** **Fatto:** l'installer non richiede e non installa più `nmcli`
-> (`04-tools.sh`, commit `da5c2a6`); su questa macchina NetworkManager è stato disinstallato e
-> `wpa_supplicant` mascherato a mano. **Manca tutto il resto:** il codice chiama ancora `nmcli` (non
-> lo trova e prosegue: nessun errore, solo codice morto), i due stadi dell'installer, il precheck, la
-> documentazione.
+> **Stato (2026-11-26).** **Fatto:** il commit 1 del 5.9 (nessun `nmcli` in codice, test e
+> diagnostica; tolto il file di STAB-9; docs e CHANGELOG aggiornati, con la riga Breaking) e
+> l'installer che non installa più `nmcli` (commit `da5c2a6`). Su questa macchina NetworkManager è
+> disinstallato e `wpa_supplicant` mascherato. **Manca:** precheck (5.5), stadi 06 e 07 e
+> `uninstall.sh` (5.4, 5.4 bis), README e troubleshooting (5.6).
 
 Questo capitolo basta da solo per fare il lavoro. Le decisioni del paragrafo 5.2 sono già prese: non
 vanno ridiscusse, vanno applicate. L'ordine dei passi è quello del paragrafo 5.9.

@@ -211,9 +211,10 @@ def main() -> int:
     iw_info = run_cmd(["iw", "dev", interface, "info"])
     print_cmd_result(iw_info)
 
-    print_header("NetworkManager Status")
-    nmcli = run_cmd(["nmcli", "-t", "-f", "GENERAL.DEVICE,GENERAL.STATE,GENERAL.CONNECTION", "dev", "show", interface])
-    print_cmd_result(nmcli)
+    print_header("Host Network Managers")
+    # Wi-Lab requires NetworkManager disabled; the radio must be unmanaged in systemd-networkd.
+    print_cmd_result(run_cmd(["systemctl", "is-active", "NetworkManager"]))
+    print_cmd_result(run_cmd(["networkctl", "list", "--no-pager"]))
 
     print_header("Try Bring Interface UP")
     ip_up = run_cmd(["ip", "link", "set", interface, "up"])

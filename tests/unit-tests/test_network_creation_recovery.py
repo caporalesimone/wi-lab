@@ -174,7 +174,7 @@ def test_usb_recovery_refuses_unsafe_target(monkeypatch):
 
 
 class _HostLink:
-    """Fake ip/nmcli/usbreset layer where a host network manager re-raises the link."""
+    """Fake ip/usbreset layer where the re-enumerated link comes up again."""
 
     def __init__(self, radio: str, upstream: bool = False) -> None:
         self.radio, self.up, self.upstream = radio, True, upstream
@@ -212,11 +212,11 @@ def test_usb_recovery_takes_back_a_radio_raised_by_host_managers(monkeypatch, up
 
     resets = [c for c in host.commands if c[0] == "usbreset"]
     if upstream:
-        assert not resets and not any(c[0] == "nmcli" or c[:3] == ["ip", "link", "set"] for c in host.commands)
+        assert not resets and not any(c[:3] == ["ip", "link", "set"] for c in host.commands)
         assert reservations.recovery_snapshot() == {radio: False}
     else:
         assert len(resets) == 1 and not host.up
-        assert ["nmcli", "device", "set", radio, "managed", "no"] in host.commands
+        assert ["ip", "link", "set", "dev", radio, "down"] in host.commands
         probe.assert_called_once()
         assert reservations.recovery_snapshot() == {}
 
