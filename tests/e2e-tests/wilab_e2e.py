@@ -135,27 +135,44 @@ class Server:
         return self.journal(since).count(marker)
 
     @contextmanager
-    def hold_dhcp_port(self, interface: str) -> Iterator[None]:
-        """Hold UDP port 67 on `interface` so dnsmasq cannot start there (a non-radio failure)."""
+    def hold_dhcp_port(self, interface: str, wait: float = 60.0) -> Iterator[None]:
+        """Hold UDP port 67 on `interface` so dnsmasq cannot start there (a non-radio failure).
+
+        dnsmasq of a running network already holds `0.0.0.0%<interface>:67`, so the
+        holder cannot take the port first: cause the failure, then enter this. The
+        holder retries the bind every 20 ms for up to `wait` seconds and gets the
+        port the moment the service stops that dnsmasq, before it starts it again.
+        """
         script = (
-            "import socket, sys\n"
-            "s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
-            "s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, sys.argv[1].encode())\n"
-            "s.bind(('0.0.0.0', 67))\n"
+            "import socket, sys, time\n"
+            "end = time.monotonic() + float(sys.argv[2])\n"
+            "while True:\n"
+            "    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+            "    s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, sys.argv[1].encode())\n"
+            "    try:\n"
+            "        s.bind(('0.0.0.0', 67))\n"
+            "        break\n"
+            "    except OSError as exc:\n"
+            "        s.close()\n"
+            "        if time.monotonic() > end:\n"
+            "            print(exc, flush=True)\n"
+            "            sys.exit(1)\n"
+            "        time.sleep(0.02)\n"
             "print('ready', flush=True)\n"
             "sys.stdin.read()\n"
         )
         password = self.sudo_file.read_bytes().splitlines()[0]
         holder = subprocess.Popen(
-            ["sudo", "-k", "-S", "-p", "", "python3", "-c", script, interface],
+            ["sudo", "-k", "-S", "-p", "", "python3", "-c", script, interface, str(wait)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         )
         assert holder.stdin is not None and holder.stdout is not None
         holder.stdin.write(password + b"\n")
         holder.stdin.flush()
         try:
-            if holder.stdout.readline().strip() != b"ready":
-                raise RuntimeError(f"Could not hold UDP port 67 on {interface}")
+            answer = holder.stdout.readline().strip()
+            if answer != b"ready":
+                raise RuntimeError(f"Could not hold UDP port 67 on {interface}: {answer.decode()}")
             yield
         finally:
             holder.stdin.close()  # the holder exits at end of input

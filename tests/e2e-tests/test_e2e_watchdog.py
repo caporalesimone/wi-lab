@@ -69,8 +69,8 @@ def test_failed_restore_is_reported_and_retried(wilab: WiLab, server: Server) ->
     antenna = _reserve_with_budget(wilab, server, ap=1)
     start = time.time()
     assert wilab.create(antenna).status_code == 200
-    with server.hold_dhcp_port(antenna.interface):
-        _kill_only_hostapd(server)
+    _kill_only_hostapd(server)
+    with server.hold_dhcp_port(antenna.interface):   # taken when the watchdog stops dnsmasq
         # Restore fails on dnsmasq: reported, not silent, and not a quarantine.
         assert wait_for(
             lambda: _network(wilab, antenna).get("runtime_state") == "restore_failed", timeout=45, interval=2,
@@ -90,8 +90,8 @@ def test_delete_stops_the_retries_and_keeps_the_reservation(wilab: WiLab, server
     """WD-2: DELETE .../network gives up a network the watchdog could not restore."""
     antenna = _reserve_with_budget(wilab, server, ap=1)
     assert wilab.create(antenna).status_code == 200
-    with server.hold_dhcp_port(antenna.interface):
-        _kill_only_hostapd(server)
+    _kill_only_hostapd(server)
+    with server.hold_dhcp_port(antenna.interface):   # taken when the watchdog stops dnsmasq
         assert wait_for(
             lambda: _network(wilab, antenna).get("runtime_state") == "restore_failed", timeout=45, interval=2,
         )
@@ -139,8 +139,8 @@ def test_failed_dhcp_restart_restores_the_whole_network(wilab: WiLab, server: Se
     antenna = _reserve_with_budget(wilab, server, ap=1, dhcp=1)
     start = time.time()
     assert wilab.create(antenna).status_code == 200
-    with server.hold_dhcp_port(antenna.interface):
-        _kill_only_dnsmasq(server, antenna)
+    _kill_only_dnsmasq(server, antenna)
+    with server.hold_dhcp_port(antenna.interface):   # taken before the watchdog restarts dnsmasq
         # DHCP restart fails -> network restore -> fails on DHCP too -> restore_failed (WD-2).
         assert wait_for(
             lambda: _network(wilab, antenna).get("runtime_state") == "restore_failed", timeout=45, interval=2,
