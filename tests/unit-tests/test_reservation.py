@@ -111,7 +111,7 @@ class TestReservationManagerCreate:
         r.expires_at = time.time() + 0.5  # about to expire, still the owner
         with pytest.raises(NoDeviceAvailableError) as exc:
             mgr.create(3600)
-        assert exc.value.next_available_in == 0
+        assert exc.value.next_available_in == 1   # 0.5 s rounded up like /status (REV-11)
         # A release that is already late (failed cleanup) is clamped, not negative.
         assert NoDeviceAvailableError(time.time() - 5).next_available_in == 0
 

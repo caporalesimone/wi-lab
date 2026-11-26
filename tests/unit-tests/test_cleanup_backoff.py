@@ -204,10 +204,6 @@ def test_cleanup_backoff_through_the_release_and_the_expiry_loop(stuck_release, 
     assert free.status_code == 200 and free.json()["interface"] == device
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "next_available_in of the reserve is int() of a wall-clock difference (truncated: 14 for a 15 s "
-    "wait), while /status rounds the same wait up with ceil() (15)"
-))
 def test_reserve_next_available_in_equals_the_cleanup_wait(stuck_release, monkeypatch):
     """unit-test-17: the 409 of the reserve gives the same wait as /status, not one second less."""
     client, headers, manager, device, _clock, _attempts, _run_expiry_loop = stuck_release

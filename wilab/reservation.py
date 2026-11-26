@@ -6,6 +6,7 @@ for a specified duration.
 """
 
 import logging
+import math
 import secrets
 import threading
 import time
@@ -38,7 +39,8 @@ class NoDeviceAvailableError(Exception):
     def next_available_in(self) -> int | None:
         if self.next_available_at is None:
             return None
-        return max(0, int(self.next_available_at - time.time()))
+        # Rounded up like /status (REV-11 point 5): never earlier than the real wait.
+        return max(0, math.ceil(self.next_available_at - time.time()))
 
 
 class ReservationCleanupError(Exception):
