@@ -1,4 +1,5 @@
-"""Firewall on the real service: lock handling (NET-1) and rules behind a 200 (NET-2, NET-4)."""
+"""Firewall on the real service: lock handling (NET-1), rules behind a 200 (NET-2, NET-4)
+and the host guard (SEC-3), also when it is lost (e2e-test-11)."""
 
 import threading
 import time
@@ -7,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 
 import pytest
-from wilab_e2e import Server, WiLab, detail_code
+from wilab_e2e import Antenna, Server, WiLab, detail_code, reserve_with_budget, wait_for
 
 RADIOS = [("2.4ghz", 6), ("5ghz", 36)]
 
@@ -124,3 +125,47 @@ def test_host_is_guarded_from_ap_clients(wilab: WiLab, server: Server, captive_p
 
     assert wilab.delete_network(antenna) == 200
     assert chain not in server.iptables_rules() and chain not in server.ip6tables_rules()
+
+
+def _network_up(wilab: WiLab, antenna: Antenna) -> bool:
+    response = wilab.network(antenna)
+    body = response.json()
+    return response.status_code == 200 and body.get("active") is True and not body.get("runtime_state")
+
+
+def _ap_restarts(wilab: WiLab, antenna: Antenna) -> int:
+    response = wilab.network(antenna)
+    return response.json()["restarts"]["ap"] if response.status_code == 200 else 0
+
+
+def test_lost_host_guard_restores_the_network(wilab: WiLab, server: Server) -> None:
+    """e2e-test-11: the guard jump and chain removed by hand, IPv4 and IPv6.
+
+    The watchdog's network check (every 30 s) finds the guard missing and
+    restores the whole network (`restarts.ap` grows, `last_reason:
+    network_check_failed`), with no quarantine; the guard is back and the stop
+    answers `200`. Uses one AP restore of the antenna's hourly budget.
+    """
+    antenna = reserve_with_budget(wilab, server, ap=1)
+    start = time.time()
+    assert wilab.create(antenna).status_code == 200
+    chain = f"wilab-in-{antenna.interface}"
+    server.remove_host_guard(antenna.interface)
+    assert chain not in server.iptables_rules() and chain not in server.ip6tables_rules()
+
+    assert wait_for(lambda: _ap_restarts(wilab, antenna) >= 1, timeout=50, interval=2)
+    assert wait_for(lambda: _network_up(wilab, antenna), timeout=30, interval=2)
+    network = wilab.network(antenna).json()
+    assert network["restarts"]["ap"] == 1, network["restarts"]
+    assert network["restarts"]["last_reason"] == "network_check_failed", network["restarts"]
+    for rules in (server.iptables_rules(), server.ip6tables_rules()):
+        first = _input_rules(rules)[0]
+        assert f"-i {antenna.interface}" in first and first.endswith(f"-j {chain}"), first
+    assert server.chain_rules(chain) and server.chain_rules(chain, ipv6=True)
+    assert not wilab.device(antenna.interface).get("recovery_state")
+    journal = server.journal(start)
+    assert "host guard" in journal
+    assert "quarantin" not in journal.lower()
+
+    assert wilab.delete_network(antenna) == 200
+    assert server.wilab_rules(antenna.interface) == []

@@ -1,8 +1,8 @@
 """API-only checks from the tester's plan (Fable-Notes.md, 5.4 "Test per il tester").
 
-These tests use only the public API, so they behave the same from the
-Wi-Lab machine or from an external one. A few also read `iw` to compare
-the API with the radio. Tests for IDs that are not fixed yet are marked
+These tests use mostly the public API. A few also read `iw` to compare
+the API with the radio, or the host (`hostapd_cli`, `iptables -S`, `ip`)
+to check what a network left behind; those need the Wi-Lab machine. Tests for IDs that are not fixed yet are marked
 `xfail` (not strict): they report XPASS once the fix lands, and the mark is
 then removed.
 """
@@ -11,10 +11,11 @@ import http.client
 import os
 import threading
 import time
+import uuid
 from urllib.parse import urlsplit
 
 import pytest
-from wilab_e2e import Server, WiLab, detail_code, network_body
+from wilab_e2e import Server, WiLab, detail_code, network_body, parse_utc
 
 
 def pending(fable_id: str):
@@ -88,8 +89,13 @@ def test_create_is_asynchronous_and_idempotent(wilab: WiLab) -> None:
     assert again.status_code == 200 and again.json()["active"] is True
 
 
-def test_release_during_a_start_answers_at_once(wilab: WiLab) -> None:
-    """A Suite Teardown never waits for a long start: the release cancels it."""
+def test_release_during_a_start_answers_at_once(wilab: WiLab, server: Server) -> None:
+    """A Suite Teardown never waits for a long start: the release cancels it.
+
+    e2e-test-3: the cancelled start leaves nothing (hostapd, dnsmasq, Wi-Lab
+    rules, IPv4 address), so a reserve and a create on the same antenna work
+    at once. Reads the host with `pgrep`, `ip` and `iptables -S` (root).
+    """
     antenna = wilab.reserve()
     rid = antenna.reservation_id
     body = network_body(ssid="wilab-cancel", channel=6, band="2.4ghz", encryption="open", tx_power_level=2)
@@ -100,6 +106,70 @@ def test_release_during_a_start_answers_at_once(wilab: WiLab) -> None:
     wilab.reserved.remove(rid)
     gone = wilab.http.get(f"/reservations/{rid}/network")
     assert (gone.status_code, gone.json()["detail"]["reason"]) == (404, "reservation_released")
+
+    assert server.pids("hostapd") == []   # the fixture keeps every other antenna idle
+    assert server.dnsmasq_pids(antenna.interface) == []
+    assert server.wilab_rules(antenna.interface) == []
+    assert server.ipv4_addresses(antenna.interface) == []
+    again = wilab.reserve(antenna.interface)
+    response = wilab.create(again)
+    assert response.status_code == 200, response.text
+
+
+# --------------------------------------------------------------------------- reservations
+
+def test_reserve_a_given_antenna(wilab: WiLab) -> None:
+    """e2e-test-4: reserve with `interface` gets that antenna, or says why not."""
+    interfaces = wilab.interfaces()
+    wanted = interfaces[-1]   # not the one a reserve without `interface` would pick
+    first = wilab.http.post("/reservations", json={"duration_seconds": 3600, "interface": wanted})
+    assert first.status_code == 200, first.text
+    reservation = first.json()
+    wilab.reserved.append(reservation["reservation_id"])
+    assert reservation["interface"] == wanted
+
+    taken = wilab.http.post("/reservations", json={"duration_seconds": 3600, "interface": wanted})
+    assert (taken.status_code, detail_code(taken)) == (409, 1005), taken.text
+    detail = taken.json()["detail"]
+    assert detail["next_available_at"] == reservation["expires_at"], (detail, reservation)
+    assert 0 < detail["next_available_in"] <= 3600
+
+    for other in interfaces:
+        if other != wanted:
+            assert wilab.reserve(other).interface == other
+
+    unknown = wilab.http.post("/reservations", json={"duration_seconds": 3600, "interface": "wilab-none0"})
+    assert unknown.status_code == 422, unknown.text
+    assert unknown.json()["detail"]["message"].startswith("interface: "), unknown.text
+
+
+def test_released_and_unknown_ids_answer_404_with_the_reason(wilab: WiLab) -> None:
+    """e2e-test-5: a released ID and an ID that never existed, on every call with an ID."""
+    antenna = wilab.reserve()
+    assert wilab.http.delete(f"/reservations/{antenna.reservation_id}").status_code == 200
+    wilab.reserved.remove(antenna.reservation_id)
+    answers = wilab.gone_answers(antenna.reservation_id)
+    assert set(answers.values()) == {(404, "reservation_released")}, answers
+
+    answers = wilab.gone_answers(str(uuid.uuid4()))
+    assert set(answers.values()) == {(404, "reservation_not_found")}, answers
+
+
+def test_expired_id_answers_404_with_the_reason(wilab: WiLab) -> None:
+    """e2e-test-5: a reservation of `min_seconds` (60 s by default) left to expire. Takes about 65 s.
+
+    The `reservation_invalidated` case is checked in test_e2e_device_loss.py,
+    where an antenna is quarantined.
+    """
+    duration = wilab.status()["reservation_policy"]["min_seconds"]
+    if duration > 90:
+        pytest.skip(f"min_timeout is {duration} s; this test needs a reservation of 90 s at most")
+    antenna = wilab.reserve(duration=duration)
+    expires_at = parse_utc(wilab.http.get(f"/reservations/{antenna.reservation_id}").json()["expires_at"])
+    time.sleep(max(0.0, expires_at - time.time()) + 1)
+    wilab.reserved.remove(antenna.reservation_id)
+    answers = wilab.gone_answers(antenna.reservation_id)
+    assert set(answers.values()) == {(404, "reservation_expired")}, answers
 
 
 def test_actions_without_a_network_share_one_status_code(wilab: WiLab) -> None:

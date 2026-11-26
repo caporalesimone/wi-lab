@@ -1,5 +1,6 @@
-"""Watchdog on the real service: AP restores after hostapd dies (WD-1, WD-2) and
-DHCP repair after dnsmasq dies (WD-3).
+"""Watchdog on the real service: AP restores after hostapd dies (WD-1, WD-2),
+DHCP repair after dnsmasq dies (WD-3), the `restarts` counters of
+GET .../network (e2e-test-6) and a create sent during a repair (e2e-test-7).
 
 The watchdog budgets (3 AP restores and 3 DHCP restarts per hour per antenna)
 live in the running service. Each test reserves an antenna that still has the
@@ -8,26 +9,15 @@ budget it needs, read from the journal, and skips when none has.
 
 import time
 
-import pytest
-from wilab_e2e import Antenna, Server, WiLab, wait_for
-
-BUDGET = 3
-
-
-def _reserve_with_budget(wilab: WiLab, server: Server, ap: int = 0, dhcp: int = 0) -> Antenna:
-    for entry in wilab.status()["antennas"]:
-        interface = entry["interface"]
-        if entry.get("recovery_state"):
-            continue
-        if (
-            server.budget_used(interface, "AP") + ap <= BUDGET
-            and server.budget_used(interface, "DHCP") + dhcp <= BUDGET
-        ):
-            return wilab.reserve(interface=interface)
-    pytest.skip(
-        f"no antenna has {ap} AP restores and {dhcp} DHCP restarts left this hour; "
-        "wait or restart the service",
-    )
+from wilab_e2e import (
+    Antenna,
+    Server,
+    WiLab,
+    detail_code,
+    parse_utc,
+    reserve_with_budget,
+    wait_for,
+)
 
 
 def _kill_only_hostapd(server: Server) -> None:
@@ -45,7 +35,7 @@ def _restored(wilab: WiLab, antenna: Antenna) -> bool:
 
 def test_ap_is_restored_after_each_hostapd_crash(wilab: WiLab, server: Server) -> None:
     """WD-1: a second hostapd crash is restored too, with no quarantine."""
-    antenna = _reserve_with_budget(wilab, server, ap=2)
+    antenna = reserve_with_budget(wilab, server, ap=2)
     start = time.time()
     assert wilab.create(antenna).status_code == 200
     for crash in range(2):
@@ -66,7 +56,7 @@ def _network(wilab: WiLab, antenna: Antenna) -> dict:
 
 def test_failed_restore_is_reported_and_retried(wilab: WiLab, server: Server) -> None:
     """WD-2: a restore that fails for a non-radio reason shows restore_failed and is retried."""
-    antenna = _reserve_with_budget(wilab, server, ap=1)
+    antenna = reserve_with_budget(wilab, server, ap=1)
     start = time.time()
     assert wilab.create(antenna).status_code == 200
     _kill_only_hostapd(server)
@@ -88,7 +78,7 @@ def test_failed_restore_is_reported_and_retried(wilab: WiLab, server: Server) ->
 
 def test_delete_stops_the_retries_and_keeps_the_reservation(wilab: WiLab, server: Server) -> None:
     """WD-2: DELETE .../network gives up a network the watchdog could not restore."""
-    antenna = _reserve_with_budget(wilab, server, ap=1)
+    antenna = reserve_with_budget(wilab, server, ap=1)
     assert wilab.create(antenna).status_code == 200
     _kill_only_hostapd(server)
     with server.hold_dhcp_port(antenna.interface):   # taken when the watchdog stops dnsmasq
@@ -117,7 +107,7 @@ def _dhcp_back(server: Server, antenna: Antenna, old_pid: int) -> bool:
 
 def test_dnsmasq_is_restarted_after_each_crash(wilab: WiLab, server: Server) -> None:
     """WD-3: a second dnsmasq crash is repaired too, with the AP kept up."""
-    antenna = _reserve_with_budget(wilab, server, dhcp=2)
+    antenna = reserve_with_budget(wilab, server, dhcp=2)
     start = time.time()
     assert wilab.create(antenna).status_code == 200
     for crash in range(2):
@@ -136,7 +126,7 @@ def test_dnsmasq_is_restarted_after_each_crash(wilab: WiLab, server: Server) -> 
 
 def test_failed_dhcp_restart_restores_the_whole_network(wilab: WiLab, server: Server) -> None:
     """WD-3: when dnsmasq cannot restart alone, the watchdog restores the network."""
-    antenna = _reserve_with_budget(wilab, server, ap=1, dhcp=1)
+    antenna = reserve_with_budget(wilab, server, ap=1, dhcp=1)
     start = time.time()
     assert wilab.create(antenna).status_code == 200
     _kill_only_dnsmasq(server, antenna)
@@ -150,3 +140,99 @@ def test_failed_dhcp_restart_restores_the_whole_network(wilab: WiLab, server: Se
     journal = server.journal(start)
     assert "cannot be repaired alone; restarting the network" in journal
     assert "quarantin" not in journal.lower()
+
+
+# --------------------------------------------------------------------------- restarts and creates during a repair
+
+_NO_RESTARTS = {"ap": 0, "dhcp": 0, "last_at": None, "last_reason": None}
+
+
+def _restarts(wilab: WiLab, antenna: Antenna) -> dict | None:
+    """`restarts` of GET .../network; None while the device is busy (503 / 1006)."""
+    response = wilab.network(antenna)
+    return response.json()["restarts"] if response.status_code == 200 else None
+
+
+def _within(stamp: str | None, start: float) -> bool:
+    return stamp is not None and start - 1 <= parse_utc(stamp) <= time.time() + 1
+
+
+def test_restarts_count_each_watchdog_repair(wilab: WiLab, server: Server) -> None:
+    """e2e-test-6: `restarts` counts one AP restore and one DHCP restart, per reservation.
+
+    The counters belong to the reservation: a stop and a new create keep them,
+    a new reservation starts from zero.
+    """
+    antenna = reserve_with_budget(wilab, server, ap=1, dhcp=1)
+    start = time.time()
+    assert wilab.create(antenna).status_code == 200
+    assert _restarts(wilab, antenna) == _NO_RESTARTS
+
+    _kill_only_hostapd(server)
+    assert wait_for(lambda: (_restarts(wilab, antenna) or {}).get("ap") == 1, timeout=45, interval=2)
+    assert wait_for(lambda: _restored(wilab, antenna), timeout=30, interval=2)
+    after_ap = _restarts(wilab, antenna)
+    assert after_ap is not None
+    assert (after_ap["ap"], after_ap["dhcp"], after_ap["last_reason"]) == (1, 0, "hostapd_not_running"), after_ap
+    assert _within(after_ap["last_at"], start), after_ap
+
+    dhcp_start = time.time()
+    old = _kill_only_dnsmasq(server, antenna)
+    assert wait_for(lambda: _dhcp_back(server, antenna, old), timeout=30, interval=1)
+    assert wait_for(lambda: _restored(wilab, antenna), timeout=15, interval=1)
+    after_dhcp = _restarts(wilab, antenna)
+    assert after_dhcp is not None
+    assert (after_dhcp["ap"], after_dhcp["dhcp"], after_dhcp["last_reason"]) == (1, 1, "dnsmasq_not_running"), (
+        after_dhcp
+    )
+    assert _within(after_dhcp["last_at"], dhcp_start), after_dhcp
+
+    # A stop and a new create on the same reservation keep the counters.
+    assert wilab.delete_network(antenna) == 200
+    assert wilab.create(antenna).status_code == 200
+    assert _restarts(wilab, antenna) == after_dhcp
+
+    # A new reservation on the same antenna starts from zero.
+    wilab.release(antenna)
+    fresh = wilab.reserve(antenna.interface)
+    assert _restarts(wilab, fresh) == _NO_RESTARTS
+
+
+def test_create_during_a_repair_answers_1009_and_never_starts_a_second_ap(
+    wilab: WiLab, server: Server,
+) -> None:
+    """e2e-test-7: a create with other settings sent while the watchdog restores the AP.
+
+    Every answer is a refusal (`409 / 1009` during the repair, `409 / 1008`
+    before the watchdog notices or after it is done, `503 / 1006` while the
+    device is held): never a `202`, never a second hostapd. Once repaired, the
+    network's own body answers `200` at once.
+    """
+    antenna = reserve_with_budget(wilab, server, ap=1)
+    assert wilab.create(antenna).status_code == 200
+    _kill_only_hostapd(server)
+
+    answers: list[tuple[int, int | None]] = []
+    states: list[str | None] = []
+    most_hostapd = 0
+    repaired = False
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        response = wilab.post_network(antenna, ssid="wilab-e2e-other")
+        answers.append((response.status_code, detail_code(response)))
+        most_hostapd = max(most_hostapd, len(server.pids("hostapd")))
+        network = wilab.network(antenna)
+        if network.status_code == 200:
+            states.append(network.json().get("runtime_state"))
+            seen_repair = (409, 1009) in answers or "restoring_ap" in states
+            if seen_repair and network.json().get("active") is True and states[-1] is None:
+                repaired = True
+                break
+        time.sleep(0.2)
+
+    assert repaired, f"no repair seen or not repaired in 60 s: answers {set(answers)}, states {set(states)}"
+    assert set(answers) <= {(409, 1009), (409, 1008), (503, 1006)}, answers
+    assert most_hostapd <= 1
+    assert len(server.pids("hostapd")) == 1
+    assert server.iw_info(antenna.interface).get("ssid") == "wilab-e2e"
+    assert wilab.post_network(antenna).status_code == 200   # the network's own body

@@ -1,4 +1,5 @@
-"""WD-7: the watchdog repairs what a running network lost beyond its processes.
+"""WD-7: the watchdog repairs what a running network lost beyond its processes,
+and leaves alone what the client turned off (e2e-test-12).
 
 Only Wi-Lab's own state is touched: the gateway address on the AP interface and
 the network's own MASQUERADE rule. The host interface and other rules are never
@@ -53,3 +54,34 @@ def test_lost_gateway_and_nat_rule_are_repaired_in_place(wilab: WiLab, server: S
     assert "repaired in place" in journal
     assert "gateway address" in journal and "NAT POSTROUTING rule" in journal
     assert "quarantin" not in journal.lower()
+
+
+def test_disabled_internet_stays_disabled(wilab: WiLab, server: Server) -> None:
+    """e2e-test-12: the network check never gives back the Internet a client disabled.
+
+    After `internet/disable` the MASQUERADE rule is gone and the
+    `wilab-block-<if>` rules are in place; 40 s later (a check runs every
+    30 s) nothing has changed and nothing was "repaired in place".
+    """
+    antenna = wilab.reserve()
+    rid = antenna.reservation_id
+    assert wilab.create(antenna, internet_enabled=True).status_code == 200
+    subnet = wilab.http.get(f"/reservations/{rid}/network").json()["ip"]["subnet"]
+    assert _masquerade_rule(server, antenna.interface) is not None
+    start = time.time()
+    assert wilab.http.post(f"/reservations/{rid}/internet/disable").status_code == 200
+
+    def disabled() -> None:
+        nat = server.iptables_rules("nat")
+        assert not [line for line in nat.splitlines() if subnet in line and "MASQUERADE" in line], nat
+        block = [line for line in server.iptables_rules().splitlines() if f"wilab-block-{antenna.interface}" in line]
+        assert block, "no wilab-block rule"
+        network = wilab.http.get(f"/reservations/{rid}/network").json()
+        assert network["internet"]["enabled"] is False, network
+        assert network["active"] is True and network["runtime_state"] is None, network
+
+    disabled()
+    time.sleep(40)
+    disabled()
+    assert wilab.http.get(f"/reservations/{rid}/network").json()["restarts"]["ap"] == 0
+    assert "repaired in place" not in server.journal(start)

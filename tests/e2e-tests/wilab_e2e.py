@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import re
+import shlex
 import subprocess
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 
 SERVICE = "wi-lab"
 
@@ -45,6 +48,43 @@ class Server:
 
     def ip6tables_rules(self, table: str = "filter") -> str:
         return self.sudo_output(["ip6tables", "-w", "5", "-t", table, "-S"])
+
+    def wilab_rules(self, interface: str) -> list[str]:
+        """Every iptables/ip6tables rule or chain Wi-Lab names after `interface`.
+
+        Matches `wilab-in-`, `wilab-guard-`, `wilab-nat-`, `wilab-forward-`,
+        `wilab-block-`, `wilab-cp-` and `wilab-captive-` followed by the interface,
+        in the IPv4 filter and nat tables and the IPv6 filter table.
+        """
+        owned = re.compile(r"wilab-[a-z]+-" + re.escape(interface) + r"(?![\w-])")
+        tables = (
+            self.iptables_rules("filter"), self.iptables_rules("nat"), self.ip6tables_rules("filter"),
+        )
+        return [line for rules in tables for line in rules.splitlines() if owned.search(line)]
+
+    def chain_rules(self, chain: str, table: str = "filter", ipv6: bool = False) -> list[str]:
+        """The `-A <chain> ...` lines of one chain (empty if the chain does not exist)."""
+        rules = self.ip6tables_rules(table) if ipv6 else self.iptables_rules(table)
+        return [line for line in rules.splitlines() if line.startswith(f"-A {chain} ")]
+
+    def remove_host_guard(self, interface: str) -> None:
+        """Delete the `wilab-in-<interface>` jump from INPUT and the chain itself, IPv4 and IPv6."""
+        chain = f"wilab-in-{interface}"
+        for command, rules in (
+            ("iptables", self.iptables_rules()), ("ip6tables", self.ip6tables_rules()),
+        ):
+            for line in rules.splitlines():
+                tokens = shlex.split(line)
+                if tokens[:2] == ["-A", "INPUT"] and tokens[-2:] == ["-j", chain]:
+                    self.sudo([command, "-w", "5", "-D", *tokens[1:]])
+            self.sudo([command, "-w", "5", "-F", chain])
+            self.sudo([command, "-w", "5", "-X", chain])
+
+    @staticmethod
+    def listening_tcp() -> list[str]:
+        """Local addresses (`ip:port`) of listening TCP sockets, from `ss`."""
+        out = subprocess.run(["ss", "-Hltn"], capture_output=True, text=True, check=True).stdout
+        return [line.split()[3] for line in out.splitlines() if len(line.split()) >= 4]
 
     @staticmethod
     def interface_present(interface: str) -> bool:
@@ -342,25 +382,35 @@ class WiLab:
         if antenna.reservation_id in self.reserved:
             self.reserved.remove(antenna.reservation_id)
 
-    def create(self, antenna: Antenna, **overrides: Any) -> httpx.Response:
+    def post_network(self, antenna: Antenna, **overrides: Any) -> httpx.Response:
+        """The create `POST` alone, with the default body plus `overrides` (None drops a field)."""
         body: dict[str, Any] = {
             "ssid": "wilab-e2e", "channel": 6, "band": "2.4ghz", "encryption": "wpa2",
             "password": "e2e-pass-123", "tx_power_level": 2,
         }
         body.update(overrides)
         body = {key: value for key, value in body.items() if value is not None}
-        url = f"/reservations/{antenna.reservation_id}/network"
-        response = self.http.post(url, json=network_body(**body))
+        return self.http.post(f"/reservations/{antenna.reservation_id}/network", json=network_body(**body))
+
+    def network(self, antenna: Antenna) -> httpx.Response:
+        return self.http.get(f"/reservations/{antenna.reservation_id}/network")
+
+    def wait_start(self, antenna: Antenna, timeout: float = 360) -> httpx.Response:
+        """Poll GET .../network until `runtime_state` is no longer `starting`; the raw answer."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            time.sleep(1)
+            response = self.network(antenna)
+            if response.status_code != 200 or response.json().get("runtime_state") != "starting":
+                return response
+        raise TimeoutError(f"{antenna.interface} still starting after {timeout:.0f} s")
+
+    def create(self, antenna: Antenna, **overrides: Any) -> httpx.Response:
+        response = self.post_network(antenna, **overrides)
         if response.status_code != 202:
             return response  # 200 (already running), or an error answered at once
         # Asynchronous create: poll until the start ends (the network, start_failed or 404).
-        deadline = time.monotonic() + 360
-        while time.monotonic() < deadline:
-            time.sleep(1)
-            response = self.http.get(url)
-            if response.status_code != 200 or response.json().get("runtime_state") != "starting":
-                return self._start_outcome(response)
-        raise TimeoutError(f"{url} still starting after 360 s")
+        return self._start_outcome(self.wait_start(antenna))
 
     @staticmethod
     def _start_outcome(response: httpx.Response) -> httpx.Response:
@@ -382,12 +432,72 @@ class WiLab:
     def delete_network(self, antenna: Antenna) -> int:
         return self.http.delete(f"/reservations/{antenna.reservation_id}/network").status_code
 
+    def gone_answers(self, reservation_id: str) -> dict[str, tuple[int, str | None]]:
+        """Status and `detail.reason` of every call that takes a reservation ID.
+
+        Meant for an ID that is gone: each call then answers 404 before looking
+        at the body, so the bodies only need to be valid.
+        """
+        base = f"/reservations/{reservation_id}"
+        create = network_body(ssid="wilab-e2e-gone", channel=6, band="2.4ghz", encryption="open", tx_power_level=2)
+        calls = {
+            "GET": lambda: self.http.get(base),
+            "GET network": lambda: self.http.get(f"{base}/network"),
+            "POST network": lambda: self.http.post(f"{base}/network", json=create),
+            "DELETE network": lambda: self.http.delete(f"{base}/network"),
+            "GET txpower": lambda: self.http.get(f"{base}/txpower"),
+            "POST txpower": lambda: self.http.post(f"{base}/txpower", json={"level": 2}),
+            "POST internet/enable": lambda: self.http.post(f"{base}/internet/enable"),
+            "DELETE": lambda: self.http.delete(base),
+        }
+        answers = {}
+        for name, call in calls.items():
+            response = call()
+            answers[name] = (response.status_code, gone_reason(response))
+        return answers
+
     def close(self) -> None:
         for rid in list(self.reserved):
             self.http.delete(f"/reservations/{rid}/network")
             self.http.delete(f"/reservations/{rid}")
         self.reserved.clear()
         self.http.close()
+
+
+def gone_reason(response: httpx.Response) -> str | None:
+    """`detail.reason` of a 404 on a call with a reservation ID; None for any other answer."""
+    if response.status_code != 404:
+        return None
+    detail = response.json().get("detail")
+    return detail.get("reason") if isinstance(detail, dict) else None
+
+
+def parse_utc(stamp: str) -> float:
+    """Unix seconds of an RFC 3339 UTC timestamp as the API writes it (Z suffix)."""
+    return datetime.fromisoformat(stamp).timestamp()
+
+
+WATCHDOG_BUDGET = 3  # AP restores, and DHCP restarts, per hour per antenna
+
+
+def reserve_with_budget(wilab: WiLab, server: Server, ap: int = 0, dhcp: int = 0) -> Antenna:
+    """Reserve an antenna with `ap` AP restores and `dhcp` DHCP restarts left this hour; else skip.
+
+    The watchdog budgets live in the running service and are read from the journal.
+    """
+    for entry in wilab.status()["antennas"]:
+        interface = entry["interface"]
+        if entry.get("recovery_state"):
+            continue
+        if (
+            server.budget_used(interface, "AP") + ap <= WATCHDOG_BUDGET
+            and server.budget_used(interface, "DHCP") + dhcp <= WATCHDOG_BUDGET
+        ):
+            return wilab.reserve(interface=interface)
+    pytest.skip(
+        f"no antenna has {ap} AP restores and {dhcp} DHCP restarts left this hour; "
+        "wait or restart the service",
+    )
 
 
 def detail_code(response: httpx.Response) -> int | None:

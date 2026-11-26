@@ -82,6 +82,9 @@ def _quarantine_while_gone(wilab: WiLab, server: Server, interface: str) -> str:
     assert response.json()["detail"]["reason"] == "reservation_invalidated"
     assert time.monotonic() - started >= 15  # the server took both pauses itself
     wilab.reserved.remove(antenna.reservation_id)  # invalidated by the quarantine
+    # e2e-test-5: the same reason on every call with the ID.
+    answers = wilab.gone_answers(antenna.reservation_id)
+    assert set(answers.values()) == {(404, "reservation_invalidated")}, answers
     status = wilab.status()
     assert wilab.device(interface)["recovery_state"] == "recovering"
     assert status["status"] == "degraded"
