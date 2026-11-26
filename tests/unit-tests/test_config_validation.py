@@ -3,6 +3,7 @@ import sys
 
 import pytest
 import yaml
+from conftest import REQUIRED_SETTINGS, REQUIRED_YAML
 
 from wilab.config_validation import validate_config_file
 
@@ -18,7 +19,7 @@ from wilab.config_validation import validate_config_file
     ],
 )
 def test_optional_config_validation_reports_errors_without_values(tmp_path, changes, message):
-    config = {"auth_token": "private-token", "dhcp_base_network": "192.168.120.0/24", "dns_server": "8.8.8.8", **changes}
+    config = {"auth_token": "private-token", "dhcp_base_network": "192.168.120.0/24", "dns_server": "8.8.8.8", **REQUIRED_SETTINGS, **changes}
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(config))
     errors, warnings = validate_config_file(str(path))
@@ -31,14 +32,14 @@ def test_config_validation_warns_about_ignored_fields_and_example_token(tmp_path
     path.write_text(
         "auth_token: secret-token-12345\n"
         "dhcp_base_network: 192.168.120.0/24\n"
-        "dns_server: 8.8.8.8\n"
+        "dns_server: 8.8.8.8\n" + REQUIRED_YAML + (
         "antennas:\n"
         "  - interface: wlan0\n"
         "    disable: true\n"
         "    show_dfs_channels: false\n"
         "    capabilities: [5ghz]\n"
         "    usb_recovery_port: legacy\n"
-    )
+    ))
     errors, warnings = validate_config_file(str(path))
     assert not errors
     assert any("example" in warning for warning in warnings)
@@ -88,7 +89,7 @@ _PARITY_CASES = [
 def test_offline_validation_and_startup_agree(tmp_path, changes):
     from wilab.config import load_config
 
-    config = {"auth_token": "private-token", "dhcp_base_network": "192.168.120.0/24", "dns_server": "8.8.8.8", **changes}
+    config = {"auth_token": "private-token", "dhcp_base_network": "192.168.120.0/24", "dns_server": "8.8.8.8", **REQUIRED_SETTINGS, **changes}
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(config))
     errors, _ = validate_config_file(str(path))
@@ -123,16 +124,16 @@ def test_startup_refuses_a_config_without_dns_server(tmp_path):
 
 def test_model_errors_name_the_fields_without_values(tmp_path):
     path = tmp_path / "config.yaml"
-    path.write_text("auth_token: private-token\ndhcp_base_network: 192.168.120.0/24\ndns_server: 8.8.8.8\n"
-                    "min_timeout: 100\nmax_timeout: 60\n")
+    path.write_text("auth_token: private-token\ndhcp_base_network: 192.168.120.0/24\ndns_server: 8.8.8.8\n" + REQUIRED_YAML + (
+                    "min_timeout: 100\nmax_timeout: 60\n"))
     errors, _ = validate_config_file(str(path))
     assert errors == ["Invalid configuration: Value error, max_timeout must be positive and at least min_timeout"]
 
 
 def test_every_antenna_entry_states_show_dfs_channels(tmp_path):
     path = tmp_path / "config.yaml"
-    path.write_text("auth_token: t\ndhcp_base_network: 192.168.120.0/24\ndns_server: 8.8.8.8\n"
-                    "antennas:\n  - interface: wlan0\n    disable: true\n")
+    path.write_text("auth_token: t\ndhcp_base_network: 192.168.120.0/24\ndns_server: 8.8.8.8\n" + REQUIRED_YAML + (
+                    "antennas:\n  - interface: wlan0\n    disable: true\n"))
     errors, _ = validate_config_file(str(path))
     assert errors == ["Invalid configuration field: antennas"]
 
@@ -142,7 +143,7 @@ def test_the_old_show_dfs_key_is_refused_with_its_new_name(tmp_path):
     from wilab.config import load_config
 
     path = tmp_path / "config.yaml"
-    path.write_text("auth_token: t\ndhcp_base_network: 192.168.120.0/24\ndns_server: 8.8.8.8\n"
-                    "antennas:\n  - interface: wlan0\n    show_dfs: true\n")
+    path.write_text("auth_token: t\ndhcp_base_network: 192.168.120.0/24\ndns_server: 8.8.8.8\n" + REQUIRED_YAML + (
+                    "antennas:\n  - interface: wlan0\n    show_dfs: true\n"))
     with pytest.raises(SystemExit, match="renamed show_dfs_channels"):
         load_config(str(path))

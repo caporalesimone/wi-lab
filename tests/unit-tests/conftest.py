@@ -9,12 +9,30 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 import pytest
 
-from wilab.config import load_config
+from wilab.config import AppConfig, load_config
 
 TEST_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'test.config.yaml')
 
 # `iw phy phy1 info` read on the lab machine (MediaTek mt7921u, 2026-11-25).
 MOCK_PHY_INFO = (Path(__file__).parent / "data" / "iw_phy_info_mt7921u.txt").read_text()
+
+
+# Every setting of config.yaml is required (only hostapd_debug_dir and antennas
+# may be omitted): tests that build a config start from these values.
+REQUIRED_SETTINGS = {
+    "api_port": 8080, "captive_portal_port": 8081, "max_timeout": 86400, "min_timeout": 60,
+    "allow_unlimited_reservation": False, "upstream_interface": "auto", "country_code": "IT",
+    "protected_commands_password": None, "internet_enabled_by_default": True, "cors_origins": None,
+}
+REQUIRED_YAML = "".join(
+    f"{key}: {'null' if value is None else str(value).lower() if isinstance(value, bool) else value}\n"
+    for key, value in REQUIRED_SETTINGS.items()
+)
+
+
+def make_config(**settings) -> AppConfig:
+    """An AppConfig with every required setting, overridden by *settings*."""
+    return AppConfig(**{**REQUIRED_SETTINGS, **settings})
 
 
 def _configured_networks_only(labels):

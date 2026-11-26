@@ -4,6 +4,12 @@
 # All comments provide detailed guidance for each parameter.
 #
 # IMPORTANT: Review and update parameters before starting Wi-Lab!
+#
+# Every setting is REQUIRED: Wi-Lab does not start if one is missing, so each
+# value is a deliberate choice. Only two may be left out: hostapd_debug_dir
+# (diagnostics, off when absent) and the antennas section (radios are found
+# automatically). protected_commands_password and cors_origins are required
+# keys but may be null to turn their feature off.
 
 # ==================================================================================================
 # API AUTHENTICATION
@@ -20,7 +26,7 @@ auth_token: "secret-token-12345"
 # Callers send it in the X-Confirm-Password header, together with the bearer token;
 # the web UI asks for it every time one of these commands is used.
 # It guards against accidental use, not against attackers: share it only with operators.
-# If omitted or empty, protected commands are disabled (HTTP 403).
+# Required key; null or empty disables the protected commands (HTTP 403).
 protected_commands_password: "change-me"
 
 # ==================================================================================================
@@ -33,22 +39,22 @@ protected_commands_password: "change-me"
 # Swagger UI docs at: http://localhost:8080/docs
 api_port: 8080
 
-# Port of the captive portal page on each AP gateway (optional, default 8081).
+# Port of the captive portal page on each AP gateway.
 # AP clients still browse to port 80: Wi-Lab redirects them here. Every portal
 # uses this port on its own gateway address, so any number of portals can run
 # at once. It must differ from api_port, 53 and 67, and be free on the host.
-# captive_portal_port: 8081
+captive_portal_port: 8081
 
 # CORS allowed origins (for frontend development)
-# If the field is not specified or empty (all entries are commented), 
-# CORS is disabled (secure for production).
+# Required key. null or an empty list disables CORS (secure for production):
+#   cors_origins: null
 # For development with Angular frontend, uncomment and configure:
 cors_origins:
    - "http://localhost:4200"       # Angular server - default
   # - "http://10.10.10.10:4200"    # Angular - Local PC
   # - "http://localhost:80"        # Production frontend (if served separately)
 # 
-# SECURITY: Only add trusted origins! Leaving this commented disables CORS (recommended for production)
+# SECURITY: Only add trusted origins! null disables CORS (recommended for production)
 
 # ==================================================================================================
 # RESERVATION TIMEOUTS
@@ -56,12 +62,12 @@ cors_origins:
 
 # Maximum allowed reservation duration (upper bound for API requests)
 # API requests with duration > max_timeout will be rejected.
-# Set to 24 hours (86400 seconds) by default.
+# Example: 24 hours (86400 seconds).
 max_timeout: 86400
 
 # Minimum allowed reservation duration (lower bound for API requests)
 # API requests with duration < min_timeout will be rejected.
-# Set to 60 seconds by default.
+# Example: 60 seconds.
 # NOTE: Hardcoded floor of 10 seconds — values below 10 are rejected at startup.
 min_timeout: 60
 
@@ -91,7 +97,7 @@ dhcp_base_network: "192.168.120.0/24"
 #   - "eth0", "ens18", etc.: Force specific interface by name
 upstream_interface: "auto"
 
-# DNS server IP address for WiFi clients (REQUIRED: the service does not start without it)
+# DNS server IP address for WiFi clients
 # Clients will use this DNS for domain resolution. It must answer from this host's network.
 # Options:
 #   - Use your local gateway or DNS server, e.g. "192.168.10.1"

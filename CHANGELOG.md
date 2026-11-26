@@ -11,7 +11,7 @@ All notable changes to Wi-Lab are documented in this file.
 | Item | Count |
 |---|---:|
 | 🐛 Bug fixes | 20 |
-| ⚠️ Breaking changes | 5 |
+| ⚠️ Breaking changes | 6 |
 | 🔧 Maintenance changes | 4 |
 | ✨ New features | 1 |
 | ✅ Test changes | 7 |
@@ -30,6 +30,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - `POST .../txpower` takes `tx_power_level` instead of `level`, the name of `radio.tx_power_level` in the create (Fable API-6).
 - `dns_server` is required in `config.yaml`: its default was `192.168.10.21`, a laboratory address, so a configuration without the key gave Wi-Fi clients a DNS server that does not exist elsewhere ("connected, no Internet"). Without it the service does not start and names the key (Fable NET-8).
 - `antennas[].show_dfs` is renamed `show_dfs_channels` in `config.yaml`, with no alias: the old name stops the service with `antennas[N].show_dfs was renamed show_dfs_channels`. Rename the key in every `antennas` entry before upgrading.
+- Every setting of `config.yaml` is required, so each value is a deliberate choice: `api_port`, `captive_portal_port`, `max_timeout`, `min_timeout`, `allow_unlimited_reservation`, `upstream_interface`, `country_code`, `internet_enabled_by_default`, and `protected_commands_password` and `cors_origins` (these two may be `null` to turn their feature off). Only `hostapd_debug_dir` and the `antennas` section may be omitted. A missing key stops the service and names it; compare your file with `config.example.yaml` before upgrading.
 
 ### ✨ Features
 

@@ -572,7 +572,7 @@ sequenceDiagram
 | dnsmasq | Listens on gateway:53 (`except-interface=lo`), answers `address=/#/<gateway>`. Clients still receive the configured DNS server. |
 | `nat` chain `wilab-cp-<interface>` | Jumped to first from `PREROUTING` for traffic entering the AP. Per-client `RETURN` rules, then DNAT of UDP/TCP 53 to gateway:53 and TCP 80 to gateway:`captive_portal_port` (8081). |
 | `filter` chain `wilab-cp-<interface>` | Jumped to first from `FORWARD`. Per-client `RETURN` rules, then reject everything else. |
-| Portal web server | Threaded HTTP server bound to gateway:`captive_portal_port` only (default 8081, not 80, so the Wi-Lab API itself can listen on port 80 of every address; one port serves every AP because each binds its own gateway). A port already in use fails the start with a message naming the setting; a malformed `Content-Length` answers `400`. `GET /` renders the page, `POST /login` signs in the caller, anything else redirects to the page. |
+| Portal web server | Threaded HTTP server bound to gateway:`captive_portal_port` only (8081 in the example configuration, not 80, so the Wi-Lab API itself can listen on port 80 of every address; one port serves every AP because each binds its own gateway). A port already in use fails the start with a message naming the setting; a malformed `Content-Length` answers `400`. `GET /` renders the page, `POST /login` signs in the caller, anything else redirects to the page. |
 
 - Chains are complete before the jump rules are added, so unsigned traffic is
   never forwarded. Signed-in clients bypass only the portal chains: Internet

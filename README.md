@@ -83,12 +83,17 @@ Pull requests and pushes to `main` run backend tests, type-checking and the
 frontend build in CI, and publish the documentation bundle as an artifact.
 `make lint` remains a local check while existing Ruff findings are addressed.
 
-Key sections:
+Every setting is required: the service does not start if one is missing, so each value is a
+deliberate choice. Only `hostapd_debug_dir` (diagnostics) and the `antennas` section may be left
+out; `protected_commands_password` and `cors_origins` may be `null` to turn their feature off.
+`config.example.yaml` documents each one.
 
 ```yaml
 auth_token: "change-me"                 # Bearer token for API authentication
+protected_commands_password: "change-me" # Maintenance endpoints; null disables them
 api_port: 8080
-# captive_portal_port: 8081            # portal page on each AP gateway (not 80, not api_port)
+captive_portal_port: 8081               # portal page on each AP gateway (not 80, not api_port)
+cors_origins: null                      # or a list of trusted frontend origins
 
 # Reservation timeouts
 max_timeout: 86400                      # 24 h
@@ -98,15 +103,16 @@ allow_unlimited_reservation: false      # allow duration_seconds=0
 # Networking
 dhcp_base_network: "192.168.120.0/24"   # Starting subnet for AP allocation
 upstream_interface: "auto"
-dns_server: "208.67.222.222"           # required: DNS handed to Wi-Fi clients
+dns_server: "208.67.222.222"            # DNS handed to Wi-Fi clients
 internet_enabled_by_default: true
 country_code: "IT"                      # WiFi regulatory domain
+# hostapd_debug_dir: "/var/log/wilab/hostapd"   # optional: reports of failed hostapd starts
 
 # Optional names and DFS choice; every AP-capable Wi-Fi interface is discovered automatically
 antennas:
   - interface: "wlxbc071dc527d6"
     display_name: "bench-antenna-1"
-    show_dfs_channels: false                     # required: offer the DFS channels (5 GHz 52-144)?
+    show_dfs_channels: false            # required in each entry: offer the DFS channels (5 GHz 52-144)?
   - interface: "wlx7820512451b4"
     display_name: "bench-antenna-2"
     show_dfs_channels: false

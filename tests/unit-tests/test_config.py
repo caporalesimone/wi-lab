@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from conftest import REQUIRED_YAML, make_config
 from pydantic import ValidationError
 
 from wilab.config import AppConfig, NetworkEntry, load_config
@@ -113,7 +114,7 @@ class TestMinTimeoutConstraint:
         cfg_file.write_text(
             "auth_token: test\n"
             "dhcp_base_network: '192.168.120.0/24'\n"
-            "dns_server: '8.8.8.8'\n"
+            "dns_server: '8.8.8.8'\n" + REQUIRED_YAML + ""
             "min_timeout: 5\n"
             "antennas:\n"
             "  - interface: wlan0\n"
@@ -129,7 +130,7 @@ class TestMinTimeoutConstraint:
         cfg_file.write_text(
             "auth_token: test\n"
             "dhcp_base_network: '192.168.120.0/24'\n"
-            "dns_server: '8.8.8.8'\n"
+            "dns_server: '8.8.8.8'\n" + REQUIRED_YAML + ""
             "min_timeout: 10\n"
             "antennas:\n"
             "  - interface: wlan0\n"
@@ -152,17 +153,15 @@ class TestAllowUnlimitedReservationConfig:
 def test_invalid_regulatory_country_is_rejected(country):
     from pydantic import ValidationError
 
-    from wilab.config import AppConfig
 
     with pytest.raises(ValidationError, match="country_code"):
-        AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", country_code=country)
+        make_config(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", country_code=country)
 
 
 @pytest.mark.parametrize("country", ["IT", "JP", "US", "XY"])
 def test_country_code_shape_and_valid_japan(country):
-    from wilab.config import AppConfig
 
-    config = AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", country_code=country)
+    config = make_config(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", country_code=country)
     assert config.country_code == country
 
 
@@ -171,9 +170,29 @@ def test_country_code_shape_and_valid_japan(country):
 def test_captive_portal_port_must_not_clash(port):
     """NET-10: the portal port differs from the API (on every address), DNS and DHCP."""
     with pytest.raises(ValidationError, match="captive_portal_port"):
-        AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", captive_portal_port=port)
+        make_config(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", captive_portal_port=port)
 
 
-def test_captive_portal_port_defaults_to_8081_so_the_api_can_use_80():
-    config = AppConfig(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", api_port=80)
+def test_the_api_can_use_80_with_the_portal_elsewhere():
+    config = make_config(auth_token="test", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", api_port=80)
     assert config.captive_portal_port == 8081
+
+
+@pytest.mark.parametrize("key", [
+    "api_port", "captive_portal_port", "max_timeout", "min_timeout", "allow_unlimited_reservation",
+    "upstream_interface", "country_code", "protected_commands_password", "internet_enabled_by_default",
+    "cors_origins",
+])
+def test_every_setting_is_required(key):
+    """Whoever writes config.yaml chooses every value: no silent default."""
+    from conftest import REQUIRED_SETTINGS
+    from pydantic import ValidationError
+
+    settings = {k: v for k, v in REQUIRED_SETTINGS.items() if k != key}
+    with pytest.raises(ValidationError, match=key):
+        AppConfig(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", **settings)
+
+
+def test_only_hostapd_debug_dir_and_antennas_may_be_omitted():
+    config = make_config(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8")
+    assert config.hostapd_debug_dir is None and config.antennas == []

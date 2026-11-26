@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from conftest import create_network, network_body
+from conftest import create_network, make_config, network_body
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -849,8 +849,7 @@ class TestReservationAPIDeleteAll:
         assert client.get(f"/api/v2/reservations/{rid}", headers={"Authorization": valid_token}).status_code == 200
 
     def test_disabled_without_a_configured_password(self, client, valid_token):
-        from wilab.config import AppConfig
-        blank = AppConfig(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", protected_commands_password="  ")
+        blank = make_config(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", protected_commands_password="  ")
         assert blank.protected_commands_password is None
         dependencies.get_config().protected_commands_password = None
         self._reserve(client, valid_token)

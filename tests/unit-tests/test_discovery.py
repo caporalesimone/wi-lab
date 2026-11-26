@@ -2,6 +2,7 @@ import logging
 import time
 
 import pytest
+from conftest import REQUIRED_YAML, make_config
 from fastapi.testclient import TestClient
 
 from wilab import config as config_module
@@ -158,7 +159,7 @@ def _write_config(tmp_path, networks_yaml):
     path.write_text(
         "auth_token: test-token\n"
         "dhcp_base_network: '192.168.120.0/24'\n"
-        "dns_server: '8.8.8.8'\n"
+        "dns_server: '8.8.8.8'\n" + REQUIRED_YAML + ""
         "upstream_interface: wlan-up\n"
         + networks_yaml
     )
@@ -262,9 +263,8 @@ class _StopAfter:
 
 def test_discovery_loop_scans_every_5s_until_an_antenna_then_every_30s(monkeypatch, caplog):
     from wilab.api import dependencies
-    from wilab.config import AppConfig
 
-    config = AppConfig(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8")
+    config = make_config(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8")
     quiet_flags = []
 
     def scan(cfg, *, quiet):
@@ -293,7 +293,7 @@ def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
     base = (
         "auth_token: test-token\n"
         "dhcp_base_network: '192.168.120.0/24'\n"
-        "dns_server: '8.8.8.8'\n"
+        "dns_server: '8.8.8.8'\n" + REQUIRED_YAML + ""
         "antennas:\n"
         "  - interface: wlx-a\n"
         "    display_name: Antenna A\n"

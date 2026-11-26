@@ -489,7 +489,7 @@ Notes:
 - A client that obtains a new IP address, or changes its MAC address, must
   sign in again. Sign-ins are cleared when the AP stops, the reservation ends
   or the watchdog restarts the AP.
-- The portal listens on `captive_portal_port` (default 8081) and dnsmasq
+- The portal listens on `captive_portal_port` (8081 in the example configuration) and dnsmasq
   answers DNS on port 53, both on the AP gateway address only. Every AP uses
   its own gateway address, so several captive APs can run at the same time.
 

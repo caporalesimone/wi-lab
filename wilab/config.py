@@ -29,30 +29,33 @@ class NetworkEntry(BaseModel):
 class AppConfig(BaseModel):
     # Every rule lives here, so `--validate-config` and the service startup give
     # the same verdict (BUG-3). Messages never repeat the configured values.
+    # Every setting is required, so whoever writes config.yaml chooses it: only
+    # hostapd_debug_dir and the antennas section may be left out.
+    # protected_commands_password and cors_origins may be null (feature off).
     auth_token: str
-    api_port: int = Field(8080, ge=1, le=65535)
+    api_port: int = Field(..., ge=1, le=65535)
     # Port of the captive portal pages on each gateway (NET-10). Clients still
     # browse to port 80: a DNAT rule sends them here. Not 80, so Wi-Lab itself
     # can listen on port 80 of every address.
-    captive_portal_port: int = Field(8081, ge=1, le=65535)
-    max_timeout: int = 86400   # 24 hours default upper bound
-    min_timeout: int = 60      # 60 seconds default lower bound
-    allow_unlimited_reservation: bool = False
+    captive_portal_port: int = Field(..., ge=1, le=65535)
+    max_timeout: int
+    min_timeout: int
+    allow_unlimited_reservation: bool
     dhcp_base_network: str
-    upstream_interface: str = "auto"
-    country_code: str = "IT"
-    protected_commands_password: str | None = None
+    upstream_interface: str
+    country_code: str
+    protected_commands_password: str | None
     # Diagnostics: save the `hostapd -d` output and configuration of every failed
     # hostapd start in this directory (None: off).
     hostapd_debug_dir: str | None = None
     # Required (NET-8): the DNS server handed to Wi-Fi clients. No default: any
     # address chosen here would be wrong on some network.
     dns_server: str
-    internet_enabled_by_default: bool = True
+    internet_enabled_by_default: bool
     # Optional display names and settings of the discovered radios (`antennas:`).
     antennas: list[NetworkEntry] = Field(default_factory=list)
     cors_origins: list[str] | None = Field(
-        default=None,
+        ...,
         description="CORS allowed origins. If None or empty, CORS is disabled (secure for production). "
                     "For development, add frontend URLs like ['http://localhost:4200', 'http://192.168.1.100:4200']"
     )
