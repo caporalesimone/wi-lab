@@ -233,7 +233,7 @@ class NetworkManager:
                 self.nat_manager.has_pending_network(device_id) or self.host_guard.has(device_id)
             )
         return (
-            device_id in self.hostapd_manager._instances
+            self.hostapd_manager.is_tracked(device_id)
             or device_id in self.dhcp_server.list_active()
             or device_id in self.captive_portals
             or firewall_pending

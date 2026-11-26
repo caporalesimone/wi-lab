@@ -544,6 +544,10 @@ class HostapdManager:
             logger.error(f"Error stopping hostapd for {net_id}: {e}")
             raise HostapdError(f"Failed to stop hostapd for {net_id}: {e}") from e
     
+    def is_tracked(self, net_id: str) -> bool:
+        """True while resources of this network still need a stop() (ARCH-8)."""
+        return net_id in self._instances
+
     def report_exit(self, net_id: str) -> None:
         """Log (and with hostapd_debug_dir save) the output of a hostapd that died (HAP-8).
 
