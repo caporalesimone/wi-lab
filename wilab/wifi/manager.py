@@ -799,8 +799,8 @@ class NetworkManager:
             if not cfg_net:
                 return None
             return NetworkStatus(interface=cfg_net.interface, active=False)
-        if getattr(st, '_deadline', None) is not None:
-            st.expires_in = max(0, int(st._deadline - time.monotonic()))
+        if (st_deadline := getattr(st, '_deadline', None)) is not None:
+            st.expires_in = max(0, int(st_deadline - time.monotonic()))
         
         # Add DHCP info and clients if active
         if st.active:
@@ -882,8 +882,8 @@ class NetworkManager:
                 raise RuntimeError(f"Cannot enable Internet: {e}") from e
         
         st.internet_enabled = True
-        if getattr(st, '_deadline', None) is not None:
-            st.expires_in = max(0, int(st._deadline - time.monotonic()))
+        if (st_deadline := getattr(st, '_deadline', None)) is not None:
+            st.expires_in = max(0, int(st_deadline - time.monotonic()))
         self.active[device_id] = st
         logger.info(f"Internet enabled for {device_id}")
         
@@ -921,8 +921,8 @@ class NetworkManager:
                 raise RuntimeError(f"Cannot disable Internet: {e}") from e
         
         st.internet_enabled = False
-        if getattr(st, '_deadline', None) is not None:
-            st.expires_in = max(0, int(st._deadline - time.monotonic()))
+        if (st_deadline := getattr(st, '_deadline', None)) is not None:
+            st.expires_in = max(0, int(st_deadline - time.monotonic()))
         self.active[device_id] = st
         logger.info(f"Internet disabled for {device_id}")
         
