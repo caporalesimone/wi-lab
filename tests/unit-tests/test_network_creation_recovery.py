@@ -298,14 +298,16 @@ def test_watchdog_restores_original_network_or_cleans_up_on_cancellation(monkeyp
     release = Mock()
     monkeypatch.setattr(manager, "release_device", release)
 
-    def start(target, request, expires_at, *, allow_internal_retry):
+    def start(target, request, expires_at, *, allow_internal_retry, cancelled):
         assert target == device
         assert request.ssid == "original" and request.internet_enabled is True
         assert expires_at == deadline and allow_internal_retry  # WD-2: same retries as a create
+        assert not cancelled()  # REV-6: a release during the restore cancels it
         if cancel == "release":
             reservation.release_requests += 1
         if cancel == "expiry":
             reservation.expires_at = 0
+        assert cancelled() is bool(cancel)
 
     restart = Mock(side_effect=start)
     monkeypatch.setattr(manager, "start_network", restart)

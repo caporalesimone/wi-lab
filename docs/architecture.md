@@ -966,7 +966,7 @@ sequenceDiagram
         WK->>K: usbreset BUS/DEV (timeout 15 s)
         WK->>K: wait up to 10 s for the same MAC on the same port
         WK->>K: down, managed, up, down, idle again
-        WK->>NM: probe: hidden WPA2 AP with random key on the failed channel,<br/>gateway, DHCP without router and DNS
+        WK->>NM: probe: hidden WPA2 AP with random key on the failed channel<br/>(channel 36 instead of a DFS one), gateway, DHCP without router and DNS
         NM->>K: AP ENABLED and dnsmasq running?
         WK->>NM: teardown probe, require managed and DOWN
         Note over WK: success leaves the loop
@@ -1001,7 +1001,7 @@ flowchart TD
     U -->|yes| P{"interface present?"}
     P -->|no| F["count failure, back off"]
     P -->|yes| L["device lock: release_device,<br/>release from host managers, DOWN, idle check"]
-    L --> PR["probe: hidden WPA2 AP on the last band/channel<br/>(2.4 GHz channel 6 if unknown), gateway, DHCP"]
+    L --> PR["probe: hidden WPA2 AP on the last band/channel<br/>(2.4 GHz channel 6 if unknown, 36 instead of DFS), gateway, DHCP"]
     PR -->|ok| OK["teardown, idle check,<br/>finish_recovery(recovered) → allocatable"]
     PR -->|fails| F
     F --> T
@@ -1100,8 +1100,15 @@ sequenceDiagram
 
 On shutdown (`SIGTERM` from systemd) the lifespan stops device discovery, waits
 briefly for it and calls `shutdown_all()`: it stops the recovery
-worker and the watchdogs, then runs `release_device()` for every antenna so that
-no hostapd, dnsmasq, iptables or tc state is left behind.
+worker and the watchdogs, cancels every running create at once (each rolls back
+in parallel instead of holding its device lock through retries and pauses), then
+runs `release_device()` for every antenna so that no hostapd, dnsmasq, iptables
+or tc state is left behind.
+
+A watchdog restore is cancellable like a create: a release, the reservation
+expiry or the shutdown stops its wait for the AP within a fraction of a second
+(Fable REV-6). The recovery probe never uses a DFS channel, so it never holds the
+device lock for a 60 s radar check.
 
 ## 10. Host state and files
 

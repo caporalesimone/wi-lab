@@ -260,8 +260,10 @@ class NetworkWatchdog:
             )
             return
         try:
+            # A release during the restore stops it at once, like a create (REV-6).
             self.manager.start_network(
                 device, pending.request, reservation.expires_at, allow_internal_retry=True,
+                cancelled=lambda: self._cancelled(reservation),
             )
         except StartupFailure as exc:
             if exc.cleanup_failed or exc.radio:
@@ -340,6 +342,7 @@ class NetworkWatchdog:
             # Same internal retries as a create request (WD-2).
             self.manager.start_network(
                 device, request, reservation.expires_at, allow_internal_retry=True,
+                cancelled=lambda: self._cancelled(reservation),
             )
         except StartupFailure as exc:
             logger.warning("AP restart failed on %s: %s", device, exc)

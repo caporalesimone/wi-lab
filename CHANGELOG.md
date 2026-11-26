@@ -31,6 +31,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - A firewall check that fails (xtables lock held by another tool, timeout) no longer counts as a missing rule: the watchdog skips that round instead of adding the Internet block again or restoring a healthy network, and stopping a network removes every copy of its Internet block (Fable REV-3).
 - Removing a network's host guard no longer fails when the firewall already lost its chain (a host firewall reload, or a guard that failed half-way): the antenna is no longer quarantined for it (Fable REV-4).
 - A retry of a failed AP start is no longer cut by a 20 s budget left over from the synchronous create: a retry that brings the AP up is kept instead of being reported as `start_failed`, and later phases (DHCP, NAT) are no longer blamed for the expired budget. Only the 3 attempts and the reservation expiry limit the retries (Fable REV-5).
+- Releasing a reservation while the watchdog restarts its AP is immediate, as during a create, instead of waiting for the restart (up to 75 s on DFS); the service shutdown cancels running creates instead of waiting for them, and the recovery probe of a reset antenna no longer uses a DFS channel (60 s radar check under the device lock) (Fable REV-6).
 
 ### 🔧 Maintenance
 
@@ -43,7 +44,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The e2e watchdog tests that block dnsmasq take UDP port 67 after the failure they cause: dnsmasq of the running network already held it, so the three tests failed before testing anything.
 - New unit tests from the 2026-11-26 review: cancel timeout, `404` reasons on every operation, cancel in each start phase and during the pause, tombstones, expiry during a start, stop retry budget, `restarts` counters, reserve by `interface`, cleanup backoff (unit-test-7 … 17).
 - New e2e tests: `start_failed`, stop and release during a start, reserve by `interface`, `404` reasons, `restarts` counters, create during a repair, expiry, captive portal, lost host guard, Internet kept disabled (e2e-test-1 … 12, except 8).
-- Unit tests for retries without a time budget (REV-5).
+- Unit tests for retries without a time budget (REV-5) and for cancelling watchdog restores, creates at shutdown and the DFS-free probe (REV-6).
 - Unit tests create networks through the real asynchronous path (`202`, then polling) with the `create_network` helper (REV-16).
 
 ### 🔌 API changes from 4.0.0 (client migration)

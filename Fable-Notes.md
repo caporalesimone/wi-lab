@@ -74,7 +74,7 @@ refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` =
 |---:|---|---|:---:|---|
 | 1 | [REV-2](#rev-2) | Media |  | Un annullamento il cui rollback fallisce non deve finire in quarantena né far rispondere `404` al rilascio. |
 | 1 | [REV-5](#rev-5) | Media | ✅ | Togliere il budget di 20 s dai tentativi interni di avvio: è un residuo della create sincrona e fa fallire avvii riusciti. |
-| 1 | [REV-6](#rev-6) | Media |  | Rendere annullabili gli avvii del watchdog e del probe, e annullare le create in `shutdown_all`. |
+| 1 | [REV-6](#rev-6) | Media | ✅ | Rendere annullabili gli avvii del watchdog e del probe, e annullare le create in `shutdown_all`. |
 | 1 | [WD-5](#wd-5) | Alta | parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. **Fatto:** stop e cleanup con l'interfaccia sparita (punti 1–2), classificazione come guasto radio. **Manca:** ritirare la voce di un'antenna che ricompare con un nome diverso (punto 3); dipende da ARCH-4. |
 | 1 | [WD-7](#wd-7) | Media | parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. **Fatto:** gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca:** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware. |
 | 1 | [BUG-5](#bug-5) | Media |  | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
@@ -198,7 +198,7 @@ Test: [unit-test-4](#unit-test-4).
 ---
 
 <a id="rev-6"></a>
-### 1. REV-6 - Gli avvii che non passano dal job della create non si possono annullare
+### 1. REV-6 - Gli avvii che non passano dal job della create non si possono annullare ✅
 
 **Gravità:** Media · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`shutdown_all`, `probe_recovered_radio`), [wilab/wifi/watchdog.py](wilab/wifi/watchdog.py) (`_restore_ap`, `_retry_pending`)
 
@@ -2389,7 +2389,7 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 |---|---|---|---|
 | [unit-test-2](#unit-test-2) | Annullamento con rollback fallito: nessuna quarantena | REV-2 | `test_async_create.py` |
 | ✅ [unit-test-4](#unit-test-4) | Un avvio riuscito non fallisce per il budget dei tentativi | REV-5 | `test_startup_classification.py` |
-| [unit-test-5](#unit-test-5) | Rilascio durante un ripristino del watchdog; arresto con una create in corso | REV-6 | `test_watchdog.py`, `test_startup.py` |
+| ✅ [unit-test-5](#unit-test-5) | Rilascio durante un ripristino del watchdog; arresto con una create in corso | REV-6 | `test_watchdog.py`, `test_startup.py` |
 | [unit-test-7](#unit-test-7) | Annullamento in timeout: il job resta finché il thread gira | REV-8 | `test_async_create.py` |
 | [unit-test-14](#unit-test-14) | Rami di guasto del watchdog | REV-10 | `test_watchdog.py` |
 | [unit-test-15](#unit-test-15) | Frontend: compilazione e spec di `startNetwork` | REV-13, REV-15 | `frontend/src/app/services/*.spec.ts` |

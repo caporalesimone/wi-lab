@@ -146,7 +146,7 @@ def test_watchdog_retries_with_backoff_until_the_ap_is_back(monkeypatch):
     device = reservation.device_id
     calls = []
 
-    def start_again(target, request, expires_at, *, allow_internal_retry):
+    def start_again(target, request, expires_at, *, allow_internal_retry, cancelled):
         calls.append(allow_internal_retry)
         if len(calls) == 1:
             raise StartupFailure("gateway setup failed again")

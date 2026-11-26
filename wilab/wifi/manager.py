@@ -61,6 +61,9 @@ STARTUP_RETRY_DELAY = 1.0
 CLEANUP_BACKOFF = (5.0, 15.0, 60.0, 300.0)
 # Longest wait for a running AP start to notice a cancel (release, stop) and roll back.
 CANCEL_TIMEOUT = 30.0
+# Channel of the recovery probe when the last one is DFS: a probe never waits for a
+# 60 s radar check under the device lock (REV-6).
+PROBE_5GHZ_CHANNEL = 36
 
 
 @dataclass
@@ -377,6 +380,8 @@ class NetworkManager:
         """Verify AP and DHCP startup without publishing a user network or enabling NAT."""
         # A reset adapter announces its channels again: never trust the old list (BUG-4).
         self._channel_manager.invalidate(device)
+        if band == "5ghz" and 52 <= channel <= 144:
+            channel = PROBE_5GHZ_CHANNEL
         subnet = self._get_subnet(device)
         net = IPv4Network(subnet)
         try:
@@ -1067,6 +1072,14 @@ class NetworkManager:
         self.recovery.stop()
         self.watchdog.stopping.set()
         logger.info("Shutting down all networks")
+        # Cancel every create first, all at once: each rolls back in parallel instead
+        # of holding its device lock through its retries and pauses (REV-6).
+        with self.start_jobs_lock:
+            starting = list(self.start_jobs)
+            for job in self.start_jobs.values():
+                job.cancel.set()
+        for device_id in starting:
+            self.cancel_start(device_id)
         device_ids = {n.device_id for n in self.config.antennas} | self.active.keys()
         for device_id in device_ids:
             try:
