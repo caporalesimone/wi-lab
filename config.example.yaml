@@ -16,6 +16,13 @@
 # Generate a secure token with: python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
 auth_token: "secret-token-12345"
 
+# Password required by the Maintenance endpoints (commands that clients must not use).
+# Callers send it in the X-Confirm-Password header, together with the bearer token;
+# the web UI asks for it every time one of these commands is used.
+# It guards against accidental use, not against attackers: share it only with operators.
+# If omitted or empty, protected commands are disabled (HTTP 403).
+protected_commands_password: "change-me"
+
 # ==================================================================================================
 # API SERVER
 # ==================================================================================================
@@ -98,18 +105,6 @@ dns_server: "208.67.222.222"
 # - false: Clients isolated (no Internet access)
 # Can be overridden per-network via API
 internet_enabled_by_default: true
-
-# ==================================================================================================
-# PROTECTED COMMANDS
-# ==================================================================================================
-
-# Password required by every Maintenance endpoint (commands that clients must
-# not use): DELETE /api/v2/reservations/all (release ALL reservations).
-# Callers send it in the X-Confirm-Password header, together with the bearer token;
-# the web UI asks for it every time "Release All" is pressed.
-# It guards against accidental use, not against attackers: share it only with operators.
-# If omitted or empty, protected commands are disabled (HTTP 403).
-protected_commands_password: "change-me"
 
 # Diagnostics for hostapd failures (optional; omit or leave empty to disable).
 # When set, every hostapd start that fails (crash, timeout, beacon setup failure)
