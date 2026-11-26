@@ -80,13 +80,15 @@ sudo ip6tables -S INPUT | grep wilab-guard
 
 ### 6. Host Network Manager Exclusion
 
-**What:** NetworkManager releases each Wi-Lab radio (`nmcli device set ... managed no`); a
+**What:** NetworkManager releases each Wi-Lab radio (`nmcli device set ... managed no`), and a
+runtime NetworkManager file keeps them unmanaged after a NetworkManager restart; a
 runtime systemd-networkd rule marks the radios unmanaged  
 **When:** Antennas are added by discovery  
-**Impact:** Only Wi-Lab radios; NetworkManager's configuration is never written or reloaded  
+**Impact:** Only Wi-Lab radios; NetworkManager's configuration is never reloaded (the runtime file is read only when NetworkManager starts)  
 **Reversible:** Yes - runtime state and the `/run` file disappear on reboot
 
 ```bash
+cat /run/NetworkManager/conf.d/00-wilab-unmanaged.conf
 cat /run/systemd/network/00-wilab-unmanaged.network
 nmcli device status; networkctl list
 ```

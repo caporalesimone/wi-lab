@@ -78,7 +78,7 @@ refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` =
 | 1 | [WD-5](#wd-5) | Alta | parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. **Fatto:** stop e cleanup con l'interfaccia sparita (punti 1–2), classificazione come guasto radio. **Manca:** ritirare la voce di un'antenna che ricompare con un nome diverso (punto 3); dipende da ARCH-4. |
 | 1 | [WD-7](#wd-7) | Media | parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. **Fatto:** gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca:** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware. |
 | 1 | [BUG-5](#bug-5) | Media | ✅ | Riprovare la discovery degli adattatori ignorati e rendere visibili gli errori. |
-| 1 | [STAB-9](#stab-9) | Bassa |  | Ripristinare le impostazioni unmanaged se NetworkManager si riavvia. |
+| 1 | [STAB-9](#stab-9) | Bassa | ✅ | Ripristinare le impostazioni unmanaged se NetworkManager si riavvia. |
 | 1 | [STAB-8](#stab-8) | Bassa |  | Limitare il lavoro di arresto entro il timeout di systemd. |
 | 1 | [WD-10](#wd-10) | Bassa |  | Non considerare guasto un access point solo per probe lenti. |
 | 1 | [HAP-9](#hap-9) | Bassa |  | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. |
@@ -407,7 +407,7 @@ volta per chiamata di `discover_radios`, non per tentativo interno.
 ---
 
 <a id="stab-9"></a>
-### 1. STAB-9 - Il rilascio da NetworkManager è solo a runtime
+### 1. STAB-9 - Il rilascio da NetworkManager è solo a runtime ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/unmanaged.py:61-81](wilab/network/unmanaged.py#L61-L81)
 

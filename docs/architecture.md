@@ -1125,18 +1125,24 @@ device lock for a 60 s radar check.
 | Captive portal chains and sign-ins | iptables `wilab-cp-<interface>` chains; sign-ins in process memory | Removed at teardown and at startup. |
 | Host guard | iptables and ip6tables `wilab-in-<interface>` chains, jumped to from `INPUT` | Removed at teardown and at startup. |
 | Traffic shaping | tc qdiscs, IFB devices | Removed at teardown. |
-| Host network manager exclusion | NetworkManager runtime device state; `/run/systemd/network/00-wilab-unmanaged.network` | Applied when antennas are added; cleared on reboot. |
+| Host network manager exclusion | NetworkManager runtime device state; `/run/NetworkManager/conf.d/00-wilab-unmanaged.conf`; `/run/systemd/network/00-wilab-unmanaged.network` | Applied when antennas are added; cleared on reboot. |
 
 When discovery adds antennas, Wi-Lab keeps the host's network managers away
 from **only those interfaces**. Otherwise they bring Wi-Lab radios up after a
 reboot or a USB reset and start wpa_supplicant or DHCP on them.
 
 - **NetworkManager:** `nmcli device set <radio> managed no` for each radio.
-  Wi-Lab never writes NetworkManager configuration or reloads it: a reload
-  re-reads the settings of every interface, and a wrong rule once handed the
-  management interface to NetworkManager, which obtained a different DHCP
-  address. A radio that re-enumerates is new to NetworkManager; the recovery
-  worker releases it again, and so does every AP start.
+  NetworkManager forgets it when it restarts (a package upgrade), so Wi-Lab also
+  writes `/run/NetworkManager/conf.d/00-wilab-unmanaged.conf`: a device section
+  that matches only the radios' names (`interface-name:=`) with `managed=0`,
+  read when NetworkManager starts (Fable STAB-9). It is a device section, not
+  `keyfile.unmanaged-devices`, because distributions ship
+  `unmanaged-devices=*,except:type:wifi`, whose `except` would win. Wi-Lab never
+  reloads NetworkManager: a reload re-reads the settings of every interface, and
+  a wrong rule once handed the management interface to NetworkManager, which
+  obtained a different DHCP address. A radio that re-enumerates is new to
+  NetworkManager; the recovery worker releases it again, and so does every AP
+  start.
 - **systemd-networkd:** a rule matching only the radios' names sets
   `Unmanaged=yes`. `networkctl reload` reconfigures only links whose matching
   configuration changed, so other interfaces are not touched.
