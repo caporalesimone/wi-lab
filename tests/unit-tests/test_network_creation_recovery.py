@@ -54,7 +54,8 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
         blocked = client.post(RESERVE, headers=headers, json={"duration_seconds": 300})
         assert blocked.status_code == 503
         assert blocked.json()["detail"]["code"] == (1002 if authorized_port else 1003)
-        assert blocked.json()["detail"]["reservation_invalidated"] is False
+        assert blocked.json()["detail"]["message"]
+        assert "reservation_invalidated" not in blocked.json()["detail"]  # a field of the old create
         assert blocked.headers.get("Retry-After") == ("10" if authorized_port else None)
         messages = [record.getMessage() for record in caplog.records if record.name == "wilab.api.errors"]
         assert messages == [

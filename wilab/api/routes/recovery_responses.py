@@ -6,27 +6,29 @@ from fastapi import HTTPException
 
 
 class RecoveryCode(IntEnum):
-    RETRY_LATER = 1001
     DEVICE_RECOVERING = 1002
     DEVICE_UNAVAILABLE = 1003
 
 
+_MESSAGES = {
+    RecoveryCode.DEVICE_RECOVERING: "Every free antenna is recovering; retry after Retry-After",
+    RecoveryCode.DEVICE_UNAVAILABLE: "No antenna is usable; check GET /status",
+}
+
+
 def _detail(code: RecoveryCode, invalidated: bool) -> dict:
-    return {
-        "code": int(code),
-        "reason": code.name.lower(),
-        "reservation_invalidated": invalidated,
-    }
+    detail = {"code": int(code), "reason": code.name.lower(), "message": _MESSAGES[code]}
+    if invalidated:
+        # Only inside a create job, which turns it into 404 reservation_invalidated.
+        detail["reservation_invalidated"] = True
+    return detail
 
 
 def recovery_error(
     code: RecoveryCode, *, invalidated: bool = False, retry_after: int | None = None,
 ) -> HTTPException:
-    # 1003 with reservation_invalidated is a state of the client's reservation, not a
-    # server defect: 503, never 500, which clients and proxies treat as retryable (API-4).
-    status_code = 409 if code == RecoveryCode.RETRY_LATER else 503
     return HTTPException(
-        status_code=status_code,
+        status_code=503,
         detail=_detail(code, invalidated),
         headers={"Retry-After": str(retry_after)} if retry_after is not None else None,
     )
