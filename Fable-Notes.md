@@ -112,13 +112,10 @@ requisiti di installazione. I punti sono divisi con questo criterio, non per gra
 | Ordine | Id | Gravità | Cosa fare | Perché prima del congelamento |
 |:---:|---|---|---|---|
 | A1 | [SEC-1](#sec-1) | Critica | Limitare la route frontend ai file contenuti nella directory frontend. | Sicurezza critica. Cambia anche le risposte: i percorsi `/api/...` e `/docs/...` inesistenti passano da `200` con `null` a `404`. |
-| A2 | [REV-2](#rev-2) | Media | Un annullamento il cui rollback fallisce non deve finire in quarantena né far rispondere `404` al rilascio. | Risposte del rilascio e dello stop durante `starting`: è il ciclo di vita che il client implementa. |
-| A3 | [REV-11](#rev-11) | Bassa | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, `next_available_in` troncato. **Fatto:** punto 4, tipi stretti. | Codici fuori contratto. |
-| A4 | [REV-9](#rev-9) | Bassa | Impostare `stop_failed` solo per lo stop chiesto dal client; rispondere `1012` a Internet, TX power e QoS su una rete fermata a metà. | Cambia `runtime_state` in `/status` e aggiunge `409 / 1012` a Internet, TX power e QoS. |
-| A5 | [HAP-9](#hap-9) | Bassa | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. | Solo la via semplice: `422` sui canali 120, 124, 128 e fuori dall'elenco dei canali. La via completa (stato "radar check") è un cambio di API: non si fa nella 4.x. |
-| A6 | [NET-8](#net-8) | Bassa | Sostituire il DNS predefinito specifico del laboratorio. | Chiave di configurazione che diventa obbligatoria: breaking per chi installa. |
-| A7 | [STAB-7](#stab-7) | Media | Aggiungere un lockfile con versioni esatte delle dipendenze. | Senza versioni bloccate una reinstallazione può cambiare le risposte (per esempio il codice per un `Authorization` mancante). Si genera al congelamento. |
-| A8 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
+| A2 | [REV-11](#rev-11) | Bassa | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, `next_available_in` troncato. **Fatto:** punto 4, tipi stretti. | Codici fuori contratto. |
+| A3 | [NET-8](#net-8) | Bassa | Sostituire il DNS predefinito specifico del laboratorio. | Chiave di configurazione che diventa obbligatoria: breaking per chi installa. |
+| A4 | [STAB-7](#stab-7) | Media | Aggiungere un lockfile con versioni esatte delle dipendenze. | Senza versioni bloccate una reinstallazione può cambiare le risposte (per esempio il codice per un `Authorization` mancante). Si genera al congelamento. |
+| A5 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
 
 ### 2.2 Blocco B: dopo la 4.1.0, solo stabilizzazione
 
@@ -200,6 +197,9 @@ NM-1 è chiuso nel codice; la prova sulla macchina è il paragrafo 5.8.
 | ✅ [BUG-6](#bug-6) | Bassa | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
 | ✅ [NET-9](#net-9) | Bassa | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
 | ✅ [NET-7](#net-7) | Bassa | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
+| ✅ [REV-2](#rev-2) | Media | Un annullamento il cui rollback fallisce non mette più in quarantena: il rilascio risponde `200` e passa il cleanup al ciclo in background, lo stop risponde `503 / 1012`. unit-test-2 in `test_async_create.py`. |
+| ✅ [REV-9](#rev-9) | Bassa | `stop_failed` solo per lo stop chiesto dal client (`stop_network(client=True)`); il cleanup del server lo toglie. Internet, TX power e QoS rispondono `409 / 1012` su una rete fermata a metà. |
+| ✅ [HAP-9](#hap-9) | Bassa | Canali 120, 124, 128 mai offerti, `422` nella create (anche dentro un blocco 40/80 MHz). |
 | ✅ [REV-8](#rev-8) | Bassa | Il job di un avvio che ignora l'annullamento resta in `start_jobs` finché il thread gira: niente secondo thread, stop `503 / 1006` poi `200` o `409 / 1007`. |
 | ✅ [API-6](#api-6) | Bassa | `POST .../txpower` prende `tx_power_level`, come la create. Breaking, nel CHANGELOG. |
 | ✅ [NM-1](#nm-1) | Media | Nessun `nmcli` nel codice; precheck all'avvio (`78` se non root o manca un comando, avvisi per NetworkManager, `wpa_supplicant` su una radio, regole rimaste); stadi 06 e 07 dell'installer che propongono di disattivare NetworkManager e `wpa_supplicant` senza rischiare l'accesso; `uninstall.sh` propone di riattivarli. Chiude ARCH-7. [Capitolo 5](#cap-5). |
@@ -297,33 +297,8 @@ il fallback su `index.html`. Dopo la correzione conviene ruotare `auth_token` e
 
 ---
 
-<a id="rev-2"></a>
-### A2. REV-2 - Annullare un avvio il cui rollback fallisce mette l'antenna in quarantena
-
-**Gravità:** Media · **Confidenza:** Confermato (riprodotto con il TestClient) · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py) (`_run_start`)
-
-**Problema.** Con una `DELETE` della reservation o della rete durante `starting`, se il rollback
-solleva `StartupFailure(cleanup_failed=True)` l'annullamento viene ignorato e il codice prosegue fino a
-`quarantine_radio`:
-
-- `DELETE /reservations/{id}` risponde `404` con `reservation_invalidated` (il contratto dice che il
-  rilascio non fallisce mai) e l'antenna va in `recovery_state: unavailable`;
-- `DELETE .../network` risponde `200` "stopped", ma la `GET` successiva è `404` con
-  `reservation_invalidated`.
-
-**Come si riproduce.** Avvio bloccato, `DELETE` della reservation, rollback che fallisce (stop di
-hostapd che solleva).
-
-**Come correggerlo.** Quando `cancel.is_set()` e il cleanup è fallito, sollevare `StartCancelled` e
-lasciare il dispositivo al percorso normale: il rilascio lo consegna al cleanup in background (come
-ogni rilascio con cleanup fallito), la stop della rete risponde `503 / 1012`.
-
-Test: [unit-test-2](#unit-test-2).
-
----
-
 <a id="rev-11"></a>
-### A3. REV-11 - Risposte delle API fuori dal contratto in casi rari
+### A2. REV-11 - Risposte delle API fuori dal contratto in casi rari
 
 **Gravità:** Bassa · **Confidenza:** Confermato per i primi due punti (TestClient); Probabile per gli altri · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py), [wilab/api/routes/txpower.py](wilab/api/routes/txpower.py), [wilab/api/routes/internet.py](wilab/api/routes/internet.py), [wilab/models.py](wilab/models.py)
 
@@ -356,56 +331,8 @@ Test: `test_error_codes.py::test_every_operation_with_a_reservation_id_answers_4
 
 ---
 
-<a id="rev-9"></a>
-### A4. REV-9 - `stop_failed` segna anche stop che non sono del client
-
-**Gravità:** Bassa · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`_stop_failed`), [wilab/api/routes/status.py](wilab/api/routes/status.py)
-
-**Problema.** Anche un rollback di avvio fallito, uno stop per scadenza o un cleanup del watchdog
-impostano `_stop_failed`. `/status` riporta allora `runtime_state: stop_failed` e
-`network_stop_incomplete` ("il proprietario ripete la `DELETE`") per un'antenna la cui reservation è
-in quarantena o scaduta, e nasconde per essa i motivi di hostapd, dnsmasq e NAT. Inoltre, mentre una
-rete è `stop_failed`, resta in `manager.active` con `active: true`: Internet, TX power e QoS operano
-su una rete fermata a metà invece di rispondere `1012`.
-
-**Come correggerlo.** Impostare il flag solo nello stop di una rete attiva chiesto dal client; nelle
-route di Internet, TX power e QoS rispondere `409 / 1012` quando `manager.stop_failed(device)`.
-
----
-
-<a id="hap-9"></a>
-### A5. HAP-9 - Canali DFS con controllo radar di 10 minuti
-
-**Gravità:** Bassa · **Confidenza:** Probabile · **File:** [wilab/wifi/hostapd.py:29](wilab/wifi/hostapd.py#L29), [wilab/wifi/hostapd.py:249](wilab/wifi/hostapd.py#L249)
-
-> **Aggiornamento (2026-11-25).** Con la create asincrona il client non va più in timeout: riceve `202` e legge lo stato. Resta il problema del server: sui canali radar meteo (120, 124, 128) i 75 s di `DFS_READY_TIMEOUT` non bastano e l'avvio fallisce come guasto radio. `allow_dfs_channels` si chiama ora `show_dfs` ed è per antenna.
-
-**Problema.** Il timeout per i canali da 52 a 144 è 75 s. In Europa i canali dei radar meteo (120, 124,
-128) richiedono 600 s di ascolto. Con `allow_dfs_channels: true` una richiesta su quei canali va sempre
-in timeout e viene trattata come guasto radio, fino alla quarantena.
-
-**Come si riproduce.** Con `allow_dfs_channels: true` e `country_code` europeo, creare una rete sul
-canale 124.
-
-**Come correggerlo.** Per la 4.1.0 solo la via semplice: rifiutare quei canali. `allow_dfs_channels`
-qui sotto è il vecchio nome di `show_dfs`.
-
-```python
-# wilab/wifi/channels.py
-# ETSI weather-radar channels need a 10-minute radar check, longer than any request can wait.
-LONG_CAC_CHANNELS = frozenset({120, 124, 128})
-```
-
-In `validate_channel`, per la banda `5ghz`: se `channel in LONG_CAC_CHANNELS` sollevare
-`ValueError("Channel ... requires a 10-minute radar check and is not supported")`, e toglierli
-dall'elenco di `GET .../channels`. La via completa, non per la 4.x perché aggiunge uno stato alle API:
-leggere `cac_time` dalla riga `DFS-CAC-START` di hostapd e usarlo come timeout, rispondendo subito al
-client con uno stato "radar check in corso".
-
----
-
 <a id="net-8"></a>
-### A6. NET-8 - `dns_server` ha come default un indirizzo di laboratorio
+### A3. NET-8 - `dns_server` ha come default un indirizzo di laboratorio
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/config.py:37](wilab/config.py#L37)
 
@@ -431,7 +358,7 @@ modifiche breaking, e `config.example.yaml` deve già contenerla.
 ---
 
 <a id="stab-7"></a>
-### A7. STAB-7 - Dipendenze non bloccate
+### A4. STAB-7 - Dipendenze non bloccate
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [requirements.txt](requirements.txt)
 
@@ -1920,6 +1847,79 @@ eseguire a interfaccia ferma, cioè nel momento meno delicato.
 
 ---
 
+<a id="rev-2"></a>
+### ✅ REV-2 - Annullare un avvio il cui rollback fallisce mette l'antenna in quarantena
+
+**Gravità:** Media · **Stato:** ✅ corretto il 2026-11-26, con test unit · **Confidenza:** Confermato (riprodotto con il TestClient) · **File:** [wilab/api/routes/network.py](wilab/api/routes/network.py) (`_run_start`)
+
+**Problema.** Con una `DELETE` della reservation o della rete durante `starting`, se il rollback
+solleva `StartupFailure(cleanup_failed=True)` l'annullamento viene ignorato e il codice prosegue fino a
+`quarantine_radio`:
+
+- `DELETE /reservations/{id}` risponde `404` con `reservation_invalidated` (il contratto dice che il
+  rilascio non fallisce mai) e l'antenna va in `recovery_state: unavailable`;
+- `DELETE .../network` risponde `200` "stopped", ma la `GET` successiva è `404` con
+  `reservation_invalidated`.
+
+**Come si riproduce.** Avvio bloccato, `DELETE` della reservation, rollback che fallisce (stop di
+hostapd che solleva).
+
+**Come correggerlo.** Quando `cancel.is_set()` e il cleanup è fallito, sollevare `StartCancelled` e
+lasciare il dispositivo al percorso normale: il rilascio lo consegna al cleanup in background (come
+ogni rilascio con cleanup fallito), la stop della rete risponde `503 / 1012`.
+
+Test: [unit-test-2](#unit-test-2).
+
+---
+
+<a id="rev-9"></a>
+### ✅ REV-9 - `stop_failed` segna anche stop che non sono del client
+
+**Gravità:** Bassa · **Stato:** ✅ corretto il 2026-11-26, con test unit · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`_stop_failed`), [wilab/api/routes/status.py](wilab/api/routes/status.py)
+
+**Problema.** Anche un rollback di avvio fallito, uno stop per scadenza o un cleanup del watchdog
+impostano `_stop_failed`. `/status` riporta allora `runtime_state: stop_failed` e
+`network_stop_incomplete` ("il proprietario ripete la `DELETE`") per un'antenna la cui reservation è
+in quarantena o scaduta, e nasconde per essa i motivi di hostapd, dnsmasq e NAT. Inoltre, mentre una
+rete è `stop_failed`, resta in `manager.active` con `active: true`: Internet, TX power e QoS operano
+su una rete fermata a metà invece di rispondere `1012`.
+
+**Come correggerlo.** Impostare il flag solo nello stop di una rete attiva chiesto dal client; nelle
+route di Internet, TX power e QoS rispondere `409 / 1012` quando `manager.stop_failed(device)`.
+
+---
+
+<a id="hap-9"></a>
+### ✅ HAP-9 - Canali DFS con controllo radar di 10 minuti
+
+**Gravità:** Bassa · **Stato:** ✅ corretto il 2026-11-26, con test unit · **Confidenza:** Probabile · **File:** [wilab/wifi/hostapd.py:29](wilab/wifi/hostapd.py#L29), [wilab/wifi/hostapd.py:249](wilab/wifi/hostapd.py#L249)
+
+> **Aggiornamento (2026-11-25).** Con la create asincrona il client non va più in timeout: riceve `202` e legge lo stato. Resta il problema del server: sui canali radar meteo (120, 124, 128) i 75 s di `DFS_READY_TIMEOUT` non bastano e l'avvio fallisce come guasto radio. `allow_dfs_channels` si chiama ora `show_dfs` ed è per antenna.
+
+**Problema.** Il timeout per i canali da 52 a 144 è 75 s. In Europa i canali dei radar meteo (120, 124,
+128) richiedono 600 s di ascolto. Con `allow_dfs_channels: true` una richiesta su quei canali va sempre
+in timeout e viene trattata come guasto radio, fino alla quarantena.
+
+**Come si riproduce.** Con `allow_dfs_channels: true` e `country_code` europeo, creare una rete sul
+canale 124.
+
+**Come correggerlo.** Per la 4.1.0 solo la via semplice: rifiutare quei canali. `allow_dfs_channels`
+qui sotto è il vecchio nome di `show_dfs`.
+
+```python
+# wilab/wifi/channels.py
+# ETSI weather-radar channels need a 10-minute radar check, longer than any request can wait.
+LONG_CAC_CHANNELS = frozenset({120, 124, 128})
+```
+
+In `validate_channel`, per la banda `5ghz`: se `channel in LONG_CAC_CHANNELS` sollevare
+`ValueError("Channel ... requires a 10-minute radar check and is not supported")`, e toglierli
+dall'elenco di `GET .../channels`. La via completa, non per la 4.x perché aggiunge uno stato alle API:
+leggere `cac_time` dalla riga `DFS-CAC-START` di hostapd e usarlo come timeout, rispondendo subito al
+client con uno stato "radar check in corso".
+
+---
+
 <a id="rev-5"></a>
 ### ✅ REV-5 - Il budget di 20 s dei tentativi interni è un residuo della create sincrona
 
@@ -2444,10 +2444,10 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 | [unit-test-15](#unit-test-15) | Frontend: compilazione e spec di `startNetwork` | REV-13, REV-15 | `frontend/src/app/services/*.spec.ts` |
 
 <a id="unit-test-2"></a>
-**unit-test-2 - Annullamento con rollback fallito.** Avvio bloccato; lo stop di hostapd nel rollback
+**unit-test-2 - Annullamento con rollback fallito.** ✅ Fatto con REV-2, in `test_async_create.py`. Avvio bloccato; lo stop di hostapd nel rollback
 solleva. `DELETE /reservations/{id}`: atteso `200`, `reason: reservation_released` alle chiamate
 successive, antenna senza `recovery_state`, cleanup affidato al ciclo in background. Con
-`DELETE .../network`: atteso `503 / 1012`, reservation valida. Oggi fallisce (REV-2).
+`DELETE .../network`: atteso `503 / 1012`, reservation valida.
 
 <a id="unit-test-4"></a>
 **unit-test-4 - Budget dei tentativi.** ✅ Fatto con REV-5, in `test_startup_classification.py`.
