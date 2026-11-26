@@ -28,6 +28,8 @@ from .recovery_responses import (
     DEVICE_BUSY_RESPONSE,
     NETWORK_NOT_ACTIVE_EXAMPLE,
     NETWORK_NOT_ACTIVE_RESPONSE,
+    STOP_INCOMPLETE_EXAMPLE,
+    require_stop_complete,
 )
 
 # ---------------------------------------------------------------------------
@@ -61,7 +63,11 @@ reservation_router = APIRouter(
 
 
 def _require_active_network(device_id: str, manager: NetworkManager) -> str:
-    """Return the physical interface name, or raise NetworkNotActive (409 / 1007, API-2)."""
+    """Return the physical interface name, or raise NetworkNotActive (409 / 1007, API-2).
+
+    A half-stopped network is 409 / 1012 (REV-9).
+    """
+    require_stop_complete(manager, device_id)
     st = manager.get_status(device_id)
     if st is None or not st.active:
         raise NetworkNotActive(device_id)
@@ -107,10 +113,13 @@ def _build_profile_state(interface: str, pm: QosProfileManager) -> QosProfileSta
         409: {
             "description": (
                 "A profile is already active (stop it first), or `detail.code: 1007` "
-                "(`network_not_active`): the reservation has no running network."
+                "(`network_not_active`): the reservation has no running network, or "
+                "`detail.code: 1012` (`stop_incomplete`): the network is half stopped, "
+                "repeat `DELETE .../network`."
             ),
             "content": {"application/json": {"examples": {
                 "network_not_active": {"value": NETWORK_NOT_ACTIVE_EXAMPLE},
+                "stop_incomplete": {"value": STOP_INCOMPLETE_EXAMPLE},
             }}},
         },
         422: {"description": "Invalid request body"},

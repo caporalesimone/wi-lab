@@ -12,7 +12,11 @@ from ...api.dependencies import (
 from ...models import TxPowerInfo, TxPowerRequest
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager, NetworkNotActive, TxPowerMismatchError
-from .recovery_responses import DEVICE_BUSY_RESPONSE, NETWORK_NOT_ACTIVE_RESPONSE
+from .recovery_responses import (
+    DEVICE_BUSY_RESPONSE,
+    NETWORK_NOT_ACTIVE_RESPONSE,
+    require_stop_complete,
+)
 
 router = APIRouter(
     prefix="/reservations", tags=["TX Power"],
@@ -59,6 +63,7 @@ def get_tx_power(
     Requires a valid reservation token.
     """
     with hold_reservation(reservation_mgr, reservation):
+        require_stop_complete(manager, reservation.device_id)
         try:
             return manager.get_tx_power_info(reservation.device_id)
         except NetworkNotActive:
@@ -115,6 +120,7 @@ def set_tx_power(
         )
 
     with hold_reservation(reservation_mgr, reservation):
+        require_stop_complete(manager, reservation.device_id)
         try:
             return manager.set_tx_power_level(reservation.device_id, req.tx_power_level)
         except TxPowerMismatchError as e:

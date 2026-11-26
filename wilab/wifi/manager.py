@@ -243,7 +243,12 @@ class NetworkManager:
                 raise RuntimeError(f"Network {device_id} is still active")
 
     def _tracked_stop(self, device_id: str) -> None:
-        """stop_network, recording failures for the background backoff (WD-6)."""
+        """stop_network, recording failures for the background backoff (WD-6).
+
+        The server owns this cleanup: a stop the client had to repeat is no
+        longer the client's (REV-9).
+        """
+        self._stop_failed.discard(device_id)
         try:
             self.stop_network(device_id)
         except RuntimeError:
@@ -640,11 +645,18 @@ class NetworkManager:
         
         return status
 
-    def stop_network(self, device_id: str) -> None:
-        with self.device_lock(device_id):
-            self._stop_network(device_id)
+    def stop_network(self, device_id: str, *, client: bool = False) -> None:
+        """Stop the network of *device_id*.
 
-    def _stop_network(self, device_id: str) -> None:
+        *client*: the stop the reservation owner asked for (DELETE .../network).
+        Only that one, when it fails, marks the network `stop_failed` for the
+        owner to repeat (REV-9). A rollback, an expiry or a background cleanup
+        that fails is retried by the server, not by the client.
+        """
+        with self.device_lock(device_id):
+            self._stop_network(device_id, client=client)
+
+    def _stop_network(self, device_id: str, *, client: bool = False) -> None:
         """
         Stop an AP network and clean up DHCP and NAT.
         
@@ -731,7 +743,8 @@ class NetworkManager:
             errors.append(f"DHCP: {e}")
 
         if errors:
-            self._stop_failed.add(device_id)
+            if client:
+                self._stop_failed.add(device_id)
             raise NetworkStopError(f"Failed to stop network {device_id}: {'; '.join(errors)}")
 
         # Remove from active dict

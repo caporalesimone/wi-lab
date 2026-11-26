@@ -1,9 +1,12 @@
-"""API-2: every action on a valid reservation without a network answers 409 / 1007."""
+"""API-2: every action on a valid reservation without a network answers 409 / 1007.
+
+REV-9: on a half-stopped network (the client's stop did not complete) 409 / 1012.
+"""
 
 import pytest
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app
+from wilab.api import create_app, dependencies
 from wilab.config import load_config
 
 
@@ -17,7 +20,7 @@ def idle_reservation():
         yield client, headers, rid
 
 
-@pytest.mark.parametrize(("method", "path", "body"), [
+ACTIONS = [
     ("post", "/internet/enable", None),
     ("post", "/internet/disable", None),
     ("get", "/txpower", None),
@@ -25,7 +28,10 @@ def idle_reservation():
     ("post", "/qos/profile", {"download_speed_kbit": 1000}),
     ("get", "/qos/profile", None),
     ("delete", "/qos/profile", None),
-])
+]
+
+
+@pytest.mark.parametrize(("method", "path", "body"), ACTIONS)
 def test_action_without_network_is_409_1007(idle_reservation, method, path, body):
     client, headers, rid = idle_reservation
     kwargs = {"headers": headers, **({"json": body} if body is not None else {})}
@@ -33,6 +39,22 @@ def test_action_without_network_is_409_1007(idle_reservation, method, path, body
     assert response.status_code == 409, response.text
     assert response.json()["detail"]["code"] == 1007
     assert response.json()["detail"]["reason"] == "network_not_active"
+
+
+@pytest.mark.parametrize(("method", "path", "body"), ACTIONS)
+def test_action_on_a_half_stopped_network_is_409_1012(idle_reservation, method, path, body):
+    """REV-9: after a client stop that did not complete, the network is not acted on."""
+    client, headers, rid = idle_reservation
+    manager = dependencies.get_manager(dependencies.get_config())
+    device = manager.config.antennas[0].device_id
+    manager._stop_failed.add(device)
+    try:
+        kwargs = {"headers": headers, **({"json": body} if body is not None else {})}
+        response = getattr(client, method)(f"/api/v2/reservations/{rid}{path}", **kwargs)
+    finally:
+        manager._stop_failed.discard(device)
+    assert response.status_code == 409, response.text
+    assert (response.json()["detail"]["code"], response.json()["detail"]["reason"]) == (1012, "stop_incomplete")
 
 
 def test_unknown_reservation_is_still_404(idle_reservation):
@@ -49,3 +71,4 @@ def test_openapi_documents_1007():
         ("/api/v2/reservations/{reservation_id}/qos/profile", "post"),
     ):
         assert "1007" in paths[path][method]["responses"]["409"]["description"], (path, method)
+        assert "1012" in paths[path][method]["responses"]["409"]["description"], (path, method)

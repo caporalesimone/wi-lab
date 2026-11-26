@@ -53,14 +53,37 @@ NETWORK_NOT_ACTIVE_EXAMPLE = {"detail": {
     "code": 1007, "reason": "network_not_active", "message": "Network wlan0 is not active",
 }}
 
+STOP_INCOMPLETE_EXAMPLE = {"detail": {
+    "code": 1012, "reason": "stop_incomplete",
+    "message": "The stop of the network on wlan0 did not complete: repeat DELETE .../network first",
+}}
+
 NETWORK_NOT_ACTIVE_RESPONSE = {
     "description": (
         "`detail.code: 1007` (`network_not_active`): the reservation is valid but has no "
-        "running network. Create one first. A `404` instead always means the reservation "
-        "itself is unknown, expired or invalidated."
+        "running network. Create one first. `detail.code: 1012` (`stop_incomplete`): the "
+        "last `DELETE .../network` did not complete and the network is half stopped; repeat "
+        "the DELETE. A `404` instead always means the reservation itself is unknown, "
+        "expired or invalidated."
     ),
-    "content": {"application/json": {"example": NETWORK_NOT_ACTIVE_EXAMPLE}},
+    "content": {"application/json": {"examples": {
+        "network_not_active": {"summary": "1007 - no running network", "value": NETWORK_NOT_ACTIVE_EXAMPLE},
+        "stop_incomplete": {"summary": "1012 - half-stopped network, repeat the DELETE", "value": STOP_INCOMPLETE_EXAMPLE},
+    }}},
 }
+
+
+def require_stop_complete(manager, device_id: str) -> None:
+    """409 / 1012 while the client's last stop of the network did not complete (REV-9).
+
+    The network is still in the manager's active list, but half stopped: Internet,
+    TX power and QoS must not act on it.
+    """
+    if manager.stop_failed(device_id):
+        raise HTTPException(status_code=409, detail=domain_error(
+            ApiErrorCode.STOP_INCOMPLETE,
+            f"The stop of the network on {device_id} did not complete: repeat DELETE .../network first",
+        ))
 
 
 RETRY_AFTER_HEADER = {

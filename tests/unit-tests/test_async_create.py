@@ -576,6 +576,8 @@ def test_release_during_a_start_whose_rollback_fails_is_a_release(stuck_rollback
     antenna = next(a for a in status["antennas"] if a["interface"] == device)
     assert antenna.get("recovery_state") in (None, "ok")
     assert any(r["code"] == "cleanup_failed" for r in status["degraded_reasons"])
+    # Not the client's to repeat any more (REV-9).
+    assert not any(r["code"] == "network_stop_incomplete" for r in status["degraded_reasons"])
     assert manager.has_leftovers(device)
 
 

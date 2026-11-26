@@ -673,7 +673,7 @@ def stop_network(
         deadline = monotonic() + STOP_RETRY_BUDGET
         while True:
             try:
-                manager.stop_network(device_id)
+                manager.stop_network(device_id, client=True)
                 break
             except NetworkStopError as exc:
                 # Usually hostapd stuck in the kernel for a few seconds (driver

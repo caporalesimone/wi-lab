@@ -70,9 +70,9 @@ def test_a_failed_phase_is_named_and_a_repeated_stop_finishes(running, monkeypat
     mgr, device = running
     label = _break(monkeypatch, mgr, phase)
     with pytest.raises(NetworkStopError, match=f"{label}: "):
-        mgr.stop_network(device)
+        mgr.stop_network(device, client=True)
     assert device in mgr.active and mgr.stop_failed(device)
-    mgr.stop_network(device)
+    mgr.stop_network(device, client=True)
     assert device not in mgr.active and not mgr.stop_failed(device)
     assert not mgr.has_leftovers(device)
     assert not mgr.isolation_manager.get_active_subnets()
@@ -93,3 +93,23 @@ def test_hostapd_that_does_not_stop_keeps_the_host_guard_and_isolation(running, 
     assert not mgr.host_guard.has(device)
     assert not mgr.isolation_manager.get_active_subnets()
     assert not mgr.has_leftovers(device)
+
+
+def test_only_the_client_stop_marks_stop_failed(running, monkeypatch):
+    """REV-9: an expiry, a rollback or a background cleanup that fails is not the client's to repeat."""
+    mgr, device = running
+    _break(monkeypatch, mgr, "DHCP")
+    with pytest.raises(NetworkStopError):
+        mgr.stop_network(device)
+    assert not mgr.stop_failed(device)
+
+
+def test_server_cleanup_takes_over_a_failed_client_stop(running, monkeypatch):
+    """REV-9: after a release the background cleanup owns the stop; stop_failed goes away."""
+    mgr, device = running
+    _break(monkeypatch, mgr, "DHCP")
+    with pytest.raises(NetworkStopError):
+        mgr.stop_network(device, client=True)
+    assert mgr.stop_failed(device)
+    mgr.release_device(device)
+    assert not mgr.stop_failed(device) and device not in mgr.active

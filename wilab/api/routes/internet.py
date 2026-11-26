@@ -11,7 +11,11 @@ from ...api.dependencies import (
 )
 from ...reservation import Reservation
 from ...wifi.manager import NetworkManager, NetworkNotActive
-from .recovery_responses import DEVICE_BUSY_RESPONSE, NETWORK_NOT_ACTIVE_RESPONSE
+from .recovery_responses import (
+    DEVICE_BUSY_RESPONSE,
+    NETWORK_NOT_ACTIVE_RESPONSE,
+    require_stop_complete,
+)
 
 router = APIRouter(
     prefix="/reservations", tags=["Internet"],
@@ -50,6 +54,7 @@ def internet_enable(
     """
     with hold_reservation(reservation_mgr, reservation):
         device_id = reservation.device_id
+        require_stop_complete(manager, device_id)
         try:
             manager.enable_internet(device_id)
             return {"detail": f"Network {device_id} internet enabled successfully"}
@@ -92,6 +97,7 @@ def internet_disable(
     """
     with hold_reservation(reservation_mgr, reservation):
         device_id = reservation.device_id
+        require_stop_complete(manager, device_id)
         try:
             manager.disable_internet(device_id)
             return {"detail": f"Network {device_id} internet disabled successfully"}

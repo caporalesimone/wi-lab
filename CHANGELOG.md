@@ -10,7 +10,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 15 |
+| 🐛 Bug fixes | 16 |
 | ⚠️ Breaking changes | 3 |
 | 🔧 Maintenance changes | 3 |
 | ✨ New features | 1 |
@@ -45,6 +45,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The installer's API test called `/api/v1/health`, which no longer exists, and passed anyway after 60 s of `404`; it now calls `GET /api/v2/status` with the token and fails the installation if the API does not answer. The final summary no longer lists a health URL that does not exist.
 - A start that ignores a cancel for more than 30 s is no longer forgotten while its thread still runs: a repeated `DELETE .../network` answers `503 / 1006` until it ends, and a create with other settings answers `409 / 1008` instead of starting a second AP thread next to it. When it ends, the stop answers `200` or `409 / 1007`, both meaning stopped (Fable REV-8).
 - Cancelling a start whose rollback fails no longer quarantines the antenna: the release answers `200` as always and leaves the cleanup to the background retry (instead of `404 reservation_invalidated`), and `DELETE .../network` answers `503 / 1012`, repeated until the stop completes, with the reservation kept (Fable REV-2).
+- Only a client's `DELETE .../network` that did not complete marks the network `stop_failed` (`network_stop_incomplete` in `/status`): a failed rollback, expiry or background cleanup no longer asks a client to repeat a stop of a network it does not own, and no longer hides the hostapd, dnsmasq and NAT reasons of that antenna. On a half-stopped network Internet, TX power and QoS answer `409 / 1012` instead of acting on it (Fable REV-9).
 - `uninstall.sh` removes what a stopped service leaves on the host (the `wilab-protect-existing` FORWARD rule, `/tmp/wilab-*`, the systemd-networkd rule, QoS IFB devices); `config.yaml` is still kept.
 
 ### 🔧 Maintenance
@@ -69,6 +70,9 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - `POST .../txpower`: the body is `{"tx_power_level": 2}`; `{"level": 2}` is now `422` (API-6).
 - **Not stable in 4.1:** TX power is under debugging (the drivers in use do not apply it reliably) and QoS profiles are experimental. Both may change in any release; the rest of the API is frozen for 4.1.
 - `DELETE .../network` on a network that is not running now stops what a failed start may have left (hostapd, rules) before answering `200`; if that cleanup fails it answers `503 / 1012` with `Retry-After`, like any incomplete stop (REV-1). Before it answered `200` and left them.
+- Internet, TX power and QoS profile requests can answer `409 / 1012` (`stop_incomplete`): the last `DELETE .../network` did not complete; repeat it until `200` (REV-9).
+- Cancelling a start (release or `DELETE .../network`) whose rollback fails: the release answers `200` (before: `404 reservation_invalidated` and the antenna quarantined); `DELETE .../network` answers `503 / 1012`, repeat it (REV-2).
+- `GET /status`: `runtime_state: stop_failed` and `network_stop_incomplete` appear only after the client's own `DELETE .../network` failed (REV-9).
 
 ---
 
