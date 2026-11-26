@@ -14,32 +14,37 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../common.sh"
 
+# Every command the service runs. nmcli is not required: NetworkManager is not part
+# of the requirements, and the service only releases radios from it when present.
 declare -a REQUIRED_CMDS=(
     "python3"
     "ip"
     "tc"
     "iptables"
+    "ip6tables"
     "hostapd"
+    "hostapd_cli"
     "dnsmasq"
     "iw"
     "udevadm"
-    "jq"
-    "nmcli"
+    "usbreset"
     "modprobe"
     "systemctl"
+    "networkctl"
 )
 
 declare -A CMD_TO_PKGS=(
-    [python3]="python3 python3-venv python3-pip"
+    [python3]="python3 python3-venv"
     [ip]="iproute2"
     [tc]="iproute2"
     [iptables]="iptables"
+    [ip6tables]="iptables"
     [hostapd]="hostapd"
+    [hostapd_cli]="hostapd"
     [dnsmasq]="dnsmasq"
     [iw]="iw"
     [udevadm]="udev"
-    [jq]="jq"
-    [nmcli]="network-manager"
+    [usbreset]="usbutils"
     [modprobe]="kmod"
 )
 
@@ -62,8 +67,8 @@ PY
     fi
 
     if [ $need_ensurepip -eq 1 ]; then
+        # The venv gets its own pip from ensurepip: no system pip needed.
         pkg_set[python3-venv]=1
-        pkg_set[python3-pip]=1
         PY_MINOR=$(python3 - <<'PY'
 import sys
 print(f"{sys.version_info.major}.{sys.version_info.minor}")

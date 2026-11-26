@@ -1,5 +1,9 @@
 fastapi>=0.110.0
-uvicorn[standard]>=0.27.0
+# Plain uvicorn plus its two fast paths; the [standard] extras also pulled
+# watchfiles (--reload), websockets and python-dotenv, which Wi-Lab does not use.
+uvicorn>=0.27.0
+uvloop>=0.19.0
+httptools>=0.6.0
 pydantic>=2.6.0
 pyyaml>=6.0.1
 jsonschema>=4.19.0

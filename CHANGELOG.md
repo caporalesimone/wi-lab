@@ -12,10 +12,10 @@ All notable changes to Wi-Lab are documented in this file.
 |---|---:|
 | 🐛 Bug fixes | 12 |
 | ⚠️ Breaking changes | 0 |
-| 🔧 Maintenance changes | 2 |
+| 🔧 Maintenance changes | 3 |
 | ✨ New features | 0 |
 | ✅ Test changes | 7 |
-| 📦 Commits since 4.0.0 | 27 |
+| 📦 Commits since 4.0.0 | 29 |
 
 Counts are the entries of the sections below and `git rev-list --count aca248e..HEAD` (`aca248e` is the last 4.0.0 commit), as of 2026-11-26.
 
@@ -42,6 +42,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 - The create job reports its outcome as a value instead of HTTP exceptions that no client received, and the synchronous create used only by the unit tests is gone; the create and network OpenAPI examples are module constants, and every error code is in one enum. The API contract is unchanged (Fable REV-16).
 - `validate_interface_wireless`, `validate_interface_ap_mode` and `validate_interface` are gone: the AP-mode check was a substring search that proved nothing, and no start used them any more; discovery already establishes wireless and AP capability (Fable BUG-6).
+- Dependencies: the installer no longer requires or installs `jq` (unused), `network-manager` (the service only releases radios from it when present) and the system `python3-pip` (the venv has its own); it now checks `ip6tables`, `hostapd_cli`, `networkctl` and `usbreset` (package `usbutils`, needed by the USB recovery and so far never installed). `uvicorn[standard]` becomes `uvicorn` with `uvloop` and `httptools`, without the unused `watchfiles`, `websockets` and `python-dotenv`; `pytest-asyncio` leaves the development requirements. Docker stays: it builds the frontend.
 
 ### ✅ Tests
 
