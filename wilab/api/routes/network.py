@@ -494,7 +494,12 @@ def _start_with_retries(
         except StartupFailure as e:
             # The next attempt reads the channel list again (BUG-4).
             channel_mgr.invalidate(device_id)
-            if cancel.is_set() and not e.cleanup_failed:
+            if cancel.is_set():
+                if e.cleanup_failed:
+                    # Not a radio fault and no quarantine (REV-2): what the rollback left
+                    # goes to the canceller's path. A release hands it to the background
+                    # cleanup, a stop answers 503 / 1012 and its repetition finishes it.
+                    logger.warning("AP start on %s cancelled; its rollback failed: %s", device_id, e)
                 return StartOutcome("cancelled")
             if not (e.radio or e.cleanup_failed):
                 # Rolled back, reservation kept: the stage tells the client what failed.

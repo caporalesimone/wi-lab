@@ -10,12 +10,12 @@ All notable changes to Wi-Lab are documented in this file.
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 14 |
+| 🐛 Bug fixes | 15 |
 | ⚠️ Breaking changes | 3 |
 | 🔧 Maintenance changes | 3 |
 | ✨ New features | 1 |
 | ✅ Test changes | 7 |
-| 📦 Commits since 4.0.0 | 37 |
+| 📦 Commits since 4.0.0 | 40 |
 
 Counts are the entries of the sections below and `git rev-list --count aca248e..HEAD` (`aca248e` is the last 4.0.0 commit), as of 2026-11-26.
 
@@ -44,6 +44,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The DHCP lease file of a network is deleted when the network ends: the next user of the adapter no longer inherits the previous session's clients (MAC addresses) for up to 12 hours. A watchdog restart of dnsmasq alone keeps the leases, so connected clients keep their addresses (Fable NET-7).
 - The installer's API test called `/api/v1/health`, which no longer exists, and passed anyway after 60 s of `404`; it now calls `GET /api/v2/status` with the token and fails the installation if the API does not answer. The final summary no longer lists a health URL that does not exist.
 - A start that ignores a cancel for more than 30 s is no longer forgotten while its thread still runs: a repeated `DELETE .../network` answers `503 / 1006` until it ends, and a create with other settings answers `409 / 1008` instead of starting a second AP thread next to it. When it ends, the stop answers `200` or `409 / 1007`, both meaning stopped (Fable REV-8).
+- Cancelling a start whose rollback fails no longer quarantines the antenna: the release answers `200` as always and leaves the cleanup to the background retry (instead of `404 reservation_invalidated`), and `DELETE .../network` answers `503 / 1012`, repeated until the stop completes, with the reservation kept (Fable REV-2).
 - `uninstall.sh` removes what a stopped service leaves on the host (the `wilab-protect-existing` FORWARD rule, `/tmp/wilab-*`, the systemd-networkd rule, QoS IFB devices); `config.yaml` is still kept.
 
 ### 🔧 Maintenance

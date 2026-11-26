@@ -533,3 +533,59 @@ def test_start_whose_channels_cannot_be_read_is_a_radio_fault_when_the_antenna_i
             mgr.start_network(device, req)
         assert failure.value.radio is gone
         assert failure.value.stage == "interface"
+
+
+# --------------------------------------------------------------------------- unit-test-2
+
+
+@pytest.fixture
+def stuck_rollback(api, monkeypatch):
+    """A start whose rollback fails when it is cancelled: hostapd is left and cannot be stopped."""
+    client, headers, url, script, manager = api
+    device = manager.config.antennas[0].device_id
+
+    def start_network(dev, req, *args, cancelled=None, **kwargs):
+        script["calls"] += 1
+        while not script["release"].wait(0.01):
+            if cancelled is not None and cancelled():
+                manager.hostapd_manager._instances[dev] = Mock()
+                raise StartupFailure("rollback failed: hostapd did not stop", stage="hostapd", cleanup_failed=True)
+        raise AssertionError("the test cancels the start")
+
+    def hostapd_stop(net_id):
+        raise HostapdError("hostapd stuck in the kernel")
+
+    monkeypatch.setattr(manager, "start_network", start_network)
+    monkeypatch.setattr(manager.hostapd_manager, "stop", hostapd_stop)
+    quarantine = Mock()
+    monkeypatch.setattr(manager, "quarantine_radio", quarantine)
+    script["release"].clear()
+    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    _wait_until(lambda: script["calls"])
+    yield client, headers, url, manager, device, quarantine
+    manager.hostapd_manager._instances.pop(device, None)
+
+
+def test_release_during_a_start_whose_rollback_fails_is_a_release(stuck_rollback):
+    """REV-2: the release never fails, no quarantine; the cleanup goes to the background."""
+    client, headers, url, manager, device, quarantine = stuck_rollback
+    assert client.delete(url, headers=headers).status_code == 200
+    assert _state(client, headers, url).json()["detail"]["reason"] == "reservation_released"
+    quarantine.assert_not_called()
+    status = client.get("/api/v2/status", headers=headers).json()
+    antenna = next(a for a in status["antennas"] if a["interface"] == device)
+    assert antenna.get("recovery_state") in (None, "ok")
+    assert any(r["code"] == "cleanup_failed" for r in status["degraded_reasons"])
+    assert manager.has_leftovers(device)
+
+
+def test_stop_during_a_start_whose_rollback_fails_is_1012_and_keeps_the_reservation(stuck_rollback):
+    """REV-2: DELETE .../network answers 503 / 1012, the reservation stays valid."""
+    client, headers, url, _manager, _device, quarantine = stuck_rollback
+    first = client.delete(f"{url}/network", headers=headers)
+    if first.status_code == 503 and first.json()["detail"]["code"] == 1006:
+        first = _wait_until(lambda: (r := client.delete(f"{url}/network", headers=headers)).status_code != 503
+                            or r.json()["detail"]["code"] != 1006 and r)
+    assert (first.status_code, first.json()["detail"]["code"]) == (503, 1012)
+    assert client.get(url, headers=headers).status_code == 200
+    quarantine.assert_not_called()
