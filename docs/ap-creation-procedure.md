@@ -780,7 +780,7 @@ Every answer leads to exactly one of these actions:
 | QoS profile start | `409 / 1010` | FIX | A profile already runs: stop it first. |
 | QoS profile stop | `409 / 1011` | DONE | No profile runs. |
 | `DELETE .../network` | `200` | DONE | The reservation stays. |
-| | `409 / 1007` | DONE | Already inactive. |
+| | `409 / 1007` | DONE | Already inactive. Also the normal end of a stop that answered `503 / 1006` because a start was slow to cancel (more than 30 s): repeat until `200` or `409 / 1007`; both mean stopped. |
 | | `503 / 1012` + `Retry-After: 5` | REPEAT | The stop did not complete, even after the server repeated it for 15 s (hostapd stuck in the kernel). Rare. Repeat until `200`. |
 | `DELETE /reservations/{id}` | `200` | DONE | Always, even if the cleanup failed: the server then keeps the antenna out of the pool and repeats the cleanup by itself. |
 | | `404` (any reason) | DONE | Nothing left to release: the release is idempotent. |

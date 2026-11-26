@@ -283,9 +283,11 @@ class NetworkManager:
         running = not job.done.is_set()
         job.cancel.set()
         if running and not job.done.wait(timeout):
+            # The job stays in start_jobs until its thread ends (REV-8): forgotten
+            # now, a later create would start a second thread next to it.
             logger.error("AP start on %s did not stop within %.0f s of the cancel", device_id, timeout)
         with self.start_jobs_lock:
-            if self.start_jobs.get(device_id) is job:
+            if self.start_jobs.get(device_id) is job and job.done.is_set():
                 del self.start_jobs[device_id]
         return running
 

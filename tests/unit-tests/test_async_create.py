@@ -297,6 +297,14 @@ def test_a_cancel_that_times_out_is_503_then_the_real_state_and_a_working_stop(a
     busy = client.delete(f"{url}/network", headers=headers)
     assert (busy.status_code, busy.json()["detail"]["code"]) == (503, 1006)
     assert busy.headers["Retry-After"] == "2"
+    # REV-8: the job is kept while its thread runs: the repeated stop is busy again,
+    # and a create with other settings is refused instead of starting a second thread.
+    assert manager.start_jobs.get(device) is job
+    again = client.delete(f"{url}/network", headers=headers)
+    assert (again.status_code, again.json()["detail"]["code"]) == (503, 1006)
+    other = client.post(f"{url}/network", headers=headers, json={**BODY, "wifi": {**BODY["wifi"], "ssid": "other"}})
+    assert (other.status_code, other.json()["detail"]["code"]) == (409, 1008)
+    assert manager.start_jobs.get(device) is job
     finish.set()
     job.thread.join(5)
     assert not job.thread.is_alive()

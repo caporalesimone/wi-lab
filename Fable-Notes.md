@@ -27,8 +27,8 @@ In quest'ordine:
 1. **Provare sulla macchina le correzioni del paragrafo 2.3** (conferma prima degli e2e): suite e2e
    standard, poi `time systemctl stop wi-lab` con due reti attive (STAB-8, meno di 60 s) e un
    `sudo reboot` (primo riavvio senza NetworkManager).
-2. **Blocco A** (paragrafo 2.1), nell'ordine della tabella. Prima di iniziarlo, prendere le decisioni
-   del paragrafo 1.3 marcate **(blocca il congelamento)**.
+2. **Blocco A** (paragrafo 2.1), nell'ordine della tabella. Le decisioni che lo bloccavano sono prese
+   (paragrafo 1.3).
 3. **Congelamento:** RELEASE-API, ultima riga del blocco A.
 4. **Blocco B** (paragrafo 2.2), nelle 4.1.x.
 
@@ -59,31 +59,34 @@ staccare la USB (23/11): serve chi la ricollega.
   dalla VM (23/11); serve poi un ricollegamento fisico.
 - `copilot.md` resta fuori dai commit.
 
-### 1.3 Decisioni aperte
+### 1.3 Decisioni
 
-**(blocca il congelamento)** = da decidere prima di chiudere il blocco A, perché cambia ciò che il
-client vede.
+**Prese il 2026-11-26** (non vanno ridiscusse):
 
-- **REV-11, punto 4 (blocca il congelamento):** rendere stretti i tipi (`strict=True`) restringe ciò
-  che i client possono inviare. Dopo il congelamento sarebbe breaking: o si fa ora o si lascia per
-  tutta la 4.x. Proposta: farlo ora.
-- **e2e-test-2 / REV-8 (blocca il congelamento):** se un annullamento va oltre i 30 s di
-  `cancel_start`, la `DELETE .../network` risponde `503 / 1006` e la ripetuta può rispondere
-  `409 / 1007` invece di `200` (lettura del codice, non visto sulla macchina). Decidere quale risposta
-  è il contratto e scriverla in `docs/ap-creation-procedure.md`.
-- **API-6 e API-7 (blocca il congelamento):** `level` in `POST .../txpower` contro
-  `radio.tx_power_level` nella create. Rinominare è breaking: o ora o mai nella 4.x. API-7
-  (`PUT .../internet`, `PUT .../txpower`) si può aggiungere dopo senza rompere nulla, quindi non blocca.
-  Proposta: non rinominare, e scrivere in `TODOs/api-review.md` che i due nomi restano per la 4.x.
-- **QoS (blocca il congelamento):** dichiararlo sperimentale nella documentazione della 4.1.0 e fuori
-  dal contratto, oppure portare NET-11, NET-13 e WD-8 nel blocco A. Proposta: sperimentale.
+- **Tipi stretti (REV-11 punto 4):** fatto. I body di reservation, create e `POST .../txpower` sono
+  `strict`; il QoS no, perché è fuori dal contratto.
+- **Stop dopo un annullamento lento (REV-8, e2e-test-2):** il contratto resta quello documentato.
+  La `DELETE .../network` risponde `503 / 1006` finché il job gira, poi `200` o `409 / 1007`, ed
+  entrambi vogliono dire "fermata" (`docs/ap-creation-procedure.md`, tabella 3.1). Il job non si
+  dimentica più mentre il thread gira: fatto.
+- **Nome del TX power (API-6):** rinominato `level` → `tx_power_level` (le API del TX power non sono
+  usate da nessun client). API-7 (`PUT`) resta nel blocco B: si può aggiungere senza rompere nulla.
+- **QoS:** sperimentale nella 4.1.0, fuori dal contratto e dal congelamento. Scritto in OpenAPI,
+  `docs/qos.md`, `docs/ap-creation-procedure.md` e CHANGELOG.
+- **TX power: da debuggare.** Non si è mai riusciti a controllare la potenza sugli adattatori in uso.
+  Dichiarato non stabile nella 4.1.0 come il QoS (stessi documenti). Il campo `radio.tx_power_level`
+  della create resta obbligatorio e validato 1-4: è nel contratto, il suo effetto no. BUG-7, PERF-6 e
+  HAP-6 escono dal blocco A e vanno nel gruppo [TXP-1](#txp-1) del paragrafo 2.2.
+
+**Ancora aperte** (nessuna blocca il congelamento):
+
 - **CHANGELOG 4.0.0:** confermare la rimozione di RACE-2 (giudicato mai rilasciato) e della voce
   "Prevent concurrent reservations…" (la 3.0.0 aveva già un lock); la data dell'intestazione è ancora
   2026-11-20.
 - **Frontend (REV-13, REV-14, REV-15):** non si può compilare senza pubblicare in `frontend/dist`;
   serve prima un target di sola compilazione (unit-test-15).
 - `config.yaml` della macchina ha ancora la `protected_commands_password` di esempio (verificato il
-  2026-11-26).
+  2026-11-26): va cambiata a mano.
 
 Gravità: **Critica** sicurezza o perdita del servizio · **Alta** una rete o un adattatore resta rotto
 senza che il client lo sappia · **Media** comportamento sbagliato in un caso realistico · **Bassa**
@@ -112,16 +115,12 @@ requisiti di installazione. I punti sono divisi con questo criterio, non per gra
 | A1 | [SEC-1](#sec-1) | Critica | Limitare la route frontend ai file contenuti nella directory frontend. | Sicurezza critica. Cambia anche le risposte: i percorsi `/api/...` e `/docs/...` inesistenti passano da `200` con `null` a `404`. |
 | A2 | [NM-1](#nm-1) | Media | Togliere `nmcli` dal codice, stadi dell'installer che propongono di disattivare NetworkManager e `wpa_supplicant` senza rischiare l'accesso alla macchina, precheck all'avvio. Tutto nel [capitolo 5](#cap-5). Toglie il codice di STAB-9 e chiude ARCH-7 (i tre rilasci `nmcli` duplicati). | Requisito di sistema nuovo (breaking per chi installa) e codice di uscita `78`: non può arrivare in una versione di sola stabilizzazione. |
 | A3 | [REV-2](#rev-2) | Media | Un annullamento il cui rollback fallisce non deve finire in quarantena né far rispondere `404` al rilascio. | Risposte del rilascio e dello stop durante `starting`: è il ciclo di vita che il client implementa. |
-| A4 | [REV-11](#rev-11) | Bassa | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, tipi accettati per sbaglio, `next_available_in` troncato. | Codici e tipi fuori contratto. Il punto 4 (`strict`) restringe ciò che il client può inviare: o ora o mai nella 4.x. |
+| A4 | [REV-11](#rev-11) | Bassa | Chiudere le risposte fuori contratto: `1006` sulla create, `404 not_found` su una reservation valida, `start_failed` dopo la scadenza, `next_available_in` troncato. **Fatto:** punto 4, tipi stretti. | Codici fuori contratto. |
 | A5 | [REV-9](#rev-9) | Bassa | Impostare `stop_failed` solo per lo stop chiesto dal client; rispondere `1012` a Internet, TX power e QoS su una rete fermata a metà. | Cambia `runtime_state` in `/status` e aggiunge `409 / 1012` a Internet, TX power e QoS. |
-| A6 | [REV-8](#rev-8) | Bassa | Non togliere da `start_jobs` un job il cui thread gira ancora dopo il timeout dell'annullamento. | Decide cosa risponde la `DELETE .../network` dopo un annullamento lento (`503 / 1006`, poi `200` o `409 / 1007`): decisione e2e-test-2 del paragrafo 1.3. |
-| A7 | [HAP-9](#hap-9) | Bassa | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. | Solo la via semplice: `422` sui canali 120, 124, 128 e fuori dall'elenco dei canali. La via completa (stato "radar check") è un cambio di API: non si fa nella 4.x. |
-| A8 | [BUG-7](#bug-7) | Bassa | Rendere coerente lo stato della potenza TX in caso di mismatch. | Cambia cosa rispondono `POST` e `GET .../txpower` dopo un mismatch. |
-| A9 | [PERF-6](#perf-6) | Bassa | Sostituire l'attesa fissa per TX power con polling limitato. | Stessa funzione di BUG-7: si fanno insieme. Cambia la durata della `POST .../txpower`. |
-| A10 | [NET-8](#net-8) | Bassa | Sostituire il DNS predefinito specifico del laboratorio. | Chiave di configurazione che diventa obbligatoria: breaking per chi installa. |
-| A11 | [API-6](#api-6) | Bassa | Uniformare i nomi di endpoint e campi. **Fatto:** `/api/v2/reservations`, `/reservations/{id}/...`, nessun `device_id` nei messaggi. **Manca:** `level` del TX power contro `radio.tx_power_level` della create; da decidere con API-7, rimandato. | Solo una decisione: rinominare `level` ora, oppure dichiarare che resta così per tutta la 4.x (paragrafo 1.3). |
-| A12 | [STAB-7](#stab-7) | Media | Aggiungere un lockfile con versioni esatte delle dipendenze. | Senza versioni bloccate una reinstallazione può cambiare le risposte (per esempio il codice per un `Authorization` mancante). Si genera al congelamento. |
-| A13 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
+| A6 | [HAP-9](#hap-9) | Bassa | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. | Solo la via semplice: `422` sui canali 120, 124, 128 e fuori dall'elenco dei canali. La via completa (stato "radar check") è un cambio di API: non si fa nella 4.x. |
+| A7 | [NET-8](#net-8) | Bassa | Sostituire il DNS predefinito specifico del laboratorio. | Chiave di configurazione che diventa obbligatoria: breaking per chi installa. |
+| A8 | [STAB-7](#stab-7) | Media | Aggiungere un lockfile con versioni esatte delle dipendenze. | Senza versioni bloccate una reinstallazione può cambiare le risposte (per esempio il codice per un `Authorization` mancante). Si genera al congelamento. |
+| A9 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
 
 ### 2.2 Blocco B: dopo la 4.1.0, solo stabilizzazione
 
@@ -140,34 +139,45 @@ cambia, si ferma e si rimanda alla versione successiva.
 | B8 | [REV-14](#rev-14) | Media |  | Frontend: non perdere gli ID delle reservation a una ricarica con il backend in errore; pulsanti e messaggi coerenti con lo stato. |
 | B9 | [HAP-8](#hap-8) | Media | parz. | Conservare un estratto sicuro dell'output hostapd per la diagnosi. **Fatto:** con `hostapd_debug_dir` ogni avvio fallito scrive configurazione (senza password) e ultime 400 righe di `hostapd -d`. **Manca:** l'output quando il watchdog trova hostapd morto su una rete attiva, e un estratto anche senza `hostapd_debug_dir`. |
 | B10 | [HAP-5](#hap-5) | Media |  | Verificare avvii radio concorrenti e serializzarli se necessario. |
-| B11 | [HAP-6](#hap-6) | Media |  | Verificare se ritardare la modifica della potenza TX migliora l'avvio. |
-| B12 | [REV-15](#rev-15) | Bassa |  | Frontend: annullare un avvio, mostrare `restarts` e `error`, scegliere l'antenna; compilazione e spec fuori dal deploy. |
-| B13 | [BUG-8](#bug-8) | Bassa |  | Usare un confronto constant-time per il token. |
-| B14 | [REV-17](#rev-17) | Bassa |  | Togliere i residui della catena di modifiche: percorso `1004` morto, metodi usati solo dai test, duplicati, testi vecchi. |
-| B15 | [HAP-7](#hap-7) | Bassa |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
-| B16 | [REV-18](#rev-18) | Bassa |  | Riordinare i test: fixture condivise e collegate come in produzione, poi i test dei paragrafi 4.6 e 4.7. |
-| B17 | [PERF-1](#perf-1) | Bassa | parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. **Fatto:** validazioni `iw`, `dnsmasq --version`, `nmcli --version`. I tre `nmcli` e la pausa di 0,2 s spariscono con NM-1. **Manca**, non fatto di proposito: `iptables-restore` in blocco (cambierebbe come si installano e tolgono tutte le regole). |
-| B18 | [PERF-2](#perf-2) | Bassa |  | Separare i controlli di stato attivo dalle query dettagliate. |
-| B19 | [PERF-5](#perf-5) | Bassa |  | Rispettare il timeout richiesto senza imporre un minimo nascosto. |
-| B20 | [PERF-4](#perf-4) | Bassa |  | Ridurre letture di discovery e probe hostapd non necessarie. |
-| B21 | [PERF-7](#perf-7) | Bassa |  | Punto informativo: nessuna crescita di memoria o descrittori trovata. Da riverificare con il test T-21. |
-| B22 | [API-7](#api-7) | Bassa |  | Valutare un modello API a risorse per le azioni enable/disable (`PATCH .../network`). **Rimandato** (decisione del 2026-11-25, [TODOs/api-review.md](TODOs/api-review.md)). |
-| B23 | [ARCH-2](#arch-2) | Media |  | Centralizzare la classificazione dei guasti. |
-| B24 | [ARCH-1](#arch-1) | Media |  | Separare le responsabilità di `NetworkManager`. |
-| B25 | [ARCH-4](#arch-4) | Media |  | Consolidare lo stato dei dispositivi in un registro unico. |
-| B26 | [ARCH-3](#arch-3) | Bassa | parz. | Separare il modello interno della rete dai modelli API. **Fatto:** la create usa `NetworkCreateBody` e la `GET` `NetworkResponse`. **Manca:** una dataclass interna al posto di `NetworkStatus` in `manager.active` (con `_expires_at_timestamp`). |
-| B27 | [ARCH-5](#arch-5) | Bassa |  | Costruire e avviare i manager esplicitamente tramite un contesto applicativo. |
-| B28 | [ARCH-6](#arch-6) | Bassa |  | Gestire dnsmasq come processo figlio in foreground. |
-| B29 | [ARCH-10](#arch-10) | Bassa |  | Definire regole di logging e limitare i messaggi ripetuti. |
-| B30 | [ARCH-9](#arch-9) | Bassa |  | Rimuovere codice, modelli e test inutilizzati. |
-| B31 | [ARCH-8](#arch-8) | Bassa |  | Sostituire l'accesso agli attributi privati di altre classi con metodi pubblici. |
-| B32 | [ARCH-11](#arch-11) | Bassa |  | Definire la strategia di integrazione prima di applicare patch specifiche del branch. |
-| B33 | [BUG-9](#bug-9) | Media |  | Allineare la validazione dei profili QoS custom al modello runtime. |
-| B34 | [NET-13](#net-13) | Bassa |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
-| B35 | [RACE-3](#race-3) | Bassa |  | Sincronizzare le operazioni QoS per interfaccia. |
-| B36 | [NET-12](#net-12) | Bassa |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
-| B37 | [NET-11](#net-11) | Media |  | Gestire o rifiutare esplicitamente valori QoS upload/download differenti. Cambia la validazione del QoS: vedi la nota sotto la tabella. |
-| B38 | [WD-8](#wd-8) | Media |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
+| B11 | [REV-15](#rev-15) | Bassa |  | Frontend: annullare un avvio, mostrare `restarts` e `error`, scegliere l'antenna; compilazione e spec fuori dal deploy. |
+| B12 | [BUG-8](#bug-8) | Bassa |  | Usare un confronto constant-time per il token. |
+| B13 | [REV-17](#rev-17) | Bassa |  | Togliere i residui della catena di modifiche: percorso `1004` morto, metodi usati solo dai test, duplicati, testi vecchi. |
+| B14 | [HAP-7](#hap-7) | Bassa |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
+| B15 | [REV-18](#rev-18) | Bassa |  | Riordinare i test: fixture condivise e collegate come in produzione, poi i test dei paragrafi 4.6 e 4.7. |
+| B16 | [PERF-1](#perf-1) | Bassa | parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. **Fatto:** validazioni `iw`, `dnsmasq --version`, `nmcli --version`. I tre `nmcli` e la pausa di 0,2 s spariscono con NM-1. **Manca**, non fatto di proposito: `iptables-restore` in blocco (cambierebbe come si installano e tolgono tutte le regole). |
+| B17 | [PERF-2](#perf-2) | Bassa |  | Separare i controlli di stato attivo dalle query dettagliate. |
+| B18 | [PERF-5](#perf-5) | Bassa |  | Rispettare il timeout richiesto senza imporre un minimo nascosto. |
+| B19 | [PERF-4](#perf-4) | Bassa |  | Ridurre letture di discovery e probe hostapd non necessarie. |
+| B20 | [PERF-7](#perf-7) | Bassa |  | Punto informativo: nessuna crescita di memoria o descrittori trovata. Da riverificare con il test T-21. |
+| B21 | [API-7](#api-7) | Bassa |  | Valutare un modello API a risorse per le azioni enable/disable (`PATCH .../network`). **Rimandato** (decisione del 2026-11-25, [TODOs/api-review.md](TODOs/api-review.md)). |
+| B22 | [ARCH-2](#arch-2) | Media |  | Centralizzare la classificazione dei guasti. |
+| B23 | [ARCH-1](#arch-1) | Media |  | Separare le responsabilità di `NetworkManager`. |
+| B24 | [ARCH-4](#arch-4) | Media |  | Consolidare lo stato dei dispositivi in un registro unico. |
+| B25 | [ARCH-3](#arch-3) | Bassa | parz. | Separare il modello interno della rete dai modelli API. **Fatto:** la create usa `NetworkCreateBody` e la `GET` `NetworkResponse`. **Manca:** una dataclass interna al posto di `NetworkStatus` in `manager.active` (con `_expires_at_timestamp`). |
+| B26 | [ARCH-5](#arch-5) | Bassa |  | Costruire e avviare i manager esplicitamente tramite un contesto applicativo. |
+| B27 | [ARCH-6](#arch-6) | Bassa |  | Gestire dnsmasq come processo figlio in foreground. |
+| B28 | [ARCH-10](#arch-10) | Bassa |  | Definire regole di logging e limitare i messaggi ripetuti. |
+| B29 | [ARCH-9](#arch-9) | Bassa |  | Rimuovere codice, modelli e test inutilizzati. |
+| B30 | [ARCH-8](#arch-8) | Bassa |  | Sostituire l'accesso agli attributi privati di altre classi con metodi pubblici. |
+| B31 | [ARCH-11](#arch-11) | Bassa |  | Definire la strategia di integrazione prima di applicare patch specifiche del branch. |
+| B32 | [BUG-9](#bug-9) | Media |  | Allineare la validazione dei profili QoS custom al modello runtime. |
+| B33 | [NET-13](#net-13) | Bassa |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
+| B34 | [RACE-3](#race-3) | Bassa |  | Sincronizzare le operazioni QoS per interfaccia. |
+| B35 | [NET-12](#net-12) | Bassa |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
+| B36 | [NET-11](#net-11) | Media |  | Gestire o rifiutare esplicitamente valori QoS upload/download differenti. Cambia la validazione del QoS: vedi la nota sotto la tabella. |
+| B37 | [WD-8](#wd-8) | Media |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
+
+**TX power, da debuggare (fuori dal congelamento, come il QoS):**
+
+| Ordine | Id | Gravità | Stato | Cosa fare |
+|:---:|---|---|:---:|---|
+| T1 | [TXP-1](#txp-1) | Media |  | Capire perché la potenza non si controlla sugli adattatori in uso, prima di correggere altro. |
+| T2 | [BUG-7](#bug-7) | Bassa |  | Rendere coerente lo stato della potenza TX in caso di mismatch. |
+| T3 | [PERF-6](#perf-6) | Bassa |  | Sostituire l'attesa fissa per TX power con polling limitato. Con BUG-7. |
+| T4 | [HAP-6](#hap-6) | Media |  | Verificare se il comando TX power subito dopo l'avvio peggiora la stabilità; se sì, non inviarlo per il livello 4. |
+
+Il gruppo T può cambiare le risposte di `.../txpower`: è permesso, perché nella 4.1.0 il TX power è
+dichiarato non stabile. Quando funziona, lo si dichiara stabile in una versione successiva.
 
 **Frontend (REV-13, REV-14, REV-15):** è la pagina web di Wi-Lab, non il client. Non tocca le API, quindi
 sta nel blocco B; REV-14 punto 1 (ID persi alla ricarica) è il più grave dei tre.
@@ -175,11 +185,12 @@ sta nel blocco B; REV-14 punto 1 (ID persi alla ricarica) è il più grave dei t
 **QoS (BUG-9, NET-13, RACE-3, NET-12, NET-11, WD-8):** sperimentale e non testato, in fondo di proposito.
 **Resta fuori dal congelamento:** il client non deve costruirci sopra finché non è dichiarato stabile.
 NET-11 e WD-8 ne cambiano il comportamento, NET-13 può far rispondere `503` a uno stop della rete, ma solo
-con un profilo QoS attivo. Vedi la decisione nel paragrafo 1.3.
+con un profilo QoS attivo. Decisione del paragrafo 1.3: sperimentale nella 4.1.0.
 
 ### 2.3 Chiusi in questo ciclo ✅
 
 Corretti il 2026-11-26, con test unit. Manca solo la prova sulla macchina (paragrafo 1.1, punto 1).
+NM-1 è in corso: il commit 1 (via `nmcli`) è fatto, il resto è nel [capitolo 5](#cap-5).
 
 | Id | Gravità | Cosa è stato fatto |
 |---|---|---|
@@ -191,6 +202,8 @@ Corretti il 2026-11-26, con test unit. Manca solo la prova sulla macchina (parag
 | ✅ [BUG-6](#bug-6) | Bassa | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
 | ✅ [NET-9](#net-9) | Bassa | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
 | ✅ [NET-7](#net-7) | Bassa | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
+| ✅ [REV-8](#rev-8) | Bassa | Il job di un avvio che ignora l'annullamento resta in `start_jobs` finché il thread gira: niente secondo thread, stop `503 / 1006` poi `200` o `409 / 1007`. |
+| ✅ [API-6](#api-6) | Bassa | `POST .../txpower` prende `tx_power_level`, come la create. Breaking, nel CHANGELOG. |
 | ✅ [STAB-9](#stab-9) | Bassa | Regola a runtime per NetworkManager. **Superato:** NM-1 toglie questo codice; su questa macchina NetworkManager non c'è più. |
 
 ---
@@ -198,7 +211,8 @@ Corretti il 2026-11-26, con test unit. Manca solo la prova sulla macchina (parag
 <a id="cap-3"></a>
 ## 3. Schede
 
-Nell'ordine del capitolo 2: blocco A (NM-1 è il [capitolo 5](#cap-5)), blocco B, poi le schede chiuse ✅.
+Nell'ordine del capitolo 2: blocco A (NM-1 è il [capitolo 5](#cap-5)), blocco B, gruppo T (TX power),
+poi le schede chiuse ✅.
 Ogni scheda ha la stessa struttura: **Problema**, **Come si riproduce**, **Come correggerlo**. Dove è
 utile c'è codice o una patch. I percorsi dei file sono relativi alla radice del repository.
 
@@ -360,25 +374,8 @@ route di Internet, TX power e QoS rispondere `409 / 1012` quando `manager.stop_f
 
 ---
 
-<a id="rev-8"></a>
-### A6. REV-8 - `cancel_start` dimentica il job dopo 30 s anche se il thread gira ancora
-
-**Gravità:** Bassa · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`cancel_start`)
-
-**Problema.** Dopo `CANCEL_TIMEOUT` il job viene tolto da `start_jobs` mentre il suo thread lavora
-ancora. `DELETE .../network` risponde `503 / 1006` e il job resta orfano: un suo guasto successivo non
-è mai visibile come `start_failed`, e una nuova create accoda un secondo thread che può finire in
-`start_failed` se l'orfano riesce. Serve un avvio bloccato per più di 30 s fuori dall'attesa di
-hostapd (l'annullamento è controllato solo lì e prima di un nuovo tentativo).
-
-**Come correggerlo.** Non cancellare un job che non è `done`: lo toglie `_run_job` quando finisce.
-
-Test: [unit-test-7](#unit-test-7).
-
----
-
 <a id="hap-9"></a>
-### A7. HAP-9 - Canali DFS con controllo radar di 10 minuti
+### A6. HAP-9 - Canali DFS con controllo radar di 10 minuti
 
 **Gravità:** Bassa · **Confidenza:** Probabile · **File:** [wilab/wifi/hostapd.py:29](wilab/wifi/hostapd.py#L29), [wilab/wifi/hostapd.py:249](wilab/wifi/hostapd.py#L249)
 
@@ -408,75 +405,8 @@ client con uno stato "radar check in corso".
 
 ---
 
-<a id="bug-7"></a>
-### A8. BUG-7 - TX power: stato incoerente dopo un mismatch
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:824-894](wilab/wifi/manager.py#L824-L894)
-
-**Problema.** `set_tx_power_level` invia il comando, dorme 3 s tenendo il lock del dispositivo, e in
-caso di differenza solleva `TxPowerMismatchError` senza registrare nulla. L'hardware può trovarsi a un
-terzo valore mentre lo stato continua a riportare il vecchio livello richiesto.
-
-**Come si riproduce.** Test: `iw dev info` finto che riporta sempre 20 dBm; `POST .../txpower` con
-livello 1 risponde `422`; `GET .../txpower` riporta ancora il livello precedente.
-
-**Come correggerlo.** Registrare sempre il livello richiesto e riportare la differenza nella risposta,
-senza attesa bloccante.
-
-```diff
---- a/wilab/wifi/manager.py
-+++ b/wilab/wifi/manager.py
-@@ def set_tx_power_level(self, device_id: str, level: int) -> dict:
--        info = self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
-         st.tx_power_level = level
-         self.active[device_id] = st
--        return info
-+        # The requested level is recorded first: the status must say what was asked,
-+        # and reported_dbm says what the hardware does.
-+        return self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
-```
-
-Per togliere i 3 s (PERF-6): ridurre l'attesa a un controllo ripetuto ogni 0,2 s per al massimo 1 s,
-uscendo appena il valore riportato corrisponde.
-
----
-
-<a id="perf-6"></a>
-### A9. PERF-6 - Il cambio di TX power blocca per 3 secondi
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:849-860](wilab/wifi/manager.py#L849-L860)
-
-**Problema.** `_set_tx_power(verify_change=True)` esegue `time.sleep(3)` dentro la richiesta e sotto il
-lock del dispositivo. Per 3 s ogni altra richiesta sulla stessa reservation aspetta (RACE-1).
-
-**Come si riproduce.** Misurare la durata di `POST .../txpower`: sempre più di 3 s.
-
-**Come correggerlo.** Attesa attiva breve al posto della pausa fissa.
-
-```diff
---- a/wilab/wifi/manager.py
-+++ b/wilab/wifi/manager.py
-         if verify_change:
--            # Wait for driver to apply change
--            time.sleep(3)
--            power_after = self._read_current_txpower(interface)
-+            # Poll briefly: most drivers report the new value at once or never.
-+            deadline = time.monotonic() + 1.0
-+            while True:
-+                power_after = self._read_current_txpower(interface)
-+                if power_after is not None and abs(power_after - desired_dbm) <= 0.5:
-+                    break
-+                if time.monotonic() >= deadline:
-+                    break
-+                time.sleep(0.2)
-```
-
-Verificare su hardware che 1 s basti per gli adattatori che supportano il cambio.
-
----
-
 <a id="net-8"></a>
-### A10. NET-8 - `dns_server` ha come default un indirizzo di laboratorio
+### A7. NET-8 - `dns_server` ha come default un indirizzo di laboratorio
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/config.py:37](wilab/config.py#L37)
 
@@ -501,33 +431,8 @@ modifiche breaking, e `config.example.yaml` deve già contenerla.
 
 ---
 
-<a id="api-6"></a>
-### A11. API-6 - Nomi incoerenti (parziale)
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/](wilab/api/routes/)
-
-> **Stato (2026-11-25):** Fatti `/api/v2/reservations` e `/reservations/{id}/...` al posto di `/device-reservation` e `/interface/{id}/...`, e nessun `device_id` nei messaggi. **Manca** un nome unico per il livello di TX power: `level` in `POST .../txpower` contro `radio.tx_power_level` nella create. È la decisione "API-6 e API-7" del paragrafo 1.3: va presa prima del congelamento.
-
-**Problema.** Il percorso dice `/interface/{reservation_id}`: il parametro è una reservation, non
-un'interfaccia. La creazione usa `tx_power_level`, l'endpoint del TX power usa `level`. Gli errori
-citano `device_id`, un nome che nell'API non esiste. `device-reservation` è al singolare.
-
-**Come si riproduce.** Leggere l'elenco dei percorsi in `/docs`.
-
-**Come correggerlo.** **Breaking**, da fare una volta sola insieme alle altre (i percorsi sono già stati rinominati nella 4.0.0, vedi il riquadro Stato).
-
-- `/api/v1/reservations` e `/api/v1/reservations/{id}` al posto di `/device-reservation`;
-- `/api/v1/reservations/{id}/network`, `/internet`, `/txpower`, `/qos/profile`, `/channels`;
-- messaggi di errore con "reservation" o "network" al posto di `device_id`.
-
-Per una transizione morbida si possono registrare gli stessi router due volte, con il vecchio prefisso
-marcato `deprecated=True`, per una versione. La regola del progetto ("cambio netto, niente livelli di
-compatibilità") suggerisce invece di farlo in una sola versione maggiore.
-
----
-
 <a id="stab-7"></a>
-### A12. STAB-7 - Dipendenze non bloccate
+### A8. STAB-7 - Dipendenze non bloccate
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [requirements.txt](requirements.txt)
 
@@ -982,49 +887,8 @@ non fermare gli altri adattatori.
 
 ---
 
-<a id="hap-6"></a>
-### B11. HAP-6 - Ipotesi: il TX power viene cambiato subito dopo l'avvio
-
-**Gravità:** Media · **Confidenza:** Ipotesi · **File:** [wilab/wifi/manager.py:365-372](wilab/wifi/manager.py#L365-L372)
-
-**Problema.** `iw dev <if> set txpower fixed` viene eseguito subito dopo la readiness, a ogni avvio. Il
-progetto documenta già che il controllo del TX power non funziona sui dongle provati. Un comando che si
-sa non funzionare, inviato a un driver che si sa fragile, a ogni avvio, è un rischio senza beneficio
-quando il livello è 4 (il massimo, ed è il valore che il frontend manda di default).
-
-**Come si riproduce (esperimento).** Confrontare la frequenza di guasti del watchdog e di
-`Message ... timeout` in `journalctl -k` su 24 ore con il comando attivo e con il comando disattivato
-per il livello 4.
-
-**Come correggerlo.**
-
-```diff
---- a/wilab/wifi/manager.py
-+++ b/wilab/wifi/manager.py
-         tx_power_level = req.tx_power_level
--        try:
--            self._set_tx_power(cfg_net.interface, tx_power_level, req.channel)
--            ...
--        except Exception as e:
--            logger.warning(f"Failed to set TX power for {device_id}: {e}")
-+        if tx_power_level < 4:
-+            # Level 4 is the driver default: do not send a command for it.
-+            try:
-+                self._set_tx_power(cfg_net.interface, tx_power_level, req.channel)
-+                runtime_dbm = self._read_current_txpower(cfg_net.interface)
-+                logger.info(...)
-+            except Exception as e:
-+                logger.warning(f"Failed to set TX power for {device_id}: {e}")
-```
-
-Attenzione: se una rete precedente sullo stesso adattatore aveva abbassato la potenza, il valore può
-restare. `reset_interface` (STAB-4) dovrebbe quindi includere `iw dev <if> set txpower auto`, da
-eseguire a interfaccia ferma, cioè nel momento meno delicato.
-
----
-
 <a id="rev-15"></a>
-### B12. REV-15 - Frontend: funzioni dell'API 4.0.0 non usate
+### B11. REV-15 - Frontend: funzioni dell'API 4.0.0 non usate
 
 **Gravità:** Bassa · **Confidenza:** Confermato (lettura) · **File:** [frontend/src/app](frontend/src/app)
 
@@ -1050,7 +914,7 @@ Test: [unit-test-15](#unit-test-15).
 ---
 
 <a id="bug-8"></a>
-### B13. BUG-8 - Confronto del token non a tempo costante
+### B12. BUG-8 - Confronto del token non a tempo costante
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/auth.py:11-19](wilab/api/auth.py#L11-L19)
 
@@ -1073,7 +937,7 @@ ricavare il token misurando i tempi.
 ---
 
 <a id="rev-17"></a>
-### B14. REV-17 - Residui della catena di modifiche
+### B13. REV-17 - Residui della catena di modifiche
 
 **Gravità:** Bassa · **Confidenza:** Confermato (lettura) · **File:** vari, elencati sotto
 
@@ -1115,7 +979,7 @@ solo dai test insieme ai loro test.
 ---
 
 <a id="hap-7"></a>
-### B15. HAP-7 - Ipotesi: `hostapd -d` per tutta la vita dell'AP
+### B14. HAP-7 - Ipotesi: `hostapd -d` per tutta la vita dell'AP
 
 **Gravità:** Bassa · **Confidenza:** Ipotesi · **File:** [wilab/wifi/hostapd.py:247](wilab/wifi/hostapd.py#L247)
 
@@ -1135,7 +999,7 @@ utile, soprattutto con HAP-8.
 ---
 
 <a id="rev-18"></a>
-### B16. REV-18 - Struttura dei test
+### B15. REV-18 - Struttura dei test
 
 **Gravità:** Bassa · **Confidenza:** Confermato (lettura e misura della copertura) · **File:** [tests/unit-tests](tests/unit-tests), [tests/e2e-tests](tests/e2e-tests)
 
@@ -1176,7 +1040,7 @@ poi i test dei paragrafi 4.6 e 4.7.
 ---
 
 <a id="perf-1"></a>
-### B17. PERF-1 - L'avvio di una rete esegue circa 20 comandi (parziale)
+### B16. PERF-1 - L'avvio di una rete esegue circa 20 comandi (parziale)
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:94-109](wilab/wifi/manager.py#L94-L109), [wilab/wifi/manager.py:254-272](wilab/wifi/manager.py#L254-L272), [wilab/network/dhcp.py:186-200](wilab/network/dhcp.py#L186-L200), [wilab/network/nat.py:187-313](wilab/network/nat.py#L187-L313)
 
@@ -1214,7 +1078,7 @@ def execute_iptables_restore(rules: str) -> None:
 ---
 
 <a id="perf-2"></a>
-### B18. PERF-2 - `GET .../network` costa due o tre comandi a chiamata
+### B17. PERF-2 - `GET .../network` costa due o tre comandi a chiamata
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:505-565](wilab/wifi/manager.py#L505-L565), [wilab/wifi/manager.py:660-713](wilab/wifi/manager.py#L660-L713)
 
@@ -1242,7 +1106,7 @@ conservare l'elenco dei client per 1-2 secondi in `_get_status` (timestamp monot
 ---
 
 <a id="perf-5"></a>
-### B19. PERF-5 - Timeout minimo di 5 s imposto in silenzio
+### B18. PERF-5 - Timeout minimo di 5 s imposto in silenzio
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/commands.py:160-183](wilab/network/commands.py#L160-L183), [wilab/network/subnet.py:12](wilab/network/subnet.py#L12)
 
@@ -1275,7 +1139,7 @@ passano un timeout inferiore a 5 s per decidere il valore voluto: `subnet.py` (2
 ---
 
 <a id="perf-4"></a>
-### B20. PERF-4 - Costo fisso del polling in background
+### B19. PERF-4 - Costo fisso del polling in background
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:49](wilab/wifi/watchdog.py#L49), [wilab/api/dependencies.py:92-123](wilab/api/dependencies.py#L92-L123), [wilab/config.py:207-235](wilab/config.py#L207-L235)
 
@@ -1298,7 +1162,7 @@ trascurabile; è un punto di eleganza e di rumore, non di necessità.
 ---
 
 <a id="perf-7"></a>
-### B21. PERF-7 - Memoria e descrittori: nessuna crescita trovata
+### B20. PERF-7 - Memoria e descrittori: nessuna crescita trovata
 
 **Gravità:** Bassa (informativo) · **Confidenza:** Confermato
 
@@ -1323,7 +1187,7 @@ def _allocate_ifb(self) -> str:
 ---
 
 <a id="api-7"></a>
-### B22. API-7 - Azioni modellate come percorsi
+### B21. API-7 - Azioni modellate come percorsi
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/internet.py](wilab/api/routes/internet.py), [wilab/api/routes/txpower.py:51-87](wilab/api/routes/txpower.py#L51-L87)
 
@@ -1350,7 +1214,7 @@ Analogamente `PUT .../txpower` con lo stesso corpo della `POST` attuale.
 ---
 
 <a id="arch-2"></a>
-### B23. ARCH-2 - Classificazione dei guasti sparsa in quattro posti
+### B22. ARCH-2 - Classificazione dei guasti sparsa in quattro posti
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/hostapd.py:62-78](wilab/wifi/hostapd.py#L62-L78), [wilab/wifi/manager.py:60-64](wilab/wifi/manager.py#L60-L64), [wilab/api/routes/network.py:232-251](wilab/api/routes/network.py#L232-L251), [wilab/wifi/watchdog.py:133-142](wilab/wifi/watchdog.py#L133-L142)
 
@@ -1387,7 +1251,7 @@ ricalcolarlo; la route ha una tabella `kind → (status HTTP, codice)`; il watch
 ---
 
 <a id="arch-1"></a>
-### B24. ARCH-1 - `NetworkManager` fa troppe cose
+### B23. ARCH-1 - `NetworkManager` fa troppe cose
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py)
 
@@ -1425,7 +1289,7 @@ class RetryPolicy:
 ---
 
 <a id="arch-4"></a>
-### B25. ARCH-4 - Il registro dei dispositivi esiste in quattro copie
+### B24. ARCH-4 - Il registro dei dispositivi esiste in quattro copie
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/config.py:26-39](wilab/config.py#L26-L39), [wilab/reservation.py:83-87](wilab/reservation.py#L83-L87), [wilab/wifi/watchdog.py:23](wilab/wifi/watchdog.py#L23), [wilab/wifi/manager.py:81](wilab/wifi/manager.py#L81), [wilab/api/dependencies.py:66-89](wilab/api/dependencies.py#L66-L89)
 
@@ -1470,7 +1334,7 @@ WD-5 punto 3 e dopo aver messo in sicurezza i punti 1-14.
 ---
 
 <a id="arch-3"></a>
-### B26. ARCH-3 - Il modello dell'API è anche lo stato interno (parziale)
+### B25. ARCH-3 - Il modello dell'API è anche lo stato interno (parziale)
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:374-394](wilab/wifi/manager.py#L374-L394), [wilab/wifi/manager.py:516-565](wilab/wifi/manager.py#L516-L565)
 
@@ -1506,7 +1370,7 @@ campo (`_restore_ap` oggi lo fa a mano e rifiuta di ripartire se un campo manca)
 ---
 
 <a id="arch-5"></a>
-### B27. ARCH-5 - Singleton collegati per effetto collaterale
+### B26. ARCH-5 - Singleton collegati per effetto collaterale
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/dependencies.py:20-56](wilab/api/dependencies.py#L20-L56), [wilab/wifi/manager.py:86-91](wilab/wifi/manager.py#L86-L91)
 
@@ -1542,7 +1406,7 @@ I costruttori non avviano thread. I test costruiscono un contesto invece di azze
 ---
 
 <a id="arch-6"></a>
-### B28. ARCH-6 - Tre modi di gestire un processo figlio
+### B27. ARCH-6 - Tre modi di gestire un processo figlio
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/commands.py:49-157](wilab/network/commands.py#L49-L157), [wilab/network/dhcp.py](wilab/network/dhcp.py)
 
@@ -1570,7 +1434,7 @@ conoscere il motivo di un'uscita, passare un `classify_output` e usare `output_t
 ---
 
 <a id="arch-10"></a>
-### B29. ARCH-10 - Il logging non ha una regola
+### B28. ARCH-10 - Il logging non ha una regola
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** tutto `wilab/`
 
@@ -1593,7 +1457,7 @@ Test T-13: un ciclo completo crea/cancella su hardware simulato non deve produrr
 ---
 
 <a id="arch-9"></a>
-### B30. ARCH-9 - Codice morto
+### B29. ARCH-9 - Codice morto
 
 **Gravità:** Bassa · **Confidenza:** Confermato (ogni nome è stato cercato in `wilab/`) · **File:** vari
 
@@ -1623,7 +1487,7 @@ con il testo aggiornato.
 ---
 
 <a id="arch-8"></a>
-### B31. ARCH-8 - Attributi privati usati tra classi
+### B30. ARCH-8 - Attributi privati usati tra classi
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:158](wilab/wifi/manager.py#L158), [wilab/wifi/manager.py:525](wilab/wifi/manager.py#L525)
 
@@ -1649,7 +1513,7 @@ e in `manager.py`: `self.hostapd_manager.is_tracked(device_id)`. Lo stesso per `
 ---
 
 <a id="arch-11"></a>
-### B32. ARCH-11 - Il layout di questo branch diverge dall'altro
+### B31. ARCH-11 - Il layout di questo branch diverge dall'altro
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** radice del repository
 
@@ -1669,7 +1533,7 @@ scritto in italiano su richiesta esplicita, in deroga alla regola "tutto in ingl
 ---
 
 <a id="bug-9"></a>
-### B33. BUG-9 - Un profilo QoS personalizzato può impedire l'avvio del servizio
+### B32. BUG-9 - Un profilo QoS personalizzato può impedire l'avvio del servizio
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:63-124](wilab/network/qos_profile.py#L63-L124), [wilab/data/qos-profiles/profile.schema.json](wilab/data/qos-profiles/profile.schema.json)
 
@@ -1742,7 +1606,7 @@ Aggiungere allo schema `"minProperties": 1` per `advanced`, per rendere esplicit
 ---
 
 <a id="net-13"></a>
-### B34. NET-13 - QoS: lo stop del profilo può far fallire lo stop della rete
+### B33. NET-13 - QoS: lo stop del profilo può far fallire lo stop della rete
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:182-197](wilab/network/qos_profile.py#L182-L197), [wilab/wifi/manager.py:439-447](wilab/wifi/manager.py#L439-L447)
 
@@ -1777,7 +1641,7 @@ dopo la pulizia.
 ---
 
 <a id="race-3"></a>
-### B35. RACE-3 - Lo stato di `QosManager` non ha lock
+### B34. RACE-3 - Lo stato di `QosManager` non ha lock
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos.py:50-136](wilab/network/qos.py#L50-L136)
 
@@ -1802,7 +1666,7 @@ non si intrecciano mai.
 ---
 
 <a id="net-12"></a>
-### B36. NET-12 - QoS: gara alla fine di un profilo `once`
+### B35. NET-12 - QoS: gara alla fine di un profilo `once`
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:264-274](wilab/network/qos_profile.py#L264-L274)
 
@@ -1842,7 +1706,7 @@ può vedersi togliere le regole dal vecchio thread: lo stato dice "profilo attiv
 ---
 
 <a id="net-11"></a>
-### B37. NET-11 - QoS inline: `upload_quality` ignorato
+### B36. NET-11 - QoS inline: `upload_quality` ignorato
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:203-228](wilab/network/qos_profile.py#L203-L228), [wilab/models.py:316-343](wilab/models.py#L316-L343)
 
@@ -1881,7 +1745,7 @@ silenzio. In alternativa si può estendere `QosProfileStep` con qualità separat
 ---
 
 <a id="wd-8"></a>
-### B38. WD-8 - Una rete ripristinata perde il profilo QoS
+### B37. WD-8 - Una rete ripristinata perde il profilo QoS
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:121-132](wilab/wifi/watchdog.py#L121-L132), [wilab/wifi/manager.py:439-447](wilab/wifi/manager.py#L439-L447)
 
@@ -1917,6 +1781,143 @@ lasciare che il watchdog ripristini. `qos_profile_manager.is_active(interface)` 
 I profili "inline" generati (`<id>:generated_static`) non sono nel catalogo: per ripristinarli bisogna
 conservare l'oggetto `QosProfile` in `_ActiveProfile` invece del solo identificativo. Documentare che
 il profilo riparte dal primo passo.
+
+---
+
+<a id="txp-1"></a>
+### T1. TXP-1 - TX power da debuggare
+
+**Gravità:** Media · **Confidenza:** Confermato (nessun adattatore in uso ha mai applicato la potenza
+richiesta) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`_set_tx_power`,
+`set_tx_power_level`, `get_tx_power_info`), [wilab/api/routes/txpower.py](wilab/api/routes/txpower.py)
+
+**Problema.** `iw dev <if> set txpower fixed <mBm>` non ha mai prodotto un cambio verificabile sugli
+adattatori in uso (mt7921u): `POST .../txpower` risponde spesso `422` "does not support dynamic power
+change", e il valore riportato da `iw dev <if> info` non segue quello richiesto. Il comando viene
+comunque inviato a ogni avvio (HAP-6). Nella 4.1.0 la funzione è dichiarata non stabile.
+
+**Come procedere.** Prima capire, poi correggere:
+
+1. Sulla macchina, con un AP attivo e nessun client: `iw dev <if> info` (riga `txpower`), poi
+   `iw dev <if> set txpower fixed 1000`, attesa di 1 s, di nuovo `iw dev <if> info`; ripetere con
+   `limit` invece di `fixed` e con `auto`. Annotare cosa cambia.
+2. Controllare il dominio regolatorio (`iw reg get`) e il limite del canale (`iw phy <phy> channels`):
+   il driver può rifiutare un valore sopra il limite o ignorare uno sotto il minimo dell'hardware.
+3. Controllare se `mt7921u` supporta il controllo per interfaccia o solo per phy
+   (`iw phy <phy> set txpower fixed ...`), e se `hostapd` sovrascrive la potenza all'avvio.
+4. Se il driver non lo supporta: dirlo nelle API (per esempio `max_dbm` e `levels_dbm` vuoti, un `409`
+   o `422` con un motivo stabile) e non inviare più il comando all'avvio. Se lo supporta: correggere
+   comando e verifica, poi BUG-7 e PERF-6.
+
+Solo dopo questo punto il TX power si può dichiarare stabile.
+
+---
+
+<a id="bug-7"></a>
+### T2. BUG-7 - TX power: stato incoerente dopo un mismatch
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:824-894](wilab/wifi/manager.py#L824-L894)
+
+**Problema.** `set_tx_power_level` invia il comando, dorme 3 s tenendo il lock del dispositivo, e in
+caso di differenza solleva `TxPowerMismatchError` senza registrare nulla. L'hardware può trovarsi a un
+terzo valore mentre lo stato continua a riportare il vecchio livello richiesto.
+
+**Come si riproduce.** Test: `iw dev info` finto che riporta sempre 20 dBm; `POST .../txpower` con
+livello 1 risponde `422`; `GET .../txpower` riporta ancora il livello precedente.
+
+**Come correggerlo.** Registrare sempre il livello richiesto e riportare la differenza nella risposta,
+senza attesa bloccante.
+
+```diff
+--- a/wilab/wifi/manager.py
++++ b/wilab/wifi/manager.py
+@@ def set_tx_power_level(self, device_id: str, level: int) -> dict:
+-        info = self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
+         st.tx_power_level = level
+         self.active[device_id] = st
+-        return info
++        # The requested level is recorded first: the status must say what was asked,
++        # and reported_dbm says what the hardware does.
++        return self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
+```
+
+Per togliere i 3 s (PERF-6): ridurre l'attesa a un controllo ripetuto ogni 0,2 s per al massimo 1 s,
+uscendo appena il valore riportato corrisponde.
+
+---
+
+<a id="perf-6"></a>
+### T3. PERF-6 - Il cambio di TX power blocca per 3 secondi
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:849-860](wilab/wifi/manager.py#L849-L860)
+
+**Problema.** `_set_tx_power(verify_change=True)` esegue `time.sleep(3)` dentro la richiesta e sotto il
+lock del dispositivo. Per 3 s ogni altra richiesta sulla stessa reservation aspetta (RACE-1).
+
+**Come si riproduce.** Misurare la durata di `POST .../txpower`: sempre più di 3 s.
+
+**Come correggerlo.** Attesa attiva breve al posto della pausa fissa.
+
+```diff
+--- a/wilab/wifi/manager.py
++++ b/wilab/wifi/manager.py
+         if verify_change:
+-            # Wait for driver to apply change
+-            time.sleep(3)
+-            power_after = self._read_current_txpower(interface)
++            # Poll briefly: most drivers report the new value at once or never.
++            deadline = time.monotonic() + 1.0
++            while True:
++                power_after = self._read_current_txpower(interface)
++                if power_after is not None and abs(power_after - desired_dbm) <= 0.5:
++                    break
++                if time.monotonic() >= deadline:
++                    break
++                time.sleep(0.2)
+```
+
+Verificare su hardware che 1 s basti per gli adattatori che supportano il cambio.
+
+---
+
+<a id="hap-6"></a>
+### T4. HAP-6 - Ipotesi: il TX power viene cambiato subito dopo l'avvio
+
+**Gravità:** Media · **Confidenza:** Ipotesi · **File:** [wilab/wifi/manager.py:365-372](wilab/wifi/manager.py#L365-L372)
+
+**Problema.** `iw dev <if> set txpower fixed` viene eseguito subito dopo la readiness, a ogni avvio. Il
+progetto documenta già che il controllo del TX power non funziona sui dongle provati. Un comando che si
+sa non funzionare, inviato a un driver che si sa fragile, a ogni avvio, è un rischio senza beneficio
+quando il livello è 4 (il massimo, ed è il valore che il frontend manda di default).
+
+**Come si riproduce (esperimento).** Confrontare la frequenza di guasti del watchdog e di
+`Message ... timeout` in `journalctl -k` su 24 ore con il comando attivo e con il comando disattivato
+per il livello 4.
+
+**Come correggerlo.**
+
+```diff
+--- a/wilab/wifi/manager.py
++++ b/wilab/wifi/manager.py
+         tx_power_level = req.tx_power_level
+-        try:
+-            self._set_tx_power(cfg_net.interface, tx_power_level, req.channel)
+-            ...
+-        except Exception as e:
+-            logger.warning(f"Failed to set TX power for {device_id}: {e}")
++        if tx_power_level < 4:
++            # Level 4 is the driver default: do not send a command for it.
++            try:
++                self._set_tx_power(cfg_net.interface, tx_power_level, req.channel)
++                runtime_dbm = self._read_current_txpower(cfg_net.interface)
++                logger.info(...)
++            except Exception as e:
++                logger.warning(f"Failed to set TX power for {device_id}: {e}")
+```
+
+Attenzione: se una rete precedente sullo stesso adattatore aveva abbassato la potenza, il valore può
+restare. `reset_interface` (STAB-4) dovrebbe quindi includere `iw dev <if> set txpower auto`, da
+eseguire a interfaccia ferma, cioè nel momento meno delicato.
 
 ---
 
@@ -2175,6 +2176,50 @@ uso. Aggiungere a `stop` un parametro `keep_leases: bool = False` e passarlo `Tr
 
 ---
 
+<a id="rev-8"></a>
+### ✅ REV-8 - `cancel_start` dimentica il job dopo 30 s anche se il thread gira ancora
+
+**Gravità:** Bassa · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py) (`cancel_start`)
+
+**Problema.** Dopo `CANCEL_TIMEOUT` il job viene tolto da `start_jobs` mentre il suo thread lavora
+ancora. `DELETE .../network` risponde `503 / 1006` e il job resta orfano: un suo guasto successivo non
+è mai visibile come `start_failed`, e una nuova create accoda un secondo thread che può finire in
+`start_failed` se l'orfano riesce. Serve un avvio bloccato per più di 30 s fuori dall'attesa di
+hostapd (l'annullamento è controllato solo lì e prima di un nuovo tentativo).
+
+> **Fatto (2026-11-26):** `cancel_start` toglie il job solo se è finito; il test è unit-test-7.
+
+**Come correggerlo.** Non cancellare un job che non è `done`: lo toglie `_run_job` quando finisce.
+
+Test: [unit-test-7](#unit-test-7).
+
+---
+
+<a id="api-6"></a>
+### ✅ API-6 - Nomi incoerenti
+
+**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/](wilab/api/routes/)
+
+> **Fatto (2026-11-26):** `POST .../txpower` prende `tx_power_level` invece di `level`, come `radio.tx_power_level` della create (test `test_strict_types.py`). Il resto era già fatto nella 4.0.0.
+
+**Problema.** Il percorso dice `/interface/{reservation_id}`: il parametro è una reservation, non
+un'interfaccia. La creazione usa `tx_power_level`, l'endpoint del TX power usa `level`. Gli errori
+citano `device_id`, un nome che nell'API non esiste. `device-reservation` è al singolare.
+
+**Come si riproduce.** Leggere l'elenco dei percorsi in `/docs`.
+
+**Come correggerlo.** **Breaking**, da fare una volta sola insieme alle altre (i percorsi sono già stati rinominati nella 4.0.0, vedi il riquadro Stato).
+
+- `/api/v1/reservations` e `/api/v1/reservations/{id}` al posto di `/device-reservation`;
+- `/api/v1/reservations/{id}/network`, `/internet`, `/txpower`, `/qos/profile`, `/channels`;
+- messaggi di errore con "reservation" o "network" al posto di `device_id`.
+
+Per una transizione morbida si possono registrare gli stessi router due volte, con il vecchio prefisso
+marcato `deprecated=True`, per una versione. La regola del progetto ("cambio netto, niente livelli di
+compatibilità") suggerisce invece di farlo in una sola versione maggiore.
+
+---
+
 <a id="stab-9"></a>
 ### ✅ STAB-9 - Il rilascio da NetworkManager è solo a runtime (superato da NM-1)
 
@@ -2362,7 +2407,7 @@ Atteso:
 | BUG-7 | `POST .../txpower` con ogni livello, poi `GET .../txpower`. | Il `GET` riporta il valore reale, non quello richiesto. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | PERF-6 | Durata di `POST .../txpower`. | Sotto i 3 s. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | SEC-1 | `curl --path-as-is http://<host>:8080//etc/passwd` e `/../config.yaml`. | `404`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
-| API-6, API-7 | Confronto di percorsi e campi con `/docs`. | Quanto deciso nel paragrafo 1.3. |  |
+| API-7 | Confronto di percorsi e campi con `/docs`. | Quanto deciso nel paragrafo 1.3. |  |
 | HAP-5, HAP-6, HAP-7 | Run SOAK identiche con la configurazione cambiata sulla macchina tra una run e l'altra. | Confronto del numero di `404 reservation_invalidated` e di `restarts.ap` tra le run. |  |
 | ARCH-1 … ARCH-11 | Run SOAK di regressione. | Nessuna differenza rispetto alla run precedente. |  |
 
@@ -2395,7 +2440,7 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 | [unit-test-2](#unit-test-2) | Annullamento con rollback fallito: nessuna quarantena | REV-2 | `test_async_create.py` |
 | ✅ [unit-test-4](#unit-test-4) | Un avvio riuscito non fallisce per il budget dei tentativi | REV-5 | `test_startup_classification.py` |
 | ✅ [unit-test-5](#unit-test-5) | Rilascio durante un ripristino del watchdog; arresto con una create in corso | REV-6 | `test_cancellable_starts.py` |
-| [unit-test-7](#unit-test-7) | Annullamento in timeout: il job resta finché il thread gira | REV-8 | `test_async_create.py` |
+| ✅ [unit-test-7](#unit-test-7) | Annullamento in timeout: il job resta finché il thread gira | REV-8 | `test_async_create.py` |
 | [unit-test-14](#unit-test-14) | Rami di guasto del watchdog | REV-10 | `test_watchdog.py` |
 | [unit-test-15](#unit-test-15) | Frontend: compilazione e spec di `startNetwork` | REV-13, REV-15 | `frontend/src/app/services/*.spec.ts` |
 
@@ -2412,9 +2457,7 @@ successive, antenna senza `recovery_state`, cleanup affidato al ciclo in backgro
 **unit-test-5 - Avvii fuori dal job.** ✅ Fatto con REV-6, in `test_cancellable_starts.py`.
 
 <a id="unit-test-7"></a>
-**unit-test-7 - Annullamento in timeout, dopo REV-8.** Il caso base (`503 / 1006`, poi lo stato reale e
-una stop che riesce) è in `test_async_create.py`. Resta da aggiungere con REV-8: il job resta in
-`start_jobs` finché il thread non finisce.
+**unit-test-7 - Annullamento in timeout.** ✅ Fatto con REV-8, in `test_async_create.py`.
 
 <a id="unit-test-14"></a>
 **unit-test-14 - Watchdog: rami di guasto.** `dhcp_server.stop` che solleva in `_restore_dhcp`; cleanup
