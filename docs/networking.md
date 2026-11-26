@@ -18,7 +18,7 @@ from clients receive a reset so applications can detect the interruption.
 **What:** Enables `net.ipv4.ip_forward=1` globally  
 **When:** When NAT is enabled for a WiFi network  
 **Impact:** Allows routing between interfaces (required for Internet access)  
-**Reversible:** Yes - disabled when all networks are stopped
+**Reversible:** Not automatically - Wi-Lab leaves it enabled when networks stop (set `net.ipv4.ip_forward=0` by hand if the host must not route); while a network with Internet runs, the watchdog enables it again if it is turned off
 
 ### 2. NAT Rules (iptables)
 
@@ -43,7 +43,7 @@ iptables -t nat -A POSTROUTING -s 192.168.120.0/24 -o eth0 -j MASQUERADE
 
 **What:** Per-AP chains `wilab-cp-<interface>` in the `nat` and `filter` tables, jumped
 to from `PREROUTING` and `FORWARD` (comment `wilab-captive-<interface>`)  
-**When:** Network created with `captive_portal: true`  
+**When:** Network created with `captive_portal.enabled: true`  
 **Impact:** Unsigned clients' DNS and HTTP are redirected to the AP gateway
 (TCP 80 to `captive_portal_port`, default 8081, where the portal listens) and
 other forwarded traffic is rejected. Signing in adds a `RETURN` rule for that
@@ -94,7 +94,7 @@ nmcli device status; networkctl list
 Recommended: do not connect the Wi-Lab host via Wi-Fi, and do not use Wi-Fi adapters
 outside Wi-Lab on it. If one is needed, list it with `disable: true`.
 
-### 6. WiFi Interface State
+### 7. WiFi Interface State
 
 **What:** Interface switched to AP mode  
 **When:** Network is created  
@@ -117,8 +117,10 @@ rejected during interface setup, or a radio or readiness timeout), Wi-Lab
 starts it again on the same adapter within the original request, on either
 band, up to 3 starts in total. It waits 1 s after each successful rollback and
 retries only while the reservation is valid and at least 4 s of the 20-second
-startup budget remain. This budget limits the retries, not rollback. A failed
-retry is reported using the creation recovery contract. Once an AP has
+startup budget remain. This budget limits the retries, not rollback. If these
+starts all fail, the create pauses 5 s and starts once more, then 10 s and
+once more; after that the antenna is quarantined and the reservation
+invalidated (see [AP creation procedure](ap-creation-procedure.md)). Once an AP has
 started, a separate watchdog handles confirmed AP outages or DHCP failure.
 See [Architecture](architecture.md) for
 restart limits, quarantine and the post-reset AP/DHCP probe.
@@ -127,8 +129,8 @@ Startup and cleanup are serialized per adapter, not across all adapters.
 An adapter remains held until cleanup succeeds, including after expiry. If
 startup cleanup is unsafe, the ID is invalidated and quarantine prevents reuse.
 System status reads allocation and recovery snapshots without running cleanup
-or waiting for the adapter's startup to finish; it still performs host health
-checks and is not a sub-second latency guarantee.
+or waiting for the adapter's startup to finish, and runs no host command:
+the health checks are refreshed in the background every 10 s.
 
 ---
 
@@ -331,9 +333,10 @@ network lifetime.
 
 The device is not reassigned until its previous network has been cleaned up.
 If cleanup fails, the device remains held; other free devices can still be
-reserved. The API returns 503 when cleanup prevents an operation; retry after
-resolving the error. A bulk release may have released some devices before
-encountering an error.
+reserved. A release always answers `200`, also for release-all: the server
+repeats a failed cleanup in the background (after 5 s, 15 s, 60 s, then every
+5 min), `GET /api/v2/status` lists it as `cleanup_failed`, and a reservation
+request for that device answers `409 / 1005` meanwhile.
 
 ---
 

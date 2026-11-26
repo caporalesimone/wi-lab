@@ -10,7 +10,7 @@
 # ==================================================================================================
 
 # Bearer token for REST API authentication
-# This token must be sent with every API request (except /health endpoint)
+# This token must be sent with every API request (except GET /api/v2/qos/profiles, the QoS catalogue)
 # 
 # SECURITY: Change this to a strong token!
 # Generate a secure token with: python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
@@ -103,8 +103,8 @@ internet_enabled_by_default: true
 # PROTECTED COMMANDS
 # ==================================================================================================
 
-# Password required by every Maintenance endpoint (commands and diagnostics that clients must
-# not use): DELETE /api/v2/reservations/all (release ALL reservations) and GET /api/v2/debug.
+# Password required by every Maintenance endpoint (commands that clients must
+# not use): DELETE /api/v2/reservations/all (release ALL reservations).
 # Callers send it in the X-Confirm-Password header, together with the bearer token;
 # the web UI asks for it every time "Release All" is pressed.
 # It guards against accidental use, not against attackers: share it only with operators.
@@ -162,7 +162,7 @@ country_code: "IT"
 # Wi-Lab starts without antennas: discovery scans as soon as the API starts, then
 # every 5 seconds while no antenna is available and every 30 seconds afterwards.
 # Antennas plugged in later are added automatically, without a restart. Each scan
-# re-reads this section, so new display names and disable flags apply to newly found
+# re-reads this section, so new display names, disable and show_dfs flags apply to newly found
 # antennas; antennas already in use are not changed until the service restarts.
 #
 #   - interface:    WiFi interface name (list them with: iw dev)

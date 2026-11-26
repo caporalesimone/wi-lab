@@ -38,7 +38,7 @@ pytest tests/unit-tests/test_config.py -v
 pytest tests/unit-tests/test_wifi.py::TestNetworkLifecycle -v
 
 # Run single test method
-pytest tests/unit-tests/test_api.py::TestAuthenticationEndpoints::test_valid_token -v
+pytest tests/unit-tests/test_api.py::TestAuthentication::test_request_without_auth -v
 
 # Run tests matching pattern
 pytest tests/unit-tests/ -k "test_tx_power" -v
@@ -66,15 +66,20 @@ open htmlcov/index.html
 
 ### Test Files
 
-The unit test suite in `tests/unit-tests/` includes:
+The unit test suite in `tests/unit-tests/` has 45 test files, plus:
 - **conftest.py** - Shared fixtures and configuration (mocks every host command)
-- **test_config.py** - Configuration loading/validation tests
-- **test_api.py** - API endpoint tests
-- **test_commands.py** - Shell command wrapper tests
-- **test_dhcp.py** - DHCP server tests
-- **test_nat.py** - NAT rules tests
-- **test_isolation.py** - Network isolation tests
-- **test_wifi.py** - WiFi interface/hostapd tests
+- **test.config.yaml** - Configuration loaded by the tests
+- **data/** - Recorded command output (for example `iw phy info`)
+
+The test files, by area:
+- **Configuration:** `test_config.py`, `test_config_validation.py`
+- **API endpoints and contract:** `test_api.py`, `test_reservation.py`, `test_async_create.py` (202, polling, cancel), `test_network_sections.py`, `test_network_not_active.py`, `test_device_busy.py`, `test_error_codes.py` (every code is in `docs/error-codes.md`), `test_openapi_examples.py`, `test_export_api_docs.py`
+- **Status and health:** `test_status_checks.py`, `test_status_snapshot.py`, `test_heartbeat.py`, `test_loop_supervision.py`
+- **Wi-Fi, hostapd and startup:** `test_wifi.py`, `test_wifi_modes.py`, `test_models.py`, `test_channels.py`, `test_discovery.py`, `test_startup.py`, `test_startup_classification.py`, `test_startup_firewall.py`, `test_network_creation_recovery.py`
+- **Watchdog, recovery and cleanup:** `test_watchdog.py`, `test_network_verify.py`, `test_device_loss.py`, `test_cleanup_backoff.py`, `test_runtime_cleanup.py`
+- **Network:** `test_dhcp.py`, `test_nat.py`, `test_isolation.py`, `test_host_guard.py`, `test_firewall_lock.py`, `test_captive.py`, `test_subnet.py`, `test_unmanaged.py`, `test_qos.py`, `test_qos_profile.py`
+- **Commands:** `test_commands.py`
+- **Frontend sources and CI:** `test_frontend_api_codes.py`, `test_frontend_captive_portal.py`, `test_frontend_tx_warning.py`, `test_frontend_wifi_modes.py`, `test_ci_workflow.py`
 
 ### Test Categories
 
@@ -91,7 +96,7 @@ The unit test suite in `tests/unit-tests/` includes:
 ### Prerequisites
 
 ```bash
-# Python 3.9+
+# Python 3.10+ (CI runs 3.12)
 python3 --version
 
 # Virtual environment tools
@@ -101,11 +106,11 @@ python3 -m venv --help
 ### Create Development Environment
 
 ```bash
-# Create virtual environment
-python3 -m venv venv
+# Create virtual environment (the Makefile uses .venv; `make venv` does the same)
+python3 -m venv .venv
 
 # Activate it
-source venv/bin/activate
+source .venv/bin/activate
 
 # Install development dependencies
 pip install -r requirements-dev.txt
@@ -119,13 +124,14 @@ pytest --version
 The `requirements-dev.txt` file contains testing and development tools:
 
 ```
+-r requirements.txt # Runtime dependencies
 pytest              # Test framework
-pytest-cov          # Coverage reporting
 pytest-asyncio      # Async test support
-pytest-mock         # Mocking utilities
-black               # Code formatter
-flake8              # Linter
+pytest-cov          # Coverage reporting
+httpx               # HTTP client used by the FastAPI test client and the e2e tests
+ruff                # Linter
 mypy                # Type checker
+types-PyYAML, types-jsonschema   # Type stubs for mypy
 ```
 
 Install all development tools with:
@@ -189,12 +195,12 @@ pytest tests/unit-tests/ --runxfail
 ```bash
 $ pytest tests/unit-tests/test_api.py -v
 
-tests/unit-tests/test_api.py::TestHealthEndpoint::test_health_check PASSED           [  5%]
-tests/unit-tests/test_api.py::TestHealthEndpoint::test_health_structure PASSED       [ 10%]
-tests/unit-tests/test_api.py::TestAuthenticationEndpoints::test_valid_token PASSED   [ 15%]
-tests/unit-tests/test_api.py::TestAuthenticationEndpoints::test_invalid_token FAILED [ 20%]
+tests/unit-tests/test_api.py::TestStatusEndpoint::test_status_requires_auth PASSED       [  1%]
+tests/unit-tests/test_api.py::TestStatusEndpoint::test_status PASSED                     [  2%]
+tests/unit-tests/test_api.py::TestStatusEndpoint::test_status_standby_mode PASSED        [  3%]
+tests/unit-tests/test_api.py::TestAuthentication::test_request_without_auth FAILED       [  4%]
 
-FAILED tests/unit-tests/test_api.py::TestAuthenticationEndpoints::test_invalid_token
+FAILED tests/unit-tests/test_api.py::TestAuthentication::test_request_without_auth
 ```
 
 **Format:** `path/to/test.py::TestClass::test_method STATUS [percentage]`
@@ -217,7 +223,7 @@ Name                      Stmts   Miss  Cover
 wilab/__init__.py            5      0   100%
 wilab/config.py             45      2    96%
 wilab/models.py            120      5    96%
-wilab/api/routes.py        156     10    94%
+wilab/api/routes/network.py 156    10    94%
 wilab/wifi/manager.py      203     18    91%
 ---------------------------------------------
 TOTAL                      742     45    94%
@@ -235,43 +241,38 @@ TOTAL                      742     45    94%
 
 ```python
 import pytest
-from unittest.mock import patch, MagicMock
-from wilab.wifi.manager import NetworkManager
+from wilab.models import NetworkCreateRequest
+from wilab.wifi.hostapd import HostapdError
+from wilab.wifi.manager import StartupFailure
+
+REQUEST = NetworkCreateRequest(
+    ssid="TestAP", channel=6, band="2.4ghz", encryption="wpa2",
+    password="test1234", tx_power_level=4,
+)
+
 
 class TestNetworkCreation:
     """Test suite for network creation functionality."""
-    
-    @pytest.fixture
-    def manager(self):
-        """Create manager instance for testing."""
-        return NetworkManager()
-    
-    def test_create_network_success(self, manager):
-        """Test successful network creation."""
-        result = manager.create_network("wlan0", {
-            "ssid": "TestAP",
-            "channel": 6,
-            "encryption": "wpa2",
-            "password": "test1234",
-            "tx_power_level": 4
-        })
-        
+
+    def test_start_network_success(self, clean_manager, monkeypatch):
+        """Test successful network creation (clean_manager comes from conftest.py)."""
+        # conftest.py refuses to launch a real hostapd: mock its start.
+        monkeypatch.setattr(clean_manager.hostapd_manager, "start", lambda **kwargs: None)
+        device = clean_manager.config.antennas[0].device_id
+        result = clean_manager.start_network(device, REQUEST)
+
         assert result.active is True
         assert result.ssid == "TestAP"
-    
-    @patch('wilab.wifi.hostapd.execute_hostapd')
-    def test_create_network_hostapd_failure(self, mock_hostapd, manager):
+
+    def test_start_network_hostapd_failure(self, clean_manager, monkeypatch):
         """Test network creation when hostapd fails."""
-        mock_hostapd.side_effect = RuntimeError("hostapd failed")
-        
-        with pytest.raises(RuntimeError):
-            manager.create_network("wlan0", {
-                "ssid": "TestAP",
-                "channel": 6,
-                "encryption": "wpa2",
-                "password": "test1234",
-                "tx_power_level": 4
-            })
+        def fail(*args, **kwargs):
+            raise HostapdError("hostapd failed")
+        monkeypatch.setattr(clean_manager.hostapd_manager, "start", fail)
+
+        device = clean_manager.config.antennas[0].device_id
+        with pytest.raises(StartupFailure):
+            clean_manager.start_network(device, REQUEST)
 ```
 
 ### Common Fixtures
@@ -279,13 +280,28 @@ class TestNetworkCreation:
 **From conftest.py:**
 ```python
 # Use fixtures provided by conftest.py
-@pytest.fixture
+@pytest.fixture(scope="session")
 def config():
-    """Loaded configuration object."""
-    
+    """Configuration loaded from test.config.yaml."""
+
+@pytest.fixture(autouse=True)
+def mock_network_operations(monkeypatch, tmp_path):
+    """Mocks ip, iw, hostapd, dnsmasq and the other host commands in every test."""
+
 @pytest.fixture
-def mock_subprocess():
-    """Mocked subprocess for command testing."""
+def clean_manager(config, monkeypatch):
+    """A fresh NetworkManager with no active networks and a mocked DHCP server."""
+```
+
+`network_body(**flat)` builds the sectioned create body (`radio`, `wifi`,
+`internet`, `captive_portal`) from flat fields. The autouse fixture
+`_create_in_the_request` runs the AP start inside the `POST` request, so most
+API tests read the outcome of a create directly (`200` or the failure);
+`test_async_create.py` turns the background thread back on to test the real
+contract (`202`, polling, cancel).
+
+```python
+body = network_body(ssid="TestAP", channel=6, band="2.4ghz", encryption="open", tx_power_level=4)
 ```
 
 ---
@@ -298,11 +314,11 @@ def mock_subprocess():
 # The project includes a test runner script
 ./run-tests.sh
 
-# This script typically:
-# 1. Sets up virtual environment if needed
-# 2. Runs pytest with standard options
-# 3. Generates coverage reports
-# 4. Returns appropriate exit code for CI/CD
+# This script:
+# 1. Installs pytest for the system Python if it is missing (no virtual environment)
+# 2. Runs pytest on tests/ (the e2e tests are collected and skipped) and saves the output in test-report.txt
+# 3. Prints a summary of passed, failed and skipped tests
+# CI does not use it: it runs `make type-check` and `make test-local-quick`
 ```
 
 ### Continuous Testing
@@ -368,7 +384,7 @@ pytest tests/unit-tests/ -v --tb=line
 **Solution:**
 ```bash
 # Activate venv
-source venv/bin/activate
+source .venv/bin/activate
 
 # Install requirements
 pip install -r requirements-dev.txt
@@ -383,7 +399,7 @@ pytest tests/unit-tests/
 
 **Solution:**
 ```bash
-# Set timeout (adjust 10 to appropriate seconds)
+# Set timeout (needs the pytest-timeout plugin, not in requirements-dev.txt)
 pytest tests/unit-tests/ --timeout=10
 
 # Disable specific test
@@ -392,16 +408,13 @@ pytest tests/unit-tests/ --deselect tests/unit-tests/test_slow_operation.py::tes
 
 ### Issue: Permission Denied on subprocess Tests
 
-**Cause:** Tests require sudo/root permissions
+**Cause:** A test reached a real host command. Unit tests never need root:
+`conftest.py` mocks every host command and refuses to launch a real `hostapd`
+("hostapd must be mocked in tests").
 
-**Solution:**
-```bash
-# Run tests with sudo
-sudo pytest tests/unit-tests/ -v
-
-# Or skip tests requiring sudo
-pytest tests/unit-tests/ -k "not requires_sudo"
-```
+**Solution:** do not run the unit tests with `sudo`. Mock the command the test
+reached (see "Mock Not Working as Expected" below), or use the fixtures of
+`conftest.py`.
 
 ### Issue: Mock Not Working as Expected
 
@@ -427,10 +440,10 @@ def test_something(self, mock_execute):
 
 ```python
 # Each test should be independent
-def test_create_network(self, manager):
+def test_start_network(self, manager):
     # Don't rely on results from other tests
     # Don't modify global state
-    manager.create_network(...)
+    manager.start_network(...)
 ```
 
 ### 2. Use Fixtures
@@ -438,8 +451,8 @@ def test_create_network(self, manager):
 ```python
 # Good: Fixture provides clean state each time
 @pytest.fixture
-def manager():
-    return NetworkManager()
+def manager(config):
+    return NetworkManager(config)
 
 def test_something(self, manager):
     # Fresh manager instance
@@ -537,14 +550,11 @@ pytest tests/unit-tests/ --cov=wilab --cov-report=term
 # Run complete test suite
 pytest tests/unit-tests/ -v --cov=wilab
 
-# Run formatter
-black wilab/ tests/
-
-# Run linter
-flake8 wilab/ tests/
+# Run linter (auto-fix with: make lint-fix)
+make lint
 
 # Run type checker
-mypy wilab/
+make type-check
 
 # If all pass: commit!
 git add -A && git commit -m "Add feature with tests"

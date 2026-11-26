@@ -23,11 +23,13 @@ Run scripts from the repository root with `bash <script>`.
 journalctl -u wi-lab.service --no-pager -g 'API failure operation='
 ```
 
-For example, `API failure operation=start_network http_status=500 detail_code=1003`
-identifies a terminal creation failure with an invalidated reservation. The
-new diagnostic line is emitted only for API `5xx` responses. It omits request
-paths, reservation IDs, tokens, and response bodies. Existing access and
-application logs are unchanged.
+For example, `API failure operation=stop_network http_status=503 detail_code=1012`
+identifies a `DELETE .../network` that did not complete (hostapd stuck in the
+kernel). The diagnostic line is emitted only for API `5xx` responses. It omits
+request paths, reservation IDs, tokens, and response bodies. A failed
+asynchronous create is not an API `5xx`: its outcome is logged by the create
+job as `AP start on <interface> failed: ...` or `AP start on <interface> ended
+its reservation (...)`.
 
 ---
 

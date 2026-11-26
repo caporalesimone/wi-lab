@@ -79,7 +79,7 @@ told directly (`404` with `reason: reservation_invalidated` on its next call). S
 
 ## Encryption, channel width and Wi-Fi generation
 
-In **Create a network on a reserved adapter**, the body is grouped in
+In **Create a network on a reserved adapter (asynchronous)**, the body is grouped in
 `radio`, `wifi` (with `security`), `internet` and `captive_portal`, like the
 answer of **GET .../network**; every example shows all the optional fields
 with their defaults. The schema describes each `wifi.security.encryption`
@@ -101,7 +101,8 @@ In the **Network** group, open **Create a network on a reserved adapter
 with `error` (`1013` and the failed `stage`, reservation still valid), or `404`
 whose `detail.reason` is `reservation_invalidated` (every start failed, antenna
 quarantined) or `reservation_expired`. Its `409` examples distinguish another
-network (`1008`) and a watchdog repair (`1009`). Radio failures are retried by
+network (`1008`), a watchdog repair (`1009`) and a stop that did not complete
+(`1012`). Radio failures are retried by
 the server during the start, so no outcome asks the client to repeat the
 create. Every code is listed in [Error codes](error-codes.md). In the
 **Reservation** group, `503 / 1003` means all adapters are quarantined and
@@ -116,10 +117,11 @@ and QoS profile endpoints when the reservation is valid but has no running
 network; `404` there always means the reservation is gone.
 
 `503 / 1006` (`device_busy`, example **1006 - adapter busy, retry**) is
-documented on the reservation endpoints: another operation on the same
-adapter, for example a network start, still held it after 5 s. Nothing was
-changed; repeat the request after `Retry-After` (2 s). The create, `GET
-.../network` and the release never answer it.
+documented on **Get network**, the network stop and the Internet, TX power and
+QoS profile endpoints: another operation on the same adapter, for example a
+network start, still held it after 5 s. Nothing was changed; repeat the
+request after `Retry-After` (2 s). The create and the release never answer
+it, and **Get network** answers at once while a create is starting.
 
 For a complete interactive example:
 

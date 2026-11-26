@@ -21,7 +21,7 @@ flowchart LR
     end
 
     subgraph Process["Wi-Lab process (Uvicorn + FastAPI)"]
-        R["Routes /api/v2<br/>reservation, network, internet,<br/>txpower, qos, status"]
+        R["Routes /api/v2<br/>reservations, antennas, network, internet,<br/>txpower, qos, status, monitoring"]
         D["dependencies.py<br/>singletons and discovery service"]
         RM["ReservationManager<br/>reservations, quarantine"]
         NM["NetworkManager<br/>AP lifecycle, device locks"]
@@ -84,7 +84,8 @@ flowchart LR
 | `wilab/wifi/discovery.py` | Detects AP-capable Wi-Fi interfaces, udev readiness, USB port, default routes. |
 | `wilab/api/__init__.py` | FastAPI app, lifespan (startup/shutdown), error handlers, frontend static files, OpenAPI. |
 | `wilab/api/dependencies.py` | Lazily created singletons, `hold_reservation`, device scan and discovery service. |
-| `wilab/api/routes/*.py` | HTTP endpoints. `network.py` contains the creation retry contract. |
+| `wilab/api/errors.py` | Error codes (`ApiErrorCode`), the `detail` envelope and the `404` reasons. |
+| `wilab/api/routes/*.py` | HTTP endpoints. `network.py` contains the asynchronous create (`StartJob` thread, paused retries) and the stop. |
 | `wilab/reservation.py` | In-memory reservation store, expiry, quarantine state. |
 | `wilab/wifi/manager.py` | `NetworkManager`: start/stop pipeline, device locks, expiry loop, TX power. |
 | `wilab/health.py` | Health checks that run host commands (hostapd and dnsmasq alive, NAT rules, upstream link), refreshed every 10 s by the `health-checks` thread; `/status` reads the latest result and runs no command (recomputed by the reader only if older than 20 s). |
@@ -93,7 +94,7 @@ flowchart LR
 | `wilab/wifi/recovery.py` | Automatic USB reset and verification of quarantined antennas. |
 | `wilab/wifi/channels.py` | Regulatory domain and per-interface channel cache, one instance shared by the API and `NetworkManager`. A channel refused from the cache is checked again against a fresh `iw` reading; the cache of an antenna is dropped after a USB recovery or re-probe and after a failed start (Fable BUG-4). |
 | `wilab/network/dhcp.py` | dnsmasq configuration and process tracking. |
-| `wilab/network/nat.py`, `isolation.py` | iptables NAT to the upstream interface and inter-AP isolation. |
+| `wilab/network/nat.py`, `isolation.py`, `host_guard.py` | iptables NAT to the upstream interface, inter-AP isolation and the per-AP `INPUT` chain that keeps AP clients off the host. |
 | `wilab/network/captive.py` | Optional captive portal: per-AP redirection chains and portal web server. |
 | `wilab/network/qos.py`, `qos_profile.py` | Traffic shaping (HTB, netem, IFB) and QoS profiles. |
 | `wilab/network/commands.py` | Bounded command execution, foreground process ownership. |
@@ -125,11 +126,12 @@ sequenceDiagram
     U->>L: lifespan startup
     L->>C: get_config() (runtime instance)
     L->>NM: get_manager() creates NetworkManager
-    L->>L: remove leftover NAT and captive portal rules
+    L->>L: remove leftover NAT, captive portal and host guard rules
     L->>L: stop orphan hostapd/dnsmasq, empty runtime dirs,<br/>delete wilab-ifb devices (STAB-4)
     NM->>NM: start expiry thread (every 5 s)
     L->>L: set regulatory domain (iw reg set)
     L->>D: start device discovery
+    L->>L: start health-checks thread and, under systemd, the watchdog pings (READY=1)
     L-->>U: ready, serve requests
     D->>RM: first scan, immediately: create ReservationManager,<br/>start watchdogs, add the antennas found
     loop for the whole process lifetime
@@ -261,6 +263,8 @@ flowchart TB
         DS["device-discovery<br/>every 5 s while no antenna, then every 30 s"]
         CC["channel-cache-scan<br/>one-shot per added antenna"]
         HC["health-checks (10 s)<br/>host commands behind /status"]
+        CJ["create-ANTENNA<br/>one per asynchronous create"]
+        SN["systemd-watchdog (20 s)<br/>pings systemd while every loop runs"]
     end
     subgraph Children["Child processes"]
         HP["hostapd (foreground child, one per AP)"]
@@ -291,14 +295,15 @@ Rules:
   antenna in the middle of an operation. API requests wait at most
   `DEVICE_BUSY_TIMEOUT` (5 s) and then return `503 / 1006 device_busy` with
   `Retry-After: 2` (Fable RACE-1), so polling clients cannot park the 40
-  request threads behind a slow start. The create waits without limit
-  (`wait=True`): one create at a time per reservation is the client contract,
-  and the start that holds the lock is itself bounded.
+  request threads behind a slow start. The create job (`_run_start`, in its
+  own thread) waits without limit (`wait=True`) and holds the lock for the
+  whole start, pauses included; the `POST` itself never waits for it.
 - Background loops (expiry, watchdog) use non-blocking acquisition: a busy
   antenna is skipped until the next tick instead of blocking the loop.
 - `GET /api/v2/status` reads snapshots and never waits for a device lock or
-  runs cleanup, so it stays responsive while an antenna is slow. It still runs
-  host health commands and is not a latency guarantee.
+  runs cleanup, so it stays responsive while an antenna is slow. It runs no
+  host command either: the health checks come from the `health-checks` thread
+  (recomputed by the reader only when the last result is older than 20 s).
 
 ## 4. Reservation lifecycle
 
@@ -335,6 +340,12 @@ stateDiagram-v2
 - **Expiry** is enforced in two places: lazily when the ID is used (the request
   gets `404` after cleanup) and by the expiry loop every 5 seconds.
 - **Release** cleans up first and frees the antenna only if cleanup succeeded.
+  It always answers `200`: when the cleanup fails the ID ends anyway and the
+  antenna stays held until a background cleanup succeeds.
+- **Ended IDs** are remembered for one hour (`ENDED_TTL`) with the reason
+  they ended (`reservation_released`, `reservation_expired`,
+  `reservation_invalidated`), so every call with the ID answers `404` with
+  that `detail.reason`; an unknown or older ID answers `reservation_not_found`.
 - **Failed cleanup backoff (WD-6):** when the cleanup of an antenna fails, the
   expiry loop and the background reservation sweep retry it after 5, 15, 60
   and then every 300 s (`CLEANUP_BACKOFF`), instead of every 5 s. A client's
@@ -372,15 +383,16 @@ sequenceDiagram
     R->>R: require_token (401)
     R->>RM: resolve_reservation (404 if unknown, expired, invalidated)
     R->>R: watchdog repairing this AP? (409 / 1009). Same body starting or running? (202 / 200)
-    R->>CH: validate_channel (422)
+    R->>R: other body starting or running? (409 / 1008). Last stop incomplete? (409 / 1012)
+    R->>CH: validate_network (422)
     R-->>C: 202 starting, the rest runs in the create job thread
     R->>RM: (job) hold_reservation: take device lock, re-check (404)
     R->>NM: (job) start_network(allow_internal_retry = first round, cancelled)
-    NM->>NM: retry deadline = now + 5 s, capped by expiry
+    NM->>NM: retry deadline = now + 20 s, capped by expiry
     NM->>NM: known antenna, not already active (409)
     NM->>NM: release_device: clear leftovers of a failed start
     NM->>NM: select available subnet, gateway .1
-    NM->>OS: validate interface exists, is wireless, supports AP
+    NM->>OS: validate interface exists
     NM->>OS: nmcli device set unmanaged (best effort)
     NM->>HA: start(ssid, channel, band, encryption, ...)
     HA->>HA: write hostapd.conf (ssid2 in hex) in a private temp dir with ctrl socket
@@ -399,6 +411,7 @@ sequenceDiagram
         NM->>FW: enable NAT (firewall lock)
     end
     NM->>FW: add isolation rules, all or nothing (firewall lock)
+    NM->>FW: add host guard chain (firewall lock)
     alt any step failed
         NM->>NM: release_device rollback
         NM->>NM: internal retry (up to 3 starts), or raise StartupFailure
@@ -462,7 +475,9 @@ interface, elapsed time and budget, socket presence, last known state, last
 probe outcome, and any observed exit code. The child output is continuously
 drained; only the last twelve allowlisted event labels are kept in memory and
 included in the failure entry. This diagnostic never includes raw child
-output, SSIDs or credentials and creates no additional file. It does not change
+output, SSIDs or credentials and creates no additional file (a separate
+report, with the configuration without passwords and the last 400 lines of
+`hostapd -d`, is written only when `hostapd_debug_dir` is set). It does not change
 readiness deadlines or retry classification. An exit code of `1` alone does
 not identify the cause.
 
@@ -478,7 +493,8 @@ flowchart LR
     B --> C["interface down, managed mode, flush addresses<br/>(skipped if the interface is gone)"]
     C --> D["disable NAT (firewall lock)"]
     D --> CPS["stop captive portal: web server,<br/>then chains and sign-ins"]
-    CPS --> E["remove isolation rules"]
+    CPS --> HG["remove host guard chain"]
+    HG --> E["remove isolation rules"]
     E --> F["stop dnsmasq"]
     F --> G{"any step failed?"}
     G -->|no| H["remove from active networks"]
@@ -561,7 +577,7 @@ flowchart TD
     S["POST create: 202, create job"] --> ST["start AP (round 1)"]
     ST --> OUT{"outcome"}
     OUT -->|success| OK["job dropped, GET: the network"]
-    OUT -->|"radio failure while starting the AP (segfault, beacon/init failure,<br/>radio or readiness timeout); round 1, fewer than 3 starts,<br/>at least 5 s of the 20 s budget left"| IR["layer 1: rollback, wait 1 s,<br/>start again inside the same request"]
+    OUT -->|"radio failure while starting the AP (segfault, beacon/init failure,<br/>radio or readiness timeout), round 1, fewer than 3 starts,<br/>at least 5 s of the 20 s budget left"| IR["layer 1: rollback, wait 1 s,<br/>start again inside the same request"]
     IR --> OUT2{"retry outcome"}
     OUT2 -->|success| OK
     OUT2 -->|"AP start failed again, starts or budget left"| IR
@@ -720,7 +736,7 @@ sequenceDiagram
     loop Layer 1: up to 3 starts within 20 s (round 1 only)
         NM->>NM: subnet, interface validation, NetworkManager unmanaged
         NM->>H: ip link down, iw set type managed, hostapd -d hostapd.conf
-        H-->>NM: output events, control socket, state ENABLED (timeout 20 s, 75 s on DFS)
+        H-->>NM: output events, control socket, state ENABLED (timeout 10 s, 75 s on DFS)
         alt radio failure (segfault, beacon or init failure, readiness timeout)
             NM->>NM: report in hostapd_debug_dir if set, rollback, wait 1 s, start again
         end
@@ -781,7 +797,7 @@ sequenceDiagram
             WD->>FW: verify gateway, ip_forward, NAT, Internet block, isolation, captive portal, re-add missing rules
         end
     end
-    C->>A: GET .../network, Internet, TX power, QoS (any call with an id except create)
+    C->>A: GET .../network, Internet, TX power, QoS (any call with an id except create and release)
     A->>RM: hold the reservation, wait at most 5 s for the device lock
     alt lock still held after 5 s (a start or restore is running)
         A-->>C: 503 / 1006 Retry-After 2 (nothing changed)
@@ -816,7 +832,7 @@ sequenceDiagram
     rect rgba(128,128,128,0.08)
     Note over C,EX: Release and expiry
     C->>A: DELETE /reservations/{id}
-    A->>RM: delete: release_requests += 1, device lock
+    A->>RM: delete: release_requests += 1, cancel a running create (it rolls back), device lock
     RM->>NM: release_device(): tracked stop of everything still running
     alt stop fails
         NM->>NM: cleanup backoff 5, 15, 60, 300 s
@@ -917,7 +933,8 @@ flowchart TD
   (gateway address, rules) are not counted.
 - Release or expiry cancels a pending restart. If a restart already ran, its
   result is cleaned up under the device lock before the antenna can be reused.
-- `POST create` returns `409` while `restoring_ap` or `restoring_dhcp` is set.
+- `POST create` returns `409 / 1009` while `restoring_ap`, `restoring_dhcp` or
+  `dhcp_failed` is set.
 
 ## 8. Quarantine and automatic USB recovery
 
@@ -1091,6 +1108,7 @@ no hostapd, dnsmasq, iptables or tc state is left behind.
 | dnsmasq configuration, leases, PID | `/tmp/wilab-dnsmasq/` | Removed at teardown. If a launch timed out before the PID file existed, teardown finds the daemon by its unique `--conf-file` argument in `/proc`, or concludes none was started (Fable NET-6). |
 | NAT and isolation rules | iptables `nat` and `FORWARD` | Removed at teardown. Leftovers are reported at startup. |
 | Captive portal chains and sign-ins | iptables `wilab-cp-<interface>` chains; sign-ins in process memory | Removed at teardown and at startup. |
+| Host guard | iptables and ip6tables `wilab-in-<interface>` chains, jumped to from `INPUT` | Removed at teardown and at startup. |
 | Traffic shaping | tc qdiscs, IFB devices | Removed at teardown. |
 | Host network manager exclusion | NetworkManager runtime device state; `/run/systemd/network/00-wilab-unmanaged.network` | Applied when antennas are added; cleared on reboot. |
 
@@ -1148,7 +1166,7 @@ is logged once as a warning. Set `upstream_interface` to force an interface.
   would hang on the same kernel lock.
 - **Self-restart only when idle (STAB-1).** The unit is `Type=notify` with
   `WatchdogSec=90s`. Every background loop (`expiry`, `discovery`,
-  `reprobe`, `watchdog:<interface>`) records a heartbeat per iteration
+  `reprobe`, `health`, `watchdog:<interface>`) records a heartbeat per iteration
   (`wilab/heartbeat.py`), and a thread pings systemd every 20 s. If a loop
   has not run for 3 minutes, `/monitoring` lists it in `checks.loops.stale` and
   `/status` is `degraded` (`loop_stalled`). The pings stop, so systemd restarts the service, only while

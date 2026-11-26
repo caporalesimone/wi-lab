@@ -8,8 +8,8 @@ This guide explains how to set up a development environment and contribute to Wi
 
 ### System Requirements
 
-- **OS:** Ubuntu 20.04+ or Debian 11+
-- **Python:** 3.9+
+- **OS:** Ubuntu 25+ for the installer and the service (`install.sh` checks it); the unit tests run on any Linux
+- **Python:** 3.10+ (CI runs 3.12)
 - **RAM:** 2GB minimum (4GB recommended)
 - **Disk:** 2GB free space
 
@@ -30,7 +30,7 @@ sudo apt-get install -y git build-essential python3-dev python3-pip python3-venv
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/your-org/wi-lab.git
+git clone https://github.com/caporalesimone/wi-lab
 cd wi-lab
 ```
 
@@ -41,7 +41,7 @@ cd wi-lab
 make venv
 
 # Install development/test dependencies (required once)
-<install-dev-dependencies-command>
+.venv/bin/pip install -r requirements-dev.txt
 
 # Activate it (optional but recommended for manual tools)
 source .venv/bin/activate
@@ -61,15 +61,16 @@ make test-local-quick
 - `pytest` - Testing framework
 - `pytest-cov` - Coverage reporting
 - `pytest-asyncio` - Async test support
-- `pytest-mock` - Mocking utilities
+- `httpx` - HTTP client for the API tests and the e2e tests
 - `ruff` - Fast Python linter and code formatter (replaces flake8, isort, black)
 - `mypy` - Static type checker for Python
 
 ### 4. Create Local Configuration
 
 ```bash
-# Create and edit your local configuration
-nano <local-config-file>
+# Create and edit your local configuration (read from ./config.yaml, or from $CONFIG_PATH)
+cp config.example.yaml config.yaml
+nano config.yaml
 ```
 
 **Example config:**
@@ -103,8 +104,8 @@ source .venv/bin/activate
 # (for example, your standard run command or ASGI server)
 python main.py
 
-# Example with hot reload (adapt module path as needed)
-uvicorn wilab.api:app --reload --host 0.0.0.0 --port 8080
+# Example with hot reload (the app is built by the create_app factory)
+uvicorn wilab.api:create_app --factory --reload --host 0.0.0.0 --port 8080
 ```
 
 ### Accessing the API
@@ -113,7 +114,7 @@ Once running:
 - **API Docs:** `http://localhost:8080/docs`
 - **Alternative Docs:** `http://localhost:8080/redoc`
 
-See [docs/swagger.md](docs/swagger.md) for complete API testing guide.
+See [swagger.md](swagger.md) for complete API testing guide.
 
 ---
 
@@ -121,7 +122,7 @@ See [docs/swagger.md](docs/swagger.md) for complete API testing guide.
 
 ### Running Tests
 
-For complete testing documentation, see [docs/unit-testing.md](docs/unit-testing.md).
+For complete testing documentation, see [unit-testing.md](unit-testing.md).
 
 Preferred commands (via Makefile):
 
@@ -137,7 +138,7 @@ make test-local-cov
 ```
 
 End-to-end tests (`tests/e2e-tests/`) run on the Wi-Lab machine against the running service and combine
-API calls with server actions. They are skipped unless enabled; see [docs/e2e-testing.md](docs/e2e-testing.md).
+API calls with server actions. They are skipped unless enabled; see [e2e-testing.md](e2e-testing.md).
 
 ```bash
 make test-e2e        # API + server checks, no USB unplug
@@ -151,7 +152,7 @@ Advanced (targeted tests when needed):
 .venv/bin/pytest tests/unit-tests/test_api.py -v
 
 # Run a specific test node
-.venv/bin/pytest tests/unit-tests/test_api.py::TestNetworkCreateEndpoint::test_network_response_structure -v
+.venv/bin/pytest tests/unit-tests/test_api.py::TestNetworkCreateEndpoint::test_start_network_invalid_reservation -v
 ```
 
 ### Using Project Automation Targets
@@ -186,7 +187,7 @@ make clean-venv
 ```
 
 Use `make help` to view the complete and always-updated list of available targets.
-See [Makefile](Makefile)
+See [Makefile](../Makefile)
 
 ---
 
@@ -266,6 +267,19 @@ The project follows clean separation of concerns:
 
 - **Configuration Layer** - Loads and validates runtime settings
 - **Models Layer** - Request/response schemas and domain data types
+- **API Layer** - HTTP routes, auth checks, and handlers
+- **Network Layer** - WiFi, DHCP, NAT, and isolation orchestration
+- **System Commands Layer** - Controlled wrappers around host networking commands
+
+### Design Principles
+
+**Separation of Concerns:** Each module has a single, well-defined responsibility  
+**No Monolithic Files:** Code split across focused modules  
+**Layered Architecture:** API → Service → System Commands  
+**Type Hints:** All function signatures and class attributes have type annotations  
+**Error Handling:** Clear error messages and appropriate HTTP status codes  
+
+The modules, threads and locks are described in [architecture.md](architecture.md).
 
 ---
 
@@ -297,7 +311,7 @@ stages.
 
 ### Available Helpers
 
-Defined in [install/common.sh](install/common.sh):
+Defined in [install/common.sh](../install/common.sh):
 
 - `state_init`
 - `state_set KEY VALUE`
@@ -306,24 +320,13 @@ Defined in [install/common.sh](install/common.sh):
 
 ### Current Bootstrap Behavior
 
-At installer start, [install.sh](install.sh) initializes the state file and sets:
+At installer start, [install.sh](../install.sh) initializes the state file and sets:
 
 - `INSTALL_RUN_STARTED=1`
 - `INSTALL_RUN_STARTED_AT=<UTC ISO timestamp>`
 
-Writers/readers for individual setup stages are intentionally deferred to the
-next phase.
-- **API Layer** - HTTP routes, auth checks, and handlers
-- **Network Layer** - WiFi, DHCP, NAT, and isolation orchestration
-- **System Commands Layer** - Controlled wrappers around host networking commands
-
-### Design Principles
-
-**Separation of Concerns:** Each module has a single, well-defined responsibility  
-**No Monolithic Files:** Code split across focused modules under 300 lines each  
-**Layered Architecture:** API → Service → System Commands  
-**Type Hints:** All function signatures and class attributes have type annotations  
-**Error Handling:** Clear error messages and appropriate HTTP status codes  
+The setup stages under `install/` then write their own keys (for example
+`SYSTEM_ROOT_OK`, `DOCKER_PRESENT`, `DOCKER_DAEMON_OK`).
 
 ---
 
@@ -434,7 +437,7 @@ Start developing:
 ```bash
 make venv
 source .venv/bin/activate
-<your-run-command>
+python main.py
 ```
 
 Then open your API docs endpoint in the browser (for example: `http://localhost:8080/docs`).

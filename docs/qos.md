@@ -67,22 +67,20 @@ You can add your own profiles by placing `.json` files in `wilab/data/qos-profil
 4. Each file is validated against `profile.schema.json` — invalid files are skipped with a warning
 5. If a profile `id` already exists in the catalogue, the duplicate is discarded and a warning is logged
 
-Create a new JSON file (e.g. `custom.json`) with the same structure as `default.json`:
+Create a new JSON file (e.g. `custom.json`) with the same structure as `default.json`, a JSON array of profiles:
 
 ```json
-{
-  "profiles": [
-    {
-      "id": "my_scenario",
-      "description": "Description of the scenario.",
-      "mode": "loop",
-      "steps": [
-        { "duration_sec": 10, "quality": 80, "dl_speed_kbit": 5000 },
-        { "duration_sec": 5, "quality": 30, "dl_speed_kbit": 1000 }
-      ]
-    }
-  ]
-}
+[
+  {
+    "id": "my_scenario",
+    "description": "Description of the scenario.",
+    "mode": "loop",
+    "steps": [
+      { "duration_sec": 10, "quality": 80, "dl_speed_kbit": 5000 },
+      { "duration_sec": 5, "quality": 30, "dl_speed_kbit": 1000 }
+    ]
+  }
+]
 ```
 
 Custom profiles appear in the catalogue endpoints and can be used exactly like built-in ones. Profiles are loaded at service startup.
@@ -125,7 +123,7 @@ The quality score (0–100) is mapped to network impairments:
 |---------|-------------|-------|--------|------------|-----------|
 | 100 | 0% | 0 ms | 0 ms | 0% | Perfect |
 | 90 | 0.3% | 10 ms | 3 ms | ~0% | Near-perfect |
-| 75 | 1.9% | 62 ms | 19 ms | 0.002% | Slightly degraded |
+| 75 | 1.9% | 62 ms | 19 ms | 0.016% | Slightly degraded |
 | 50 | 7.5% | 250 ms | 75 ms | 0.125% | Noticeable |
 | 25 | 16.9% | 562 ms | 169 ms | 0.42% | Poor |
 | 0 | 30% | 1000 ms | 300 ms | 1% | Nearly unusable |
@@ -274,7 +272,7 @@ Response:
 }
 ```
 
-Returns `404` if no profile is currently active on the interface.
+Returns `409` with `detail.code: 1011` (`qos_profile_not_active`) if no profile is currently active on the interface.
 
 ### 6. Switch profiles
 
@@ -296,16 +294,20 @@ curl -X POST "$BASE/reservations/$RES/qos/profile" \
 
 ## Error Responses
 
-| Status | Cause | Example detail |
+Every error body is `{"detail": {"code": ..., "reason": "...", "message": "..."}}`;
+use the status and `detail.code` for control flow (see [Error codes](error-codes.md)).
+
+| Status / `detail.code` | Cause | Example `detail.message` |
 |--------|-------|----------------|
-| 401 | Missing or invalid token | `"Not authenticated"` |
-| 404 | Reservation not found / expired | `"Reservation not found"` |
-| 404 | Profile ID not in catalogue | `"Profile 'xyz' not found in catalogue"` |
-| 404 | No active profile (on DELETE) | `"No active profile on this interface"` |
-| 409 | Network not active | `"Cannot apply QoS: network is not active for this reservation"` |
-| 409 | Profile already active | `"A profile is already active on this interface. Stop it first."` |
-| 422 | Both profile_id and inline params | `"Cannot specify both 'profile_id' and inline QoS parameters"` |
-| 422 | Empty request body | `"Must specify either 'profile_id' or at least one QoS parameter"` |
+| 401 / 401 | Missing or invalid token | `"Invalid token"` |
+| 404 / 404 | The reservation ID is no longer valid; `detail.reason` says why (`reservation_released`, `reservation_expired`, `reservation_invalidated`, `reservation_not_found`) | `"Reservation released (by its owner or by release-all)"` |
+| 409 / 1007 | Network not active (start, get and stop) | `"Network wlan0 is not active"` |
+| 409 / 1010 | Profile already active (on POST) | `"A profile is already active on this interface. Stop it first."` |
+| 409 / 1011 | No active profile (on DELETE) | `"No active profile on this interface"` |
+| 422 / 422 | Profile ID not in catalogue | `"profile_id: profile 'xyz' not found in catalogue"` |
+| 422 / 422 | Both profile_id and inline params | `"Cannot specify both 'profile_id' and inline QoS parameters"` |
+| 422 / 422 | Empty request body | `"Must specify either 'profile_id' or at least one QoS parameter"` |
+| 503 / 1006 | Another operation holds the adapter; repeat after `Retry-After` (2 s) | `"Another operation on this adapter is still running; retry after Retry-After"` |
 
 ---
 

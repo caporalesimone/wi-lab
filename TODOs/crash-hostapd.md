@@ -61,7 +61,8 @@ changelog (`/usr/share/doc/hostapd/changelog.Debian.gz`) mentions the patch.
 ## Important: the patch changes Wi-Lab's behaviour
 
 With the patch hostapd no longer crashes: it exits with an error code. Today
-an unclassified exit code is a generic `500` without retry, so creates would
+an unclassified exit code is not retried: the create ends as `runtime_state:
+start_failed` (`error.code` 1013, `stage: hostapd`), so creates would
 fail more often than now. **Before installing a patched hostapd**, Wi-Lab must
 recognize the nl80211 initialization error in the `hostapd -d` output and
 classify it as a radio failure (like `HostapdInitFailure`), so it is retried.

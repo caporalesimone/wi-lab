@@ -8,7 +8,7 @@ Typical use-cases: automated wireless testing, RF/antenna benchmarking, classroo
 
 ## How It Works
 
-1. **Multiple WiFi interfaces** — each USB adapter is declared in `config.yaml` and managed independently.
+1. **Multiple WiFi interfaces** — every AP-capable adapter is discovered automatically (`config.yaml` can give it a display name) and managed independently.
 2. **Reservation system** — before touching an interface you acquire a time-limited (or unlimited) reservation token via the API. The token is an 8-char hex string; when it expires the AP is torn down automatically. A device is not reassigned until cleanup succeeds. If cleanup fails, the device stays held for retry; other free devices remain available.
 3. **One AP per interface** — while reserved, you can create a WiFi network (hostapd), configure DHCP (dnsmasq), enable/disable Internet (iptables NAT), and adjust TX power — all via REST calls.
 4. **Web frontend** — an Angular SPA shows every interface as a card (available / owned / occupied), lets you reserve, configure, and monitor networks from the browser. The auth token is entered at runtime via a login dialog.
@@ -124,9 +124,14 @@ Virtual Environment:
   make clean-venv        Remove virtual environment
 
 Testing (Local - uses venv):
-  make test-local        Run all tests with verbose output
-  make test-local-quick  Run tests with minimal output
-  make test-local-cov    Run tests with coverage report (HTML)
+  make test-local        Run unit tests with verbose output
+  make test-local-quick  Run unit tests with minimal output
+  make test-local-cov    Run unit tests with coverage report (HTML)
+
+Testing (E2E - on the Wi-Lab machine, against the running service):
+  make test-e2e          API + server checks, no USB unplug
+  make test-e2e-usb      Also simulate USB unplugs (WD-4/WD-5)
+  Add WILAB_E2E_SLOW=1 for long tests; see docs/e2e-testing.md
 
 Code Quality:
   make lint              Run ruff linter
@@ -164,12 +169,20 @@ curl -X POST http://localhost:8080/api/v2/reservations \
 #   "expires_in": 900
 # }
 
-# 2. Create a WiFi network on the reserved device
+# 2. Create a WiFi network on the reserved device (asynchronous: answers 202, "runtime_state": "starting")
 curl -X POST http://localhost:8080/api/v2/reservations/a1b2c3d4/network \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"radio": {"band": "2.4ghz", "channel": 6, "tx_power_level": 4},
        "wifi": {"ssid": "TestNetwork", "security": {"encryption": "wpa2", "password": "mypassword"}}}'
+
+# 3. Poll every 1-2 s until "runtime_state" is no longer "starting" ("active": true: the AP is up)
+curl http://localhost:8080/api/v2/reservations/a1b2c3d4/network \
+  -H "Authorization: Bearer change-me"
+
+# 4. Release the reservation when done (also stops the network)
+curl -X DELETE http://localhost:8080/api/v2/reservations/a1b2c3d4 \
+  -H "Authorization: Bearer change-me"
 ```
 
 For the full endpoint reference, open **Swagger UI** at `http://<host>:8080/docs` or **ReDoc** at `http://<host>:8080/redoc`.
@@ -187,7 +200,9 @@ Detailed guides live in the `docs/` folder:
 | [swagger.md](docs/swagger.md) | API exploration via Swagger UI |
 | [error-codes.md](docs/error-codes.md) | Every API error code (`detail.code`), its HTTP status and the client action |
 | [networking.md](docs/networking.md) | Subnet layout, iptables, NAT internals |
+| [qos.md](docs/qos.md) | QoS profiles: catalogue, playback modes, API |
 | [unit-testing.md](docs/unit-testing.md) | Test suite structure and pytest usage |
+| [e2e-testing.md](docs/e2e-testing.md) | End-to-end tests against the running service on real adapters |
 | [troubleshooting.md](docs/troubleshooting.md) | Common issues, diagnostics scripts, debugging |
 | [readme-dev.md](docs/readme-dev.md) | Developer setup and contribution workflow |
 

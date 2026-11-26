@@ -328,11 +328,14 @@ of them. Further rules:
 - **Adapter busy: `503 / 1006`.** Every request on a reservation other than
   the create (`GET`/`DELETE .../network`, Internet,
   TX power, QoS profile) waits at most **5 s** for another operation on the
-  same adapter, such as a network start (up to 20 s, 75 s on a DFS channel).
+  same adapter, such as a network start (for its duration see
+  [2.3](#23-send-it-then-poll)) or a stop that the server is repeating.
   After that it returns `503` with `detail.code: 1006`,
   `reason: device_busy` and `Retry-After: 2`. Nothing was changed: repeat the
-  same request after `Retry-After`. A create never returns `1006`: it waits
-  for the adapter.
+  same request after `Retry-After`. A create never returns `1006`: it answers
+  at once and the start, in the background, waits for the adapter. During
+  that start `GET .../network` answers at once too, and the release never
+  returns `1006`.
 
   ```json
   HTTP/1.1 503 Service Unavailable
@@ -349,6 +352,8 @@ of them. Further rules:
   {
     "interface": "wlx7419f8176286", "active": true, "runtime_state": null,
     "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3471},
+    "restarts": {"ap": 0, "dhcp": 0, "last_at": null, "last_reason": null},
+    "error": null,
     "radio": {
       "band": "5ghz", "channel": 36,
       "channel_width": {"requested": 80, "reported": 80},
@@ -369,6 +374,8 @@ of them. Further rules:
   | Section | Content |
   |---|---|
   | `reservation` | `expires_at` (UTC) and `expires_in` (seconds); always present. |
+  | `restarts` | Watchdog repairs counted over the reservation (see below); always present. |
+  | `error` | Set only with `runtime_state: start_failed` (2.4); `null` otherwise. |
   | `radio` | Band, channel, channel width (`requested`, and `reported` by the radio: lower when hostapd fell back to 20 MHz on 2.4 GHz), Wi-Fi generation, TX power. |
   | `wifi` | SSID, hidden flag, `security` (encryption and password, returned so test devices can be connected). |
   | `ip` | Subnet, gateway, DHCP range and the DNS server announced to clients. |
@@ -376,8 +383,8 @@ of them. Further rules:
   | `clients` | Connected clients (`mac`, `ip`, and `captive_authorized` with a portal). The count is the list length. |
 
   While the network is not running, or while the watchdog restores it, only
-  `interface`, `active`, `runtime_state` and `reservation` are set; the other
-  sections are `null`.
+  `interface`, `active`, `runtime_state`, `reservation` and `restarts` are
+  set; the other sections are `null`.
 - Wi-Lab's watchdog checks every running AP about every 5 seconds and restarts
   it with the same settings and reservation, up to 3 times per hour per
   antenna; a fourth failure within the hour quarantines the antenna. While this
@@ -519,10 +526,10 @@ views; clients only need `/status`.
   `network_active` (a network runs on it).
 - `reservation: null` does **not** mean the antenna can be reserved: an entry
   with `recovery_state` is excluded from allocation.
-- How a client learns that *its* antenna was quarantined: the create returns
-  `503` with `detail.code: 1003`, `reason: device_unavailable` and
-  `reservation_invalidated: true`. From then on the reservation ID returns
-  `404`. There is no other notification: discard the ID and reserve again.
+- How a client learns that *its* antenna was quarantined: every call with the
+  reservation ID, including the polling of a create, returns `404` with
+  `detail.reason: reservation_invalidated`. There is no other notification:
+  discard the ID and reserve again.
 - New reservations skip quarantined antennas silently while another antenna is
   free. When none is allocatable because of quarantine, reserve returns `503`
   with `1002` (recovery in progress, retry after `Retry-After`) or `1003`
@@ -546,7 +553,7 @@ sequenceDiagram
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 0 - before reserving (optional, no reservation needed)
     C->>W: GET /status
-    W-->>C: status, antennas[] (reserved, recovery_state), reservation_policy
+    W-->>C: status, antennas[] (reservation, network_active, recovery_state), reservation_policy
     Note over C: allow_unlimited tells whether duration_seconds 0 is accepted.<br/>Entries with recovery_state are not allocatable.
     end
 
@@ -593,7 +600,7 @@ sequenceDiagram
     C->>W: POST /reservations/{id}/network {radio, wifi, internet, captive_portal}
     alt 202 runtime_state starting
         W-->>C: accepted, same schema as GET .../network
-        Note over W: In the background: prepares the radio, starts hostapd, waits for the AP<br/>(20 s, 75 s on DFS), gateway, DHCP, NAT, isolation. Radio failure: up to<br/>3 starts within 20 s, then one after 5 s, then one after 10 s
+        Note over W: In the background: prepares the radio, starts hostapd, waits for the AP<br/>(10 s, 75 s on DFS), gateway, DHCP, NAT, isolation. Radio failure: up to<br/>3 starts within 20 s, then one after 5 s, then one after 10 s
         loop every 1-2 s while runtime_state is starting
             C->>W: GET /reservations/{id}/network
             alt runtime_state starting
@@ -733,7 +740,7 @@ Every answer leads to exactly one of these actions:
 | any | `401` | FIX | Wrong or missing token. |
 | any call with an ID | `404` + `reason: reservation_invalidated` or `reservation_expired` | RESERVE AGAIN | The ID was invalidated (its antenna was quarantined: radio failures, also during a watchdog restart) or expired. Never release it. On a release: DONE. |
 | | `404` + `reason: reservation_released` or `reservation_not_found` | DONE | Released (by you or release-all), never existed, or ended more than an hour ago. Nothing to release. |
-| any call with an ID except the create | `503 / 1006` + `Retry-After: 2` | REPEAT | Another operation holds the antenna. Nothing was changed. |
+| `GET`/`DELETE .../network`, Internet, TX power, QoS | `503 / 1006` + `Retry-After: 2` | REPEAT | Another operation holds the antenna. Nothing was changed. Never on the create or the release. |
 | `POST /reservations` | `200` | DONE | Keep `reservation_id` and `interface`. |
 | | `409 / 1005` | REPEAT | All antennas reserved (with `interface`: that one). Wait `next_available_in`, or a backoff of 10–60 s when it is `null`. |
 | | `503 / 1002` + `Retry-After: 10` | REPEAT | An antenna is being recovered. |
