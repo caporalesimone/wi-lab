@@ -84,8 +84,8 @@ flowchart LR
 | `wilab/wifi/discovery.py` | Detects AP-capable Wi-Fi interfaces, udev readiness, USB port, default routes. |
 | `wilab/api/__init__.py` | FastAPI app, lifespan (startup/shutdown), error handlers, frontend static files, OpenAPI. |
 | `wilab/api/dependencies.py` | Lazily created singletons, `hold_reservation`, device scan and discovery service. |
-| `wilab/api/errors.py` | Error codes (`ApiErrorCode`), the `detail` envelope and the `404` reasons. |
-| `wilab/api/routes/*.py` | HTTP endpoints. `network.py` contains the asynchronous create (`StartJob` thread, paused retries) and the stop. |
+| `wilab/api/errors.py` | Error codes (`ApiErrorCode`, the whole 1001-1013 range in one enum), the `detail` envelope (`domain_error`) and the `404` reasons. |
+| `wilab/api/routes/*.py` | HTTP endpoints. `network.py` contains the asynchronous create (`StartJob` thread, paused retries, `StartOutcome`) and the stop; its OpenAPI examples are module constants (`_CREATE_RESPONSES`, `_GET_RESPONSES`). `recovery_responses.py` builds the answers shared by several routes (`1002`, `1003`, `1006`). |
 | `wilab/reservation.py` | In-memory reservation store, expiry, quarantine state. |
 | `wilab/wifi/manager.py` | `NetworkManager`: start/stop pipeline, device locks, expiry loop, TX power. |
 | `wilab/health.py` | Health checks that run host commands (hostapd and dnsmasq alive, NAT rules, upstream link), refreshed every 10 s by the `health-checks` thread; `/status` reads the latest result and runs no command (recomputed by the reader only if older than 20 s). |
@@ -245,6 +245,11 @@ thread (`StartJob` in `NetworkManager.start_jobs`): the create answers `202` at
 once and `GET .../network` reads the job without waiting for the device lock.
 A release or a stop sets the job's cancel event first (`cancel_start`), so it
 never waits for a long start: the hostapd readiness wait and the pauses check it.
+The job answers no request, so it raises no HTTP error: `_run_start` returns a
+`StartOutcome` (`started`, `cancelled`, `ended` when the reservation ended,
+`start_failed` with the `1013` error) and `_run_job` stores it for
+`GET .../network`. Unit tests go through the same path: `create_network` in
+`tests/unit-tests/conftest.py` posts the create and polls the outcome.
 
 ```mermaid
 flowchart TB

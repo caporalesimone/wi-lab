@@ -19,7 +19,6 @@ from ...reservation import (
 from ...timestamps import format_utc_timestamp
 from .recovery_responses import (
     RETRY_AFTER_HEADER,
-    RecoveryCode,
     recovery_error,
     recovery_example,
 )
@@ -105,8 +104,8 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
             "description": "No allocatable adapter: recovery (1002), quarantine or no Wi-Fi adapter detected (1003).",
             "headers": RETRY_AFTER_HEADER,
             "content": {"application/json": {"examples": {
-                "device_recovering": recovery_example(RecoveryCode.DEVICE_RECOVERING),
-                "device_unavailable": recovery_example(RecoveryCode.DEVICE_UNAVAILABLE),
+                "device_recovering": recovery_example(ApiErrorCode.DEVICE_RECOVERING),
+                "device_unavailable": recovery_example(ApiErrorCode.DEVICE_UNAVAILABLE),
             }}},
         },
     },
@@ -166,8 +165,8 @@ def create_reservation(
         ) from exc
     except DeviceRecoveryUnavailable as exc:
         if exc.recovering:
-            raise recovery_error(RecoveryCode.DEVICE_RECOVERING, retry_after=10) from exc
-        raise recovery_error(RecoveryCode.DEVICE_UNAVAILABLE) from exc
+            raise recovery_error(ApiErrorCode.DEVICE_RECOVERING, retry_after=10) from exc
+        raise recovery_error(ApiErrorCode.DEVICE_UNAVAILABLE) from exc
     except NoDeviceAvailableError as exc:
         raise HTTPException(
             status_code=409,

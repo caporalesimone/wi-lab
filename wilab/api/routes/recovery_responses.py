@@ -1,50 +1,33 @@
-"""HTTP contract for network creation recovery."""
-
-from enum import IntEnum
+"""HTTP answers shared by several routes: antennas recovering or unavailable, adapter busy."""
 
 from fastapi import HTTPException
 
-
-class RecoveryCode(IntEnum):
-    DEVICE_RECOVERING = 1002
-    DEVICE_UNAVAILABLE = 1003
-
+from ..errors import ApiErrorCode, domain_error
 
 _MESSAGES = {
-    RecoveryCode.DEVICE_RECOVERING: "Every free antenna is recovering; retry after Retry-After",
-    RecoveryCode.DEVICE_UNAVAILABLE: "No antenna is usable; check GET /status",
+    ApiErrorCode.DEVICE_RECOVERING: "Every free antenna is recovering; retry after Retry-After",
+    ApiErrorCode.DEVICE_UNAVAILABLE: "No antenna is usable; check GET /status",
 }
 
 
-def _detail(code: RecoveryCode, invalidated: bool) -> dict:
-    detail = {"code": int(code), "reason": code.name.lower(), "message": _MESSAGES[code]}
-    if invalidated:
-        # Only inside a create job, which turns it into 404 reservation_invalidated.
-        detail["reservation_invalidated"] = True
-    return detail
-
-
-def recovery_error(
-    code: RecoveryCode, *, invalidated: bool = False, retry_after: int | None = None,
-) -> HTTPException:
+def recovery_error(code: ApiErrorCode, *, retry_after: int | None = None) -> HTTPException:
+    """503 / 1002 or 1003 on a reservation: no antenna can be given now."""
     return HTTPException(
         status_code=503,
-        detail=_detail(code, invalidated),
+        detail=domain_error(code, _MESSAGES[code]),
         headers={"Retry-After": str(retry_after)} if retry_after is not None else None,
     )
 
 
-def recovery_example(code: RecoveryCode, *, invalidated: bool = False) -> dict:
-    return {"value": {"detail": _detail(code, invalidated)}}
+def recovery_example(code: ApiErrorCode) -> dict:
+    return {"value": {"detail": domain_error(code, _MESSAGES[code])}}
 
 
 def device_busy_detail() -> dict:
     """Body of a 503 / 1006: another operation on the adapter is still running (RACE-1)."""
-    return {
-        "code": 1006,
-        "reason": "device_busy",
-        "message": "Another operation on this adapter is still running; retry after Retry-After",
-    }
+    return domain_error(
+        ApiErrorCode.DEVICE_BUSY, "Another operation on this adapter is still running; retry after Retry-After",
+    )
 
 
 DEVICE_BUSY_RESPONSE = {

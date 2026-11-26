@@ -45,7 +45,6 @@ from ...wifi.manager import (
 from .recovery_responses import (
     DEVICE_BUSY_RESPONSE,
     device_busy_detail,
-    recovery_example,
 )
 
 # After a radio failure the create job starts the AP again after these pauses.
@@ -122,9 +121,189 @@ _STARTING_EXAMPLE = {
 }
 
 
-def _error(code: int, reason: str, message: str) -> dict:
-    """An error `detail` object as the API returns it."""
-    return {"code": code, "reason": reason, "message": message}
+_CREATE_RESPONSES: dict = {
+    202: {
+        "description": (
+            "Start accepted: the network with `active: false` and `runtime_state: starting` "
+            "(the same schema as `GET .../network`). Poll `GET .../network` every 1-2 s. "
+            "Also the answer to the same body while that start is running."
+        ),
+        "content": {"application/json": {"example": _STARTING_EXAMPLE}},
+    },
+    200: {
+        "description": (
+            "The same body on a network that is already running with exactly these settings "
+            "(e.g. a create repeated after a lost answer): the network, nothing is restarted."
+        ),
+        "content": {"application/json": {"example": {**_ACTIVE_EXAMPLE, "clients": []}}},
+    },
+    401: {"description": "Unauthorized", "content": {"application/json": {
+        "example": {"detail": error_detail(401, "Invalid token")},
+    }}},
+    409: {
+        "description": (
+            "A network with different settings runs or is starting (1008; the same body "
+            "answers 202 or 200), a watchdog repair in progress (1009), or the last stop did "
+            "not complete (1012: repeat DELETE .../network, then the create)."
+        ),
+        "content": {"application/json": {"examples": {
+            "active_network": {"value": {"detail": domain_error(
+                ApiErrorCode.NETWORK_ALREADY_ACTIVE,
+                "Network wlan0 is already active. Stop it first before creating a new one.",
+            )}},
+            "restoration_in_progress": {
+                "value": {"detail": domain_error(ApiErrorCode.RESTORATION_IN_PROGRESS, "Network restoration is in progress")},
+            },
+            "stop_incomplete": {
+                "summary": "1012 - the last stop did not complete: repeat DELETE .../network, then the create",
+                "value": {"detail": domain_error(
+                    ApiErrorCode.STOP_INCOMPLETE,
+                    "The stop of the network on wlan0 did not complete: repeat DELETE .../network first",
+                )},
+            },
+        }}},
+    },
+    422: {
+        "description": (
+            "Validation failed: body, unsupported or disabled channel, `encryption: wpa` "
+            "(no longer accepted), or an encryption, channel width or Wi-Fi generation the "
+            "antenna does not support"
+        ),
+        "content": {"application/json": {"examples": {
+            "wpa_removed": {
+                "summary": "encryption wpa is no longer accepted",
+                "value": {"detail": error_detail(
+                    422,
+                    "wifi.security.encryption: 'wpa' is no longer accepted: use "
+                    "'wpa2' (what 'wpa' used to create) or 'wpa1' for legacy WPA/TKIP",
+                )},
+            },
+            "wpa1_unsupported": {
+                "summary": "wpa1 on an antenna without TKIP",
+                "value": {"detail": error_detail(
+                    422, "wifi.security.encryption: wpa1 is not supported on this antenna",
+                )},
+            },
+            "width_unavailable": {
+                "summary": "Channel cannot be used at the requested width",
+                "value": {"detail": error_detail(
+                    422,
+                    "radio.channel_width: 80 MHz on channel 165 is not available: Channel 169 is disabled on wlan0 "
+                    "for band 5ghz (regulatory domain restriction)",
+                )},
+            },
+            "generation_unsupported": {
+                "summary": "Wi-Fi generation not supported by the antenna",
+                "value": {"detail": error_detail(
+                    422,
+                    "radio.wifi_generation: wifi_generation 6 is not supported on this antenna for band 5ghz",
+                )},
+            },
+            "field_validation": {
+                "summary": "Invalid field: the message starts with its path in the body",
+                "value": {"detail": error_detail(
+                    422, "radio.channel_width: Input should be 20, 40 or 80",
+                )},
+            },
+            "body_validation": {
+                "summary": "Rule between fields: the path is the refused field",
+                "value": {"detail": error_detail(
+                    422,
+                    "radio.channel: Channel 99 is not a valid WiFi channel for band 5ghz",
+                )},
+            },
+            "unsupported_channel": {
+                "summary": "Channel not supported by hardware",
+                "value": {"detail": error_detail(
+                    422, "radio.channel: Channel 173 is not supported on wlan0 for band 5ghz",
+                )},
+            },
+            "disabled_channel": {
+                "summary": "Channel disabled by regulatory domain",
+                "value": {"detail": error_detail(
+                    422,
+                    "radio.channel: Channel 14 is disabled on wlan0 for band 2.4ghz (regulatory domain restriction)",
+                )},
+            },
+        }}},
+    },
+}
+
+
+_CREATE_BODY_EXAMPLES: dict = {
+    "wpa2_network": {
+        "summary": "2.4 GHz WPA2 network, every optional field at its default",
+        "description": "Required: radio.band, radio.channel, radio.tx_power_level, "
+        "wifi.ssid, wifi.security.encryption, and wifi.security.password unless the "
+        "encryption is open. Optional, shown with their defaults: radio.channel_width, "
+        "radio.wifi_generation, wifi.hidden, internet.enabled (default from the server "
+        "configuration), captive_portal.enabled.",
+        "value": {
+        "radio": {
+            "band": "2.4ghz", "channel": 5, "channel_width": 20,
+            "wifi_generation": 4, "tx_power_level": 4,
+        },
+        "wifi": {
+            "ssid": "TestNetwork", "hidden": False,
+            "security": {"encryption": "wpa2", "password": "testpass123"},
+        },
+        "internet": {"enabled": True},
+        "captive_portal": {"enabled": False},
+    },
+    },
+    "wifi5_80mhz": {
+        "summary": "5 GHz Wi-Fi 5 network at 80 MHz",
+        "description": "Channels 36-48 as one 80 MHz channel, 802.11ac. Needs an antenna "
+        "whose GET /antennas/{interface} lists 80 MHz for wifi_generation 5 on 5ghz.",
+        "value": {
+        "radio": {
+            "band": "5ghz", "channel": 36, "channel_width": 80,
+            "wifi_generation": 5, "tx_power_level": 4,
+        },
+        "wifi": {
+            "ssid": "Wifi5Test", "hidden": False,
+            "security": {"encryption": "wpa2-wpa3", "password": "testpass123"},
+        },
+        "internet": {"enabled": True},
+        "captive_portal": {"enabled": False},
+    },
+    },
+    "wpa1_legacy": {
+        "summary": "Legacy WPA (TKIP) network for old clients",
+        "description": "Insecure, 802.11a/g only (20 MHz, at most 54 Mbit/s). Accepted "
+        "only on antennas whose GET /antennas/{interface} lists wpa1 in encryptions.",
+        "value": {
+        "radio": {
+            "band": "2.4ghz", "channel": 6, "channel_width": 20,
+            "wifi_generation": 4, "tx_power_level": 4,
+        },
+        "wifi": {
+            "ssid": "LegacyWpa", "hidden": False,
+            "security": {"encryption": "wpa1", "password": "testpass123"},
+        },
+        "internet": {"enabled": True},
+        "captive_portal": {"enabled": False},
+    },
+    },
+    "captive_portal_network": {
+        "summary": "Network behind a simulated captive portal",
+        "description": "Clients are redirected to the portal page until they press Sign in. "
+        "Only the client that signs in is released; with internet.enabled it then reaches "
+        "the Internet.",
+        "value": {
+        "radio": {
+            "band": "2.4ghz", "channel": 6, "channel_width": 20,
+            "wifi_generation": 4, "tx_power_level": 4,
+        },
+        "wifi": {
+            "ssid": "CaptiveTest", "hidden": False,
+            "security": {"encryption": "wpa2", "password": "testpass123"},
+        },
+        "internet": {"enabled": True},
+        "captive_portal": {"enabled": True},
+    },
+    },
+}
 
 
 @router.post(
@@ -132,113 +311,7 @@ def _error(code: int, reason: str, message: str) -> dict:
     response_model=NetworkResponse,
     status_code=202,
     summary="Create a network on a reserved adapter (asynchronous)",
-    responses={
-        202: {
-            "description": (
-                "Start accepted: the network with `active: false` and `runtime_state: starting` "
-                "(the same schema as `GET .../network`). Poll `GET .../network` every 1-2 s. "
-                "Also the answer to the same body while that start is running."
-            ),
-            "content": {"application/json": {"example": _STARTING_EXAMPLE}},
-        },
-        200: {
-            "description": (
-                "The same body on a network that is already running with exactly these settings "
-                "(e.g. a create repeated after a lost answer): the network, nothing is restarted."
-            ),
-            "content": {"application/json": {"example": {**_ACTIVE_EXAMPLE, "clients": []}}},
-        },
-        401: {"description": "Unauthorized", "content": {"application/json": {
-            "example": {"detail": _error(401, "unauthorized", "Invalid token")},
-        }}},
-        409: {
-            "description": (
-                "A network with different settings runs or is starting (1008; the same body "
-                "answers 202 or 200), a watchdog repair in progress (1009), or the last stop did "
-                "not complete (1012: repeat DELETE .../network, then the create)."
-            ),
-            "content": {"application/json": {"examples": {
-                "active_network": {"value": {"detail": _error(
-                    1008, "network_already_active",
-                    "Network wlan0 is already active. Stop it first before creating a new one.",
-                )}},
-                "restoration_in_progress": {
-                    "value": {"detail": _error(1009, "restoration_in_progress", "Network restoration is in progress")},
-                },
-                "stop_incomplete": {
-                    "summary": "1012 - the last stop did not complete: repeat DELETE .../network, then the create",
-                    "value": {"detail": _error(
-                        1012, "stop_incomplete",
-                        "The stop of the network on wlan0 did not complete: repeat DELETE .../network first",
-                    )},
-                },
-            }}},
-        },
-        422: {
-            "description": (
-                "Validation failed: body, unsupported or disabled channel, `encryption: wpa` "
-                "(no longer accepted), or an encryption, channel width or Wi-Fi generation the "
-                "antenna does not support"
-            ),
-            "content": {"application/json": {"examples": {
-                "wpa_removed": {
-                    "summary": "encryption wpa is no longer accepted",
-                    "value": {"detail": _error(
-                        422, "validation_error",
-                        "wifi.security.encryption: 'wpa' is no longer accepted: use "
-                        "'wpa2' (what 'wpa' used to create) or 'wpa1' for legacy WPA/TKIP",
-                    )},
-                },
-                "wpa1_unsupported": {
-                    "summary": "wpa1 on an antenna without TKIP",
-                    "value": {"detail": _error(
-                        422, "validation_error", "wifi.security.encryption: wpa1 is not supported on this antenna",
-                    )},
-                },
-                "width_unavailable": {
-                    "summary": "Channel cannot be used at the requested width",
-                    "value": {"detail": _error(
-                        422, "validation_error",
-                        "radio.channel_width: 80 MHz on channel 165 is not available: Channel 169 is disabled on wlan0 "
-                        "for band 5ghz (regulatory domain restriction)",
-                    )},
-                },
-                "generation_unsupported": {
-                    "summary": "Wi-Fi generation not supported by the antenna",
-                    "value": {"detail": _error(
-                        422, "validation_error",
-                        "radio.wifi_generation: wifi_generation 6 is not supported on this antenna for band 5ghz",
-                    )},
-                },
-                "field_validation": {
-                    "summary": "Invalid field: the message starts with its path in the body",
-                    "value": {"detail": _error(
-                        422, "validation_error", "radio.channel_width: Input should be 20, 40 or 80",
-                    )},
-                },
-                "body_validation": {
-                    "summary": "Rule between fields: the path is the refused field",
-                    "value": {"detail": _error(
-                        422, "validation_error",
-                        "radio.channel: Channel 99 is not a valid WiFi channel for band 5ghz",
-                    )},
-                },
-                "unsupported_channel": {
-                    "summary": "Channel not supported by hardware",
-                    "value": {"detail": _error(
-                        422, "validation_error", "radio.channel: Channel 173 is not supported on wlan0 for band 5ghz",
-                    )},
-                },
-                "disabled_channel": {
-                    "summary": "Channel disabled by regulatory domain",
-                    "value": {"detail": _error(
-                        422, "validation_error",
-                        "radio.channel: Channel 14 is disabled on wlan0 for band 2.4ghz (regulatory domain restriction)",
-                    )},
-                },
-            }}},
-        },
-    },
+    responses=_CREATE_RESPONSES,
 )
 def start_network(
     reservation_mgr: ReservationManagerDep,
@@ -246,80 +319,7 @@ def start_network(
     reservation: Reservation = Depends(resolve_reservation),
     body: NetworkCreateBody = Body(
         ...,
-        openapi_examples={
-            "wpa2_network": {
-                "summary": "2.4 GHz WPA2 network, every optional field at its default",
-                "description": "Required: radio.band, radio.channel, radio.tx_power_level, "
-                "wifi.ssid, wifi.security.encryption, and wifi.security.password unless the "
-                "encryption is open. Optional, shown with their defaults: radio.channel_width, "
-                "radio.wifi_generation, wifi.hidden, internet.enabled (default from the server "
-                "configuration), captive_portal.enabled.",
-                "value": {
-                "radio": {
-                    "band": "2.4ghz", "channel": 5, "channel_width": 20,
-                    "wifi_generation": 4, "tx_power_level": 4,
-                },
-                "wifi": {
-                    "ssid": "TestNetwork", "hidden": False,
-                    "security": {"encryption": "wpa2", "password": "testpass123"},
-                },
-                "internet": {"enabled": True},
-                "captive_portal": {"enabled": False},
-            },
-            },
-            "wifi5_80mhz": {
-                "summary": "5 GHz Wi-Fi 5 network at 80 MHz",
-                "description": "Channels 36-48 as one 80 MHz channel, 802.11ac. Needs an antenna "
-                "whose GET /antennas/{interface} lists 80 MHz for wifi_generation 5 on 5ghz.",
-                "value": {
-                "radio": {
-                    "band": "5ghz", "channel": 36, "channel_width": 80,
-                    "wifi_generation": 5, "tx_power_level": 4,
-                },
-                "wifi": {
-                    "ssid": "Wifi5Test", "hidden": False,
-                    "security": {"encryption": "wpa2-wpa3", "password": "testpass123"},
-                },
-                "internet": {"enabled": True},
-                "captive_portal": {"enabled": False},
-            },
-            },
-            "wpa1_legacy": {
-                "summary": "Legacy WPA (TKIP) network for old clients",
-                "description": "Insecure, 802.11a/g only (20 MHz, at most 54 Mbit/s). Accepted "
-                "only on antennas whose GET /antennas/{interface} lists wpa1 in encryptions.",
-                "value": {
-                "radio": {
-                    "band": "2.4ghz", "channel": 6, "channel_width": 20,
-                    "wifi_generation": 4, "tx_power_level": 4,
-                },
-                "wifi": {
-                    "ssid": "LegacyWpa", "hidden": False,
-                    "security": {"encryption": "wpa1", "password": "testpass123"},
-                },
-                "internet": {"enabled": True},
-                "captive_portal": {"enabled": False},
-            },
-            },
-            "captive_portal_network": {
-                "summary": "Network behind a simulated captive portal",
-                "description": "Clients are redirected to the portal page until they press Sign in. "
-                "Only the client that signs in is released; with internet.enabled it then reaches "
-                "the Internet.",
-                "value": {
-                "radio": {
-                    "band": "2.4ghz", "channel": 6, "channel_width": 20,
-                    "wifi_generation": 4, "tx_power_level": 4,
-                },
-                "wifi": {
-                    "ssid": "CaptiveTest", "hidden": False,
-                    "security": {"encryption": "wpa2", "password": "testpass123"},
-                },
-                "internet": {"enabled": True},
-                "captive_portal": {"enabled": True},
-            },
-            },
-        },
+        openapi_examples=_CREATE_BODY_EXAMPLES,
     ),
     manager: NetworkManager = Depends(get_manager),
     channel_mgr: ChannelManager = Depends(get_channel_manager),
@@ -556,11 +556,11 @@ def _run_job(
 
 
 def _state_response(
-    reservation: Reservation, runtime_state: str, error: dict | None = None,
+    reservation: Reservation, runtime_state: str, error: dict | None = None, *, active: bool = False,
 ) -> NetworkResponse:
-    """A network that is not running: starting, or start_failed with its error."""
+    """A network answered without its sections: starting, start_failed with its error, or restoring."""
     return NetworkResponse(
-        interface=reservation.device_id, active=False, runtime_state=runtime_state,
+        interface=reservation.device_id, active=active, runtime_state=runtime_state,
         reservation=ReservationInfo(
             expires_at=format_utc_timestamp(reservation.expires_at),
             expires_in=reservation.expires_in,
@@ -690,75 +690,78 @@ def _release_leftovers(manager: NetworkManager, device_id: str) -> None:
         ) from exc
 
 
+_GET_RESPONSES: dict = {
+    503: DEVICE_BUSY_RESPONSE,
+    200: {
+        "description": (
+            "Network status in sections: `reservation`, `radio`, `wifi`, `ip`, `internet`, "
+            "`captive_portal` and `clients`. While the network is not running, or while the "
+            "watchdog restores it, only `interface`, `active`, `runtime_state` and "
+            "`reservation` are set and the sections are null."
+        ),
+        "content": {"application/json": {"examples": {
+            "active": {
+                "summary": "Active 5 GHz network at 80 MHz with Internet and two clients",
+                "value": _ACTIVE_EXAMPLE,
+            },
+            "restoring_ap": {"value": {
+                "interface": "wlan0", "active": False, "runtime_state": "restoring_ap",
+                "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 54},
+            }},
+            "restoring_dhcp": {"value": {
+                "interface": "wlan0", "active": True, "runtime_state": "restoring_dhcp",
+                "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 53},
+            }},
+            "dhcp_failed": {"value": {
+                "interface": "wlan0", "active": True, "runtime_state": "dhcp_failed",
+                "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 51},
+            }},
+            "restore_failed": {
+                "summary": "AP restart failed; the watchdog retries with backoff",
+                "value": {
+                "interface": "wlan0", "active": False, "runtime_state": "restore_failed",
+                "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3300},
+            },
+            },
+            "captive_portal": {
+                "summary": "Active network with a captive portal",
+                "value": {
+                    "interface": "wlan0", "active": True, "runtime_state": None,
+                    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3540},
+                    "radio": {
+                        "band": "2.4ghz", "channel": 6,
+                        "channel_width": {"requested": 20, "reported": 20},
+                        "wifi_generation": 4,
+                        "tx_power": {"requested_level": 4, "reported_level": 4, "reported_dbm": 20.0},
+                    },
+                    "wifi": {
+                        "ssid": "CaptiveTest", "hidden": False,
+                        "security": {"encryption": "wpa2", "password": "testpass123"},
+                    },
+                    "ip": {
+                        "subnet": "192.168.120.0/24", "gateway": "192.168.120.1",
+                        "dhcp_range": {"start": "192.168.120.10", "end": "192.168.120.250"},
+                        "dns_server": "192.168.10.21",
+                    },
+                    "internet": {"enabled": True},
+                    "captive_portal": {"enabled": True, "url": "http://192.168.120.1:8081/"},
+                    "clients": [
+                        {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.120.23", "captive_authorized": True},
+                        {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.120.57", "captive_authorized": False},
+                    ],
+                },
+            },
+        }}},
+    },
+    401: {"description": "Unauthorized (missing or invalid auth token)"},
+    404: {"description": "Reservation not found or expired"},
+}
+
+
 @router.get(
     "/{reservation_id}/network",
     response_model=NetworkResponse,
-    responses={
-        503: DEVICE_BUSY_RESPONSE,
-        200: {
-            "description": (
-                "Network status in sections: `reservation`, `radio`, `wifi`, `ip`, `internet`, "
-                "`captive_portal` and `clients`. While the network is not running, or while the "
-                "watchdog restores it, only `interface`, `active`, `runtime_state` and "
-                "`reservation` are set and the sections are null."
-            ),
-            "content": {"application/json": {"examples": {
-                "active": {
-                    "summary": "Active 5 GHz network at 80 MHz with Internet and two clients",
-                    "value": _ACTIVE_EXAMPLE,
-                },
-                "restoring_ap": {"value": {
-                    "interface": "wlan0", "active": False, "runtime_state": "restoring_ap",
-                    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 54},
-                }},
-                "restoring_dhcp": {"value": {
-                    "interface": "wlan0", "active": True, "runtime_state": "restoring_dhcp",
-                    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 53},
-                }},
-                "dhcp_failed": {"value": {
-                    "interface": "wlan0", "active": True, "runtime_state": "dhcp_failed",
-                    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 51},
-                }},
-                "restore_failed": {
-                    "summary": "AP restart failed; the watchdog retries with backoff",
-                    "value": {
-                    "interface": "wlan0", "active": False, "runtime_state": "restore_failed",
-                    "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3300},
-                },
-                },
-                "captive_portal": {
-                    "summary": "Active network with a captive portal",
-                    "value": {
-                        "interface": "wlan0", "active": True, "runtime_state": None,
-                        "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 3540},
-                        "radio": {
-                            "band": "2.4ghz", "channel": 6,
-                            "channel_width": {"requested": 20, "reported": 20},
-                            "wifi_generation": 4,
-                            "tx_power": {"requested_level": 4, "reported_level": 4, "reported_dbm": 20.0},
-                        },
-                        "wifi": {
-                            "ssid": "CaptiveTest", "hidden": False,
-                            "security": {"encryption": "wpa2", "password": "testpass123"},
-                        },
-                        "ip": {
-                            "subnet": "192.168.120.0/24", "gateway": "192.168.120.1",
-                            "dhcp_range": {"start": "192.168.120.10", "end": "192.168.120.250"},
-                            "dns_server": "192.168.10.21",
-                        },
-                        "internet": {"enabled": True},
-                        "captive_portal": {"enabled": True, "url": "http://192.168.120.1:8081/"},
-                        "clients": [
-                            {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.120.23", "captive_authorized": True},
-                            {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.120.57", "captive_authorized": False},
-                        ],
-                    },
-                },
-            }}},
-        },
-        401: {"description": "Unauthorized (missing or invalid auth token)"},
-        404: {"description": "Reservation not found or expired"},
-    },
+    responses=_GET_RESPONSES,
 )
 def get_network(
     reservation_mgr: ReservationManagerDep,
@@ -784,15 +787,8 @@ def get_network(
         return _state_response(reservation, job.state, job.error)
     runtime_state = manager.watchdog.state(reservation)
     if runtime_state in ("restoring_ap", "restoring_dhcp"):
-        return NetworkResponse(
-            interface=reservation.device_id, active=runtime_state == "restoring_dhcp",
-            runtime_state=runtime_state,
-            reservation=ReservationInfo(
-                expires_at=format_utc_timestamp(reservation.expires_at),
-                expires_in=reservation.expires_in,
-            ),
-            restarts=_restarts(reservation),
-        )
+        # Answered without waiting for the device, which the restore holds.
+        return _state_response(reservation, runtime_state, active=runtime_state == "restoring_dhcp")
     with hold_reservation(reservation_mgr, reservation):
         return _network_response(manager, reservation)
 

@@ -14,11 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 class ApiErrorCode(IntEnum):
-    """Domain codes in `detail.code`; 1001-1003 are in recovery_responses.RecoveryCode.
+    """Every domain code in `detail.code`, one enum for the whole range (REV-16).
 
     Every code is listed, with its HTTP status and client action, in
     docs/error-codes.md.
     """
+    RETRY_LATER = 1001                 # no longer answered: the server retries radio failures itself
+    DEVICE_RECOVERING = 1002
+    DEVICE_UNAVAILABLE = 1003
     CLEANUP_FAILED = 1004              # no longer answered: the release always succeeds
     NO_DEVICE_AVAILABLE = 1005
     DEVICE_BUSY = 1006

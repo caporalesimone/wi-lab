@@ -19,7 +19,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🔧 Maintenance
 
-- The create job reports its outcome as a value instead of HTTP exceptions that no client received, and the synchronous create used only by the unit tests is gone (Fable REV-16, in part).
+- The create job reports its outcome as a value instead of HTTP exceptions that no client received, and the synchronous create used only by the unit tests is gone; the create and network OpenAPI examples are module constants, and every error code is in one enum. The API contract is unchanged (Fable REV-16).
 
 ### ✅ Tests
 
