@@ -49,7 +49,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The e2e watchdog tests that block dnsmasq take UDP port 67 after the failure they cause: dnsmasq of the running network already held it, so the three tests failed before testing anything.
 - New unit tests from the 2026-11-26 review: cancel timeout, `404` reasons on every operation, cancel in each start phase and during the pause, tombstones, expiry during a start, stop retry budget, `restarts` counters, reserve by `interface`, cleanup backoff (unit-test-7 … 17).
 - New e2e tests: `start_failed`, stop and release during a start, reserve by `interface`, `404` reasons, `restarts` counters, create during a repair, expiry, captive portal, lost host guard, Internet kept disabled (e2e-test-1 … 12, except 8).
-- Unit tests for retries without a time budget (REV-5) and for cancelling watchdog restores, creates at shutdown and the DFS-free probe (REV-6); an adapter udev never renames (BUG-5); the NetworkManager runtime rule (STAB-9); parallel shutdown within its budget (STAB-8); slow watchdog probes (WD-10).
+- Unit tests for retries without a time budget (REV-5) and for cancelling watchdog restores, creates at shutdown and the DFS-free probe (REV-6); an adapter udev never renames (BUG-5); the NetworkManager runtime rule (STAB-9); parallel shutdown within its budget (STAB-8); slow watchdog probes (WD-10); a stale gateway address no longer shifts the subnet after an unclean restart, already fixed by the discovery reset (NET-9).
 - Unit tests create networks through the real asynchronous path (`202`, then polling) with the `create_network` helper (REV-16).
 
 ### 🔌 API changes from 4.0.0 (client migration)

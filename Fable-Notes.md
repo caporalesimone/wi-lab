@@ -83,7 +83,7 @@ refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` =
 | 1 | [WD-10](#wd-10) | Bassa | ✅ | Non considerare guasto un access point solo per probe lenti. |
 | 1 | [HAP-9](#hap-9) | Bassa |  | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. |
 | 1 | [BUG-6](#bug-6) | Bassa | ✅ | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
-| 1 | [NET-9](#net-9) | Bassa |  | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
+| 1 | [NET-9](#net-9) | Bassa | ✅ | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
 | 1 | [NET-7](#net-7) | Bassa |  | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
 | 2 | [SEC-1](#sec-1) | Critica |  | Limitare la route frontend ai file contenuti nella directory frontend. |
 | 3 | [REV-8](#rev-8) | Bassa |  | Non togliere da `start_jobs` un job il cui thread gira ancora dopo il timeout dell'annullamento. |
@@ -568,7 +568,7 @@ Rimuovere `validate_interface_wireless`, `validate_interface_ap_mode` e `validat
 ---
 
 <a id="net-9"></a>
-### 1. NET-9 - Le subnet non sono stabili tra un riavvio e l'altro
+### 1. NET-9 - Le subnet non sono stabili tra un riavvio e l'altro ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:111-141](wilab/wifi/manager.py#L111-L141)
 
@@ -582,6 +582,9 @@ nuova rete sullo stesso adattatore: la subnet è la base più uno.
 
 **Come correggerlo.** La causa sparisce con `reset_interface` alla scoperta del dispositivo (STAB-4),
 che toglie l'indirizzo prima di qualunque allocazione.
+
+> **Stato (2026-11-26):** già risolto da STAB-4; il test
+> `test_a_stale_gateway_address_does_not_shift_the_subnet` lo dimostra.
 
 ---
 

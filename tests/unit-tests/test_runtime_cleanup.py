@@ -101,3 +101,37 @@ def test_reset_interface_skips_a_missing_adapter_and_survives_failures(monkeypat
     monkeypatch.setattr(interface_module, "execute_command", fail)
     interface_module.reset_interface("wlan0")
     assert len(calls) == 5  # every step is still tried
+
+
+@pytest.mark.parametrize("reset_works", [True, False])
+def test_a_stale_gateway_address_does_not_shift_the_subnet(monkeypatch, reset_works):
+    """NET-9: after an unclean restart a radio keeps the gateway address of its subnet.
+
+    Discovery resets the radio (STAB-4) before any allocation, so the radio gets its
+    own subnet again instead of the next one. Without the reset it would shift.
+    """
+    from ipaddress import IPv4Network
+
+    from wilab.api import dependencies
+    from wilab.config import NetworkEntry
+    from wilab.wifi import manager as manager_module
+
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    radio = NetworkEntry(interface="wlxstale", display_name="stale")
+    base = IPv4Network(config.dhcp_base_network)
+    natural = IPv4Network((int(base.network_address) + 256 * len(config.antennas), 24))
+    routes = {natural}   # the address the radio kept from the previous run
+
+    def reset(interface):
+        if reset_works and interface == radio.interface:
+            routes.clear()
+
+    monkeypatch.setattr(dependencies, "scan_new_networks", lambda cfg, quiet=False: [radio])
+    monkeypatch.setattr(dependencies, "exclude_from_host_managers", lambda names: None)
+    monkeypatch.setattr(dependencies, "reset_interface", reset)
+    monkeypatch.setattr(manager.watchdog, "watch", lambda devices: None)
+    monkeypatch.setattr(manager_module, "host_ipv4_networks", lambda: set(routes))
+    dependencies.scan_devices(config)
+    subnet = IPv4Network(manager._get_subnet(radio.device_id))
+    assert (subnet == natural) is reset_works
