@@ -132,8 +132,34 @@ class HostapdInstance(TypedDict):
 
 
 DEBUG_TAIL_LINES = 400      # `hostapd -d` lines kept per start when hostapd_debug_dir is set
+LOG_TAIL_LINES = 80         # kept always, so a failure can be reported without hostapd_debug_dir (HAP-8)
+LOGGED_TAIL_LINES = 40      # written to the journal when hostapd fails or dies
+# Lines of `hostapd -d` that may carry key material or passwords: never logged or saved.
+_SECRET_OUTPUT = re.compile(r"psk|pmk|ptk|gtk|igtk|kck|kek|passphrase|password|key", re.IGNORECASE)
 DEBUG_MAX_FILES = 100       # failure reports kept in hostapd_debug_dir (oldest removed)
 _SECRET_KEYS = ("wpa_passphrase=", "sae_password=", "wpa_psk=")
+
+
+def redacted_tail(process: ForegroundProcess, *, exited: bool = False) -> list[str]:
+    """The kept output lines of hostapd without lines that may contain secrets."""
+    return [line for line in process.output_tail(exited=exited) if not _SECRET_OUTPUT.search(line)]
+
+
+def log_tail(interface: str, what: str, process: ForegroundProcess) -> None:
+    """Write the last hostapd output lines to the journal (HAP-8).
+
+    The lines just before a crash are what a driver developer asks for; only
+    the twelve classified labels were kept before.
+    """
+    try:
+        lines = redacted_tail(process, exited=True)[-LOGGED_TAIL_LINES:]
+        if lines:
+            logger.warning(
+                "hostapd on %s %s (exit code %s); last output lines:\n%s",
+                interface, what, process.poll(), "\n".join(lines),
+            )
+    except Exception as exc:  # noqa: BLE001 - diagnostics never change how a start ends
+        logger.debug("Cannot log the hostapd output of %s: %s", interface, exc)
 
 
 def save_failure(
@@ -156,7 +182,7 @@ def save_failure(
             f.write(f"exit code: {process.poll()}\n\n--- hostapd.conf ---\n")
             f.write("\n".join(config_lines))
             f.write("\n\n--- hostapd -d (last lines) ---\n")
-            f.write("\n".join(process.output_tail(exited=True)) + "\n")
+            f.write("\n".join(redacted_tail(process, exited=True)) + "\n")
         reports = sorted(
             os.path.join(directory, name) for name in os.listdir(directory) if name.endswith(".log")
         )
@@ -343,7 +369,7 @@ class HostapdManager:
 
             process = start_foreground(
                 ["hostapd", "-d", config_file], classify_output=_classify_output,
-                keep_lines=DEBUG_TAIL_LINES if self._debug_dir else 0,
+                keep_lines=DEBUG_TAIL_LINES if self._debug_dir else LOG_TAIL_LINES,
             )
             instance["process"] = process
             sub_channels = layout.channels if layout is not None else (channel,)
@@ -352,6 +378,7 @@ class HostapdManager:
             try:
                 self._wait_until_ready(process, interface, control_dir, timeout, cancelled)
             except (HostapdError, CommandError) as exc:
+                log_tail(interface, f"failed to start ({type(exc).__name__})", process)
                 if self._debug_dir:
                     save_failure(self._debug_dir, interface, exc, process, config_content)
                 raise
@@ -518,6 +545,32 @@ class HostapdManager:
             logger.error(f"Error stopping hostapd for {net_id}: {e}")
             raise HostapdError(f"Failed to stop hostapd for {net_id}: {e}") from e
     
+    def report_exit(self, net_id: str) -> None:
+        """Log (and with hostapd_debug_dir save) the output of a hostapd that died (HAP-8).
+
+        Called by the watchdog when it finds hostapd gone on an active network,
+        before the restore replaces the process. Never raises.
+        """
+        instance = self._instances.get(net_id)
+        process = instance["process"] if instance is not None else None
+        if instance is None or process is None or process.poll() is None:
+            return
+        try:
+            log_tail(instance["interface"], "died on an active network", process)
+            if self._debug_dir:
+                try:
+                    with open(instance["config_file"], encoding="utf-8") as f:
+                        config = f.read()
+                except OSError:
+                    config = ""
+                save_failure(
+                    self._debug_dir, instance["interface"],
+                    HostapdError(f"hostapd exited with code {process.poll()} on an active network"),
+                    process, config,
+                )
+        except Exception as exc:  # noqa: BLE001 - diagnostics must never break the watchdog
+            logger.warning("Cannot report the hostapd exit on %s: %s", net_id, exc)
+
     def is_running(self, net_id: str) -> bool:
         """Check if hostapd is running for a network."""
         if net_id not in self._instances:

@@ -10,7 +10,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 22 |
+| 🐛 Bug fixes | 23 |
 | ⚠️ Breaking changes | 6 |
 | 🔧 Maintenance changes | 4 |
 | ✨ New features | 1 |
@@ -59,6 +59,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - `next_available_in` of a reserve answered `409 / 1005` is rounded up like `GET /status`: the two no longer differ by one second for the same wait (Fable REV-11).
 - A jump of the system clock (NTP correcting a wrong boot time, a VM resumed after a pause) no longer expires every reservation and network at once, nor stretches them: expiries use the monotonic clock, and the unit starts after `time-sync.target`. Reinstall the systemd unit to get the new ordering (Fable STAB-5).
 - Runtime files of hostapd and dnsmasq move from `/tmp/wilab-*` to `/run/wilab`, a directory systemd creates readable by root only (`RuntimeDirectory=wilab`). In `/tmp` the cleanup of files untouched for days could remove the dnsmasq PID file of a long-running network (`/status` then reported DHCP down), and a fixed name in a world-writable directory let a local user prepare it for root to write into. Startup removes the old directories; reinstall the systemd unit (Fable STAB-2).
+- The last 40 lines of `hostapd -d` reach the journal when a start fails and when the watchdog finds hostapd dead on an active network, also without `hostapd_debug_dir`; before, only twelve classified labels were kept and the lines just before a crash were lost. Lines that may contain keys or passwords are dropped, also from the `hostapd_debug_dir` reports (Fable HAP-8).
 - `uninstall.sh` removes what a stopped service leaves on the host (the `wilab-protect-existing` FORWARD rule, `/tmp/wilab-*`, the systemd-networkd rule, QoS IFB devices); `config.yaml` is still kept.
 
 ### 🔧 Maintenance

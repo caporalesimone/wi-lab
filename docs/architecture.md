@@ -496,10 +496,14 @@ On readiness failure, Wi-Lab logs one `hostapd startup failure` entry with the
 interface, elapsed time and budget, socket presence, last known state, last
 probe outcome, and any observed exit code. The child output is continuously
 drained; only the last twelve allowlisted event labels are kept in memory and
-included in the failure entry. This diagnostic never includes raw child
-output, SSIDs or credentials and creates no additional file (a separate
-report, with the configuration without passwords and the last 400 lines of
-`hostapd -d`, is written only when `hostapd_debug_dir` is set). It does not change
+included in the failure entry. The last 80 raw output lines are kept too:
+when a start fails, and when the watchdog finds hostapd dead on an active
+network, the last 40 are written to the journal as one `WARNING`
+(Fable HAP-8). Lines that may carry key material or passwords (`PSK`, `PMK`,
+`key`, `passphrase`, ...) are dropped before writing; the SSID may appear.
+No file is created unless `hostapd_debug_dir` is set: then a report with the
+configuration without passwords and the last 400 lines (filtered the same
+way) is saved as well. It does not change
 readiness deadlines or retry classification. An exit code of `1` alone does
 not identify the cause.
 

@@ -125,6 +125,8 @@ class NetworkWatchdog:
                 if not alive or misses >= MISS_LIMIT or restart_network:
                     if restart_network:
                         logger.warning("%s; restarting the network", restart_network)
+                    if not alive:
+                        self.manager.hostapd_manager.report_exit(device)
                     reservation.record_restart("ap", (
                         "hostapd_not_running" if not alive
                         else restart_reason or (
