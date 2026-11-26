@@ -274,7 +274,9 @@ class NetworkWatchdog:
                 return
             self._fail_again(pending, exc)
             return
-        except ValueError as exc:
+        except Exception as exc:  # ValueError, or anything unexpected (REV-1)
+            if not isinstance(exc, ValueError):
+                logger.exception("AP restore retry failed unexpectedly on %s", device)
             self._fail_again(pending, exc)
             return
         self._drop_pending(device)
@@ -348,8 +350,11 @@ class NetworkWatchdog:
             elif not self._cancelled(reservation):
                 self._owe(reservation, request, band, channel, exc)
             return
-        except ValueError as exc:
-            logger.warning("AP restart failed on %s: %s", device, exc)
+        except Exception as exc:  # ValueError (settings), or anything unexpected (REV-1)
+            if isinstance(exc, ValueError):
+                logger.warning("AP restart failed on %s: %s", device, exc)
+            else:
+                logger.exception("AP restart failed unexpectedly on %s", device)
             if not self._cancelled(reservation):
                 self._owe(reservation, request, band, channel, exc)
             return

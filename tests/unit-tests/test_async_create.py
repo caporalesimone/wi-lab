@@ -213,3 +213,65 @@ def test_start_failed_always_carries_1013_also_for_an_unexpected_error(api):
         )
         assert (failed["error"]["code"], failed["error"]["reason"]) == (1013, "startup_failed")
         assert failed["error"]["stage"] is None and failed["error"]["message"]
+
+
+# --------------------------------------------------------------------------- REV-1 (unit-test-1)
+
+
+@pytest.fixture
+def real_start(monkeypatch):
+    """Background creates with the real start_network: hostapd and DHCP are fakes that track state."""
+    monkeypatch.setattr(network, "CREATE_IN_BACKGROUND", True)
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    monkeypatch.setattr(dependencies.get_channel_manager(), "validate_network", Mock())
+    monkeypatch.setattr(manager._channel_manager, "validate_network", Mock())
+    monkeypatch.setattr(manager.recovery, "schedule", Mock())
+    instances = manager.hostapd_manager._instances
+
+    def hostapd_start(*, net_id, **kwargs):
+        instances[net_id] = Mock()
+
+    stop = Mock(side_effect=lambda net_id: instances.pop(net_id, None))
+    monkeypatch.setattr(manager.hostapd_manager, "start", hostapd_start)
+    monkeypatch.setattr(manager.hostapd_manager, "stop", stop)
+    monkeypatch.setattr(manager.dhcp_server, "start", Mock(return_value={}))
+    monkeypatch.setattr(manager.dhcp_server, "stop", Mock())
+    monkeypatch.setattr(manager.dhcp_server, "list_active", Mock(return_value=[]))
+    headers = {"Authorization": f"Bearer {config.auth_token}"}
+    with TestClient(create_app()) as client:
+        rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
+        yield client, headers, f"{RESERVE}/{rid}", manager, stop
+        with manager.start_jobs_lock:
+            threads = [job.thread for job in manager.start_jobs.values() if job.thread is not None]
+        for thread in threads:
+            thread.join(timeout=5)
+        manager.active.clear()
+
+
+@pytest.mark.parametrize("error", [KeyError("subnet"), OSError(24, "Too many open files")])
+def test_unexpected_error_in_a_start_leaves_nothing_running(real_start, monkeypatch, error):
+    client, headers, url, manager, stop = real_start
+    monkeypatch.setattr(manager.isolation_manager, "add_network", Mock(side_effect=error))
+    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    failed = _wait_until(lambda: (r := _state(client, headers, url).json())["runtime_state"] == "start_failed" and r)
+    assert (failed["error"]["code"], failed["error"]["stage"]) == (1013, "isolation")
+    device = failed["interface"]
+    stop.assert_called_with(device)   # the rollback stopped hostapd
+    assert not manager.has_leftovers(device)
+    assert device not in manager.active
+    assert client.delete(f"{url}/network", headers=headers).status_code == 200   # clears start_failed
+    again = client.delete(f"{url}/network", headers=headers)
+    assert (again.status_code, again.json()["detail"]["code"]) == (409, 1007)
+
+
+def test_stop_releases_what_a_failed_start_left(real_start):
+    """A start whose rollback failed left hostapd: DELETE .../network stops it instead of a bare 200."""
+    client, headers, url, manager, stop = real_start
+    device = manager.config.antennas[0].device_id
+    manager.hostapd_manager._instances[device] = Mock()   # left by an earlier start
+    assert client.delete(f"{url}/network", headers=headers).status_code == 200
+    stop.assert_called_with(device)
+    assert not manager.has_leftovers(device)
+    again = client.delete(f"{url}/network", headers=headers)
+    assert (again.status_code, again.json()["detail"]["code"]) == (409, 1007)

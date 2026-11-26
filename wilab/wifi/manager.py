@@ -239,20 +239,27 @@ class NetworkManager:
                 lock = self._device_locks[device_id] = threading.RLock()
             return lock
 
+    def has_leftovers(self, device_id: str) -> bool:
+        """True if a device that is not active still has tracked resources.
+
+        A start that failed and could not roll back leaves them: hostapd,
+        dnsmasq, the captive portal or firewall rules (REV-1).
+        """
+        with self._firewall_lock:
+            firewall_pending = (
+                self.nat_manager.has_pending_network(device_id) or self.host_guard.has(device_id)
+            )
+        return (
+            device_id in self.hostapd_manager._instances
+            or device_id in self.dhcp_server.list_active()
+            or device_id in self.captive_portals
+            or firewall_pending
+        )
+
     def release_device(self, device_id: str) -> None:
         """Stop all tracked resources before a device can be reassigned."""
         with self.device_lock(device_id):
-            with self._firewall_lock:
-                firewall_pending = (
-                    self.nat_manager.has_pending_network(device_id) or self.host_guard.has(device_id)
-                )
-            if (
-                device_id in self.active
-                or device_id in self.hostapd_manager._instances
-                or device_id in self.dhcp_server.list_active()
-                or device_id in self.captive_portals
-                or firewall_pending
-            ):
+            if device_id in self.active or self.has_leftovers(device_id):
                 self._tracked_stop(device_id)
             if device_id in self.active:
                 raise RuntimeError(f"Network {device_id} is still active")
@@ -602,6 +609,20 @@ class NetworkManager:
                 raise StartupFailure(
                     f"Failed to {stage}: {e}", radio=radio, stage=STARTUP_STAGES.get(stage),
                 ) from e
+            except Exception as e:
+                # Anything else (a bug, an OSError from a library, a KeyError) after
+                # the AP may already be up: roll back all the same, or hostapd keeps
+                # transmitting for a network nobody tracks (REV-1). Never retried.
+                logger.exception("Unexpected error during %s for %s", stage, device_id)
+                try:
+                    self.release_device(device_id)
+                except RuntimeError:
+                    logger.exception("Startup rollback failed for %s", device_id)
+                    raise StartupFailure(
+                        f"Failed to {stage}: {e!r}", radio=not interface_present(cfg_net.interface),
+                        cleanup_failed=True, stage=STARTUP_STAGES.get(stage),
+                    ) from e
+                raise StartupFailure(f"Failed to {stage}: {e!r}", stage=STARTUP_STAGES.get(stage)) from e
             else:
                 if retrying:
                     logger.info("AP startup retry recovered %s", device_id)
@@ -705,16 +726,21 @@ class NetworkManager:
                 logger.error("Error stopping captive portal: %s", e)
                 errors.append(f"captive portal: {e}")
         
-        # Remove the host guard (SEC-3)
-        try:
-            with self._firewall_lock:
-                self.host_guard.remove(device_id)
-        except CommandError as e:
-            logger.error("Error removing host guard: %s", e)
-            errors.append(f"host guard: {e}")
+        # The host guard (SEC-3) and the isolation rules stay while hostapd may
+        # still run: its clients would reach the host and the other networks.
+        # The repeated stop removes them once hostapd is gone (REV-7).
+        if not hostapd_stopped:
+            logger.warning("Keeping host guard and isolation of %s until hostapd stops", device_id)
+        else:
+            try:
+                with self._firewall_lock:
+                    self.host_guard.remove(device_id)
+            except CommandError as e:
+                logger.error("Error removing host guard: %s", e)
+                errors.append(f"host guard: {e}")
 
         # Remove isolation rules
-        if subnet:
+        if subnet and hostapd_stopped:
             try:
                 with self._firewall_lock:
                     self.isolation_manager.remove_network(subnet)

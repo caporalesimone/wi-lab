@@ -639,6 +639,7 @@ def stop_network(
                 headers={"Retry-After": str(DEVICE_BUSY_RETRY_AFTER)},
             )
         if reservation.device_id not in manager.active:
+            _release_leftovers(manager, reservation.device_id)
             return {"detail": f"Network {reservation.device_id} stopped successfully"}
         # The start completed just before the cancel: stop the network it left.
     with hold_reservation(reservation_mgr, reservation):
@@ -647,6 +648,11 @@ def stop_network(
         if not st:
             raise HTTPException(status_code=404, detail=UNKNOWN_ANTENNA)
         if not st.active:
+            if manager.has_leftovers(device_id):
+                # A start that failed and could not roll back left hostapd or rules (REV-1).
+                _release_leftovers(manager, device_id)
+                manager.watchdog.forget(device_id)
+                return {"detail": f"Network {device_id} stopped successfully"}
             if manager.watchdog.forget(device_id):
                 # The client gives up a network the watchdog failed to restore (WD-2).
                 return {"detail": f"Network {device_id} stopped successfully"}
@@ -671,6 +677,18 @@ def stop_network(
                 logger.info("Stop of %s did not complete; repeating it: %s", device_id, exc)
                 sleep(STOP_RETRY_PAUSE)
         return {"detail": f"Network {device_id} stopped successfully"}
+
+
+def _release_leftovers(manager: NetworkManager, device_id: str) -> None:
+    """Stop what a failed start left on a device that is not active (REV-1); 503 / 1012 if it fails."""
+    try:
+        manager.release_device(device_id)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=domain_error(ApiErrorCode.STOP_INCOMPLETE, str(exc)),
+            headers={"Retry-After": str(STOP_RETRY_AFTER)},
+        ) from exc
 
 
 @router.get(

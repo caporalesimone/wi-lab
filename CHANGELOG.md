@@ -12,6 +12,8 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### 🐛 Bug Fixes
 
+- A start that fails with an unexpected error (for example too many open files) is rolled back like any other failure: the AP no longer keeps transmitting after `start_failed`, `DELETE .../network` stops whatever a failed start left, and the watchdog reports such a failed restore as `restore_failed` and retries it (Fable REV-1).
+- A stop that cannot stop hostapd keeps the host guard and the isolation rules until a repeated stop succeeds, so clients of an AP still transmitting cannot reach the host or other networks (Fable REV-7).
 - A firewall check that fails (xtables lock held by another tool, timeout) no longer counts as a missing rule: the watchdog skips that round instead of adding the Internet block again or restoring a healthy network, and stopping a network removes every copy of its Internet block (Fable REV-3).
 - Removing a network's host guard no longer fails when the firewall already lost its chain (a host firewall reload, or a guard that failed half-way): the antenna is no longer quarantined for it (Fable REV-4).
 
@@ -19,9 +21,11 @@ All notable changes to Wi-Lab are documented in this file.
 
 ### ✅ Tests
 
+- New tests for unexpected start errors (REV-1), failed firewall checks (REV-3), a missing host guard chain (REV-4) and a stop failing in each phase (REV-7).
+
 ### 🔌 API changes from 4.0.0 (client migration)
 
-No API changes yet.
+- `DELETE .../network` on a network that is not running now stops what a failed start may have left (hostapd, rules) before answering `200`; if that cleanup fails it answers `503 / 1012` with `Retry-After`, like any incomplete stop (REV-1). Before it answered `200` and left them.
 
 ---
 

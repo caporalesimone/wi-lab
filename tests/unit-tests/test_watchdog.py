@@ -339,3 +339,22 @@ def test_get_network_has_the_restarts_section(monkeypatch):
     assert body["restarts"]["ap"] == 1 and body["restarts"]["dhcp"] == 0
     assert body["restarts"]["last_reason"] == "hostapd_not_running"
     assert body["restarts"]["last_at"].endswith("Z")
+
+
+def test_unexpected_error_in_a_restore_is_a_failed_restore(monkeypatch):
+    """REV-1: an error other than StartupFailure or ValueError is reported and retried, not lost."""
+    config = dependencies.get_config()
+    manager = dependencies.get_manager(config)
+    reservations = dependencies.get_reservation_manager(config)
+    reservation = reservations.create(0)
+    monkeypatch.setattr(manager, "release_device", Mock())
+    monkeypatch.setattr(manager, "start_network", Mock(side_effect=KeyError("boom")))
+    quarantine = Mock()
+    monkeypatch.setattr(manager, "quarantine_radio", quarantine)
+    manager.watchdog._restore_ap(reservations, reservation, _restorable(reservation.device_id), False)
+    quarantine.assert_not_called()
+    assert manager.watchdog.state(reservation) == "restore_failed"
+    pending = manager.watchdog._pending[reservation.device_id]
+    monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: pending.next_try)
+    manager.watchdog._retry_pending(reservations, pending)
+    assert pending.failures == 2   # the retry failed the same way and was scheduled again

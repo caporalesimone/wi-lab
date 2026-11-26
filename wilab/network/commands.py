@@ -280,6 +280,10 @@ def execute_command(
 
     except FileNotFoundError as e:
         raise CommandError(f"Command not found: {cmd[0]}") from e
+    except OSError as e:
+        # EMFILE, ENOMEM, EACCES from Popen: a failed command like any other, so
+        # the caller's rollback runs (REV-1).
+        raise CommandError(f"Could not run {cmd[0]}: {e}") from e
 
 
 # Seconds iptables waits for the xtables lock instead of failing at once (NET-1).

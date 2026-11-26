@@ -577,3 +577,22 @@ def test_foreground_process_keeps_the_last_output_lines_only_on_request():
     quiet = start_foreground([sys.executable, "-c", "print(1)"], classify_output=lambda line: None)
     quiet._process.wait(timeout=5)
     assert quiet.output_tail(exited=True) == []
+
+
+def test_any_oserror_from_popen_is_a_command_error(monkeypatch):
+    """REV-1: EMFILE, ENOMEM, EACCES fail the command like any other error, so the rollback runs."""
+    from wilab.network import commands
+
+    def popen(*args, **kwargs):
+        raise OSError(24, "Too many open files")
+
+    monkeypatch.setattr(commands.subprocess, "Popen", popen)
+    with pytest.raises(CommandError, match="Too many open files") as failure:
+        execute_command(["ip", "link"])
+    assert failure.value.returncode is None
+
+
+def test_failed_command_carries_its_exit_code():
+    with pytest.raises(CommandError) as failure:
+        execute_command([sys.executable, "-c", "import sys; sys.exit(3)"])
+    assert failure.value.returncode == 3
