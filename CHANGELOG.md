@@ -40,6 +40,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 ### 🔧 Maintenance
 
 - The create job reports its outcome as a value instead of HTTP exceptions that no client received, and the synchronous create used only by the unit tests is gone; the create and network OpenAPI examples are module constants, and every error code is in one enum. The API contract is unchanged (Fable REV-16).
+- `validate_interface_wireless`, `validate_interface_ap_mode` and `validate_interface` are gone: the AP-mode check was a substring search that proved nothing, and no start used them any more; discovery already establishes wireless and AP capability (Fable BUG-6).
 
 ### ✅ Tests
 

@@ -82,7 +82,7 @@ refactoring e ottimizzazioni. I numeri mancanti sono punti già fatti. `parz.` =
 | 1 | [STAB-8](#stab-8) | Bassa | ✅ | Limitare il lavoro di arresto entro il timeout di systemd. |
 | 1 | [WD-10](#wd-10) | Bassa | ✅ | Non considerare guasto un access point solo per probe lenti. |
 | 1 | [HAP-9](#hap-9) | Bassa |  | Gestire attese DFS/CAC e timeout di avvio dei canali. Con la create asincrona il client non va più in timeout; **manca** la gestione dei canali radar meteo (120, 124, 128: 600 s di ascolto contro i 75 s di `DFS_READY_TIMEOUT`), oggi un guasto radio. |
-| 1 | [BUG-6](#bug-6) | Bassa |  | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
+| 1 | [BUG-6](#bug-6) | Bassa | ✅ | Sostituire il controllo impreciso della modalità AP con una verifica affidabile. |
 | 1 | [NET-9](#net-9) | Bassa |  | Pulire indirizzi obsoleti e rendere persistenti le subnet se necessario. |
 | 1 | [NET-7](#net-7) | Bassa |  | Eliminare i lease quando termina la rete, preservandoli per il recupero DHCP. |
 | 2 | [SEC-1](#sec-1) | Critica |  | Limitare la route frontend ai file contenuti nella directory frontend. |
@@ -536,7 +536,7 @@ client con uno stato "radar check in corso".
 ---
 
 <a id="bug-6"></a>
-### 1. BUG-6 - `validate_interface_ap_mode` non dimostra nulla
+### 1. BUG-6 - `validate_interface_ap_mode` non dimostra nulla ✅
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/interface.py:52-90](wilab/wifi/interface.py#L52-L90), [wilab/wifi/manager.py:254-262](wilab/wifi/manager.py#L254-L262)
 
@@ -1258,7 +1258,7 @@ ricavare il token misurando i tempi.
 - **Usati solo dai test:** `heartbeat.forget`, `NetworkManager.get_summary`, `services_status`,
   `execute_pkill` (con una logica `signal` sbagliata), `NatManager.disable_ip_forwarding` e
   `flush_all_rules`, `IsolationManager.flush_all` e `get_active_subnets`, `stop_all` in hostapd e
-  dhcp, `check_ip_forwarding`, `validate_interface*` tranne `_exists`, `command_deadline` (non più usato dopo REV-5).
+  dhcp, `check_ip_forwarding`, `command_deadline` (non più usato dopo REV-5).
 - **Duplicati:** `unhandled_api_exception` ripete il middleware `answer_unexpected_errors`; "elenca
   con `-S`, trova il commento, cancella" è scritto quattro volte (nat ×2, captive, host guard); il
   test DFS `52 <= c <= 144` è in hostapd e nella route invece di `requires_dfs`; la ricerca
@@ -1865,7 +1865,6 @@ Test T-13: un ciclo completo crea/cancella su hardware simulato non deve produrr
 | `execute_pkill` | `network/commands.py` | |
 | `HostapdManager.stop_all`, `DhcpServer.stop_all` | `wifi/hostapd.py`, `network/dhcp.py` | |
 | `NetworkManager.get_summary` | `wifi/manager.py` | "Backward-compatible", contro la regola del progetto |
-| `validate_interface` | `wifi/interface.py` | |
 | `QosRequest`, `QosStatus`, `InterfaceStatus` | `models.py` | Endpoint inesistenti |
 | Percorsi commentati | `api/__init__.py` (`_candidate_frontend_paths`) | |
 | `"pid_file": None` | `wifi/hostapd.py` (`status`) | Campo residuo |

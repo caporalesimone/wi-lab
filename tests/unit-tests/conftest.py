@@ -84,16 +84,7 @@ def _stop_background_threads(monkeypatch):
 def mock_network_operations(monkeypatch, tmp_path):
     """Auto-mock network operations that require root privileges."""
     from wilab.network import captive, commands, dhcp, nat, subnet
-    from wilab.wifi import channels, hostapd, interface, manager
-    
-    # Mock WiFi interface validation (requires real hardware)
-    def mock_validate_interface(iface):
-        # Just return without validation
-        return
-    
-    def mock_validate_interface_ap_mode(iface):
-        # Just return without validation
-        return
+    from wilab.wifi import channels, hostapd, manager
     
     # Mock execute_ip to avoid RTNETLINK errors (requires root)
     def mock_execute_ip(args):
@@ -252,10 +243,6 @@ Band 2:
             return mock_execute_ip(cmd[1:])
         # For other commands, return empty string
         return ""
-    
-    # Patch in interface module
-    monkeypatch.setattr(interface, "validate_interface", mock_validate_interface)
-    monkeypatch.setattr(interface, "validate_interface_ap_mode", mock_validate_interface_ap_mode)
     
     # Patch in manager module (where they're imported)
     monkeypatch.setattr(manager, "validate_interface_exists", lambda iface: None)
