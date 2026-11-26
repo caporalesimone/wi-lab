@@ -4,7 +4,13 @@ import logging
 import shlex
 from itertools import pairwise
 
-from .commands import CommandError, execute_command, execute_iptables, execute_sysctl, rule_exists
+from .commands import (
+    CommandError,
+    execute_command,
+    execute_iptables,
+    execute_sysctl,
+    rule_exists,
+)
 
 logger = logging.getLogger(__name__)
 
