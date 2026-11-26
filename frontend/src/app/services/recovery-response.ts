@@ -20,10 +20,29 @@ export enum RecoveryCode {
 const CODE_HINTS: Partial<Record<number, string>> = {
   [RecoveryCode.DeviceBusy]: 'The antenna is busy with another operation. Try again in a few seconds.',
   [RecoveryCode.NetworkNotActive]: 'The network is not running on this antenna. Start WiFi first.',
-  [RecoveryCode.NetworkAlreadyActive]: 'A network with different settings is already running on this antenna. Stop it first.',
+  [RecoveryCode.NetworkAlreadyActive]: 'A network with different settings is already running or starting on this antenna. Stop it first.',
   [RecoveryCode.RestorationInProgress]: 'The network is being restarted by the watchdog. Wait a few seconds.',
   [RecoveryCode.StopIncomplete]: 'The last stop did not complete. Stop WiFi again, then start it.',
 };
+
+/** A sentence for every reason of a 404 on a reservation (REV-13): never the raw JSON. */
+const REASON_TEXT: Record<string, string> = {
+  reservation_released: 'The reservation was released (from another tab or by Release All).',
+  reservation_not_found: 'The reservation is unknown to the server (for example after a server restart).',
+  reservation_expired: 'The reservation expired.',
+  reservation_invalidated: 'The antenna failed and the reservation was invalidated; reserve a device again.',
+};
+
+export function reservationGoneText(error: ApiError | HttpErrorResponse): string | null {
+  const response = error instanceof HttpErrorResponse ? error : error.originalError;
+  if (response?.status !== 404) return null;
+  return REASON_TEXT[response.error?.detail?.reason] ?? null;
+}
+
+/** No answer, a proxy or server error, or 503 / 1006: the server may still be working. */
+export function isTransient(error: HttpErrorResponse): boolean {
+  return error.status === 0 || error.status >= 500;
+}
 
 export interface ApiError extends Error {
   originalError?: HttpErrorResponse;
@@ -34,7 +53,7 @@ export function apiErrorToast(title: string, error: ApiError | HttpErrorResponse
   const response = error instanceof HttpErrorResponse ? error : error.originalError;
   if (!response?.status) return `${title}: ${error.message}`;
 
-  const hint = CODE_HINTS[response.error?.detail?.code];
+  const hint = CODE_HINTS[response.error?.detail?.code] ?? reservationGoneText(response);
   if (hint) return `${title}\n${hint}`;
   const body: unknown = response.error;
   const text = body == null || body === ''

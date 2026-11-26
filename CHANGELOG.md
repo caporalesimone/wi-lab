@@ -10,7 +10,7 @@ All notable changes to Wi-Lab are documented in this file.
 
 | Item | Count |
 |---|---:|
-| 🐛 Bug fixes | 23 |
+| 🐛 Bug fixes | 25 |
 | ⚠️ Breaking changes | 6 |
 | 🔧 Maintenance changes | 4 |
 | ✨ New features | 1 |
@@ -60,6 +60,8 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - A jump of the system clock (NTP correcting a wrong boot time, a VM resumed after a pause) no longer expires every reservation and network at once, nor stretches them: expiries use the monotonic clock, and the unit starts after `time-sync.target`. Reinstall the systemd unit to get the new ordering (Fable STAB-5).
 - Runtime files of hostapd and dnsmasq move from `/tmp/wilab-*` to `/run/wilab`, a directory systemd creates readable by root only (`RuntimeDirectory=wilab`). In `/tmp` the cleanup of files untouched for days could remove the dnsmasq PID file of a long-running network (`/status` then reported DHCP down), and a fixed name in a world-writable directory let a local user prepare it for root to write into. Startup removes the old directories; reinstall the systemd unit (Fable STAB-2).
 - The last 40 lines of `hostapd -d` reach the journal when a start fails and when the watchdog finds hostapd dead on an active network, also without `hostapd_debug_dir`; before, only twelve classified labels were kept and the lines just before a crash were lost. Lines that may contain keys or passwords are dropped, also from the `hostapd_debug_dir` reports (Fable HAP-8).
+- Web UI, create: a cancelled start is no longer reported as "started successfully"; a poll without an answer, a 5xx or a `1006` no longer ends the start with "Failed to start network" while the server goes on; a slow poll no longer leaves the card stuck on "Starting WiFi..." (one poll at a time, 10-minute limit); Stop and Release stay usable during a start; a card that did not launch the start (reload, another tab) shows it and disables Start; the `start_failed` error and every `404` reason are shown as sentences (Fable REV-13).
+- Web UI: a reload while the backend restarts or answers `401`/`5xx` no longer forgets the saved reservation IDs (only a `404` drops one); Stop is enabled for `starting`, `start_failed`, `restore_failed` and `stop_failed`, where the server accepts it; the recovering or unavailable message appears on cards that are not mine; a double click on Start WiFi opens one dialog; the dialog requires a password and counts SSID and password in UTF-8 bytes like the server (Fable REV-14).
 - `uninstall.sh` removes what a stopped service leaves on the host (the `wilab-protect-existing` FORWARD rule, `/tmp/wilab-*`, the systemd-networkd rule, QoS IFB devices); `config.yaml` is still kept.
 
 ### 🔧 Maintenance

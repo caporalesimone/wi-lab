@@ -134,11 +134,16 @@
         </div>
       </div>
       <p *ngIf="runtimeStateLabel as label" role="status">{{ label }}</p>
-      <div *ngIf="!status?.active && !restoring" class="inactive-message">
-        <mat-icon>wifi_off</mat-icon>
-        <p role="status">{{ createMessage ?? 'Access point not active — start WiFi to begin' }}</p>
+      <!-- A start runs, from this card or elsewhere (reload, another tab): REV-13 -->
+      <div *ngIf="starting || createMessage" class="inactive-message">
+        <mat-spinner diameter="24"></mat-spinner>
+        <p role="status">{{ createMessage ?? 'Starting the access point...' }}</p>
       </div>
-      <div *ngIf="!status?.active && !restoring" class="option-tile" [class.on]="captivePortalChoice">
+      <div *ngIf="!status?.active && !restoring && !starting && !createMessage" class="inactive-message">
+        <mat-icon>wifi_off</mat-icon>
+        <p role="status">Access point not active — start WiFi to begin</p>
+      </div>
+      <div *ngIf="!status?.active && !restoring && !starting && !createMessage" class="option-tile" [class.on]="captivePortalChoice">
         <mat-icon class="option-icon">{{ captivePortalChoice ? 'login' : 'public' }}</mat-icon>
         <div class="option-text">
           <span class="option-title">Captive portal</span>
@@ -154,22 +159,13 @@
       </div>
     </mat-card-content>
 
-    <mat-card-content *ngIf="slot.recoveryState">
-      <div class="placeholder-message occupied">
-        <mat-icon>build</mat-icon>
-        <p>{{ slot.recoveryState === 'recovering'
-          ? 'This antenna is recovering and cannot be reserved yet.'
-          : 'This antenna is unavailable and cannot be reserved.' }}</p>
-      </div>
-    </mat-card-content>
-
     <mat-card-actions>
       <div class="actions-container">
         <div class="button-row">
-          <button mat-raised-button color="primary" (click)="startWiFi()" [disabled]="loading || restoring || status?.active">
+          <button mat-raised-button color="primary" (click)="startWiFi()" [disabled]="loading || restoring || status?.active || starting || createMessage">
             <mat-icon>play_arrow</mat-icon> Start WiFi
           </button>
-          <button mat-raised-button color="warn" (click)="stopWiFi()" [disabled]="loading || restoring || !status?.active">
+          <button mat-raised-button color="warn" (click)="stopWiFi()" [disabled]="loading || restoring || !canStop">
             <mat-icon>stop</mat-icon> Stop WiFi
           </button>
         </div>
@@ -190,6 +186,16 @@
       <mat-spinner *ngIf="loading" diameter="24" class="loading-spinner"></mat-spinner>
     </mat-card-actions>
   </ng-container>
+
+  <!-- ============ RECOVERING / UNAVAILABLE (usually not mine: quarantine ends the reservation) ============ -->
+  <mat-card-content *ngIf="slot.recoveryState && !isMine">
+    <div class="placeholder-message occupied">
+      <mat-icon>build</mat-icon>
+      <p>{{ slot.recoveryState === 'recovering'
+        ? 'This antenna is recovering and cannot be reserved yet.'
+        : 'This antenna is unavailable and cannot be reserved.' }}</p>
+    </div>
+  </mat-card-content>
 
   <!-- ============ AVAILABLE (not reserved) ============ -->
   <mat-card-content *ngIf="isAvailable">

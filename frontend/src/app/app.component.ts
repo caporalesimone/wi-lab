@@ -155,8 +155,16 @@ export class AppComponent implements OnInit, OnDestroy {
           pending--;
           if (pending === 0) this.finishRestore();
         },
-        error: () => {
-          // Expired or invalid — skip
+        error: (err: ApiError) => {
+          // Only a 404 means the reservation is gone (REV-14). A server restarting
+          // (status 0), a 401 or a 5xx must not lose the ID: keep the saved one and
+          // let the card find out; a later 404 releases it there.
+          if (err.originalError?.status !== 404) {
+            this.myReservations.set(entry.key, entry.value);
+            this.snackBar.open(apiErrorToast('Could not check a saved reservation; it is kept', err), 'Close', {
+              duration: 8000, panelClass: ['error-snackbar'],
+            });
+          }
           pending--;
           if (pending === 0) this.finishRestore();
         }

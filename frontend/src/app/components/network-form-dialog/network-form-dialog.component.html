@@ -6,7 +6,7 @@
       <mat-label>SSID</mat-label>
       <input matInput formControlName="ssid" required>
       <mat-error *ngIf="form.get('ssid')?.hasError('required')">SSID is required</mat-error>
-      <mat-error *ngIf="form.get('ssid')?.hasError('maxlength')">SSID must be 32 characters or less</mat-error>
+      <mat-error *ngIf="form.get('ssid')?.hasError('utf8Length')">SSID must be at most 32 bytes (accented letters and emoji take 2-4)</mat-error>
     </mat-form-field>
 
     <mat-form-field appearance="outline">
@@ -60,7 +60,7 @@
       <input matInput type="text" formControlName="password" [required]="form.get('encryption')?.value !== 'open'">
       <mat-hint>Minimum 8 characters</mat-hint>
       <mat-error *ngIf="form.get('password')?.hasError('required')">Password is required</mat-error>
-      <mat-error *ngIf="form.get('password')?.hasError('minlength')">Password must be at least 8 characters</mat-error>
+      <mat-error *ngIf="form.get('password')?.hasError('utf8Length')">Password must be 8 to 63 bytes (accented letters take 2)</mat-error>
     </mat-form-field>
 
     <mat-form-field appearance="outline">

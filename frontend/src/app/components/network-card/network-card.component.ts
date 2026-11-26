@@ -12,7 +12,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { interval, Subscription } from 'rxjs';
 import { WilabApiService } from '../../services/wilab-api.service';
 import { AntennaDetails, ClientInfo, NetworkCreateRequest, NetworkStatus } from '../../models/network.models';
-import { ApiError, apiErrorToast } from '../../services/recovery-response';
+import { ApiError, apiErrorToast, reservationGoneText } from '../../services/recovery-response';
 import { environment } from '../../../environments/environment';
 import { GENERATION_LABELS, NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
 import { InterfaceSlot } from '../../app.component';
@@ -45,6 +45,8 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   /** Captive portal choice for the next start; preselects the start dialog. */
   captivePortalChoice = false;
   private creation?: Subscription;
+  /** GET /antennas is running for the start dialog: a second click opens nothing (REV-14). */
+  private openingForm = false;
   pollingSubscription?: Subscription;
   countdownSubscription?: Subscription;
   clientsCount = 0;
@@ -73,15 +75,37 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     return this.slot.myReservation?.reservation_id ?? '';
   }
 
+  /** GET .../network when read; /status (every 10 s) only before the first read (REV-13). */
   public get runtimeState() {
-    return this.status?.runtime_state ?? this.slot.runtimeState;
+    return this.status === null ? this.slot.runtimeState : this.status.runtime_state;
+  }
+
+  /** A start runs, launched here or elsewhere (reload, another tab). */
+  public get starting(): boolean {
+    return this.runtimeState === 'starting';
+  }
+
+  /**
+   * DELETE .../network answers 200 also with no running network in these states:
+   * it cancels the start, clears start_failed or gives up the watchdog's retries (REV-14).
+   */
+  public get canStop(): boolean {
+    return !!this.status?.active
+      || this.runtimeState === 'starting'
+      || this.runtimeState === 'start_failed'
+      || this.runtimeState === 'restore_failed'
+      || this.runtimeState === 'stop_failed';
   }
 
   /** A sentence for every runtime_state of GET .../network or /status. */
   public get runtimeStateLabel(): string | null {
     switch (this.runtimeState) {
       case 'starting': return 'Starting the access point...';
-      case 'start_failed': return 'The last start failed. Start WiFi again or check the error.';
+      case 'start_failed': {
+        const error = this.status?.error;
+        const stage = error?.stage ? ` (${error.stage})` : '';
+        return `The last start failed${stage}: ${error?.message ?? 'unknown error'}. Start WiFi again or stop to clear it.`;
+      }
       case 'restoring_ap': return 'Restoring the access point. Clients may need to reconnect.';
       case 'restoring_dhcp': return 'Restarting DHCP.';
       case 'dhcp_failed': return 'DHCP is unavailable; the whole network is being restarted.';
@@ -254,6 +278,8 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
         if (this.reservationId !== reservationId || this.createMessage !== null) return;
         if (showNotification) this.loading = false;
         if (err.originalError?.status === 404) {
+          const why = reservationGoneText(err);
+          if (why) this.snackBar.open(why, 'Close', { duration: 8000 });
           this.released.emit(reservationId);
         } else if (showNotification) {
           this.snackBar.open(apiErrorToast('Failed to read network status', err), 'Close', {
@@ -266,14 +292,18 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   public startWiFi(): void {
-    if (!this.isMine || this.loading || this.restoring) return;
+    if (!this.isMine || this.loading || this.restoring || this.starting || this.openingForm || this.createMessage !== null) return;
+    this.openingForm = true;
     // The form lists only what this antenna can use (GET /antennas/{interface}).
     this.wilabApiService.getAntenna(this.slot.interface).subscribe({
       next: antenna => this.openNetworkForm(antenna),
-      error: (err: ApiError) => this.snackBar.open(
-        apiErrorToast('Failed to read the antenna options', err), 'Close',
-        { duration: 10000, panelClass: ['error-snackbar'] },
-      ),
+      error: (err: ApiError) => {
+        this.openingForm = false;
+        this.snackBar.open(
+          apiErrorToast('Failed to read the antenna options', err), 'Close',
+          { duration: 10000, panelClass: ['error-snackbar'] },
+        );
+      },
     });
   }
 
@@ -286,40 +316,47 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     });
 
     dialogRef.afterClosed().subscribe((result: NetworkCreateRequest | undefined) => {
-      if (result && this.reservationId === reservationId && !this.loading && !this.restoring) {
-        this.loading = true;
+      this.openingForm = false;
+      if (result && this.reservationId === reservationId && !this.loading && !this.restoring && !this.starting) {
+        // Not `loading`: Stop (cancels the start) and Release stay usable while it runs (REV-13).
         this.createMessage = 'Starting WiFi... If the radio needs restarting this can take up to a minute.';
         this.creation = this.wilabApiService.startNetwork(reservationId, result).subscribe({
           next: (network) => {
+            if (this.reservationId !== reservationId) return;
+            // The 202 body first: the card shows "starting" at once, no stale label (REV-13).
+            this.status = network;
+            if (network.runtime_state === 'starting') return;
             this.createMessage = null;
-            this.loading = false;
             if (network.runtime_state === 'start_failed') {
-              // Non-radio failure, rolled back; the reservation is still valid.
+              // Non-radio failure, rolled back; the reservation is still valid. The card shows the error.
               const stage = network.error?.stage ? ` (${network.error.stage})` : '';
               this.snackBar.open(`Failed to start network${stage}: ${network.error?.message ?? 'unknown error'}`,
                 'Close', { duration: 10000, panelClass: ['error-snackbar'] });
-            } else {
+            } else if (network.active) {
               this.snackBar.open('WiFi network started successfully', 'Close', { duration: 3000 });
+            } else {
+              // Not active and no start running: cancelled (a stop or release from another tab).
+              this.snackBar.open('The start was cancelled; the network is not running.', 'Close', { duration: 5000 });
             }
             this.checkStatus(false);
           },
           error: (err: ApiError) => {
             this.createMessage = null;
-            this.loading = false;
             const raw = err.originalError;
-            // A 404 while polling: the reservation ended, detail.reason says why.
-            const reason = raw?.status === 404 ? raw?.error?.detail?.reason : null;
             if (raw?.status === 404) {
+              // The reservation ended while starting: detail.reason says why.
               this.released.emit(reservationId);
-            } else if (raw?.status === 0) {
-              this.checkStatus(false);
+              this.snackBar.open(`WiFi did not start. ${reservationGoneText(err) ?? ''}`.trim(), 'Close', {
+                duration: 10000, panelClass: ['error-snackbar']
+              });
+              return;
             }
-            const message = reason === 'reservation_invalidated'
-              ? 'WiFi startup failed. The reservation was invalidated; request a new device to continue.'
-              : reason === 'reservation_expired'
-                ? 'The reservation expired before the network could start.'
-                : 'Failed to start network';
-            this.snackBar.open(apiErrorToast(message, err), 'Close', {
+            // No final answer (timeout, connection lost): the normal polling shows the real state.
+            this.checkStatus(false);
+            const stillRunning = (err.originalError as unknown as Error | undefined)?.name === 'TimeoutError';
+            this.snackBar.open(stillRunning
+              ? 'The start is taking longer than expected; the card updates when it ends.'
+              : apiErrorToast('Failed to start network', err), 'Close', {
               duration: 10000, panelClass: ['error-snackbar']
             });
           }
@@ -329,7 +366,8 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   public stopWiFi(): void {
-    if (!confirm(`Are you sure you want to stop the WiFi network "${this.status?.wifi?.ssid}"?`)) return;
+    const what = this.status?.active ? `the WiFi network "${this.status?.wifi?.ssid}"` : 'the start or the retries on this antenna';
+    if (!confirm(`Are you sure you want to stop ${what}?`)) return;
     this.loading = true;
     this.wilabApiService.stopNetwork(this.reservationId).subscribe({
       next: () => {

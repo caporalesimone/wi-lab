@@ -1,10 +1,10 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
-import { Observable, of, throwError, timer } from 'rxjs';
-import { catchError, first, switchMap } from 'rxjs/operators';
+import { EMPTY, Observable, concat, of, throwError, timer } from 'rxjs';
+import { catchError, exhaustMap, first, switchMap, timeout } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
-import { ApiError, RecoveryCode, retryWhenBusy } from './recovery-response';
+import { ApiError, RecoveryCode, isTransient, retryWhenBusy } from './recovery-response';
 import {
   AntennaDetails,
   StatusResponse,
@@ -16,6 +16,12 @@ import {
 
 /** How often GET .../network is read while a create is starting. */
 const CREATE_POLL_MS = 1500;
+/**
+ * Longest wait for the end of a start (REV-13): a DFS start with the server's
+ * retries takes up to about 7 minutes. After it the card falls back to its
+ * normal status polling.
+ */
+const CREATE_POLL_LIMIT_MS = 10 * 60 * 1000;
 
 @Injectable({
   providedIn: 'root'
@@ -105,18 +111,29 @@ export class WilabApiService {
 
   /**
    * Asynchronous create: the POST answers 202 with runtime_state "starting", then
-   * GET .../network is polled until the start ends. Emits the final network:
-   * runtime_state null (the AP is up) or "start_failed" (see `error`). A 404 while
-   * polling (reservation invalidated or expired) is an error with detail.reason.
-   * Radio failures are retried by the server: never repeat the create for them.
+   * GET .../network is polled until the start ends (REV-13).
+   * Emits the 202 body first (the card shows "starting" at once), then the final
+   * network: `active: true` (the AP is up), "start_failed" (see `error`), or
+   * `active: false` with runtime_state null (the start was cancelled, e.g. from
+   * another tab). A 404 while polling (reservation ended) is an error with
+   * detail.reason. A poll without an answer, a 5xx or a 503 / 1006 is skipped:
+   * the server is still working. Each poll waits for the previous one
+   * (exhaustMap), and polling stops after CREATE_POLL_LIMIT_MS with a timeout
+   * error. Radio failures are retried by the server: never repeat the create for them.
    */
   public startNetwork(reservationId: string, config: NetworkCreateRequest): Observable<NetworkStatus> {
     const url = `${this.apiUrl}/reservations/${reservationId}/network`;
-    return this.http.post<NetworkStatus>(url, config, { headers: this.getHeaders() }).pipe(
-      switchMap(created => created.runtime_state !== 'starting' ? of(created) : timer(CREATE_POLL_MS, CREATE_POLL_MS).pipe(
-        switchMap(() => this.http.get<NetworkStatus>(url, { headers: this.getHeaders() })),
-        first(status => status.runtime_state !== 'starting'),
+    const poll = timer(CREATE_POLL_MS, CREATE_POLL_MS).pipe(
+      exhaustMap(() => this.http.get<NetworkStatus>(url, { headers: this.getHeaders() }).pipe(
+        catchError((error: HttpErrorResponse) => isTransient(error) ? EMPTY : throwError(() => error)),
       )),
+      first(status => status.runtime_state !== 'starting'),
+      timeout({ first: CREATE_POLL_LIMIT_MS }),
+    );
+    return this.http.post<NetworkStatus>(url, config, { headers: this.getHeaders() }).pipe(
+      // The same body on a running network can answer 1006 (REV-11): repeat it.
+      retryWhenBusy(),
+      switchMap(created => created.runtime_state !== 'starting' ? of(created) : concat(of(created), poll)),
       catchError(this.handleError)
     );
   }

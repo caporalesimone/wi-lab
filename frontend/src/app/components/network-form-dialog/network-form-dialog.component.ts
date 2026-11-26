@@ -1,6 +1,6 @@
 import { Component, Inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, Validators, ReactiveFormsModule } from '@angular/forms';
+import { AbstractControl, FormBuilder, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { MatDialogRef, MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -33,6 +33,16 @@ export const GENERATION_LABELS: Record<number, string> = {
   5: 'Wi-Fi 5 (802.11ac)',
   6: 'Wi-Fi 6 (802.11ax)',
 };
+
+/** Length in UTF-8 bytes, as the server counts it (REV-14): "è" is 2 bytes, not 1. */
+export function utf8Length(min: number, max: number): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value = control.value;
+    if (typeof value !== 'string' || value === '') return null;
+    const bytes = new TextEncoder().encode(value).length;
+    return bytes < min || bytes > max ? { utf8Length: { min, max, actual: bytes } } : null;
+  };
+}
 
 @Component({
   selector: 'app-network-form-dialog',
@@ -78,11 +88,11 @@ export class NetworkFormDialogComponent {
     const defaultSsid = `test-network-${this.data.netId}`;
     
     this.form = this.formBuilder.group({
-      ssid: [defaultSsid, [Validators.required, Validators.maxLength(32)]],
+      ssid: [defaultSsid, [Validators.required, utf8Length(1, 32)]],
       channel: [firstChannels.includes(6) ? 6 : firstChannels[0], Validators.required],
       band: [band, Validators.required],
       encryption: ['wpa2', Validators.required],
-      password: ['12345678', [Validators.minLength(8), Validators.maxLength(63)]],
+      password: ['12345678', [Validators.required, utf8Length(8, 63)]],
       hidden: [false],
       internet_enabled: [true],
       captive_portal: [this.data.captivePortal ?? false],
@@ -102,7 +112,7 @@ export class NetworkFormDialogComponent {
       if (encryption === 'open') {
         passwordControl?.clearValidators();
       } else {
-        passwordControl?.setValidators([Validators.required, Validators.minLength(8), Validators.maxLength(63)]);
+        passwordControl?.setValidators([Validators.required, utf8Length(8, 63)]);
       }
       passwordControl?.updateValueAndValidity();
     });
