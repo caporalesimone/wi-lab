@@ -33,8 +33,19 @@
 #            (GET /status, GET .../network): clients poll them every few seconds, so
 #            this level fills the journal. Use it only while investigating.
 #
-# Whatever the level, journalctl can show less: `journalctl -u wi-lab -p err` (errors only)
-# or `-p warning` (errors and warnings). The change applies after a restart of the service.
+# The change applies after a restart of the service (sudo systemctl restart wi-lab).
+#
+# Reading the log (sudo, or a user in the systemd-journal group):
+#   journalctl -u wi-lab -f                     follow it live (Ctrl+C to stop)
+#   journalctl -u wi-lab --since "1 hour ago"   a period (also "today", "2026-11-27 15:00")
+#   journalctl -u wi-lab -b                     since the last boot of the host
+#   journalctl -u wi-lab -p err                 errors only, whatever log_level is
+#   journalctl -u wi-lab -p warning             errors and warnings
+#   journalctl -u wi-lab | grep res=1a2b3c4d    one reservation (its ID from POST /reservations)
+#   journalctl -u wi-lab | grep ant=wlx0c1d2e   one antenna (its interface)
+#   journalctl -u wi-lab | grep uvicorn.access  the HTTP requests (client address, method, path, status)
+#   journalctl -u wi-lab -n 200 --no-pager      the last 200 lines, without the pager
+# Options can be combined: journalctl -u wi-lab -p warning --since today
 log_level: "INFO"
 
 # ==================================================================================================
