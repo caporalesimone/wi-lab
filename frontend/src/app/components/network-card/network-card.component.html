@@ -143,20 +143,6 @@
         <mat-icon>wifi_off</mat-icon>
         <p role="status">Access point not active — start WiFi to begin</p>
       </div>
-      <div *ngIf="!status?.active && !restoring && !starting && !createMessage" class="option-tile" [class.on]="captivePortalChoice">
-        <mat-icon class="option-icon">{{ captivePortalChoice ? 'login' : 'public' }}</mat-icon>
-        <div class="option-text">
-          <span class="option-title">Captive portal</span>
-          <span class="option-description">
-            {{ captivePortalChoice
-              ? 'The next network starts with a portal page; clients sign in before getting access.'
-              : 'The next network starts without a portal page.' }}
-          </span>
-        </div>
-        <mat-slide-toggle color="primary" [checked]="captivePortalChoice" [disabled]="loading"
-          (change)="captivePortalChoice = $event.checked"
-          aria-label="Start the next network with a captive portal"></mat-slide-toggle>
-      </div>
     </mat-card-content>
 
     <mat-card-actions>

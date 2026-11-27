@@ -86,6 +86,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - Web UI, create: a cancelled start is no longer "started successfully", a transient error no longer ends the start, Stop and Release stay usable, and every `404` reason is a sentence (Fable REV-13).
 - Web UI: a reload keeps the saved reservations unless the server answers `404`; Stop is enabled wherever the server accepts it; the dialog requires a password and counts bytes like the server (Fable REV-14).
 - Web UI: a connection error no longer suggests a CORS problem (Fable REV-17).
+- Web UI: the captive portal is chosen only in the create dialog; the antenna card no longer has its own toggle and shows only whether the running access point has a portal.
 
 ### 🔧 Maintenance
 

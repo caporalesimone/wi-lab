@@ -30,7 +30,7 @@ def test_dialog_lists_come_from_the_antennas_api():
 def test_card_reads_the_capabilities_before_opening_the_form():
     card_ts = (ROOT / "components/network-card/network-card.component.ts").read_text()
     assert "this.wilabApiService.getCapabilities(this.slot.interface)" in card_ts
-    assert "data: { netId: reservationId, captivePortal: this.captivePortalChoice, antenna }" in card_ts
+    assert "data: { netId: reservationId, antenna }" in card_ts
     service = (ROOT / "services/wilab-api.service.ts").read_text()
     assert "/antennas/${encodeURIComponent(iface)}/capabilities" in service
     card_html = (ROOT / "components/network-card/network-card.component.html").read_text()

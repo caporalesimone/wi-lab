@@ -75,7 +75,7 @@ export class NetworkFormDialogComponent {
     private formBuilder: FormBuilder,
     private dialogRef: MatDialogRef<NetworkFormDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: {
-      netId: string; captivePortal?: boolean; antenna: AntennaCapabilities;
+      netId: string; antenna: AntennaCapabilities;
     }
   ) {
     // Every list comes from GET /antennas/{interface}/capabilities: band, then generation,
@@ -95,7 +95,7 @@ export class NetworkFormDialogComponent {
       password: ['12345678', [Validators.required, utf8Length(8, 63)]],
       hidden: [false],
       internet_enabled: [true],
-      captive_portal: [this.data.captivePortal ?? false],
+      captive_portal: [false],
       tx_power_level: [4, [Validators.required, Validators.min(1), Validators.max(4)]],
       channel_width: [20 as ChannelWidth, Validators.required],
       wifi_generation: [4 as WifiGeneration, Validators.required],
