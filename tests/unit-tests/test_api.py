@@ -80,11 +80,20 @@ class TestStatusEndpoint:
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
-        assert data['status'] in ['ok', 'degraded', 'standby']
+        assert data['status'] in ['in_use', 'degraded', 'standby']
         assert 'version' in data
         assert 'antennas' in data and 'networks' not in data
         assert 'checks' not in data and data['degraded_reasons'] == []
     
+    def test_a_reserved_antenna_without_network_is_in_use(self, client, valid_token):
+        """`in_use` means an antenna is held, not that a network runs (2026-11-27)."""
+        headers = {'Authorization': valid_token}
+        rid = client.post('/api/v2/reservations', headers=headers, json={'duration_seconds': 600}).json()['reservation_id']
+        data = client.get('/api/v2/status', headers=headers).json()
+        assert data['status'] == 'in_use' and data['active_networks'] == 0
+        assert client.delete(f'/api/v2/reservations/{rid}', headers=headers).status_code == 200
+        assert client.get('/api/v2/status', headers=headers).json()['status'] == 'standby'
+
     def test_status_standby_mode(self, client, valid_token):
         """Test status endpoint in standby mode (no active networks)."""
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
@@ -183,7 +192,7 @@ class TestStatusEndpoint:
         
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200  # Should not crash
-        assert resp.json()["status"] in ("standby", "ok", "degraded")
+        assert resp.json()["status"] in ("standby", "in_use", "degraded")
         assert 'upstream_interface' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']
         assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']['reachable'] is False
         assert 'error' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']

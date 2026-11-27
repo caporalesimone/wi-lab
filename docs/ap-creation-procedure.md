@@ -500,8 +500,8 @@ usable. Poll it (for example every 10–30 s) and show the result to the user.
 
 | `status` | Meaning |
 |---|---|
-| `standby` | No AP is active and no antenna is quarantined. |
-| `ok` | APs are active and every health check passes. |
+| `standby` | No antenna is reserved and nothing is wrong. |
+| `in_use` | At least one antenna is reserved (with or without an AP) and every health check passes. |
 | `degraded` | At least one entry in `degraded_reasons`. |
 
 `degraded_reasons` says why, with a stable `code` and the `interface` it
@@ -692,7 +692,7 @@ sequenceDiagram
         end
     and Anyone polls the service (every 10 to 30 s)
         C->>W: GET /status
-        W-->>C: ok, degraded or standby, degraded_reasons, recovery_state, runtime_state
+        W-->>C: standby, in_use or degraded, degraded_reasons, recovery_state, runtime_state
         Note over C: Show degraded with the affected antenna
     end
     opt Change the running network

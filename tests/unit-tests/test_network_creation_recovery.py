@@ -248,7 +248,7 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert reserve["503"]["content"]["application/json"]["examples"]["device_recovering"]["value"]["detail"]["code"] == 1002
     status_examples = paths["/api/v2/status"]["get"]["responses"]["200"]["content"]["application/json"]["examples"]
     assert {name: e["value"]["status"] for name, e in status_examples.items()} == {
-        "standby": "standby", "ok": "ok", "degraded_quarantine": "degraded",
+        "standby": "standby", "in_use": "in_use", "degraded_quarantine": "degraded",
     }
     status = status_examples["degraded_quarantine"]["value"]
     assert status["antennas"][0]["recovery_state"] == "unavailable"

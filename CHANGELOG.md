@@ -16,7 +16,7 @@ updates its date.
 
 | Item | Count |
 |---|---:|
-| ⚠️ Breaking changes | 8 |
+| ⚠️ Breaking changes | 9 |
 | ✨ New features | 5 |
 | 🐛 Bug fixes | 32 |
 | 🔧 Maintenance changes | 16 |
@@ -36,6 +36,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - NetworkManager is no longer supported: the host network must be on systemd-networkd. The installer offers to disable and mask NetworkManager and `wpa_supplicant`, never when the host needs them; `uninstall.sh` offers to re-enable them. When upgrading, run the installer again (Fable NM-1).
 - The reservation, create and `POST .../txpower` bodies accept only the JSON types they document: `"6"`, `true` or `6.0` for an integer, or `"false"` and `0` for a boolean, are `422` (Fable REV-11).
 - `POST .../txpower` takes `tx_power_level` instead of `level`, as `radio.tx_power_level` in the create (Fable API-6).
+- `GET /status`: `status` is `standby`, `in_use` or `degraded`. `in_use` replaces `ok` and means that at least one antenna is reserved, with or without a network; before, `ok` meant that a network was running, and a reserved antenna without one was `standby`.
 
 ### ✨ Features
 
@@ -117,6 +118,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ### 🔌 API changes from 4.0.0 (client migration)
 
+- `GET /status` and `GET /monitoring`: `status: "ok"` is now `"in_use"`, set as soon as an antenna is reserved (also without a network). `standby` means no antenna is reserved; `degraded` is unchanged. Clients that compared with `"ok"` must use `"in_use"`; the number of running networks stays in `active_networks`.
 - Strict types: send integers and booleans as JSON numbers and booleans. A string such as `"6"`, `true` for a number or `6.0` is now `422` in `POST /reservations`, `POST .../network` and `POST .../txpower` (REV-11).
 - `POST .../txpower`: the body is `{"tx_power_level": 2}`; `{"level": 2}` is now `422` (API-6).
 - **Not stable in 4.1:** TX power is under debugging (the drivers in use do not apply it reliably) and QoS profiles are experimental. Both may change in any release; the rest of the API is frozen for 4.1.

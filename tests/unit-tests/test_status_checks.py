@@ -29,6 +29,7 @@ def running(monkeypatch, context, app):
             return active_network(interface=device, subnet="192.168.120.0/24",
                                  internet_enabled=state["internet"])
 
+        context.reservations.create(3600, device)   # a network always belongs to a reservation
         monkeypatch.setitem(manager.active, device, network())
         monkeypatch.setattr(manager.hostapd_manager, "is_running", Mock(return_value=True))
         monkeypatch.setattr(manager.dhcp_server, "is_running", Mock(return_value=True))
@@ -48,7 +49,7 @@ def running(monkeypatch, context, app):
 def test_network_without_internet_is_ok_on_a_host_without_nat_rules(running):
     get, _state, _manager, _device = running
     data = get()
-    assert data["status"] == "ok"  # before BUG-2: degraded (no MASQUERADE anywhere)
+    assert data["status"] == "in_use"  # before BUG-2: degraded (no MASQUERADE anywhere)
     assert data["checks"]["iptables_nat"] == {"configured": True, "missing": [], "errors": []}
 
 
@@ -60,7 +61,7 @@ def test_foreign_masquerade_does_not_count_for_a_network_with_internet(running):
     assert data["status"] == "degraded"
     assert data["checks"]["iptables_nat"]["missing"] == [device]
     state["nat"] += f'\n-A POSTROUTING -s 192.168.120.0/24 -o eth0 -m comment --comment wilab-nat-{device} -j MASQUERADE'
-    assert get()["status"] == "ok"
+    assert get()["status"] == "in_use"
 
 
 def test_link_with_up_flag_but_state_down_is_not_up(running):
@@ -81,7 +82,7 @@ def test_unknown_state_with_lower_up_is_up(running):
 def test_upstream_down_does_not_degrade_networks_without_internet(running):
     get, state, _manager, _device = running
     state["link"] = _link("DOWN", ["UP"], inet=False)
-    assert get()["status"] == "ok"
+    assert get()["status"] == "in_use"
 
 
 def test_dead_hostapd_is_reported_and_degrades(running):

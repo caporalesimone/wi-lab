@@ -262,7 +262,7 @@ def test_24ghz_40mhz_reports_the_width_it_got(wilab: WiLab, server: Server) -> N
 def test_network_without_internet_is_not_degraded(wilab: WiLab) -> None:
     antenna = wilab.reserve()
     assert wilab.create(antenna, internet_enabled=False).status_code == 200
-    assert wilab.status()["status"] == "ok"
+    assert wilab.status()["status"] == "in_use"
 
 
 @pending("BUG-7")

@@ -62,7 +62,7 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
 ## Service health (`degraded`)
 
 Open **System → Read system and adapter status**. Under **Responses → 200 →
-Examples** select `standby`, `ok` or `degraded_quarantine`. `status:
+Examples** select `standby`, `in_use` or `degraded_quarantine`. `status:
 "degraded"` means at least one adapter is quarantined
 (`antennas[].recovery_state`: `recovering` or `unavailable`), a reserved
 network is being repaired, lost DHCP or could not be restarted

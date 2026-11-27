@@ -16,6 +16,7 @@ def stopping_network(monkeypatch, context, app):
         headers = {"Authorization": f"Bearer {load_config().auth_token}"}
         manager = context.manager
         device = manager.config.antennas[0].device_id
+        context.reservations.create(3600, device)   # a network always belongs to a reservation
         monkeypatch.setitem(
             manager.active, device,
             active_network(interface=device, subnet="192.168.120.0/24"),
@@ -49,7 +50,7 @@ def test_network_mid_operation_does_not_make_status_degraded(stopping_network):
         release.set()
         thread.join()
     assert data["active_networks"] == 1
-    assert data["status"] == "ok"
+    assert data["status"] == "in_use"
 
 
 def test_settled_network_with_dhcp_down_is_still_degraded(stopping_network):
