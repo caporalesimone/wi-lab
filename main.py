@@ -27,7 +27,10 @@ def main():
     
     # Load configuration (exits with descriptive error on failure)
     config = load_config()
-    logger.info("Configuration loaded from %s", os.environ.get("CONFIG_PATH", "default"))
+    # Until here the level is INFO: the startup lines above are always written.
+    log.set_level(log.level_of(config.log_level))
+    logger.info("Configuration loaded from %s (log level %s)",
+                os.environ.get("CONFIG_PATH", "default"), config.log_level)
     logger.info(
         "Wi-Fi adapters are added by device discovery (subnets from %s)", config.dhcp_base_network,
     )

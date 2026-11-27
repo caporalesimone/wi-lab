@@ -23,7 +23,7 @@ MOCK_PHY_INFO = (Path(__file__).parent / "data" / "iw_phy_info_mt7921u.txt").rea
 # Every setting of config.yaml is required (only hostapd_debug_dir and antennas
 # may be omitted): tests that build a config start from these values.
 REQUIRED_SETTINGS = {
-    "api_port": 8080, "captive_portal_port": 8081, "max_timeout": 86400, "min_timeout": 60,
+    "log_level": "INFO", "api_port": 8080, "captive_portal_port": 8081, "max_timeout": 86400, "min_timeout": 60,
     "allow_unlimited_reservation": False, "upstream_interface": "auto", "country_code": "IT",
     "protected_commands_password": None, "internet_enabled_by_default": True, "cors_origins": None,
     "watchdog": {"ap_restores": {"limit": 3, "window_minutes": 60},

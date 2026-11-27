@@ -89,6 +89,55 @@ def test_context_is_added_without_touching_the_call(captured):
     assert lines[2].endswith(" - INFO - outside")
 
 
+def _access(method: str, status: int) -> None:
+    # The record uvicorn writes for every request: (client, method, path, version, status).
+    logging.getLogger("uvicorn.access").info(
+        '%s - "%s %s HTTP/%s" %d', "192.168.10.100:5000", method, "/api/v2/status", "1.1", status,
+    )
+
+
+def test_at_info_successful_reads_are_not_written(captured):
+    """Polling GETs were most of the journal; changes and failures are the record of who did what."""
+    for method, status in [("GET", 200), ("HEAD", 200), ("GET", 304), ("POST", 201),
+                           ("DELETE", 200), ("PUT", 200), ("GET", 404), ("GET", 500)]:
+        _access(method, status)
+    lines = captured.getvalue().splitlines()
+    written = [line.split('"')[1].split()[0] + " " + line.rsplit(" ", 1)[1] for line in lines]
+    assert written == ["POST 201", "DELETE 200", "PUT 200", "GET 404", "GET 500"]
+    assert all(line.startswith("<6>") for line in lines)
+
+
+def test_at_debug_every_request_is_written(captured):
+    log.set_level(logging.DEBUG)
+    _access("GET", 200)
+    _access("POST", 201)
+    lines = captured.getvalue().splitlines()
+    assert [line[:3] for line in lines] == ["<7>", "<6>"]
+    assert " - DEBUG - " in lines[0]
+
+
+@pytest.mark.parametrize(("level", "written"), [
+    ("ERROR", ["<3>"]), ("WARNING", ["<3>", "<4>"]), ("INFO", ["<3>", "<4>", "<6>"]),
+    ("DEBUG", ["<3>", "<4>", "<6>", "<7>"]),
+])
+def test_log_level_of_config_yaml(captured, level, written):
+    log.set_level(log.level_of(level))
+    logger = logging.getLogger("wilab.test")
+    logger.error("e")
+    logger.warning("w")
+    logger.info("i")
+    logger.debug("d")
+    _access("POST", 201)  # INFO
+    lines = captured.getvalue().splitlines()
+    assert [line[:3] for line in lines if "wilab.test" in line] == written
+    assert any("uvicorn.access" in line for line in lines) == (level in {"INFO", "DEBUG"})
+
+
+def test_unknown_level_name_is_refused():
+    with pytest.raises(ValueError):
+        log.level_of("LOUD")
+
+
 def test_uvicorn_goes_through_the_same_format(captured):
     logging.getLogger("uvicorn.error").info("served")
     assert " - uvicorn.error - INFO - served" in captured.getvalue()

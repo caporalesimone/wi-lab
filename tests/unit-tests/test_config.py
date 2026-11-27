@@ -1,7 +1,9 @@
 import os
+from pathlib import Path
 
 import pytest
-from conftest import REQUIRED_YAML, make_config
+import yaml
+from conftest import REQUIRED_SETTINGS, REQUIRED_YAML, make_config
 from pydantic import ValidationError
 
 from wilab.config import AppConfig, NetworkEntry, load_config
@@ -258,3 +260,22 @@ def test_watchdog_section_mistakes_stop_the_service(section):
 
     with pytest.raises(ValidationError):
         WatchdogConfig.model_validate(section)
+
+
+def test_log_level_is_required_and_checked():
+    """`log_level` is the first setting of config.yaml: required, one of four names, any case."""
+    base = {"auth_token": "t", "dhcp_base_network": "192.168.120.0/24", "dns_server": "1.1.1.1"}
+    assert make_config(**base, log_level="warning").log_level == "WARNING"
+    settings = {**REQUIRED_SETTINGS, **base}
+    settings.pop("log_level")
+    with pytest.raises(ValidationError, match="log_level"):
+        AppConfig(**settings)
+    with pytest.raises(ValidationError, match="log_level"):
+        make_config(**base, log_level="VERBOSE")
+
+
+def test_log_level_is_the_first_setting_of_the_example():
+    example = (Path(__file__).resolve().parents[2] / "config.example.yaml").read_text()
+    keys = [line.split(":")[0] for line in example.splitlines() if line and line[0].isalpha()]
+    assert keys[0] == "log_level"
+    assert yaml.safe_load(example)["log_level"] == "INFO"

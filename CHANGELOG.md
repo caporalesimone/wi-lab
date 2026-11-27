@@ -16,7 +16,7 @@ updates its date.
 
 | Item | Count |
 |---|---:|
-| ⚠️ Breaking changes | 10 |
+| ⚠️ Breaking changes | 12 |
 | ✨ New features | 5 |
 | 🐛 Bug fixes | 33 |
 | 🔧 Maintenance changes | 16 |
@@ -31,6 +31,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - Every `config.yaml` setting is required: `api_port`, `captive_portal_port`, `max_timeout`, `min_timeout`, `allow_unlimited_reservation`, `upstream_interface`, `country_code`, `internet_enabled_by_default`, `protected_commands_password` and `cors_origins` (the last two may be `null`). Only `hostapd_debug_dir` and `antennas` may be omitted. A missing key stops the service and names it: compare your file with `config.example.yaml`.
 - `config.yaml` needs a `watchdog:` section with `ap_restores` and `dhcp_restarts` (`limit` and `window_minutes` each); `drivers` is optional. The 4.0.0 values are `{limit: 3, window_minutes: 60}`: copy the section from `config.example.yaml`.
 - `dns_server` is required in `config.yaml`. Its old default, `192.168.10.21`, was a laboratory address that left Wi-Fi clients without DNS elsewhere (Fable NET-8).
+- `log_level` is required in `config.yaml`, as its first setting: `DEBUG`, `INFO`, `WARNING` or `ERROR` (copy the block of `config.example.yaml`, which explains what each level writes). At `INFO` the successful reads (`GET`, `HEAD`, `OPTIONS`) of the HTTP access log are no longer written: clients' polling was most of the journal; changes and failed requests still are.
 - `antennas[].show_dfs` is renamed `show_dfs_channels`, without an alias: the old name stops the service with a message naming the new one.
 - Ubuntu Server 25.04 or newer is required, not only tested (tested on Ubuntu Server 26.04.1 LTS, kernel 7.0.0-44).
 - NetworkManager is no longer supported: the host network must be on systemd-networkd. The installer offers to disable and mask NetworkManager and `wpa_supplicant`, never when the host needs them; `uninstall.sh` offers to re-enable them. When upgrading, run the installer again (Fable NM-1).

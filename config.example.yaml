@@ -13,6 +13,31 @@
 # keys but may be null to turn their feature off.
 
 # ==================================================================================================
+# LOGGING
+# ==================================================================================================
+
+# Level of the service log, written to the systemd journal (journalctl -u wi-lab).
+# Each level writes its own records and everything of the levels listed before it:
+#
+#   ERROR    Only what needs someone to act: an antenna that USB recovery could not bring
+#            back, a cleanup or a firewall rule that failed. Too little to explain a
+#            problem later.
+#   WARNING  ERROR, plus the failures Wi-Lab repairs by itself: watchdog restarts of
+#            hostapd, dnsmasq or the whole network, retried starts, quarantines, stale
+#            rules removed. The least to keep in production.
+#   INFO     WARNING, plus the history: networks started and stopped (antenna, channel,
+#            reservation), reservations created and released, and one line for every
+#            HTTP request that changes something (POST, PUT, DELETE) or fails (4xx, 5xx):
+#            the record of who did what. Recommended.
+#   DEBUG    INFO, plus the details for debugging, among them every successful read
+#            (GET /status, GET .../network): clients poll them every few seconds, so
+#            this level fills the journal. Use it only while investigating.
+#
+# Whatever the level, journalctl can show less: `journalctl -u wi-lab -p err` (errors only)
+# or `-p warning` (errors and warnings). The change applies after a restart of the service.
+log_level: "INFO"
+
+# ==================================================================================================
 # API AUTHENTICATION
 # ==================================================================================================
 

@@ -2,7 +2,7 @@ import logging
 import os
 import re
 from ipaddress import IPv4Address, IPv4Network
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -89,6 +89,8 @@ class AppConfig(BaseModel):
     # Every setting is required, so whoever writes config.yaml chooses it: only
     # hostapd_debug_dir and the antennas section may be left out (and watchdog.drivers).
     # protected_commands_password and cors_origins may be null (feature off).
+    # Level of the service log (wilab/log.py): DEBUG, INFO, WARNING or ERROR.
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"]
     auth_token: str
     api_port: int = Field(..., ge=1, le=65535)
     # Port of the captive portal pages on each gateway (NET-10). Clients still
@@ -129,6 +131,12 @@ class AppConfig(BaseModel):
         if not re.fullmatch(r"[A-Z]{2}", value):
             raise ValueError("country_code must be two uppercase ASCII letters")
         return value
+
+    @field_validator('log_level', mode='before')
+    @classmethod
+    def upper_log_level(cls, value: Any) -> Any:
+        """`info` is accepted as `INFO`."""
+        return value.strip().upper() if isinstance(value, str) else value
 
     @field_validator('auth_token')
     @classmethod

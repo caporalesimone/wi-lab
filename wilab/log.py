@@ -66,10 +66,54 @@ def under_journal() -> bool:
     return bool(os.environ.get("JOURNAL_STREAM"))
 
 
+# Requests that only read: when they succeed they are written at DEBUG.
+_READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+class AccessFilter(logging.Filter):
+    """Writes the successful reads of uvicorn's access log at DEBUG.
+
+    Clients poll `GET /status` and `GET .../network` every few seconds: at INFO
+    those lines were most of the journal and said nothing. What changes
+    something (POST, PUT, DELETE) and every answer of 400 or more stay INFO:
+    they are the record of who did what.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        # uvicorn's access record: (client, method, path, http_version, status).
+        if isinstance(args, tuple) and len(args) == 5:
+            method, status = args[1], args[4]
+            if method in _READ_METHODS and isinstance(status, int) and status < 400:
+                record.levelno, record.levelname = logging.DEBUG, "DEBUG"
+        return True
+
+
+def level_of(name: str) -> int:
+    """The `logging` level of a `log_level` name of config.yaml (DEBUG, INFO, WARNING, ERROR)."""
+    level = logging.getLevelName(name.upper())
+    if not isinstance(level, int):
+        raise ValueError(f"unknown log level: {name}")
+    return level
+
+
+def set_level(level: int) -> None:
+    """Change the level of the service log (`log_level` of config.yaml) after `setup()`."""
+    root = logging.getLogger()
+    root.setLevel(level)
+    for handler in root.handlers:
+        handler.setLevel(level)
+
+
 def setup(level: int = logging.INFO, stream: IO[str] | None = None, *, journal: bool | None = None) -> None:
-    """Configure logging for the whole process; safe to call again (tests)."""
+    """Configure logging for the whole process; safe to call again (tests).
+
+    The level is also the handler's: records of the libraries (uvicorn) and the
+    access lines moved to DEBUG pass through it too.
+    """
     journal = under_journal() if journal is None else journal
     handler = logging.StreamHandler(stream or sys.stderr)
+    handler.setLevel(level)
     handler.addFilter(ContextFilter())
     handler.setFormatter(logging.Formatter(("<%(syslog_priority)d>" if journal else "") + FORMAT))
     root = logging.getLogger()
@@ -80,6 +124,8 @@ def setup(level: int = logging.INFO, stream: IO[str] | None = None, *, journal: 
         library.handlers.clear()
         library.propagate = True
         library.setLevel(library_level)
+        library.filters[:] = [f for f in library.filters if not isinstance(f, AccessFilter)]
+    logging.getLogger("uvicorn.access").addFilter(AccessFilter())
 
 
 @contextmanager

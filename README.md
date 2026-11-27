@@ -88,7 +88,14 @@ deliberate choice. Only `hostapd_debug_dir` (diagnostics) and the `antennas` sec
 out; `protected_commands_password` and `cors_origins` may be `null` to turn their feature off.
 `config.example.yaml` documents each one.
 
+`log_level` sets what the journal keeps. `INFO` (recommended) keeps the history: networks,
+reservations and every request that changes something or fails; successful reads such as the
+clients' polling of `GET /status` are written only at `DEBUG`. `WARNING` keeps errors and the
+failures Wi-Lab repaired by itself, `ERROR` only what needs someone to act. Whatever the level,
+`journalctl -u wi-lab -p err` (or `-p warning`) shows only the most important lines.
+
 ```yaml
+log_level: "INFO"                       # DEBUG, INFO (recommended), WARNING or ERROR: see below
 auth_token: "change-me"                 # Bearer token for API authentication
 protected_commands_password: "change-me" # Maintenance endpoints; null disables them
 api_port: 8080
