@@ -6,7 +6,7 @@ nel [CHANGELOG](CHANGELOG.md) e in [docs/](docs/): qui non si ripete.
 <a id="cap-1"></a>
 ## 1. Come lavorare
 
-### 1.1 Da dove ripartire (stato del 2026-11-26)
+### 1.1 Da dove ripartire (stato del 2026-11-27)
 
 - Versione in corso: **4.1.0**, non rilasciata. Branch `fix/reservation-lifecycle`.
 - **Obiettivo: congelare il comportamento della 4.1.0** per poter iniziare il client. Dopo il
@@ -15,7 +15,9 @@ nel [CHANGELOG](CHANGELOG.md) e in [docs/](docs/): qui non si ripete.
   disinstallato (pacchetti in stato `rc`), `wpa_supplicant` è mascherato, `ens18` è di
   systemd-networkd. Il servizio è stato disinstallato e reinstallato con gli script del repository:
   gira da questa cartella con il codice del commit `bf5055f` e l'unit nuova (`TimeoutStopSec=60s`).
-- Test unit tutti verdi, nessun `xfail`.
+- Test unit tutti verdi, nessun `xfail` (1068 il 2026-11-27, più 13 spec del frontend con
+  `make frontend-test`). Il servizio gira con il codice del 2026-11-27 (ARCH-10, PERF-4, REV-10,
+  SEC-1, BUG-9, NET-11), riavviato alle 06:20.
 - **E2E standard sul codice di oggi (2026-11-26, commit `b63b1fb`, unit reinstallata):** 61 passed,
   5 xfail noti (SEC-1 ×3, BUG-7, PERF-6), 10 skipped. Due skip del watchdog sono per il limite orario
   dei ripristini consumato dai test precedenti: vanno rilanciati dopo un restart. Non eseguiti: USB,
@@ -77,8 +79,8 @@ staccare la USB (23/11): serve chi la ricollega.
 - **CHANGELOG 4.0.0:** tolte RACE-2 (mai rilasciato) e "Prevent concurrent reservations…" (la 3.0.0
   aveva già il lock); data dell'intestazione = data di `aca248e`, ultimo commit della 4.0.0.
 - **`protected_commands_password`:** cambiata in `config.yaml` della macchina con un valore casuale (2026-11-26).
-- **SEC-1:** resta aperto finché non si rifà il frontend; avviso nel paragrafo 2.1, nel README e nel
-  CHANGELOG.
+- **SEC-1:** chiuso il 2026-11-27 con T-01 (la correzione era piccola e indipendente dal nuovo
+  frontend); avvisi tolti da README e CHANGELOG. Verificato sulla macchina: `404`.
 - **NET-8:** `dns_server` sempre obbligatoria.
 - **Configurazione:** tutti i campi obbligatori, tranne `hostapd_debug_dir` e la sezione `antennas`;
   `protected_commands_password` e `cors_origins` obbligatori ma possono essere `null`.
@@ -94,8 +96,8 @@ staccare la USB (23/11): serve chi la ricollega.
 
 **Ancora aperte** (nessuna blocca il congelamento):
 
-- **Frontend (REV-13, REV-14, REV-15):** non si può compilare senza pubblicare in `frontend/dist`;
-  serve prima un target di sola compilazione (unit-test-15).
+- **Frontend (REV-15):** si compila senza pubblicare (`make frontend-check`) e le spec della create
+  girano con `make frontend-test` (unit-test-15). Il nuovo frontend non è ancora pubblicato.
 
 Gravità: **Critica** sicurezza o perdita del servizio · **Alta** una rete o un adattatore resta rotto
 senza che il client lo sappia · **Media** comportamento sbagliato in un caso realistico · **Bassa**
@@ -119,13 +121,6 @@ requisiti di installazione. I punti sono divisi con questo criterio, non per gra
 
 ### 2.1 Blocco A: da chiudere per la 4.1.0
 
-> ⚠️ **SEC-1 resta aperto di proposito (decisione del 2026-11-26): il frontend verrà rifatto.** Fino ad
-> allora chi raggiunge la porta dell'API legge **senza autenticazione** qualunque file della macchina
-> (`GET //etc/shadow`, `config.yaml` con token e password, `/home/simone/.wilabsudo`): verificato sulla
-> macchina il 2026-11-26. Non esporre la porta fuori dalla rete del laboratorio. Scritto anche nel
-> README e nel CHANGELOG. Il nuovo frontend deve chiuderlo; se il rifacimento slitta, la correzione
-> della [scheda](#sec-1) è piccola e si può fare da sola.
-
 | Ordine | Id | Gravità | Cosa fare | Perché prima del congelamento |
 |:---:|---|---|---|---|
 | A1 | RELEASE-API | - | **Ultima attività: è il congelamento.** Revisione di tutte le API: ogni endpoint, parametro, codice di stato, `detail.code`, header (`Retry-After`) ed esempio deve corrispondere a Swagger (`/docs`), ReDoc (`/redoc`), `docs/ap-creation-procedure.md`, `docs/error-codes.md` e al capitolo API del `CHANGELOG.md`. Poi e2e completi (standard, lunghi, riavvio, USB), tabella Statistics, `requirements.lock`. | Da qui in poi il contratto non cambia. |
@@ -137,28 +132,23 @@ cambia, si ferma e si rimanda alla versione successiva.
 
 | Ordine | Id | Gravità | Stato | Cosa fare |
 |:---:|---|---|:---:|---|
-| B1 | [REV-10](#rev-10) | Bassa |  | Non chiedere un reset USB quando il watchdog fallisce un cleanup senza guasto radio. |
-| B2 | [REV-12](#rev-12) | Bassa |  | Piccole gare e casi limite: cache dei canali, radar DFS nel watchdog, `runtime_cleanup` che può sollevare, scadenza dentro `_get_status`. |
-| B3 | [WD-5](#wd-5) | Alta | parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. **Fatto:** stop e cleanup con l'interfaccia sparita (punti 1–2), classificazione come guasto radio. **Manca:** ritirare la voce di un'antenna che ricompare con un nome diverso (punto 3); dipende da ARCH-4. |
-| B4 | [WD-7](#wd-7) | Media | parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. **Fatto:** gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca:** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware. |
-| B5 | [HAP-5](#hap-5) | Media |  | Verificare avvii radio concorrenti e serializzarli se necessario. |
-| B6 | [REV-15](#rev-15) | Bassa |  | Frontend: annullare un avvio, mostrare `restarts` e `error`, scegliere l'antenna; compilazione e spec fuori dal deploy. |
-| B7 | [BUG-8](#bug-8) | Bassa |  | Usare un confronto constant-time per il token. |
-| B8 | [REV-17](#rev-17) | Bassa |  | Togliere i residui della catena di modifiche: percorso `1004` morto, metodi usati solo dai test, duplicati, testi vecchi. |
-| B9 | [HAP-7](#hap-7) | Bassa |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
-| B10 | [REV-18](#rev-18) | Bassa |  | Riordinare i test: fixture condivise e collegate come in produzione, poi i test dei paragrafi 4.6 e 4.7. |
-| B11 | [PERF-1](#perf-1) | Bassa | parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. **Fatto:** validazioni `iw`, `dnsmasq --version`, `nmcli --version`. I tre `nmcli` e la pausa di 0,2 s spariscono con NM-1. **Manca**, non fatto di proposito: `iptables-restore` in blocco (cambierebbe come si installano e tolgono tutte le regole). |
-| B12 | [PERF-4](#perf-4) | Bassa |  | Ridurre letture di discovery e probe hostapd non necessarie. |
-| B13 | [PERF-7](#perf-7) | Bassa |  | Punto informativo: nessuna crescita di memoria o descrittori trovata. Da riverificare con il test T-21. |
-| B14 | [API-7](#api-7) | Bassa |  | Valutare un modello API a risorse per le azioni enable/disable (`PATCH .../network`). **Rimandato** (decisione del 2026-11-25, [TODOs/api-review.md](TODOs/api-review.md)). |
-| B15 | [ARCH-10](#arch-10) | Bassa |  | Definire regole di logging e limitare i messaggi ripetuti. |
-| B16 | [ARCH-11](#arch-11) | Bassa |  | Domande e proposte su cosa portare da `feature/device-capabilities` (CLAUDE.md, pyproject, CI, documentazione API, correzioni): da accettare o rifiutare una per una. |
-| B17 | [BUG-9](#bug-9) | Media |  | Allineare la validazione dei profili QoS custom al modello runtime. |
-| B18 | [NET-13](#net-13) | Bassa |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
-| B19 | [RACE-3](#race-3) | Bassa |  | Sincronizzare le operazioni QoS per interfaccia. |
-| B20 | [NET-12](#net-12) | Bassa |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
-| B21 | [NET-11](#net-11) | Media |  | Gestire o rifiutare esplicitamente valori QoS upload/download differenti. Cambia la validazione del QoS: vedi la nota sotto la tabella. |
-| B22 | [WD-8](#wd-8) | Media |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
+| B1 | [REV-12](#rev-12) | Bassa |  | Piccole gare e casi limite: cache dei canali, radar DFS nel watchdog, `runtime_cleanup` che può sollevare, scadenza dentro `_get_status`. |
+| B2 | [WD-5](#wd-5) | Alta | parz. | Consentire cleanup e rimozione sicuri degli adattatori scomparsi. **Fatto:** stop e cleanup con l'interfaccia sparita (punti 1–2), classificazione come guasto radio. **Manca:** ritirare la voce di un'antenna che ricompare con un nome diverso (punto 3); dipende da ARCH-4. |
+| B3 | [WD-7](#wd-7) | Media | parz. | Verificare e riparare lo stato effettivo della rete nel watchdog. **Fatto:** gateway, `ip_forward`, regole NAT, blocco Internet, isolamento e captive portal. **Manca:** il controllo che la radio trasmetta davvero (`tx_packets`, beacon), da provare prima sull'hardware. |
+| B4 | [HAP-5](#hap-5) | Media |  | Verificare avvii radio concorrenti e serializzarli se necessario. |
+| B5 | [REV-15](#rev-15) | Bassa |  | Frontend: annullare un avvio, mostrare `restarts` e `error`, scegliere l'antenna; compilazione e spec fuori dal deploy. |
+| B6 | [BUG-8](#bug-8) | Bassa |  | Usare un confronto constant-time per il token. |
+| B7 | [REV-17](#rev-17) | Bassa |  | Togliere i residui della catena di modifiche: percorso `1004` morto, metodi usati solo dai test, duplicati, testi vecchi. |
+| B8 | [HAP-7](#hap-7) | Bassa |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
+| B9 | [REV-18](#rev-18) | Bassa |  | Riordinare i test: fixture condivise e collegate come in produzione, poi i test dei paragrafi 4.6 e 4.7. |
+| B10 | [PERF-1](#perf-1) | Bassa | parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. **Fatto:** validazioni `iw`, `dnsmasq --version`, `nmcli --version`. I tre `nmcli` e la pausa di 0,2 s spariscono con NM-1. **Manca**, non fatto di proposito: `iptables-restore` in blocco (cambierebbe come si installano e tolgono tutte le regole). |
+| B11 | [PERF-7](#perf-7) | Bassa |  | Punto informativo: nessuna crescita di memoria o descrittori trovata. Da riverificare con il test T-21. |
+| B12 | [API-7](#api-7) | Bassa |  | Valutare un modello API a risorse per le azioni enable/disable (`PATCH .../network`). **Rimandato** (decisione del 2026-11-25, [TODOs/api-review.md](TODOs/api-review.md)). |
+| B13 | [ARCH-11](#arch-11) | Bassa |  | Domande e proposte su cosa portare da `feature/device-capabilities` (CLAUDE.md, pyproject, CI, documentazione API, correzioni): da accettare o rifiutare una per una. |
+| B14 | [NET-13](#net-13) | Bassa |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
+| B15 | [RACE-3](#race-3) | Bassa |  | Sincronizzare le operazioni QoS per interfaccia. |
+| B16 | [NET-12](#net-12) | Bassa |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
+| B17 | [WD-8](#wd-8) | Media |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
 
 **TX power, da debuggare (fuori dal congelamento, come il QoS):**
 
@@ -175,14 +165,14 @@ dichiarato non stabile. Quando funziona, lo si dichiara stabile in una versione 
 **Frontend (REV-13, REV-14, REV-15):** è la pagina web di Wi-Lab, non il client. Non tocca le API, quindi
 sta nel blocco B; REV-14 punto 1 (ID persi alla ricarica) è il più grave dei tre.
 
-**QoS (BUG-9, NET-13, RACE-3, NET-12, NET-11, WD-8):** sperimentale e non testato, in fondo di proposito.
+**QoS (NET-13, RACE-3, NET-12, WD-8; BUG-9 e NET-11 chiusi il 2026-11-27):** sperimentale e non testato, in fondo di proposito.
 **Resta fuori dal congelamento:** il client non deve costruirci sopra finché non è dichiarato stabile.
-NET-11 e WD-8 ne cambiano il comportamento, NET-13 può far rispondere `503` a uno stop della rete, ma solo
+WD-8 ne cambia il comportamento, NET-13 può far rispondere `503` a uno stop della rete, ma solo
 con un profilo QoS attivo. Decisione del paragrafo 1.3: sperimentale nella 4.1.0.
 
 ### 2.3 Chiusi in questo ciclo ✅
 
-Corretti il 2026-11-26, con test unit. Manca solo la prova sulla macchina (paragrafo 1.1, punto 1).
+Corretti il 2026-11-26 e il 2026-11-27, con test unit. Manca solo la prova sulla macchina (paragrafo 1.1, punto 1).
 NM-1 è chiuso nel codice; la prova sulla macchina è il paragrafo 5.8.
 
 | Id | Gravità | Cosa è stato fatto |
@@ -219,6 +209,12 @@ NM-1 è chiuso nel codice; la prova sulla macchina è il paragrafo 5.8.
 | ✅ [REV-8](#rev-8) | Bassa | Il job di un avvio che ignora l'annullamento resta in `start_jobs` finché il thread gira: niente secondo thread, stop `503 / 1006` poi `200` o `409 / 1007`. |
 | ✅ [API-6](#api-6) | Bassa | `POST .../txpower` prende `tx_power_level`, come la create. Breaking, nel CHANGELOG. |
 | ✅ [NM-1](#nm-1) | Media | Nessun `nmcli` nel codice; precheck all'avvio (`78` se non root o manca un comando, avvisi per NetworkManager, `wpa_supplicant` su una radio, regole rimaste); stadi 06 e 07 dell'installer che propongono di disattivare NetworkManager e `wpa_supplicant` senza rischiare l'accesso; `uninstall.sh` propone di riattivarli. Chiude ARCH-7. [Capitolo 5](#cap-5). |
+| ✅ SEC-1 | Critica | La route del frontend risolve il percorso e serve solo dentro la propria cartella; `//...` e `..` che escono sono `404`, come `/docs/...`, `/redoc/...`, `/openapi.json/...`. T-01 in `test_frontend_static.py`; e2e senza `xfail`. Verificato sulla macchina il 2026-11-27. Ruotare `auth_token` se la porta era esposta. |
+| ✅ ARCH-10 | Bassa | `wilab/log.py`: una configurazione (anche uvicorn e httpx), priorità syslog nel journal (`-p err` funziona), `[ant=… res=…]` da `contextvars`, `log.every()` per i messaggi ripetuti (TX power: uno all'ora per antenna). Livelli per regola (`docs/readme-dev.md`), `test_logging_rules.py`, `G004` in `make lint`. Nella run di 2 ore c'erano 117 ERROR e nessun guasto vero. |
+| ✅ PERF-4 | Bassa | `HostapdMonitor` (`wifi/hostapd_ctrl.py`): connessione persistente al socket di controllo, `ATTACH`, `PING`, riconnessione con backoff e lista client ricostruita; sveglia il watchdog alla perdita o ad `AP-DISABLED`; `is_enabled` senza `hostapd_cli` (ripiego se non connesso). Watchdog in `tick(DeviceWatch)` (4.1). Discovery e `config.yaml` (punto 1 della scheda) non toccati. |
+| ✅ REV-10 | Bassa | Un cleanup fallito del watchdog con l'adattatore presente è un ripristino dovuto (`restore_failed`), riprovato dopo 15 s; quarantena solo al secondo fallimento, senza reset USB. unit-test-14 in `test_watchdog.py`. |
+| ✅ BUG-9 | Media | Profili QoS validati uno per uno (schema `items`, `minProperties` su `advanced`, poi il modello): uno sbagliato si salta con un avviso; schema illeggibile = catalogo vuoto. T-19. |
+| ✅ NET-11 | Media | QoS inline: qualità download e upload diverse, o una qualità con `advanced`, rispondono `422`. T-19. |
 | ✅ [STAB-9](#stab-9) | Bassa | Regola a runtime per NetworkManager. **Superato:** NM-1 toglie questo codice; su questa macchina NetworkManager non c'è più. |
 
 ---
@@ -230,102 +226,6 @@ Nell'ordine del capitolo 2: blocco A, blocco B, gruppo T (TX power),
 poi le schede chiuse ✅.
 Ogni scheda ha la stessa struttura: **Problema**, **Come si riproduce**, **Come correggerlo**. Dove è
 utile c'è codice o una patch. I percorsi dei file sono relativi alla radice del repository.
-
-<a id="sec-1"></a>
-### ⚠️ SEC-1 - Lettura di file senza autenticazione dalla route del frontend
-
-**Gravità:** Critica · **Stato:** aperto di proposito fino al nuovo frontend (paragrafo 2.1) · **Confidenza:** Confermato sulla macchina il 2026-11-26 · **File:** [wilab/api/__init__.py:195-214](wilab/api/__init__.py#L195-L214)
-
-**Problema.** Quando esiste la cartella del frontend compilato (l'installer la crea), `create_app`
-registra `GET /{full_path:path}` e serve `frontend_path / full_path` se è un file. Non c'è alcun
-controllo che il risultato resti dentro la cartella del frontend:
-
-- se `full_path` inizia con `/` (richiesta `GET //etc/shadow`), unire un percorso assoluto a un `Path`
-  scarta la parte sinistra: il file servito è `/etc/shadow`;
-- i segmenti `..` inviati così come sono (`curl --path-as-is`) escono dalla cartella.
-
-Il servizio gira come root e questa route non richiede il token. Si possono leggere `config.yaml`
-(token dell'API e password dei comandi protetti), i file `hostapd.conf` con le passphrase WPA, e
-qualunque altro file dell'host. Lo stesso handler restituisce `None`, cioè `200` con corpo `null`, per
-i percorsi `/api/...` diversi da `/api/v1` e per `/docs/...`.
-
-**Come si riproduce.** Su una macchina di test con il frontend compilato e il servizio avviato:
-
-```bash
-curl -s --path-as-is http://<host>:8080//etc/hostname
-curl -s --path-as-is http://<host>:8080/../../../../config.yaml
-```
-
-Se la risposta è il contenuto del file, il difetto è confermato. Senza server: chiamare direttamente
-la funzione `serve_frontend` con `full_path="/etc/hostname"` (vedi test T-01).
-
-**Come correggerlo.** Risolvere il percorso e servirlo solo se resta dentro la cartella del frontend.
-
-```diff
---- a/wilab/api/__init__.py
-+++ b/wilab/api/__init__.py
-@@ def create_app() -> FastAPI:
-     if frontend_path:
-+        frontend_root = frontend_path.resolve()
-+
-         @app.get("/", include_in_schema=False)
-         async def serve_index():
--            index_path = frontend_path / "index.html"
-+            index_path = frontend_root / "index.html"
-             if index_path.is_file():
-                 return FileResponse(index_path)
-             return {"error": "Frontend index.html not found"}
-
-         @app.get("/{full_path:path}", include_in_schema=False)
-         async def serve_frontend(full_path: str):
--            if full_path == "api/v1" or full_path.startswith("api/v1/"):
-+            # Paths owned by the API and its documentation are never the frontend.
-+            if full_path.split("/", 1)[0] in {"api", "docs", "redoc", "openapi.json"}:
-                 raise StarletteHTTPException(status_code=404)
--            if (
--                full_path.startswith("api/")
--                or full_path == "docs"
--                or full_path.startswith("docs/")
--                or full_path == "openapi.json"
--            ):
--                return None
--
--            file_path = frontend_path / full_path
--            if file_path.is_file():
--                return FileResponse(file_path)
-+
-+            # Never serve anything outside the frontend directory: an absolute
-+            # path or ".." segments must not escape it.
-+            candidate = (frontend_root / full_path.lstrip("/")).resolve()
-+            if candidate.is_relative_to(frontend_root) and candidate.is_file():
-+                return FileResponse(candidate)
-
--            index_path = frontend_path / "index.html"
-+            index_path = frontend_root / "index.html"
-             if index_path.is_file():
-                 return FileResponse(index_path)
-             return {"error": "Frontend not found"}
-```
-
-In alternativa si può montare `StaticFiles` di Starlette, che fa già questo controllo, e tenere solo
-il fallback su `index.html`. Dopo la correzione conviene ruotare `auth_token` e
-`protected_commands_password` sulle macchine già esposte.
-
----
-
-<a id="rev-10"></a>
-### B1. REV-10 - Il watchdog chiede un reset USB per un cleanup fallito
-
-**Gravità:** Bassa · **Confidenza:** Probabile (lettura del codice) · **File:** [wilab/wifi/watchdog.py](wilab/wifi/watchdog.py) (`_restore_ap`)
-
-**Problema.** Dopo un cleanup fallito (per esempio un errore di iptables) il watchdog chiama la
-quarantena con `radio_fault=radio_known`: il reset USB parte perché banda e canale sono noti, non
-perché la radio abbia un guasto. `_retry_pending` passa `radio_fault=False` per la stessa situazione.
-
-**Come correggerlo.** Passare `False` per il cleanup fallito; `True` solo quando il budget dei
-ripristini è finito per guasti radio.
-
----
 
 <a id="rev-12"></a>
 ### B2. REV-12 - Piccole gare e casi limite in wifi e network
@@ -552,7 +452,7 @@ Una riga "Watchdog restarts: AP n, DHCP m, last <reason>" quando `ap + dhcp > 0`
 l'etichetta. Una select dell'antenna nel dialog di reservation. Un target `make check-frontend` che
 compila in una directory temporanea senza pubblicare.
 
-Test: [unit-test-15](#unit-test-15).
+Test: unit-test-15 ✅ (`make frontend-test`).
 
 ---
 
@@ -720,29 +620,6 @@ def execute_iptables_restore(rules: str) -> None:
 
 ---
 
-<a id="perf-4"></a>
-### B12. PERF-4 - Costo fisso del polling in background
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:49](wilab/wifi/watchdog.py#L49), [wilab/api/dependencies.py:92-123](wilab/api/dependencies.py#L92-L123), [wilab/config.py:207-235](wilab/config.py#L207-L235)
-
-**Problema.** Per ogni AP attivo, un `hostapd_cli` ogni 5 s: circa 6,3 milioni di processi creati
-all'anno per adattatore. La discovery ogni 30 s esegue due `ip route`, `iw dev`, un `iw phy info` per
-radio, un `udevadm info` per interfaccia, e rilegge e rivalida tutto `config.yaml`. Il costo in CPU è
-trascurabile; è un punto di eleganza e di rumore, non di necessità.
-
-**Come si riproduce.** `perf stat -e sched:sched_process_fork -p <pid> sleep 60`.
-
-**Come correggerlo.** In ordine di semplicità:
-
-1. Rileggere `config.yaml` solo se la data di modifica è cambiata (`os.stat(path).st_mtime_ns`).
-2. Portare l'intervallo del probe `hostapd_cli` a 15 s lasciando a 5 s il controllo `poll()` del
-   processo, che non costa nulla e copre il caso del crash.
-3. Soluzione a eventi: una connessione persistente al socket di controllo di hostapd (`ATTACH`) per
-   `AP-DISABLED`, e `udevadm monitor --subsystem-match=net` come processo figlio in primo piano per i
-   collegamenti a caldo. Il polling resta come rete di sicurezza a intervalli lunghi.
-
----
-
 <a id="perf-7"></a>
 ### B13. PERF-7 - Memoria e descrittori: nessuna crescita trovata
 
@@ -792,29 +669,6 @@ def set_internet(body: InternetRequest, ...):
 ```
 
 Analogamente `PUT .../txpower` con lo stesso corpo della `POST` attuale.
-
----
-
-<a id="arch-10"></a>
-### B15. ARCH-10 - Il logging non ha una regola
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** tutto `wilab/`
-
-**Problema.** f-string e `%s` mescolati; condizioni attese a livello `ERROR` (NET-5); guasti veri a
-`DEBUG` (WD-9); un messaggio ripetuto ogni 5 s (WD-6); una riga falsa (NET-4). Per un servizio la cui
-salute si legge dal journal, il segnale è invertito in più punti.
-
-**Come si riproduce.** `journalctl -u wi-lab -p err --since today` su una macchina che funziona bene:
-ci sono righe.
-
-**Come correggerlo.** Tre regole, scritte in `docs/readme-dev.md` e fatte rispettare da un test:
-
-1. `ERROR` significa che qualcuno deve intervenire. Un comando di verifica che risponde "no" non è un
-   errore.
-2. Nessun messaggio si ripete più di una volta al minuto per la stessa causa.
-3. Sempre `logger.x("... %s", valore)`, mai f-string (la regola ruff `G004` lo controlla).
-
-Test T-13: un ciclo completo crea/cancella su hardware simulato non deve produrre record `ERROR`.
 
 ---
 
@@ -874,79 +728,6 @@ modifica una versione già datata. **Domanda:** le adottiamo, in aggiunta alla r
 
 Nota: l'altro branch usa CRLF nel working tree; qui `.gitattributes` impone LF ovunque. Proposta:
 tenere LF.
-
----
-
-<a id="bug-9"></a>
-### B17. BUG-9 - Un profilo QoS personalizzato può impedire l'avvio del servizio
-
-**Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:63-124](wilab/network/qos_profile.py#L63-L124), [wilab/data/qos-profiles/profile.schema.json](wilab/data/qos-profiles/profile.schema.json)
-
-**Problema.** `_load_catalogue` scarta i file con JSON non valido o che non rispettano lo schema, ma
-costruisce i modelli pydantic fuori da ogni `try`. Lo schema e il modello non coincidono: lo schema
-accetta un passo con `"advanced": {}` come unico contenuto (la chiave è presente, quindi `anyOf` è
-soddisfatto), mentre il codice trasforma il dizionario vuoto in `None` e `QosProfileStep` rifiuta un
-passo senza alcun parametro. L'eccezione risale da `QosProfileManager.__init__` a `get_manager`, che è
-chiamato in `lifespan`: il servizio non parte, e con `Restart=always` riprova ogni 10 secondi. Anche un
-file di schema illeggibile ha lo stesso effetto.
-
-I dieci profili forniti in `default.json` sono corretti e non hanno questo problema.
-
-**Come si riproduce.** Test: in una cartella temporanea copiare lo schema e scrivere `custom.json` con
-
-```json
-[{"id": "x", "description": "", "mode": "loop", "steps": [{"duration_sec": 5, "advanced": {}}]}]
-```
-
-`QosProfileManager(cartella)` solleva `pydantic.ValidationError`.
-
-**Come correggerlo.** Un profilo sbagliato va scartato con un avviso, non deve fermare il servizio.
-
-```diff
---- a/wilab/network/qos_profile.py
-+++ b/wilab/network/qos_profile.py
-+from pydantic import ValidationError
-@@ def _load_catalogue(self) -> None:
--        with open(schema_path) as f:
--            schema = json.load(f)
-+        try:
-+            with open(schema_path) as f:
-+                schema = json.load(f)
-+        except (json.JSONDecodeError, OSError) as exc:
-+            logger.error("Cannot read profile schema %s: %s", schema_path, exc)
-+            return
-@@
-             for raw_profile in data:
-                 pid = raw_profile["id"]
-                 ...
--                steps = [
--                    QosProfileStep(...)
--                    for s in raw_profile["steps"]
--                ]
--                self._profiles[pid] = QosProfile(...)
-+                try:
-+                    steps = [
-+                        QosProfileStep(
-+                            duration_sec=s["duration_sec"],
-+                            quality=s.get("quality"),
-+                            dl_speed_kbit=s.get("dl_speed_kbit"),
-+                            ul_speed_kbit=s.get("ul_speed_kbit"),
-+                            advanced=QosQualityAdvanced(**s["advanced"]) if "advanced" in s else None,
-+                        )
-+                        for s in raw_profile["steps"]
-+                    ]
-+                    profile = QosProfile(
-+                        id=pid, description=raw_profile.get("description", ""),
-+                        source_file=json_file.name, mode=QosProfileMode(raw_profile["mode"]), steps=steps,
-+                    )
-+                except (ValidationError, ValueError) as exc:
-+                    logger.warning("Skipping invalid profile '%s' in '%s': %s", pid, json_file.name, exc)
-+                    continue
-+                self._profiles[pid] = profile
-```
-
-Con `"advanced" in s` un oggetto vuoto diventa "netem senza parametri", coerente con lo schema.
-Aggiungere allo schema `"minProperties": 1` per `advanced`, per rendere esplicita la regola.
 
 ---
 
@@ -1047,45 +828,6 @@ può vedersi togliere le regole dal vecchio thread: lo stato dice "profilo attiv
 ```
 
 `start_profile` prende lo stesso lock, quindi aspetta la fine della pulizia.
-
----
-
-<a id="net-11"></a>
-### B21. NET-11 - QoS inline: `upload_quality` ignorato
-
-**Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:203-228](wilab/network/qos_profile.py#L203-L228), [wilab/models.py:316-343](wilab/models.py#L316-L343)
-
-**Problema.** `build_inline_profile` usa `download_quality` e ricorre a `upload_quality` solo se il
-primo manca. Una richiesta con `download_quality: 40, upload_quality: 90` applica 40 in entrambe le
-direzioni e risponde `200`. Il passo di un profilo ha un solo campo `quality`, quindi i due valori
-diversi non sono rappresentabili.
-
-**Come si riproduce.** `POST .../qos/profile` con `{"download_quality": 40, "upload_quality": 90}`,
-poi `tc qdisc show dev <ifb>`: la perdita in upload è quella della qualità 40.
-
-**Come correggerlo.** Rifiutare ciò che non si può applicare.
-
-```diff
---- a/wilab/models.py
-+++ b/wilab/models.py
-@@ class QosProfileStartRequest(BaseModel):
-         if not has_profile and not has_inline:
-             raise ValueError("Must specify either 'profile_id' or at least one QoS parameter")
-+        if (
-+            self.download_quality is not None
-+            and self.upload_quality is not None
-+            and self.download_quality != self.upload_quality
-+        ):
-+            raise ValueError("download_quality and upload_quality must be equal: quality applies to both directions")
-+        if self.advanced is not None and (
-+            self.download_quality is not None or self.upload_quality is not None
-+        ):
-+            raise ValueError("'advanced' cannot be combined with a quality score")
-         return self
-```
-
-Il secondo controllo copre un caso analogo: oggi con `advanced` presente la qualità viene scartata in
-silenzio. In alternativa si può estendere `QosProfileStep` con qualità separate per direzione.
 
 ---
 
@@ -1741,7 +1483,7 @@ che disabilita Start, nasconde il messaggio "non attiva" e mostra lo spinner; te
 anche "is starting". (5) Impostare `status` dalla risposta `202`. (6) Usare `slot.runtimeState` solo
 con `status === null`. (7) Una frase per ogni `reason`.
 
-Test: [unit-test-15](#unit-test-15).
+Test: unit-test-15 ✅ (`make frontend-test`).
 
 ---
 
@@ -2294,51 +2036,16 @@ Solo test di punti aperti o generali. I test unit vanno in `tests/unit-tests/` (
 ### 4.1 Strumenti di prova
 
 ✅ `FakeClock` e `CommandRecorder` sono in `tests/unit-tests/helpers.py` (con `test_helpers.py`).
-**Manca** il terzo: un giro di watchdog chiamabile. `_watch` è ancora un ciclo infinito con lo stato
-in variabili locali; va estratto in un metodo `tick(state)` con lo stato in una piccola dataclass per
-dispositivo. È un refactoring puro, serve a T-20 e rende provabili WD-1, WD-2, WD-3 e WD-10 senza
-thread e senza attese.
+✅ Il giro di watchdog chiamabile: `NetworkWatchdog.tick(reservations, DeviceWatch)` (2026-11-27), usato
+da T-20.
 
 ### 4.2 Test automatici
 
 Fatti e tolti da qui: T-13 e T-21 (`test_lifecycle_hygiene.py`; T-21 con 200 cicli invece di 2.000, per
 restare nella suite veloce), T-18 (`TestWallClockJumps` in `test_reservation.py`, con STAB-5).
-Restano quelli che oggi fallirebbero e si scrivono con la correzione: T-01 (SEC-1, aperto di
-proposito), T-19 (BUG-9, NET-11, QoS sperimentale), T-20 (serve il giro di watchdog del 4.1).
-
-| Id | Cosa verifica | Schede | File proposto |
-|---|---|---|---|
-| T-01 | La route del frontend non esce dalla propria cartella | SEC-1 | `tests/test_frontend_static.py` |
-| T-19 | Catalogo QoS con profili sbagliati e QoS inline | BUG-9, NET-11 | `tests/test_qos_profile.py` |
-| T-20 | Simulazione di lunga durata con guasti casuali | WD, HAP (regressione) | `tests/test_soak.py` |
-
-**T-01 - Route del frontend.** Creare una cartella temporanea `root/app/` con `index.html` e un file
-`root/secret.txt` fuori da essa; sostituire `_candidate_frontend_paths` perché restituisca
-`root/app`; costruire l'app. Chiamare direttamente la funzione della route (non il client HTTP, che
-normalizza i percorsi) con tre valori di `full_path`: `"../secret.txt"`, il percorso assoluto di
-`secret.txt`, e `"/" + percorso assoluto`. In tutti i casi la risposta non deve essere il file
-segreto. Un quarto caso con `"index.html"` deve restituirlo. Per ottenere la funzione: cercare tra
-`app.routes` quella con `path == "/{full_path:path}"` e usare `.endpoint`.
-
-**T-19 - QoS.** Catalogo con un file che contiene un profilo valido e uno con `"advanced": {}`: il
-manager parte, il profilo valido c'è. Schema illeggibile: il manager parte con catalogo vuoto. Inline
-con `download_quality` diverso da `upload_quality`: `422`.
-
-**T-20 - Simulazione di lunga durata.** È il test che manca di più. Con `FakeClock`, `tick` e hostapd,
-dnsmasq e comandi simulati: un pool di quattro dispositivi con reti attive e reservation illimitate;
-per 10.000 passi (ogni passo 5 s simulati, circa 14 ore) un generatore pseudo-casuale con seme fisso
-inietta guasti: morte di hostapd, morte di dnsmasq, comando `iptables` che fallisce una volta,
-`hostapd_cli` che va in timeout, avvio che fallisce con ognuna delle classi di eccezione. Alla fine,
-dopo 30 minuti simulati senza guasti, devono valere le invarianti:
-
-- ogni reservation ancora valida ha la sua rete attiva;
-- nessun dispositivo è in quarantena;
-- `/status` riporta `ok`;
-- l'insieme delle regole firewall "installate" nel simulatore corrisponde alle reti attive.
-
-Oggi questo test fallisce entro pochi minuti simulati (WD-1, WD-2, WD-4). È la definizione eseguibile
-di "le reti devono restare funzionanti": conviene scriverlo per primo e usarlo come misura del
-progresso. Marcarlo `slow` e registrare il marker in `pytest.ini`.
+Fatti il 2026-11-27 e tolti da qui: T-01 (`test_frontend_static.py`, con SEC-1), T-19 (in
+`test_qos_profile.py`, con BUG-9 e NET-11), T-20 (`test_soak.py`: 14 ore simulate in circa 1 s, oppure
+più lunghe con `WILAB_SOAK_STEPS`). Nessun test automatico di questo paragrafo resta da scrivere.
 
 ### 4.3 Prove su hardware (manuali o con marker `hardware`)
 
@@ -2348,7 +2055,6 @@ in uno script sotto `diagnostics/` che stampa un esito per riga.
 
 | Id | Prova | Conferma |
 |---|---|---|
-| H-01 | `curl --path-as-is http://<host>:8080//etc/hostname` | SEC-1 |
 | H-04 | 200 cicli crea/cancella su due adattatori, in parallelo e in sequenza | HAP-5 |
 | H-05 | 24 ore con e senza comando TX power; contare i timeout del firmware nel log del kernel | HAP-6 |
 | H-06 | `kill -9` del servizio con reti e QoS attivi; verificare `tc`, file e subnet dopo il riavvio | NET-9 |
@@ -2392,10 +2098,8 @@ Atteso:
 |---|---|---|---|
 | WD-10 | Run lunga con M1 e M3. | Nessun `restoring_ap` e nessun aumento di `restarts.ap` su reti senza guasti. |  |
 | HAP-9 | Con `show_dfs: true`, create sul canale 124. | Rifiuto esplicito (`422`) o attesa gestita, non un guasto radio con quarantena. |  |
-| NET-11 | QoS con `download_quality: 40`, `upload_quality: 90`. | Rifiuto esplicito, oppure valori diversi nelle due direzioni (`GET .../qos`). |  |
 | BUG-7 | `POST .../txpower` con ogni livello, poi `GET .../txpower`. | Il `GET` riporta il valore reale, non quello richiesto. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | PERF-6 | Durata di `POST .../txpower`. | Sotto i 3 s. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
-| SEC-1 | `curl --path-as-is http://<host>:8080//etc/passwd` e `/../config.yaml`. | `404`. | 🧪 [test_e2e_api.py](tests/e2e-tests/test_e2e_api.py) |
 | API-7 | Confronto di percorsi e campi con `/docs`. | Quanto deciso nel paragrafo 1.3. |  |
 | HAP-5, HAP-6, HAP-7 | Run SOAK identiche con la configurazione cambiata sulla macchina tra una run e l'altra. | Confronto del numero di `404 reservation_invalidated` e di `restarts.ap` tra le run. |  |
 | ARCH-1 … ARCH-11 | Run SOAK di regressione. | Nessuna differenza rispetto alla run precedente. |  |
@@ -2419,42 +2123,18 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 | STAB-8 | Due reti attive; `time systemctl stop wi-lab`. | Arresto in meno di 60 s, nessun "stop-sigterm timed out" nel journal. |  |
 | STAB-5 | Spostare l'orologio della VM di +2 h con una reservation attiva. | La reservation non scade in anticipo. |  |
 | BUG-5 | Collegare un'antenna nuova a servizio avviato. | Compare in `/status` entro 30 s, oppure il motivo dello scarto è nel journal. |  |
-| PERF-1, PERF-2, PERF-4, PERF-5 | `strace -f -e trace=execve` sui processi del servizio durante create, `GET .../network` e a riposo. | Come descritto nelle schede. |  |
+| PERF-1, PERF-2, PERF-5 | `strace -f -e trace=execve` sui processi del servizio durante create, `GET .../network` e a riposo. | Come descritto nelle schede. |  |
 | Telefono | Connessione reale: SSID `Caffè ☕` e `my"net\` visibili; rete nascosta non ASCII; password di 8 e 63 caratteri; `wpa2-wpa3` con client WPA3 e WPA2 e `wpa1` annotando avvisi o rifiuti dei client recenti; velocità a 20, 40 e 80 MHz sui 5 GHz con un client Wi-Fi 5 e uno Wi-Fi 6; `nslookup` (NET-8); `/docs` e `ssh` verso il gateway rifiutati; isolamento tra reti; captive portal su `http://<gateway>:8081/`. | Connessione e DHCP funzionanti; host non raggiungibile dalla rete di test. | ✅ regole dell'host: [test_e2e_firewall.py](tests/e2e-tests/test_e2e_firewall.py) |
 
 ### 4.6 Test unit da scrivere
 
-| Id | Cosa verifica | Schede | File proposto |
-|---|---|---|---|
-| [unit-test-14](#unit-test-14) | Rami di guasto del watchdog | REV-10 | `test_watchdog.py` |
-| [unit-test-15](#unit-test-15) | Frontend: spec di `startNetwork` | REV-13, REV-15 | `frontend/src/app/services/*.spec.ts` |
-
-Fatti e tolti: unit-test-2, 4, 5, 7.
-
-<a id="unit-test-14"></a>
-**unit-test-14 - Watchdog: rami di guasto.** `dhcp_server.stop` che solleva in `_restore_dhcp`; cleanup
-che fallisce in `_retry_pending`; rilascio subito dopo un nuovo tentativo riuscito. Atteso:
-`release_device` chiamato, quarantena con `radio_fault=False`, `404 reservation_invalidated`, antenna
-`unavailable`. Oggi fallisce (REV-10). I contatori `restarts` dalle API sono già in `test_watchdog.py`.
-
-<a id="unit-test-15"></a>
-**unit-test-15 - Frontend.** ✅ La compilazione senza pubblicare c'è: `make frontend-check`. **Mancano**
-le spec di `startNetwork` con un `HttpClient` finto: `202` → rete attiva; `202` →
-`start_failed`; `404` per ognuno dei quattro `reason`; errore a metà polling; avvio annullato
-(`active: false`, `runtime_state: null`); `unsubscribe`.
+Nessuno. Fatti e tolti: unit-test-2, 4, 5, 7, 14 (`test_watchdog.py`, con REV-10), 15 (spec del
+frontend, `make frontend-test`).
 
 ### 4.7 Test e2e da scrivere
 
-| Id | Cosa verifica | Accesso |
-|---|---|---|
-| [e2e-test-8](#e2e-test-8) | Stop incompleto: `1012` | root, difficile da provocare |
-
-<a id="e2e-test-8"></a>
-**e2e-test-8 - Stop incompleto.** `SIGSTOP` al PID di hostapd, poi `DELETE .../network`. Atteso:
-risposta entro circa 15-17 s, `200` oppure `503 / 1012` con `Retry-After: 5`; con `1012` la `GET`
-mostra `stop_failed`, la create risponde `409 / 1012`, e dopo `SIGCONT` la `DELETE` risponde `200`.
-Provare prima su una VM sacrificabile: un processo fermato con un segnale può comportarsi in modo
-diverso da uno bloccato nel kernel.
+Nessuno. Fatto e tolto: e2e-test-8 (`test_e2e_start_stop.py::test_stop_of_a_frozen_hostapd`), da eseguire
+sulla macchina con conferma. Aggiunto con PERF-4: `kill -SEGV` di hostapd in `test_e2e_watchdog.py`.
 
 ---
 
