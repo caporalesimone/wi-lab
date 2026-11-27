@@ -133,3 +133,42 @@ def test_expiry_stops_the_network(wilab: WiLab, server: Server) -> None:
     assert wait_for(ended, timeout=12, interval=1), wilab.device(antenna.interface)
     assert server.pids("hostapd") == []
     assert server.wilab_rules(antenna.interface) == []
+
+
+def test_stop_of_a_frozen_hostapd(wilab: WiLab, server: Server) -> None:
+    """e2e-test-8: `SIGSTOP` to hostapd, then `DELETE .../network`.
+
+    SIGKILL ends a stopped process, so the stop usually completes (`200`); a
+    process stuck in the kernel answers `503 / 1012` instead. Both are allowed,
+    each with its contract: the answer comes within about 17 s; with `1012` the
+    network shows `stop_failed`, a create answers `409 / 1012`, and after
+    `SIGCONT` the repeated DELETE answers `200`. Either way nothing is left.
+    """
+    antenna = wilab.reserve()
+    assert wilab.create(antenna).status_code == 200
+    pids = server.pids("hostapd")
+    assert len(pids) == 1, pids
+    server.kill(pids[0], "STOP")
+    try:
+        began = time.monotonic()
+        stopped = wilab.http.delete(f"/reservations/{antenna.reservation_id}/network", timeout=40)
+        seconds = time.monotonic() - began
+        print(f"\nDELETE with hostapd stopped: {stopped.status_code} in {seconds:.1f} s")
+        assert seconds < 20, seconds
+        if stopped.status_code == 503:
+            assert detail_code(stopped) == 1012, stopped.text
+            assert stopped.headers.get("Retry-After") == "5"
+            assert wilab.network(antenna).json()["runtime_state"] == "stop_failed"
+            again = wilab.post_network(antenna)
+            assert (again.status_code, detail_code(again)) == (409, 1012), again.text
+            server.kill(pids[0], "CONT")
+            assert wait_for(lambda: wilab.delete_network(antenna) == 200, timeout=30, interval=5)
+        else:
+            assert stopped.status_code == 200, stopped.text
+    finally:
+        if pids[0] in server.pids("hostapd"):
+            server.kill(pids[0], "CONT")
+    assert wait_for(lambda: server.pids("hostapd") == [], timeout=15, interval=1)
+    _nothing_left(wilab, server, antenna)
+    # The antenna works at once for the next network.
+    assert wilab.create(antenna).status_code == 200
