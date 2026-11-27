@@ -4,7 +4,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help venv lock test-local test-local-quick test-local-cov test-e2e test-e2e-usb clean-venv lint lint-fix type-check stop start restart build-frontend
+.PHONY: help venv lock frontend-check test-local test-local-quick test-local-cov test-e2e test-e2e-usb clean-venv lint lint-fix type-check stop start restart build-frontend
 
 # Default target: show help
 help:
@@ -14,6 +14,7 @@ help:
 	@echo "  make venv              Create local Python virtual environment"
 	@echo "  make clean-venv        Remove virtual environment"
 	@echo "  make lock              Regenerate requirements.lock (on purpose, then run the tests)"
+	@echo "  make frontend-check    Compile the frontend (production build in Docker) without publishing it"
 	@echo ""
 	@echo "Testing (Local - uses venv):"
 	@echo "  make test-local        Run unit tests with verbose output"
@@ -56,6 +57,13 @@ lock:
 	{ head -3 requirements.lock; .lock-venv/bin/pip freeze | grep -viE '^(setuptools|wheel|pip)=='; } > requirements.lock.new
 	mv requirements.lock.new requirements.lock && rm -rf .lock-venv
 	@echo "✓ requirements.lock regenerated: review the diff, run the tests"
+
+# Compile the frontend with its production build, in Docker, without touching
+# frontend/dist (unit-test-15): a compile check before deploy_frontend.sh.
+frontend-check:
+	docker build -q -t wi-lab-frontend:check frontend >/dev/null
+	docker rmi -f wi-lab-frontend:check >/dev/null
+	@echo "✓ Frontend compiles (production build); nothing was published"
 
 # Local test targets (use venv)
 test-local: venv
