@@ -114,7 +114,7 @@ def test_a_stale_gateway_address_does_not_shift_the_subnet(monkeypatch, reset_wo
 
     from wilab.api import dependencies
     from wilab.config import NetworkEntry
-    from wilab.wifi import manager as manager_module
+    from wilab.network import subnet_allocator
 
     config = dependencies.get_config()
     manager = dependencies.get_manager(config)
@@ -131,7 +131,7 @@ def test_a_stale_gateway_address_does_not_shift_the_subnet(monkeypatch, reset_wo
     monkeypatch.setattr(dependencies, "exclude_from_host_managers", lambda names: None)
     monkeypatch.setattr(dependencies, "reset_interface", reset)
     monkeypatch.setattr(manager.watchdog, "watch", lambda devices: None)
-    monkeypatch.setattr(manager_module, "host_ipv4_networks", lambda: set(routes))
+    monkeypatch.setattr(subnet_allocator, "host_ipv4_networks", lambda: set(routes))
     dependencies.scan_devices(config)
     subnet = IPv4Network(manager._get_subnet(radio.device_id))
     assert (subnet == natural) is reset_works

@@ -8,7 +8,6 @@ from _thread import RLock
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from ipaddress import IPv4Network
-from itertools import islice
 from typing import Any
 
 from .. import heartbeat
@@ -27,7 +26,7 @@ from ..network.isolation import IsolationManager
 from ..network.nat import NatManager
 from ..network.qos import QosManager
 from ..network.qos_profile import QosProfileManager
-from ..network.subnet import host_ipv4_networks
+from ..network.subnet_allocator import SubnetAllocator
 from ..reservation import Reservation, ReservationManager
 from ..timestamps import format_utc_timestamp
 from .active import ActiveNetwork
@@ -175,8 +174,7 @@ class NetworkManager:
         self._device_locks = {n.device_id: threading.RLock() for n in config.antennas}
         self._device_locks_guard = threading.Lock()
         self._firewall_lock = threading.Lock()
-        self._subnet_lock = threading.Lock()
-        self._assigned_subnets: dict[str, IPv4Network] = {}
+        self.subnets = SubnetAllocator(config)
         # WD-6: consecutive cleanup failures and next background attempt per device
         self._cleanup_failures: dict[str, int] = {}
         self._stop_failed: set[str] = set()  # stops to repeat (NetworkStopError)
@@ -204,35 +202,9 @@ class NetworkManager:
 
     def _get_subnet(self, device_id: str) -> str:
         """Allocate or reuse a non-overlapping /24 before a new AP start."""
-        devices = [n.device_id for n in self.config.antennas]
-        if device_id not in devices:
+        if device_id not in [n.device_id for n in self.config.antennas]:
             raise ValueError(UNKNOWN_ANTENNA)
-
-        base_net = IPv4Network(self.config.dhcp_base_network, strict=False)
-        if base_net.prefixlen != 24:
-            raise ValueError("dhcp_base_network must be a /24 network")
-
-        with self._subnet_lock:
-            host_networks = host_ipv4_networks()
-            previous = self._assigned_subnets.get(device_id)
-            if previous is not None and not any(previous.overlaps(route) for route in host_networks):
-                return str(previous)
-
-            assigned = set(self._assigned_subnets.values())
-            candidates = (
-                subnet for subnet in base_net.supernet(new_prefix=16).subnets(new_prefix=24)
-                if subnet >= base_net and subnet not in assigned
-                and not any(subnet.overlaps(route) for route in host_networks)
-            )
-            # Preserve pool order even when a later antenna starts first.
-            earlier_unassigned = sum(
-                device not in self._assigned_subnets for device in devices[:devices.index(device_id)]
-            )
-            subnet = next(islice(candidates, earlier_unassigned, None), None)
-            if subnet is None:
-                raise ValueError(f"No available /24 AP subnet for {device_id} from {base_net}")
-            self._assigned_subnets[device_id] = subnet
-            return str(subnet)
+        return self.subnets.allocate(device_id)
 
     def device_lock(self, device_id: str) -> RLock:
         """Serialize lifecycle operations only for this device."""
@@ -704,7 +676,7 @@ class NetworkManager:
         cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
         # A startup rollback runs before the network is active: use the assigned
         # subnet so its isolation rules are removed too (NET-2).
-        assigned = self._assigned_subnets.get(device_id)
+        assigned = self.subnets.assigned(device_id)
         subnet = self.active[device_id].subnet if device_id in self.active else (
             str(assigned) if assigned is not None else None
         )

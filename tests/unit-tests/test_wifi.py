@@ -65,7 +65,7 @@ class TestSubnetResolution:
         cfg.dhcp_base_network = "192.168.9.0/24"
         cfg.antennas.append(NetworkEntry(interface="wlan1", display_name="extra"))
         host_routes = {IPv4Network("192.168.10.0/24")}
-        monkeypatch.setattr("wilab.wifi.manager.host_ipv4_networks", lambda: host_routes)
+        monkeypatch.setattr("wilab.network.subnet_allocator.host_ipv4_networks", lambda: host_routes)
         mgr = NetworkManager(cfg)
         # A later antenna can start first without taking the first antenna's slot.
         assert mgr._get_subnet("wlan1") == "192.168.11.0/24"
@@ -81,7 +81,7 @@ class TestSubnetResolution:
 
         mgr = NetworkManager(load_config())
         monkeypatch.setattr(
-            "wilab.wifi.manager.host_ipv4_networks", lambda: {IPv4Network("192.168.0.0/16")},
+            "wilab.network.subnet_allocator.host_ipv4_networks", lambda: {IPv4Network("192.168.0.0/16")},
         )
         start = Mock()
         monkeypatch.setattr(mgr.hostapd_manager, "start", start)
@@ -346,7 +346,7 @@ class TestNetworkLifecycle:
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)
         monkeypatch.setattr(mgr.nat_manager, 'block_internet', lambda *a: events.append('block'))
         monkeypatch.setattr(
-            "wilab.wifi.manager.host_ipv4_networks", lambda: {IPv4Network("192.168.120.0/24")},
+            "wilab.network.subnet_allocator.host_ipv4_networks", lambda: {IPv4Network("192.168.120.0/24")},
         )
         monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda *a, **kw: events.append('ap'))
         
