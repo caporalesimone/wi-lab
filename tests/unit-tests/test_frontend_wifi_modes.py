@@ -15,7 +15,7 @@ def test_encryptions_come_only_from_the_antenna():
 
 
 def test_dialog_lists_come_from_the_antennas_api():
-    """Band, generation, width and channel are dropdowns filled from GET /antennas/{interface}."""
+    """Band, generation, width and channel are dropdowns filled from GET /antennas/{interface}/capabilities."""
     dialog = DIALOG_TS.read_text()
     assert "channel_width: value.channel_width" in dialog
     assert "wifi_generation: value.wifi_generation" in dialog
@@ -27,12 +27,12 @@ def test_dialog_lists_come_from_the_antennas_api():
     assert 'type="number" formControlName="channel"' not in html
 
 
-def test_card_reads_the_antenna_before_opening_the_form():
+def test_card_reads_the_capabilities_before_opening_the_form():
     card_ts = (ROOT / "components/network-card/network-card.component.ts").read_text()
-    assert "this.wilabApiService.getAntenna(this.slot.interface)" in card_ts
+    assert "this.wilabApiService.getCapabilities(this.slot.interface)" in card_ts
     assert "data: { netId: reservationId, captivePortal: this.captivePortalChoice, antenna }" in card_ts
     service = (ROOT / "services/wilab-api.service.ts").read_text()
-    assert "/antennas/${encodeURIComponent(iface)}" in service
+    assert "/antennas/${encodeURIComponent(iface)}/capabilities" in service
     card_html = (ROOT / "components/network-card/network-card.component.html").read_text()
     assert "status?.radio?.channel_width as width" in card_html
     assert "width.reported !== width.requested" in card_html

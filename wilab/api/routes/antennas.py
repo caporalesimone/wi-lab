@@ -1,27 +1,30 @@
-"""Antennas: the Wi-Fi radios Wi-Lab manages and what a network on each can use.
+"""Antennas: the Wi-Fi radios Wi-Lab manages, how each is now, and what a network on it can use.
 
 An antenna is the physical radio; a network is the AP a reservation runs on it.
-These endpoints need only the token: they describe hardware, not a reservation.
+`GET /antennas/{interface}` is the antenna now (attachment, state, health);
+`GET /antennas/{interface}/capabilities` what a create on it can ask, which does
+not change while the adapter stays the same. Both need only the token.
+`interface` is the first field of every antenna object.
 """
+
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...api.auth import require_token
-from ...api.dependencies import get_channel_manager, get_devices, get_manager
-from ...devices import DeviceRegistry
+from ...api.dependencies import get_channel_manager, get_devices, get_manager, get_reservation_manager
+from ...devices import Device, DeviceRegistry
+from ...models import ReservationInfo
+from ...reservation import ReservationManager
 from ...network.commands import CommandError
 from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager, band_options
 from ...wifi.discovery import detect_device
 from ...wifi.manager import NetworkManager
+from .status import antenna_state
 
 router = APIRouter(prefix="/antennas", tags=["Antennas"])
-
-class AntennaSummary(BaseModel):
-    display_name: str = Field(description="Name from `antennas` in the configuration, else the interface")
-    interface: str = Field(description="Linux interface name; identifies the antenna in this API")
-
 
 class DeviceDetails(BaseModel):
     bus: str = Field(description="`usb`, `pci` (also cards built into the motherboard) or `sdio`")
@@ -83,26 +86,68 @@ class AntennaHealth(BaseModel):
     last_usb_reset_at: str | None = Field(None, description="UTC time of the last USB reset; null if none since the service started")
 
 
-class AntennaDetails(AntennaSummary):
+class AntennaDetails(BaseModel):
+    interface: str = Field(description="Linux interface name; identifies the antenna in this API")
+    display_name: str = Field(description="Name from `antennas` in the configuration, else the interface")
     device: DeviceDetails | None = Field(description="Where the antenna is attached; null if sysfs does not show it")
-    encryptions: list[str] = Field(description="Encryptions a create can ask; `wpa1` only at 20 MHz with 802.11n")
-    bands: Bands = Field(description="Options per band, keyed like `radio.band`")
+    reservation: ReservationInfo | None = Field(description="null when the antenna is not reserved")
+    network_active: bool
+    recovery_state: Literal["recovering", "unavailable"] | None = Field(
+        None, description="Present only while the antenna is quarantined",
+    )
+    runtime_state: str | None = Field(
+        None, description="Present only while a start, a repair or a half-done stop is in progress",
+    )
     health: AntennaHealth = Field(description=(
         "Repair budgets of the watchdog (by the antenna's driver, `watchdog` in config.yaml), "
         "quarantines and USB resets. Counted since the service started."
     ))
 
 
-_DETAILS_EXAMPLE = {
-    "display_name": "antenna-1",
-    "interface": "wlx7419f8176286",
-    "health": {
-        "ap_restores": {"used": 1, "limit": 3, "window_minutes": 60, "frees_at": "2026-11-27T09:12:00Z"},
-        "dhcp_restarts": {"used": 0, "limit": 3, "window_minutes": 60, "frees_at": None},
-        "quarantines": {"count": 0, "last_at": None, "last_usb_recovery": None},
-        "last_usb_reset_at": None,
+class AntennaCapabilities(BaseModel):
+    interface: str = Field(description="Linux interface name; identifies the antenna in this API")
+    encryptions: list[str] = Field(description="Encryptions a create can ask; `wpa1` only at 20 MHz with 802.11n")
+    bands: Bands = Field(description="Options per band, keyed like `radio.band`")
+
+
+_DETAILS_EXAMPLES = {
+    "reserved": {
+        "summary": "Reserved, network running, one AP restore in the window",
+        "value": {
+            "interface": "wlx7419f8176286",
+            "display_name": "antenna-1",
+            "device": {"bus": "usb", "address": "2-1", "driver": "mt7921u"},
+            "reservation": {"expires_at": "2026-11-27T19:11:57Z", "expires_in": 3298},
+            "network_active": True,
+            "health": {
+                "ap_restores": {"used": 1, "limit": 5, "window_minutes": 60, "frees_at": "2026-11-27T18:42:10Z"},
+                "dhcp_restarts": {"used": 0, "limit": 3, "window_minutes": 60, "frees_at": None},
+                "quarantines": {"count": 0, "last_at": None, "last_usb_recovery": None},
+                "last_usb_reset_at": None,
+            },
+        },
     },
-    "device": {"bus": "usb", "address": "2-1", "driver": "mt7921u"},
+    "quarantined": {
+        "summary": "Free but quarantined after a radio fault",
+        "value": {
+            "interface": "wlx7419f817651c",
+            "display_name": "antenna-2",
+            "device": {"bus": "usb", "address": "2-2", "driver": "mt7921u"},
+            "reservation": None,
+            "network_active": False,
+            "recovery_state": "unavailable",
+            "health": {
+                "ap_restores": {"used": 5, "limit": 5, "window_minutes": 60, "frees_at": "2026-11-27T18:55:02Z"},
+                "dhcp_restarts": {"used": 0, "limit": 3, "window_minutes": 60, "frees_at": None},
+                "quarantines": {"count": 1, "last_at": "2026-11-27T18:20:31Z", "last_usb_recovery": True},
+                "last_usb_reset_at": "2026-11-27T18:20:33Z",
+            },
+        },
+    },
+}
+
+_CAPABILITIES_EXAMPLE = {
+    "interface": "wlx7419f8176286",
     "encryptions": ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"],
     "bands": {
         "2.4ghz": {
@@ -136,24 +181,73 @@ _DETAILS_EXAMPLE = {
 }
 
 
+def _known(devices: DeviceRegistry, interface: str) -> Device:
+    entry = devices.get(interface)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Unknown antenna: {interface}")
+    return entry
+
+
 @router.get(
     "/{interface}",
     response_model=AntennaDetails,
-    summary="Read what a network on an antenna can use",
+    response_model_exclude_unset=True,
+    summary="Read an antenna now: attachment, state and health",
     responses={
-        200: {"content": {"application/json": {"example": _DETAILS_EXAMPLE}}},
+        200: {"content": {"application/json": {"examples": _DETAILS_EXAMPLES}}},
         401: {"description": "Unauthorized (missing or invalid auth token)"},
         404: {"description": "No managed antenna has this interface"},
-        503: {"description": "The radio cannot be read now (e.g. unplugged or being reset); retry later"},
     },
 )
 def get_antenna(
     interface: str = Path(..., description="Interface name from `antennas[]` of `GET /status`"),
     devices: DeviceRegistry = Depends(get_devices),
-    channel_mgr: ChannelManager = Depends(get_channel_manager),
     manager: NetworkManager = Depends(get_manager),
+    reservation_mgr: ReservationManager = Depends(get_reservation_manager),
     _auth: bool = Depends(require_token),
 ) -> AntennaDetails:
+    """The antenna as it is now.
+
+    `reservation`, `network_active` and, when they apply, `recovery_state` and
+    `runtime_state` are the antenna's entry of `antennas[]` in `GET /status`.
+    `device` is where it is attached (bus, port, kernel driver).
+
+    `health` tells how close the antenna is to a quarantine: the watchdog's
+    repairs in its sliding window against the limit (from the antenna's driver,
+    `watchdog` in config.yaml), when the oldest one frees, past quarantines and
+    USB resets.
+
+    What a network on it can use is in `GET /antennas/{interface}/capabilities`.
+    """
+    entry = _known(devices, interface)
+    state, _ = antenna_state(
+        manager, entry, reservation_mgr.snapshot(), reservation_mgr.recovery_snapshot(), manager.active.copy(),
+    )
+    device = detect_device(interface)
+    return AntennaDetails(
+        **state,
+        device=DeviceDetails(bus=device.bus, address=device.address, driver=device.driver) if device else None,
+        health=_health(manager, interface),
+    )
+
+
+@router.get(
+    "/{interface}/capabilities",
+    response_model=AntennaCapabilities,
+    summary="Read what a network on an antenna can use",
+    responses={
+        200: {"content": {"application/json": {"example": _CAPABILITIES_EXAMPLE}}},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
+        404: {"description": "No managed antenna has this interface"},
+        503: {"description": "The radio cannot be read now (e.g. unplugged or being reset); retry later"},
+    },
+)
+def get_capabilities(
+    interface: str = Path(..., description="Interface name from `antennas[]` of `GET /status`"),
+    devices: DeviceRegistry = Depends(get_devices),
+    channel_mgr: ChannelManager = Depends(get_channel_manager),
+    _auth: bool = Depends(require_token),
+) -> AntennaCapabilities:
     """The options of a create on this antenna, to fill a form's lists.
 
     Per band: the Wi-Fi generations with the channel widths each can use, and
@@ -164,21 +258,14 @@ def get_antenna(
 
     DFS channels (5 GHz 52-144) are listed, with `dfs: true`, only when the
     antenna has `show_dfs_channels: true` in the configuration. The data comes from the
-    radio and is cached; no reservation is needed.
-
-    `health` tells how close the antenna is to a quarantine: the watchdog's
-    repairs in its sliding window against the limit (from the antenna's driver,
-    `watchdog` in config.yaml), when the oldest one frees, past quarantines and
-    USB resets.
+    radio and is cached; it does not change while the adapter stays the same,
+    so a client can read it once per antenna. No reservation is needed.
     """
-    entry = devices.get(interface)
-    if entry is None:
-        raise HTTPException(status_code=404, detail=f"Unknown antenna: {interface}")
+    _known(devices, interface)
     try:
         info = channel_mgr.get_channels(interface)
     except (CommandError, ValueError) as exc:
         raise HTTPException(status_code=503, detail=f"Cannot read antenna {interface}: {exc}") from exc
-    device = detect_device(interface)
     bands: dict[str, BandOptions] = {}
     for band in ("2.4ghz", "5ghz"):
         options = band_options(info, band)
@@ -196,13 +283,8 @@ def get_antenna(
                 for c in options.channels
             ],
         )
-    return AntennaDetails(
-        display_name=entry.display_name,
-        interface=entry.interface,
-        device=DeviceDetails(bus=device.bus, address=device.address, driver=device.driver) if device else None,
-        encryptions=info.capabilities.encryptions(),
-        bands=Bands.model_validate(bands),
-        health=_health(manager, interface),
+    return AntennaCapabilities(
+        interface=interface, encryptions=info.capabilities.encryptions(), bands=Bands.model_validate(bands),
     )
 
 

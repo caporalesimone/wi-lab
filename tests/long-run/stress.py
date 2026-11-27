@@ -65,7 +65,7 @@ class Recorder:
 
 
 def random_settings(rng: random.Random, details: dict[str, Any]) -> dict[str, Any]:
-    """A create body the antenna says it supports (GET /antennas/{interface}), DFS excluded."""
+    """A create body the antenna says it supports (GET /antennas/{interface}/capabilities), DFS excluded."""
     band = rng.choice(sorted(details["bands"]))
     options = details["bands"][band]
     encryption = rng.choice(details["encryptions"])
@@ -188,7 +188,7 @@ def exercise(client: WiLab, antenna: Antenna, rng: random.Random, rec: Recorder,
 def churn(client: WiLab, interface: str, rng: random.Random, rec: Recorder, until: float,
           stop: threading.Event | None = None) -> None:
     """Create, use and stop networks with random settings on *interface* until *until*."""
-    details = client.antenna(interface)
+    details = client.capabilities(interface)
     antenna = wait_reserve(client, interface, rec)
     while time.monotonic() < until and not (stop and stop.is_set()):
         body = random_settings(rng, details)
@@ -378,7 +378,7 @@ def _strike(server: Server, client: WiLab, antenna: Antenna, kind: str, rec: Rec
 
 def burst(client: WiLab, interface: str, rng: random.Random, rec: Recorder, until: float, targets: Targets) -> None:
     """Reserve, run 10-40 networks back to back with random settings and actions, release; again."""
-    details = client.antenna(interface)
+    details = client.capabilities(interface)
     while time.monotonic() < until:
         antenna = wait_reserve(client, interface, rec, duration=rng.choice([600, 1800, 3600, 0]))
         count = rng.randint(10, 40)

@@ -37,7 +37,7 @@ class NetworkCreateRequest(BaseModel):
             "`wpa1`: legacy WPA (PSK, TKIP), only to test legacy clients: insecure, no 802.11n "
             "(802.11a/g, at most 54 Mbit/s, 20 MHz), some recent clients warn or refuse to "
             "connect, and only on antennas that support it (`encryptions` in "
-            "`GET /antennas/{interface}`). "
+            "`GET /antennas/{interface}/capabilities`). "
             "`wpa` is no longer accepted (422): it created WPA2, use `wpa2`."
         ),
     )
@@ -62,7 +62,7 @@ class NetworkCreateRequest(BaseModel):
             "On 2.4 GHz 40 MHz is accepted, but hostapd falls back to 20 MHz when it sees "
             "neighbouring networks (20/40 coexistence): check `reported_channel_width` in "
             "`GET .../network`. Only widths listed for the generation and the channel in "
-            "`GET /antennas/{interface}` are accepted."
+            "`GET /antennas/{interface}/capabilities` are accepted."
         ),
     )
     wifi_generation: Literal[4, 5, 6] = Field(
@@ -70,7 +70,7 @@ class NetworkCreateRequest(BaseModel):
         description=(
             "Optional Wi-Fi generation, default 4: 4 = Wi-Fi 4 (802.11n), 5 = Wi-Fi 5 "
             "(802.11ac, 5 GHz only), 6 = Wi-Fi 6 (802.11ax). Only generations listed for the band in "
-            "`GET /antennas/{interface}` are accepted."
+            "`GET /antennas/{interface}/capabilities` are accepted."
         ),
     )
 

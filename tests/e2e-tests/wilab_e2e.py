@@ -377,8 +377,14 @@ class WiLab:
         raise KeyError(interface)
 
     def antenna(self, interface: str) -> dict[str, Any]:
-        """GET /antennas/{interface}: what a network on the antenna can use."""
+        """GET /antennas/{interface}: the antenna now (attachment, state, health)."""
         response = self.http.get(f"/antennas/{interface}")
+        response.raise_for_status()
+        return response.json()
+
+    def capabilities(self, interface: str) -> dict[str, Any]:
+        """GET /antennas/{interface}/capabilities: what a network on the antenna can use."""
+        response = self.http.get(f"/antennas/{interface}/capabilities")
         response.raise_for_status()
         return response.json()
 
@@ -386,7 +392,7 @@ class WiLab:
         self, interface: str, band: str, channel: int, width: int, generation: int,
     ) -> bool:
         """True when the antenna lists this generation, width and channel together."""
-        options = self.antenna(interface)["bands"][band]
+        options = self.capabilities(interface)["bands"][band]
         widths: list[int] = next((g["channel_widths"] for g in options["wifi_generations"]
                        if g["wifi_generation"] == generation), [])
         return width in widths and any(

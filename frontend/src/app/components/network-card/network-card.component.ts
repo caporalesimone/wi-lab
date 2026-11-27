@@ -11,7 +11,7 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { interval, Subscription } from 'rxjs';
 import { WilabApiService } from '../../services/wilab-api.service';
-import { AntennaDetails, ClientInfo, NetworkCreateRequest, NetworkStatus } from '../../models/network.models';
+import { AntennaCapabilities, ClientInfo, NetworkCreateRequest, NetworkStatus } from '../../models/network.models';
 import { ApiError, apiErrorToast, reservationGoneText } from '../../services/recovery-response';
 import { environment } from '../../../environments/environment';
 import { GENERATION_LABELS, NetworkFormDialogComponent } from '../network-form-dialog/network-form-dialog.component';
@@ -282,7 +282,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     if (!this.isMine || this.loading || this.restoring || this.starting || this.openingForm || this.createMessage !== null) return;
     this.openingForm = true;
     // The form lists only what this antenna can use (GET /antennas/{interface}).
-    this.wilabApiService.getAntenna(this.slot.interface).subscribe({
+    this.wilabApiService.getCapabilities(this.slot.interface).subscribe({
       next: antenna => this.openNetworkForm(antenna),
       error: (err: ApiError) => {
         this.openingForm = false;
@@ -294,7 +294,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     });
   }
 
-  private openNetworkForm(antenna: AntennaDetails): void {
+  private openNetworkForm(antenna: AntennaCapabilities): void {
     if (!this.isMine || this.loading || this.restoring) return;
     const reservationId = this.reservationId;
     const dialogRef = this.dialog.open(NetworkFormDialogComponent, {

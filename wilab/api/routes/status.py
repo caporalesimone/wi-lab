@@ -11,6 +11,7 @@ from ... import heartbeat
 from ...api.auth import require_token
 from ...api.dependencies import get_config, get_manager, get_reservation_manager
 from ...config import AppConfig
+from ...devices import Device
 from ...models import ReservationInfo
 from ...network.commands import stuck_commands
 from ...reservation import ReservationManager
@@ -73,8 +74,8 @@ class ServiceState(BaseModel):
 
 
 class AntennaState(BaseModel):
+    interface: str = Field(..., description="Linux interface name; identifies the antenna in this API")
     display_name: str
-    interface: str
     reservation: ReservationInfo | None = Field(..., description="null when the antenna is not reserved")
     network_active: bool
     recovery_state: Literal["recovering", "unavailable"] | None = Field(
@@ -121,9 +122,9 @@ class SystemStatus(BaseModel):
                         "version": "4.1.0",
                         "service": {"health": "good", "free_antennas": 2, "degraded_reasons": [], "restart_required": None},
                         "antennas": [
-                            {"display_name": "Antenna A", "interface": "wlan0", "reservation": None,
+                            {"interface": "wlan0", "display_name": "Antenna A", "reservation": None,
                              "network_active": False},
-                            {"display_name": "Antenna B", "interface": "wlan1", "reservation": None,
+                            {"interface": "wlan1", "display_name": "Antenna B", "reservation": None,
                              "network_active": False},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
@@ -135,9 +136,9 @@ class SystemStatus(BaseModel):
                         "version": "4.1.0",
                         "service": {"health": "good", "free_antennas": 1, "degraded_reasons": [], "restart_required": None},
                         "antennas": [
-                            {"display_name": "Antenna A", "interface": "wlan0", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540},
+                            {"interface": "wlan0", "display_name": "Antenna A", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540},
                              "network_active": True},
-                            {"display_name": "Antenna B", "interface": "wlan1", "reservation": None,
+                            {"interface": "wlan1", "display_name": "Antenna B", "reservation": None,
                              "network_active": False},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
@@ -157,9 +158,9 @@ class SystemStatus(BaseModel):
                             "message": RESTART_MESSAGES[(True, False)],
                         }},
                         "antennas": [
-                            {"display_name": "Antenna A", "interface": "wlan0", "reservation": None,
+                            {"interface": "wlan0", "display_name": "Antenna A", "reservation": None,
                              "network_active": False, "recovery_state": "unavailable"},
-                            {"display_name": "Antenna B", "interface": "wlan1", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 54},
+                            {"interface": "wlan1", "display_name": "Antenna B", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 54},
                              "network_active": False, "runtime_state": "restoring_ap"},
                         ],
                         "reservation_policy": _POLICY_EXAMPLE,
@@ -220,8 +221,8 @@ def system_status(
     progress is not judged, so a create or delete never makes the status flap.
 
     The former owner of a quarantined antenna is told by `404` with
-    `reason: reservation_invalidated` on every call with its ID. What a network on each antenna can use is
-    in `GET /antennas/{interface}`.
+    `reason: reservation_invalidated` on every call with its ID. One antenna with its health is
+    `GET /antennas/{interface}`; what a network on it can use is `GET /antennas/{interface}/capabilities`.
     """
     return _system_status(manager, config, reservation_mgr)
 
@@ -242,6 +243,41 @@ REASON_MESSAGES = {
 
 def _reason(code: str, interface: str | None = None, **values: Any) -> dict[str, Any]:
     return {"code": code, "interface": interface, "message": REASON_MESSAGES[code].format(**values)}
+
+
+def antenna_state(
+    manager: NetworkManager, n: Device, reservations: dict[str, Any], recovery: dict[str, bool],
+    active: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """One antenna's entry of `antennas[]` (also `GET /antennas/{interface}`) and its degraded reasons.
+
+    `interface` comes first in every antenna object of the API. `runtime_state`
+    and `recovery_state` are added only when they apply.
+    """
+    entry: dict[str, Any] = {"interface": n.interface, "display_name": n.display_name}
+    reasons: list[dict[str, Any]] = []
+    reservation = reservations.get(n.device_id)
+    # API-1: the same reservation object as the reservation and network answers.
+    entry["reservation"] = None if reservation is None else {
+        "expires_at": format_utc_timestamp(reservation.expires_at),
+        "expires_in": reservation.expires_in,
+    }
+    entry["network_active"] = n.device_id in active
+    if reservation is not None and (runtime_state := manager.watchdog.state(reservation)):
+        entry["runtime_state"] = runtime_state
+        reasons.append(_reason("network_being_repaired", n.interface, state=runtime_state))
+    elif reservation is not None and (job := manager.start_job(reservation)) is not None:
+        entry["runtime_state"] = job.state  # starting or start_failed: not a fault
+    elif manager.stop_failed(n.device_id):
+        # Same state as GET .../network; its half-stopped processes are not
+        # reported again as hostapd/dnsmasq/NAT problems below.
+        entry["runtime_state"] = "stop_failed"
+        reasons.append(_reason("network_stop_incomplete", n.interface))
+    if n.device_id in recovery:
+        state = "recovering" if recovery[n.device_id] else "unavailable"
+        entry["recovery_state"] = state
+        reasons.append(_reason("antenna_quarantined", n.interface, state=state))
+    return entry, reasons
 
 
 def _assess(manager: NetworkManager, reservation_mgr: ReservationManager) -> dict[str, Any]:
@@ -267,28 +303,8 @@ def _assess(manager: NetworkManager, reservation_mgr: ReservationManager) -> dic
     recovery = reservation_mgr.recovery_snapshot()
     cleanup_failures = manager.cleanup_failures()
     for n in manager.devices.all():
-        entry: dict[str, Any] = {"display_name": n.display_name, "interface": n.interface}
-        reservation = reservations.get(n.device_id)
-        # API-1: the same reservation object as the reservation and network answers.
-        entry["reservation"] = None if reservation is None else {
-            "expires_at": format_utc_timestamp(reservation.expires_at),
-            "expires_in": reservation.expires_in,
-        }
-        entry["network_active"] = n.device_id in snapshot
-        if reservation is not None and (runtime_state := manager.watchdog.state(reservation)):
-            entry["runtime_state"] = runtime_state
-            reasons.append(_reason("network_being_repaired", n.interface, state=runtime_state))
-        elif reservation is not None and (job := manager.start_job(reservation)) is not None:
-            entry["runtime_state"] = job.state  # starting or start_failed: not a fault
-        elif manager.stop_failed(n.device_id):
-            # Same state as GET .../network; its half-stopped processes are not
-            # reported again as hostapd/dnsmasq/NAT problems below.
-            entry["runtime_state"] = "stop_failed"
-            reasons.append(_reason("network_stop_incomplete", n.interface))
-        if n.device_id in recovery:
-            state = "recovering" if recovery[n.device_id] else "unavailable"
-            entry["recovery_state"] = state
-            reasons.append(_reason("antenna_quarantined", n.interface, state=state))
+        entry, found = antenna_state(manager, n, reservations, recovery, snapshot)
+        reasons.extend(found)
         if count := cleanup_failures.get(n.device_id):
             # The release answered 200; the background sweep repeats the cleanup (WD-6).
             reasons.append(_reason(

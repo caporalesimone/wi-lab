@@ -202,7 +202,7 @@ _EXPECTED_SECURITY: dict[str, dict[str, str | None]] = {
 def test_every_encryption_starts_as_announced(wilab: WiLab, server: Server, encryption: str) -> None:
     """HAP-10: each encryption starts and hostapd runs exactly that security mode."""
     antenna = wilab.reserve()
-    if encryption not in wilab.antenna(antenna.interface)["encryptions"]:
+    if encryption not in wilab.capabilities(antenna.interface)["encryptions"]:
         pytest.skip(f"{encryption} not supported on {antenna.interface}")
     password = None if encryption == "open" else "e2e-pass-123"
     response = wilab.create(antenna, encryption=encryption, password=password)
@@ -352,7 +352,13 @@ def test_every_antenna_lists_options_without_a_reservation(wilab: WiLab) -> None
     """Antennas API: readable with the token only, for every managed antenna."""
     assert wilab.http.get("/antennas").status_code == 404   # the list is antennas[] of /status
     for entry in wilab.status()["antennas"]:
-        details = wilab.antenna(entry["interface"])
+        antenna = wilab.antenna(entry["interface"])
+        assert list(antenna)[0] == "interface"
+        same = [k for k in entry if k != "reservation"]   # expires_in may tick between the calls
+        assert {k: antenna[k] for k in same} == {k: entry[k] for k in same}
+        assert "health" in antenna and "bands" not in antenna
+        details = wilab.capabilities(entry["interface"])
+        assert list(details) == ["interface", "encryptions", "bands"]
         assert details["bands"]["2.4ghz"]["channels"] or details["bands"]["5ghz"]["channels"]
         for options in details["bands"].values():
             assert all(c["frequency_mhz"] < 5925 for c in options["channels"])   # no 6 GHz

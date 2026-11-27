@@ -102,16 +102,19 @@ The reservation answer names the antenna (`interface`). Ask what a network on
 it can use; no reservation is needed, so a GUI can also show free antennas:
 
 ```http
-GET /api/v2/status                   → antennas[]: display_name, interface, reservation
-GET /api/v2/antennas/{interface}     → device, encryptions, and per band the
-                                       Wi-Fi generations, widths and channels
+GET /api/v2/status                                → antennas[]: interface, display_name, reservation
+GET /api/v2/antennas/{interface}/capabilities     → encryptions, and per band the
+                                                    Wi-Fi generations, widths and channels
 ```
+
+The capabilities do not change while the adapter stays the same: read them once per
+antenna. `GET /api/v2/antennas/{interface}` is the antenna now instead: where it is
+attached, its entry of `antennas[]` in `/status` (reservation, network, quarantine) and
+its repair `health`.
 
 ```json
 {
-  "display_name": "antenna-1",
   "interface": "wlx7419f8176286",
-  "device": {"bus": "usb", "address": "2-1", "driver": "mt7921u"},
   "encryptions": ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"],
   "bands": {
     "2.4ghz": {
@@ -216,7 +219,7 @@ so do the antenna checks made before starting the AP.
 
 #### 2.2.1 Encryption, channel width and Wi-Fi generation
 
-Each antenna reports what it supports in `GET /api/v2/antennas/{interface}`
+Each antenna reports what it supports in `GET /api/v2/antennas/{interface}/capabilities`
 (see [2.1](#21-read-what-the-antenna-can-use)), read from the radio (`iw phy`).
 A create that asks for anything else returns `422` without touching the
 antenna.
@@ -528,9 +531,9 @@ antenna:
     "restart_required": null
   },
   "antennas": [
-    {"display_name": "antenna-1", "interface": "wlx7419f8176286", "reservation": null,
+    {"interface": "wlx7419f8176286", "display_name": "antenna-1", "reservation": null,
      "network_active": false, "recovery_state": "unavailable"},
-    {"display_name": "antenna-2", "interface": "wlx7419f817651c",
+    {"interface": "wlx7419f817651c", "display_name": "antenna-2",
      "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540},
      "network_active": true}
   ]
@@ -615,9 +618,9 @@ sequenceDiagram
 
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 2 - read what the antenna can use (no reservation needed)
-    C->>W: GET /antennas/{interface}
+    C->>W: GET /antennas/{interface}/capabilities
     alt 200
-        W-->>C: device, encryptions, bands: wifi_generations (widths) and usable channels (widths)
+        W-->>C: encryptions, bands: wifi_generations (widths) and usable channels (widths)
         Note over C: Build the body: band, then generation, then width,<br/>then a channel whose channel_widths contains that width.<br/>wpa1 only with wifi_generation 4 at 20 MHz
     else 503
         W-->>C: the radio cannot be read now (unplugged, being reset)
@@ -779,7 +782,7 @@ Every answer leads to exactly one of these actions:
 | | `503 / 1002` + `Retry-After: 10` | REPEAT | An antenna is being recovered. |
 | | `503 / 1003` | STOP | No usable antenna. Right after a service start, wait up to 30 s for discovery and check `GET /status` first. With `interface`: that antenna is quarantined; reserve without it. |
 | | `422` | FIX | `duration_seconds` out of limits, `0` while unlimited reservations are off, or `interface: ...` not a managed antenna. |
-| `GET /antennas/{interface}` | `503` | REPEAT | After a few seconds; the radio is being reset. Or create with the defaults. |
+| `GET /antennas/{interface}/capabilities` | `503` | REPEAT | After a few seconds; the radio is being reset. Or create with the defaults. |
 | | `404` | RESERVE AGAIN | The antenna is no longer managed. |
 | `POST .../network` (create) | `202` | WAIT | Start accepted: poll `GET .../network` every 1–2 s (rows below). |
 | | `200` | DONE | The same body on a network already running with it: the network. |

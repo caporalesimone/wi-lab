@@ -16,7 +16,7 @@ updates its date.
 
 | Item | Count |
 |---|---:|
-| ⚠️ Breaking changes | 12 |
+| ⚠️ Breaking changes | 13 |
 | ✨ New features | 5 |
 | 🐛 Bug fixes | 33 |
 | 🔧 Maintenance changes | 16 |
@@ -38,6 +38,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The reservation, create and `POST .../txpower` bodies accept only the JSON types they document: `"6"`, `true` or `6.0` for an integer, or `"false"` and `0` for a boolean, are `422` (Fable REV-11).
 - `POST .../txpower` takes `tx_power_level` instead of `level`, as `radio.tx_power_level` in the create (Fable API-6).
 - `GET /api/v2/antennas` (the list) is removed: it repeated `antennas[]` of `GET /status`. `GET /api/v2/antennas/{interface}` stays.
+- `GET /antennas/{interface}` is the antenna now: `interface`, `display_name`, `device`, its `/status` state (`reservation`, `network_active`, `recovery_state`, `runtime_state`) and `health`. `encryptions` and `bands` moved to the new `GET /antennas/{interface}/capabilities`, which does not change while the adapter stays the same. In every antenna object `interface` is the first field.
 - `GET /status` and `GET /monitoring`: the string `status` (`standby`, `ok`, `degraded`) and the top-level `degraded_reasons`, `active_networks` and `restart_required` are replaced by one object, `service`: `{"health": "good" | "degraded", "free_antennas": N, "degraded_reasons": [...], "restart_required": null | {...}}`. `free_antennas` counts the antennas a reservation would get now; the running networks are `antennas[]` with `network_active: true`.
 
 ### ✨ Features
@@ -122,7 +123,8 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 ### 🔌 API changes from 4.0.0 (client migration)
 
 - `GET /status` and `GET /monitoring`: read `service.health` (`good` or `degraded`) where you compared `status` with `"degraded"` (`standby` and `ok` are gone), `service.degraded_reasons` instead of `degraded_reasons`, and `service.restart_required` (always present, `null` when nothing is needed) instead of `restart_required`. `active_networks` is removed: count `antennas[]` with `network_active: true`. `service.free_antennas` says how many antennas are free right now; to get one, reserve it, since another client may take it in between.
-- `GET /api/v2/antennas` is removed: read the antennas (`display_name`, `interface`, reservation) from `antennas[]` of `GET /status`. `GET /api/v2/antennas/{interface}` is unchanged.
+- `GET /api/v2/antennas` is removed: read the antennas (`display_name`, `interface`, reservation) from `antennas[]` of `GET /status`.
+- `GET /antennas/{interface}`: read `encryptions` and `bands` from `GET /antennas/{interface}/capabilities` (same content); the antenna itself now also has `reservation`, `network_active` and, when set, `recovery_state` and `runtime_state`, as in `/status`. A `503` (radio being reset) comes only from `.../capabilities`.
 - `GET /status` is documented by a schema in Swagger: required fields, `null` values shown in the examples, `recovery_state` and `runtime_state` present only when set.
 - `GET /monitoring`: `checks.upstream_interface` gives the interface data (`operstate`, `mac`, `mtu`, `ipv4` and `ipv6` addresses with prefix, `gateway`) instead of `up`, `has_ip` and `reachable`; it is information only. The `degraded_reasons` code `upstream_unreachable` is gone: the host uplink no longer makes the service degraded.
 - Strict types: send integers and booleans as JSON numbers and booleans. A string such as `"6"`, `true` for a number or `6.0` is now `422` in `POST /reservations`, `POST .../network` and `POST .../txpower` (REV-11).
@@ -135,10 +137,10 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - A watchdog restore whose cleanup fails once now shows `runtime_state: restore_failed` and is retried, instead of `404 reservation_invalidated` (REV-10).
 - QoS (experimental): `POST .../qos/profile` with different `download_quality` and `upload_quality`, or a quality with `advanced`, is now `422` (NET-11).
 - `GET /status` has a new field `restart_required` (`null` or `{service, system, since, message}`); `GET /monitoring` a new check `os_updates`. Additive: it never makes the status `degraded`.
-- `GET /antennas/{interface}` has a new object `health` (repair budgets, quarantines, USB resets). Additive.
+- `GET /antennas/{interface}` has a new object `health` (repair budgets, quarantines, USB resets).
 - `GET .../network`: after a radar event on a DFS channel `channel` is the channel the AP moved to, which can differ from the one requested (REV-12).
 - An antenna whose interface has been gone for about 2 minutes, with nothing holding it, leaves `GET /status` and `GET /antennas`; `GET /antennas/{interface}` then answers `404` and a reserve by that `interface` answers as for an unknown antenna (WD-5).
-- Channels 120, 124 and 128 (5 GHz) are no longer listed by `GET /antennas/{interface}` and are `422` in the create (HAP-9).
+- Channels 120, 124 and 128 (5 GHz) are no longer listed by `GET /antennas/{interface}/capabilities` and are `422` in the create (HAP-9).
 - `POST .../network` can answer `503 / 1006` with `Retry-After: 2`, only when the same body finds the network already running (the `200` case) and another operation holds the adapter: repeat it. It was possible before but documented as never happening (REV-11).
 
 ---

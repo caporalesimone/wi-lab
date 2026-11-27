@@ -38,11 +38,9 @@ export interface BandOptions {
   channels: ChannelOption[];
 }
 
-/** GET /antennas/{interface}: what a network on the antenna can use. */
-export interface AntennaDetails {
-  display_name: string;
+/** GET /antennas/{interface}/capabilities: what a network on the antenna can use. */
+export interface AntennaCapabilities {
   interface: string;
-  device: { bus: string; address: string; driver: string | null } | null;
   encryptions: string[];
   bands: Record<Band, BandOptions>;
 }
@@ -54,8 +52,8 @@ export interface StatusReservation {
 }
 
 export interface InterfaceInfo {
-  display_name: string;
   interface: string;
+  display_name: string;
   /** null: no reservation holds the antenna. Unlimited: both fields null. */
   reservation: StatusReservation | null;
   network_active: boolean;

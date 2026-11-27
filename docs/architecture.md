@@ -739,7 +739,7 @@ sequenceDiagram
 
     rect rgba(128,128,128,0.08)
     Note over C,EX: Antenna options (no reservation)
-    C->>A: GET /antennas/{interface}
+    C->>A: GET /antennas/{interface}/capabilities
     A->>CM: get_channels(interface)
     CM->>CM: cached, else iw phy channels and iw phy info (6 GHz dropped,<br/>DFS disabled when antennas[].show_dfs_channels is false)
     alt read fails

@@ -6,7 +6,7 @@ import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 import { ApiError, RecoveryCode, isTransient, retryWhenBusy } from './recovery-response';
 import {
-  AntennaDetails,
+  AntennaCapabilities,
   StatusResponse,
   NetworkStatus,
   NetworkCreateRequest,
@@ -51,8 +51,8 @@ export class WilabApiService {
   // ---- Antennas ----
 
   /** What a network on the antenna can use: fills the create form's lists. */
-  public getAntenna(iface: string): Observable<AntennaDetails> {
-    return this.http.get<AntennaDetails>(`${this.apiUrl}/antennas/${encodeURIComponent(iface)}`, {
+  public getCapabilities(iface: string): Observable<AntennaCapabilities> {
+    return this.http.get<AntennaCapabilities>(`${this.apiUrl}/antennas/${encodeURIComponent(iface)}/capabilities`, {
       headers: this.getHeaders()
     }).pipe(
       catchError(this.handleError)

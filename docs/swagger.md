@@ -54,10 +54,11 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
   of the health checks is in **System → Read the detailed health checks**
   (`GET /api/v2/monitoring`).
 
-- **Antennas** comes before **Network**: `GET /api/v2/antennas/{interface}`
-  gives what a network on an antenna can use (the antennas are `antennas[]` of
-  `GET /api/v2/status`) (encryptions, and per band the Wi-Fi generations, widths and
-  usable channels). Only the token is needed, no reservation.
+- **Antennas** comes before **Network** (the antennas are `antennas[]` of `GET /api/v2/status`):
+  `GET /api/v2/antennas/{interface}` is the antenna now (attachment, reservation, network,
+  quarantine and repair health); `GET /api/v2/antennas/{interface}/capabilities` is what a
+  network on it can use (encryptions, and per band the Wi-Fi generations, widths and usable
+  channels). Only the token is needed, no reservation.
 
 ## Service health (`degraded`)
 

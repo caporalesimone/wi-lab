@@ -283,7 +283,7 @@ _CREATE_BODY_EXAMPLES: dict = {
     "wifi5_80mhz": {
         "summary": "5 GHz Wi-Fi 5 network at 80 MHz",
         "description": "Channels 36-48 as one 80 MHz channel, 802.11ac. Needs an antenna "
-        "whose GET /antennas/{interface} lists 80 MHz for wifi_generation 5 on 5ghz.",
+        "whose GET /antennas/{interface}/capabilities lists 80 MHz for wifi_generation 5 on 5ghz.",
         "value": {
         "radio": {
             "band": "5ghz", "channel": 36, "channel_width": 80,
@@ -300,7 +300,7 @@ _CREATE_BODY_EXAMPLES: dict = {
     "wpa1_legacy": {
         "summary": "Legacy WPA (TKIP) network for old clients",
         "description": "Insecure, 802.11a/g only (20 MHz, at most 54 Mbit/s). Accepted "
-        "only on antennas whose GET /antennas/{interface} lists wpa1 in encryptions.",
+        "only on antennas whose GET /antennas/{interface}/capabilities lists wpa1 in encryptions.",
         "value": {
         "radio": {
             "band": "2.4ghz", "channel": 6, "channel_width": 20,
@@ -404,7 +404,7 @@ def start_network(
     that support it). `wpa` is no longer accepted and returns `422`: use `wpa2`.
     Optional `radio.channel_width` (20, 40, 80 MHz; default 20) and `radio.wifi_generation`
     (4 = 802.11n, 5 = 802.11ac, 6 = 802.11ax; default 4) select the radio mode;
-    the defaults keep the previous behaviour. `GET /antennas/{interface}` lists
+    the defaults keep the previous behaviour. `GET /antennas/{interface}/capabilities` lists
     what the antenna supports; anything else returns `422`.
     40 MHz on 2.4 GHz may fall back to 20 MHz when neighbouring networks are
     present: `GET .../network` reports the actual `radio.channel_width.reported`.

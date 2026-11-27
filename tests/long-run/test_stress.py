@@ -77,7 +77,7 @@ def test_parallel_churn(idle: WiLab, server, base_url, token):
 
 
 def _chaos_round(client: WiLab, interface: str, rng: random.Random, rec: Recorder) -> None:
-    details = client.antenna(interface)
+    details = client.capabilities(interface)
     antenna = wait_reserve(client, interface, rec)
     action = rng.choice(["cancel", "release_while_starting", "same_body_again", "other_body", "reserve_churn", "storm"])
     rec.event("chaos", action=action, interface=interface)

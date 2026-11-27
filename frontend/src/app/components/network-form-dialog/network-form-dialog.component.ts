@@ -11,7 +11,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import {
-  AntennaDetails,
+  AntennaCapabilities,
   Band,
   BandOptions,
   ChannelOption,
@@ -75,10 +75,10 @@ export class NetworkFormDialogComponent {
     private formBuilder: FormBuilder,
     private dialogRef: MatDialogRef<NetworkFormDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: {
-      netId: string; captivePortal?: boolean; antenna: AntennaDetails;
+      netId: string; captivePortal?: boolean; antenna: AntennaCapabilities;
     }
   ) {
-    // Every list comes from GET /antennas/{interface}: band, then generation,
+    // Every list comes from GET /antennas/{interface}/capabilities: band, then generation,
     // then width, then a channel usable at that width.
     this.encryptionTypes = this.data.antenna.encryptions.filter(enc => enc in ENCRYPTION_LABELS);
     this.bands = (['2.4ghz', '5ghz'] as Band[]).filter(b => this.data.antenna.bands[b].channels.length > 0);

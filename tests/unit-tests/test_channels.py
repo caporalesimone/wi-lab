@@ -243,7 +243,7 @@ class TestChannelManagerResolve:
 
 
 # ---------------------------------------------------------------------------
-# API tests – GET /api/v2/antennas/{interface}
+# API tests – GET /api/v2/antennas/{interface} and .../capabilities
 # ---------------------------------------------------------------------------
 
 def _set_show_dfs_channels(context, value: bool) -> None:
@@ -257,27 +257,33 @@ class TestAntennasAPI:
 
     def test_requires_auth(self, client):
         assert client.get('/api/v2/antennas/wls16').status_code == 401
+        assert client.get('/api/v2/antennas/wls16/capabilities').status_code == 401
 
     def test_the_list_is_in_status_only(self, client, valid_token):
         """GET /antennas repeated antennas[] of GET /status (removed 2026-11-27)."""
         headers = {'Authorization': valid_token}
         assert client.get('/api/v2/antennas', headers=headers).status_code == 404
         listed = client.get('/api/v2/status', headers=headers).json()["antennas"]
-        assert {"display_name": "bench-antenna-1", "interface": "wls16"} in [
-            {k: a[k] for k in ("display_name", "interface")} for a in listed
+        assert {"interface": "wls16", "display_name": "bench-antenna-1"} in [
+            {k: a[k] for k in ("interface", "display_name")} for a in listed
         ]
+        assert all(list(a)[0] == "interface" for a in listed)
 
     def test_unknown_antenna_returns_404(self, client, valid_token):
-        resp = client.get('/api/v2/antennas/wlan99', headers={'Authorization': valid_token})
-        assert resp.status_code == 404
+        for path in ('/api/v2/antennas/wlan99', '/api/v2/antennas/wlan99/capabilities'):
+            assert client.get(path, headers={'Authorization': valid_token}).status_code == 404
 
     def test_details(self, client, valid_token, monkeypatch):
         from wilab.api.routes import antennas
         from wilab.wifi.discovery import DeviceInfo
         monkeypatch.setattr(antennas, "detect_device", lambda i: DeviceInfo("usb", "2-1", "mt7921u"))
-        data = client.get('/api/v2/antennas/wls16', headers={'Authorization': valid_token}).json()
+        antenna = client.get('/api/v2/antennas/wls16', headers={'Authorization': valid_token}).json()
+        assert list(antenna) == ["interface", "display_name", "device", "reservation", "network_active", "health"]
+        assert antenna["device"] == {"bus": "usb", "address": "2-1", "driver": "mt7921u"}
+        assert antenna["reservation"] is None and antenna["network_active"] is False
+        data = client.get('/api/v2/antennas/wls16/capabilities', headers={'Authorization': valid_token}).json()
+        assert list(data) == ["interface", "encryptions", "bands"]
         assert data["interface"] == "wls16"
-        assert data["device"] == {"bus": "usb", "address": "2-1", "driver": "mt7921u"}
         assert data["encryptions"] == ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"]
         assert data["bands"]["5ghz"]["wifi_generations"] == [
             {"wifi_generation": 4, "channel_widths": [20, 40]},
@@ -292,6 +298,27 @@ class TestAntennasAPI:
         assert all(c["frequency_mhz"] < 5925 for c in channels.values())   # no 6 GHz
         assert 14 not in {c["channel"] for c in data["bands"]["2.4ghz"]["channels"]}
 
+    def test_the_antenna_state_is_its_entry_of_status(self, client, valid_token, reservation_id, context, monkeypatch):
+        """Reserved and quarantined: the same fields and values as antennas[] of GET /status."""
+        headers = {'Authorization': valid_token}
+        monkeypatch.setattr(context.reservations, "recovery_snapshot", lambda: {"wls16": False})
+        status = {a["interface"]: a for a in client.get('/api/v2/status', headers=headers).json()["antennas"]}
+        for interface, entry in status.items():
+            antenna = client.get(f'/api/v2/antennas/{interface}', headers=headers).json()
+            assert {k: antenna[k] for k in entry} == entry
+        assert status["wls16"]["recovery_state"] == "unavailable"
+        assert any(a["reservation"] is not None for a in status.values())
+
+    def test_only_the_capabilities_read_the_radio(self, client, valid_token, context, monkeypatch):
+        """A radio being reset: the antenna answers 200, its capabilities 503 (retry)."""
+        from wilab.network.commands import CommandError
+        def unreadable(interface):
+            raise CommandError("iw failed")
+        monkeypatch.setattr(context.channels, "get_channels", unreadable)
+        headers = {'Authorization': valid_token}
+        assert client.get('/api/v2/antennas/wls16', headers=headers).status_code == 200
+        assert client.get('/api/v2/antennas/wls16/capabilities', headers=headers).status_code == 503
+
     def test_device_is_null_when_sysfs_does_not_show_it(self, client, valid_token, monkeypatch):
         from wilab.api.routes import antennas
         monkeypatch.setattr(antennas, "detect_device", lambda i: None)
@@ -301,7 +328,7 @@ class TestAntennasAPI:
     def test_every_listed_choice_is_accepted_by_the_create_check(self, client, valid_token, context):
         """The lists and the create use the same rules: no combination is refused."""
         _set_show_dfs_channels(context, True)
-        data = client.get('/api/v2/antennas/wls16', headers={'Authorization': valid_token}).json()
+        data = client.get('/api/v2/antennas/wls16/capabilities', headers={'Authorization': valid_token}).json()
         mgr = context.channels
         checked = 0
         for band, options in data["bands"].items():
@@ -475,7 +502,7 @@ class TestNetworkCreationChannelValidation:
         url = f"/api/v2/reservations/{reservation_id}/network"
         headers = {"Authorization": valid_token}
 
-        listing = client.get("/api/v2/antennas/wls16", headers=headers)
+        listing = client.get("/api/v2/antennas/wls16/capabilities", headers=headers)
         assert listing.status_code == 200
         channels = {ch["channel"]: ch for ch in listing.json()["bands"]["5ghz"]["channels"]}
         assert (52 in channels) is show_dfs_channels
