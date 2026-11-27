@@ -320,18 +320,11 @@ assert created.status_code == 202 and outcome.json()["active"] is True
 
 ## CI/CD Integration
 
-### Using run-tests.sh
+### In CI and locally
 
-```bash
-# The project includes a test runner script
-./run-tests.sh
-
-# This script:
-# 1. Installs pytest for the system Python if it is missing (no virtual environment)
-# 2. Runs pytest on tests/ (the e2e tests are collected and skipped) and saves the output in test-report.txt
-# 3. Prints a summary of passed, failed and skipped tests
-# CI does not use it: it runs `make type-check` and `make test-local-quick`
-```
+The Makefile is the only entry point: `make test-local` (verbose, with the coverage
+report), `make test-local-quick` (no coverage, for every change) and `make test-local-cov`
+(HTML report in `htmlcov/`). CI runs `make lint`, `make type-check` and `make test-local`.
 
 ### Continuous Testing
 

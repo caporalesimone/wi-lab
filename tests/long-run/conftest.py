@@ -32,7 +32,7 @@ HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
 sys.path.insert(0, str(REPO_ROOT / "tests" / "e2e-tests"))   # reuse the e2e helpers
 
-from wilab_e2e import Server, WiLab
+from wilab_e2e import Server, WiLab  # noqa: E402 (after the path above)
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

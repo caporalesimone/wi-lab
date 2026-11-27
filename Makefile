@@ -18,8 +18,8 @@ help:
 	@echo "  make frontend-test     Run the frontend specs (Node test runner in Docker, no browser)"
 	@echo ""
 	@echo "Testing (Local - uses venv):"
-	@echo "  make test-local        Run unit tests with verbose output"
-	@echo "  make test-local-quick  Run unit tests with minimal output"
+	@echo "  make test-local        Run unit tests, verbose, with the coverage report (as CI)"
+	@echo "  make test-local-quick  Run unit tests with minimal output, no coverage"
 	@echo "  make test-local-cov    Run unit tests with coverage report (HTML)"
 	@echo ""
 	@echo "Testing (E2E - on the Wi-Lab machine, against the running service):"
@@ -76,9 +76,10 @@ frontend-test:
 	@echo "✓ Frontend specs passed"
 
 # Local test targets (use venv)
+# Coverage only here, in test-local-cov and in CI (ARCH-11 A5): the quick run stays quick.
 test-local: venv
 	@echo "Running tests locally in venv..."
-	$(PYTEST) tests/unit-tests -v --tb=short
+	$(PYTEST) tests/unit-tests -v --tb=short --cov=wilab --cov-report=term-missing:skip-covered
 
 test-local-quick: venv
 	@echo "Running tests locally in venv (quick mode)..."
@@ -100,9 +101,8 @@ test-e2e-usb: venv
 # Code quality targets
 lint: venv
 	@echo "Running ruff linter..."
-	$(VENV)/bin/ruff check wilab/ tests/ --color=always
-	$(VENV)/bin/ruff check wilab/ main.py --select G004 --color=always
-	@echo "✓ Lint check completed"
+	$(VENV)/bin/ruff check wilab/ tests/ main.py scripts/ --color=always
+	@echo "✓ Lint check completed (rules in pyproject.toml)"
 
 lint-fix: venv
 	@echo "Running ruff formatter and fixer..."

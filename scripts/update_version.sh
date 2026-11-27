@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION_FILE="$(dirname "$0")/VERSION"
-PACKAGE_JSON="$(dirname "$0")/frontend/package.json"
+# Run from anywhere: the repository is the parent of scripts/ (ARCH-11 A4).
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION_FILE="$REPO_DIR/VERSION"
+PACKAGE_JSON="$REPO_DIR/frontend/package.json"
 
 usage() {
     cat <<'EOF'
-Usage: ./update_version.sh [--bump-to X.Y.Z]
+Usage: scripts/update_version.sh [--bump-to X.Y.Z]
 
 Options:
   --bump-to X.Y.Z   Set the next version non-interactively

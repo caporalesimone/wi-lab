@@ -1,0 +1,41 @@
+# Tool configuration for the whole project: pytest, ruff and mypy (Fable ARCH-11 A2).
+#
+# There is deliberately no [project] table: Wi-Lab is deployed from a checkout, not
+# installed as a package, and the version has one source, the VERSION file, changed
+# only with scripts/update_version.sh. Do not add a version here.
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit-tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["-v", "--tb=short", "--strict-markers", "-ra"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "api: API tests",
+    "slow: Slow running tests",
+    "e2e: End-to-end tests against a running service (tests/e2e-tests, need WILAB_E2E=1)",
+    "usb: E2E tests that simulate a USB unplug (need WILAB_E2E_USB=1)",
+    "usb_active_ap: E2E tests that unplug an antenna with an active AP (need WILAB_E2E_USB_ACTIVE_AP=1)",
+    "service_restart: E2E tests that kill and restart the Wi-Lab service (need WILAB_E2E_RESTART=1)",
+]
+
+[tool.ruff]
+# The rule set is pinned so `make lint` gives the same answer with any ruff version
+# (ARCH-11 A3): the defaults change between releases and mostly flagged style
+# (B008 on FastAPI's Depends(), BLE001 on deliberate catch-alls).
+target-version = "py312"
+
+[tool.ruff.lint]
+# E4/E7/E9 and F: real errors (syntax, undefined names, unused imports...).
+# G004: no f-strings in logging calls (ARCH-10, docs/readme-dev.md).
+select = ["E4", "E7", "E9", "F", "G004"]
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = false
+init_typed = true
+warn_required_dynamic_aliases = false

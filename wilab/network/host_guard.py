@@ -76,9 +76,9 @@ class HostGuard:
         """Guard the host from clients of `interface`. All or nothing: raises CommandError."""
         self._guarded[net_id] = interface  # tracked first, so a rollback removes partial rules
         name = chain(net_id)
-        for run, rules in ((execute_iptables, _ipv4_rules(captive_port)), (_ip6tables, _ipv6_rules())):
+        for run, guard_rules in ((execute_iptables, _ipv4_rules(captive_port)), (_ip6tables, _ipv6_rules())):
             run(["-N", name])
-            for rule in rules:
+            for rule in guard_rules:
                 run(["-A", name, *rule])
             # First in INPUT, so a host rule that accepts everything cannot come before it.
             run(["-I", "INPUT", "1", *_jump(interface, net_id)[1:]])

@@ -25,10 +25,12 @@ jobs:
           .venv/bin/python -m pip install -r requirements-dev.txt
       - name: Validate example configuration
         run: .venv/bin/python main.py --validate-config --config config.example.yaml
+      - name: Lint
+        run: make lint
       - name: Type check
         run: make type-check
-      - name: Test backend
-        run: make test-local-quick
+      - name: Test backend (with coverage)
+        run: make test-local
       - name: Build offline API documentation
         run: .venv/bin/python scripts/export_api_docs.py --out api-docs
       - name: Upload API documentation
