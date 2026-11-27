@@ -107,6 +107,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - New e2e tests: `kill -SEGV` of hostapd restored within 15 s with the control connection following (PERF-4), and the stop of a hostapd frozen with `SIGSTOP` (e2e-test-8).
 - Long run: a burst test on every antenna in parallel (reserve, 10-40 random networks back to back with cancels, conflicts and networks left up, release, again) with a chaos monkey that kills hostapd (`SIGSEGV`) and dnsmasq of dwelling networks within the watchdog budgets and checks each comes back by itself within 45 s.
 - Unit tests for the radar check and the moved channel in the watchdog, the channel cache refresh, a startup cleanup that cannot read `/proc` and an expired network read while its stop fails (REV-12); the retirement of a gone antenna and what keeps it (WD-5); the constant-time token check (BUG-8); the client list, from 49 % to full coverage (REV-18). Unit coverage is 94 %.
+- The long run ends by comparing the idle service with itself before the run: same process, open descriptors (+8), threads (+4) and resident memory (+40 MB) at most (PERF-7, T-21 on real hardware).
 - Unit tests create networks through the real asynchronous path (`202`, then polling) with the `create_network` helper (REV-16).
 
 ### 🔌 API changes from 4.0.0 (client migration)

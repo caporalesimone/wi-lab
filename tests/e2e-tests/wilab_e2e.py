@@ -156,6 +156,21 @@ class Server:
         """SIGKILL only the main process: an unclean shutdown, then Restart=always."""
         self.sudo(["systemctl", "kill", "--kill-whom=main", "--signal=SIGKILL", SERVICE])
 
+    def service_resources(self) -> dict[str, int]:
+        """PID, resident memory (kB), open descriptors and threads of the service's main process."""
+        pid = int(subprocess.run(
+            ["systemctl", "show", SERVICE, "-p", "MainPID", "--value"], capture_output=True, text=True, check=True,
+        ).stdout.strip())
+        fields = dict(
+            line.split(":", 1) for line in Path(f"/proc/{pid}/status").read_text().splitlines() if ":" in line
+        )
+        return {
+            "pid": pid,
+            "rss_kb": int(fields["VmRSS"].split()[0]),
+            "threads": int(fields["Threads"]),
+            "fds": len(self.sudo_output(["ls", f"/proc/{pid}/fd"]).split()),   # root only
+        }
+
     @staticmethod
     def service_started_at() -> float:
         stamp = subprocess.run(

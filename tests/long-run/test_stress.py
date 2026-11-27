@@ -233,3 +233,21 @@ def test_burst_on_every_antenna_with_fault_injection(idle: WiLab, server, base_u
     print(f"\nchaos monkey: {kills} kills, {recovered} recovered by themselves")
     _finish(rec, errors)
     assert kills >= 5, f"the monkey struck only {kills} times"
+
+
+# Fable PERF-7: after hours of networks, the service is back where it started.
+RSS_GROWTH_KB = 40_000      # Python's allocator keeps some freed memory; a leak grows without bound
+FD_GROWTH = 8
+THREAD_GROWTH = 4
+
+
+def test_no_growth_of_memory_descriptors_or_threads(idle: WiLab, server, resources_at_start):
+    """Runs last: memory, descriptors and threads of the idle service compared with before the run."""
+    time.sleep(10)   # monitors, readers and repair threads of the last networks end
+    after = server.service_resources()
+    before = resources_at_start
+    print(f"\nservice resources before {before}, after {after}")
+    assert after["pid"] == before["pid"], "the service restarted during the run"
+    assert after["fds"] <= before["fds"] + FD_GROWTH, (before, after)
+    assert after["threads"] <= before["threads"] + THREAD_GROWTH, (before, after)
+    assert after["rss_kb"] <= before["rss_kb"] + RSS_GROWTH_KB, (before, after)

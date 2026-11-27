@@ -1,7 +1,9 @@
 """Long-run stress tests against a running Wi-Lab service on real hardware.
 
 They create networks continuously through the API for a fixed time and then
-check that nothing is left behind. Skipped unless WILAB_LONG_RUN=1.
+check that nothing is left behind; the last test compares the service's memory,
+open descriptors and threads with those before the first (PERF-7). Skipped
+unless WILAB_LONG_RUN=1.
 
 Environment:
     WILAB_LONG_RUN=1          enable the suite
@@ -57,6 +59,12 @@ def token() -> str:
 @pytest.fixture(scope="session")
 def base_url() -> str:
     return os.environ.get("WILAB_E2E_URL", "http://localhost:8080")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def resources_at_start(server: Server) -> dict[str, int]:
+    """The service's memory, descriptors and threads before the first test (PERF-7)."""
+    return server.service_resources()
 
 
 @pytest.fixture
