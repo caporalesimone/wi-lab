@@ -88,6 +88,24 @@
           <span class="label">Wi-Fi:</span>
           <span class="value">{{ generationLabels[status!.radio!.wifi_generation] }}</span>
         </div>
+        <div class="info-row" *ngIf="status?.radio"
+          matTooltip="On: clients of older Wi-Fi generations can connect with their own generation. Off: only clients of the chosen generation or newer.">
+          <span class="label">Older generations:</span>
+          <span class="value">
+            <span class="state-pill" [class.on]="status?.radio?.enable_generation_fallback !== false">
+              {{ status?.radio?.enable_generation_fallback !== false ? 'Accepted' : 'Refused' }}
+            </span>
+          </span>
+        </div>
+        <div class="info-row" *ngIf="status?.radio"
+          matTooltip="On: the AP announces the optional Wi-Fi 4/5 features of the antenna (short guard interval, LDPC, STBC, larger frames, beamforming), so links are faster and steadier. Off: a minimal AP that announces none of them.">
+          <span class="label">HT/VHT capabilities:</span>
+          <span class="value">
+            <span class="state-pill" [class.on]="status?.radio?.enable_ht_vht_capab !== false">
+              {{ status?.radio?.enable_ht_vht_capab !== false ? 'On' : 'Off' }}
+            </span>
+          </span>
+        </div>
         <div class="info-row">
           <span class="label">Captive portal:</span>
           <span class="value captive-value">

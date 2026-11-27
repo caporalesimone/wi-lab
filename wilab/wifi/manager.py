@@ -29,7 +29,7 @@ from ..network.subnet_allocator import SubnetAllocator
 from ..reservation import Reservation, ReservationManager
 from ..timestamps import format_utc_timestamp
 from .active import ActiveNetwork
-from .channels import ChannelManager, is_dfs_channel
+from .channels import BandCapabilities, ChannelManager, is_dfs_channel
 from .clients import ClientLister
 from .failures import FailureKind
 from .hostapd import (
@@ -164,6 +164,13 @@ class NetworkManager:
         self._expiry_thread = threading.Thread(target=self._expiry_loop, name="network-expiry", daemon=True)
         self._expiry_thread.start()
 
+    def _band_capabilities(self, interface: str, band: str) -> BandCapabilities | None:
+        """The antenna's capabilities on *band* (cached by the channel manager), for ht/vht_capab."""
+        try:
+            return self._channel_manager.get_channels(interface).capabilities.bands.get(band)
+        except (CommandError, ValueError):
+            return None
+
     @property
     def channel_manager(self) -> ChannelManager:
         """The service-wide channel and capability cache."""
@@ -278,11 +285,13 @@ class NetworkManager:
         running = (
             st.ssid, st.password or None, st.encryption, st.band, st.channel, bool(st.hidden),
             st.channel_width or 20, st.wifi_generation or 4, st.enable_generation_fallback,
+            st.enable_ht_vht_capab,
             st.internet_enabled, st.captive_portal, st.tx_power_level,
         )
         asked = (
             req.ssid, req.password or None, req.encryption, req.band, req.channel, req.hidden,
-            req.channel_width, req.wifi_generation, req.enable_generation_fallback, internet,
+            req.channel_width, req.wifi_generation, req.enable_generation_fallback,
+            req.enable_ht_vht_capab, internet,
             req.captive_portal, req.tx_power_level,
         )
         return running == asked
@@ -465,6 +474,7 @@ class NetworkManager:
         plan = StartPlan(
             device_id=device_id, interface=cfg_net.interface, request=req, subnet=subnet,
             internet_enabled=internet_enabled, layout=layout, cancelled=cancelled,
+            band_capabilities=self._band_capabilities(cfg_net.interface, req.band),
         )
         policy = RetryPolicy.internal() if allow_internal_retry else RetryPolicy.single()
         run_startup(self, plan, policy, deadline)

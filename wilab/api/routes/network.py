@@ -113,7 +113,7 @@ _ACTIVE_EXAMPLE = {
     "radio": {
         "band": "5ghz", "channel": 36,
         "channel_width": {"requested": 80, "reported": 80},
-        "wifi_generation": 5, "enable_generation_fallback": True,
+        "wifi_generation": 5, "enable_generation_fallback": True, "enable_ht_vht_capab": True,
         "tx_power": {"requested_level": 4, "reported_level": 4, "reported_dbm": 20.0},
     },
     "wifi": {
@@ -426,6 +426,31 @@ def start_network(
     what the antenna supports; anything else returns `422`.
     40 MHz on 2.4 GHz may fall back to 20 MHz when neighbouring networks are
     present: `GET /access-point/{reservation_id}` reports the actual `radio.channel_width.reported`.
+
+    **Generation fallback** (`radio.enable_generation_fallback`, default `true`): a client
+    connects with the highest generation it shares with the AP, so a Wi-Fi 5 phone on a
+    Wi-Fi 6 AP gets a Wi-Fi 5 link. `false` accepts only clients of `wifi_generation` or
+    newer; the AP also tells it in its beacons, so other clients do not even try.
+
+    **Optional 802.11n/ac features** (`radio.enable_ht_vht_capab`, default `true`): every
+    802.11n and 802.11ac link works with the mandatory features alone; the optional ones
+    make it faster and steadier, and a client uses one only if both sides announce it.
+    With `true` the AP announces those its antenna declares (read from `iw phy`, written
+    as hostapd `ht_capab` and `vht_capab`), never more, so hostapd accepts them on any
+    adapter:
+
+    | Feature | hostapd flags | Effect |
+    |---|---|---|
+    | Short guard interval | `SHORT-GI-20/40/80` | Shorter pause between symbols: about +10% throughput |
+    | LDPC | `LDPC`, `RXLDPC` | Stronger error correction: a steadier link with a weak signal |
+    | STBC | `TX-STBC`, `RX-STBC1`, `TX-STBC-2BY1`, `RX-STBC-1` | The same data from two antennas: helps at distance |
+    | Larger frames | `MAX-AMSDU-7935`, `MAX-MPDU-11454`, `MAX-A-MPDU-LEN-EXP7` | Bigger aggregates: less overhead per packet |
+    | Beamformee | `SU-BEAMFORMEE`, `MU-BEAMFORMEE`, `BF-ANTENNA-n` | The client can steer its signal towards the AP |
+
+    `false` announces none of them (only the channel width), the behaviour before 4.1.0:
+    a minimal AP, to see how clients behave without them. 802.11ax (Wi-Fi 6) features
+    are always announced as hostapd reads them from the driver. The values above are an
+    MT7921U; another adapter announces its own.
     """
     req = body.to_request()
     device_id = reservation.device_id

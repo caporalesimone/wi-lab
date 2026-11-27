@@ -73,6 +73,21 @@ class NetworkCreateRequest(BaseModel):
             "`GET /antennas/{interface}/capabilities` are accepted."
         ),
     )
+    enable_ht_vht_capab: bool = Field(
+        True,
+        description=(
+            "Optional, default true: the access point announces the optional 802.11n and 802.11ac "
+            "features the antenna supports, read from `iw phy` (hostapd `ht_capab` and `vht_capab`): "
+            "short guard interval (shorter pause between symbols, about +10% throughput), LDPC "
+            "(stronger error correction, steadier link with a weak signal), STBC (the same data from "
+            "two antennas, helps at distance), larger aggregated frames (A-MSDU, MPDU, A-MPDU: less "
+            "overhead) and beamformee support. A client uses only what both sides announce, so these "
+            "make Wi-Fi 4 and Wi-Fi 5 links faster and more robust; Wi-Fi 6 features are always "
+            "announced. false: the access point announces none of them, only the channel width (the "
+            "behavior before 4.1.0): a minimal access point, to test how clients behave without them. "
+            "No effect with `wpa1`, which runs without 802.11n."
+        ),
+    )
     enable_generation_fallback: bool = Field(
         True,
         description=(
@@ -218,6 +233,9 @@ class NetworkStatus(BaseModel):
     enable_generation_fallback: bool | None = Field(
         None, description="False: only clients of `wifi_generation` or newer are accepted",
     )
+    enable_ht_vht_capab: bool | None = Field(
+        None, description="True: the optional 802.11n/ac features of the antenna are announced",
+    )
     subnet: str | None = None
     internet_enabled: bool = False
     captive_portal: bool = Field(False, description="True if clients are held behind the captive portal until they sign in")
@@ -254,6 +272,7 @@ _BODY_PATHS = {
     "band": "radio.band", "channel": "radio.channel", "channel_width": "radio.channel_width",
     "wifi_generation": "radio.wifi_generation", "tx_power_level": "radio.tx_power_level",
     "enable_generation_fallback": "radio.enable_generation_fallback",
+    "enable_ht_vht_capab": "radio.enable_ht_vht_capab",
     "ssid": "wifi.ssid", "hidden": "wifi.hidden", "encryption": "wifi.security.encryption",
     "password": "wifi.security.password", "internet_enabled": "internet.enabled",
     "captive_portal": "captive_portal.enabled",
@@ -275,6 +294,7 @@ class RadioSettings(BaseModel):
     channel_width: Literal[20, 40, 80] = Field(20, description=_doc("channel_width"))
     wifi_generation: Literal[4, 5, 6] = Field(4, description=_doc("wifi_generation"))
     enable_generation_fallback: bool = Field(True, description=_doc("enable_generation_fallback"))
+    enable_ht_vht_capab: bool = Field(True, description=_doc("enable_ht_vht_capab"))
     tx_power_level: int = Field(..., ge=1, le=4, description="TX power level (1=low, 4=max)")
 
 
@@ -364,6 +384,10 @@ class RadioInfo(BaseModel):
     wifi_generation: int = Field(description="4 (802.11n), 5 (802.11ac), 6 (802.11ax)")
     enable_generation_fallback: bool = Field(
         True, description="False: clients older than `wifi_generation` are refused",
+    )
+    enable_ht_vht_capab: bool = Field(
+        True, description="True: the optional 802.11n/ac features of the antenna are announced "
+        "(short guard interval, LDPC, STBC, larger frames, beamformee); see the create body",
     )
     tx_power: NetworkTxPower | None = Field(None, description="Requested and reported TX power")
 
@@ -483,6 +507,7 @@ class NetworkResponse(BaseModel):
                 ),
                 wifi_generation=st.wifi_generation or 4,
                 enable_generation_fallback=st.enable_generation_fallback is not False,
+                enable_ht_vht_capab=st.enable_ht_vht_capab is not False,
                 tx_power=st.tx_power,
             ),
             wifi=WifiInfo(

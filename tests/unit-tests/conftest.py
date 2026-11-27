@@ -415,7 +415,7 @@ def clean_manager(config, monkeypatch):
     return mgr
 
 
-_RADIO_FIELDS = ("band", "channel", "channel_width", "wifi_generation", "enable_generation_fallback", "tx_power_level")
+_RADIO_FIELDS = ("band", "channel", "channel_width", "wifi_generation", "enable_generation_fallback", "enable_ht_vht_capab", "tx_power_level")
 
 
 def network_body(**flat):

@@ -71,6 +71,10 @@ class ActiveNetwork:
     def enable_generation_fallback(self) -> bool:
         return self.request.enable_generation_fallback
 
+    @property
+    def enable_ht_vht_capab(self) -> bool:
+        return self.request.enable_ht_vht_capab
+
     def expired(self, now: float) -> bool:
         return self.deadline is not None and self.deadline < now
 
@@ -102,6 +106,7 @@ class ActiveNetwork:
             channel_width=req.channel_width,
             wifi_generation=req.wifi_generation,
             enable_generation_fallback=req.enable_generation_fallback,
+            enable_ht_vht_capab=req.enable_ht_vht_capab,
             subnet=self.subnet,
             internet_enabled=self.internet_enabled,
             captive_portal=req.captive_portal,

@@ -15,7 +15,7 @@ from ..models import NetworkCreateRequest
 from ..network.captive import CaptivePortal, CaptivePortalError
 from ..network.commands import CommandError, execute_ip
 from ..network.dhcp import DhcpServerError
-from .channels import ChannelLayout
+from .channels import BandCapabilities, ChannelLayout
 from .failures import FailureKind
 from .hostapd import HostapdCancelled, HostapdError
 from .interface import interface_present
@@ -123,6 +123,8 @@ class StartPlan:
     internet_enabled: bool
     layout: ChannelLayout
     cancelled: Callable[[], bool] | None = None
+    # The antenna's capabilities on the band, for hostapd ht_capab/vht_capab.
+    band_capabilities: BandCapabilities | None = None
 
 
 class StartAttempt:
@@ -159,6 +161,7 @@ class StartAttempt:
             channel_width=req.channel_width,
             wifi_generation=req.wifi_generation,
             generation_fallback=req.enable_generation_fallback,
+            capabilities=plan.band_capabilities if req.enable_ht_vht_capab else None,
             layout=plan.layout,
             **({"cancelled": plan.cancelled} if plan.cancelled is not None else {}),
         )

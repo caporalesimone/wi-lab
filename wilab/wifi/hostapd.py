@@ -20,7 +20,7 @@ from ..network.commands import (
     start_foreground,
 )
 from ..paths import HOSTAPD_RUNTIME_DIR, make_private_dir
-from .channels import ChannelLayout, channel_layouts, is_dfs_channel
+from .channels import BandCapabilities, ChannelLayout, channel_layouts, is_dfs_channel
 from .failures import FailureKind
 from .hostapd_ctrl import ControlError, HostapdMonitor, parse_fields
 from .interface import interface_present
@@ -79,8 +79,80 @@ SECURITY_LINES: dict[str, list[str]] = {
 REQUIRE_LINES = {4: "require_ht=1", 5: "require_vht=1", 6: "require_he=1"}
 
 
+def ht_capab_flags(ht_cap: int, band: str, width: int) -> list[str]:
+    """Optional 802.11n features of the radio (HT Capabilities Info), as hostapd `ht_capab` flags.
+
+    Only what the radio declares is listed, so hostapd accepts every flag.
+    Greenfield is left out (deprecated, it hides the AP from legacy stations).
+    """
+    flags = []
+    if ht_cap & 0x0001:
+        flags.append("[LDPC]")
+    if ht_cap & 0x0020:
+        flags.append("[SHORT-GI-20]")
+    if ht_cap & 0x0040 and width >= 40:
+        flags.append("[SHORT-GI-40]")
+    if ht_cap & 0x0080:
+        flags.append("[TX-STBC]")
+    rx_stbc = (ht_cap >> 8) & 0x3
+    if rx_stbc:
+        flags.append(f"[RX-STBC{'123'[:rx_stbc]}]")
+    if ht_cap & 0x0800:
+        flags.append("[MAX-AMSDU-7935]")
+    if ht_cap & 0x1000 and band == "2.4ghz" and width >= 40:
+        flags.append("[DSSS_CCK-40]")
+    return flags
+
+
+def vht_capab_flags(vht_cap: int, width: int) -> list[str]:
+    """Optional 802.11ac features of the radio (VHT Capabilities Info), as hostapd `vht_capab` flags."""
+    flags = []
+    mpdu = vht_cap & 0x3
+    if mpdu:
+        flags.append("[MAX-MPDU-11454]" if mpdu >= 2 else "[MAX-MPDU-7991]")
+    if vht_cap & 0x10:
+        flags.append("[RXLDPC]")
+    if vht_cap & 0x20 and width >= 80:
+        flags.append("[SHORT-GI-80]")
+    if vht_cap & 0x80:
+        flags.append("[TX-STBC-2BY1]")
+    rx_stbc = (vht_cap >> 8) & 0x7
+    if rx_stbc:
+        flags.append(f"[RX-STBC-{'1234'[:rx_stbc]}]")
+    if vht_cap & (1 << 11):
+        flags.append("[SU-BEAMFORMER]")
+        sounding = (vht_cap >> 16) & 0x7
+        if sounding:
+            flags.append(f"[SOUNDING-DIMENSION-{sounding + 1}]")
+    if vht_cap & (1 << 12):
+        flags.append("[SU-BEAMFORMEE]")
+        antennas = (vht_cap >> 13) & 0x7
+        if antennas:
+            flags.append(f"[BF-ANTENNA-{antennas + 1}]")
+    if vht_cap & (1 << 19):
+        flags.append("[MU-BEAMFORMER]")
+    if vht_cap & (1 << 20):
+        flags.append("[MU-BEAMFORMEE]")
+    if vht_cap & (1 << 21):
+        flags.append("[VHT-TXOP-PS]")
+    if vht_cap & (1 << 22):
+        flags.append("[HTC-VHT]")
+    exponent = (vht_cap >> 23) & 0x7
+    if exponent:
+        flags.append(f"[MAX-A-MPDU-LEN-EXP{exponent}]")
+    adapt = (vht_cap >> 26) & 0x3
+    if adapt >= 2:
+        flags.append(f"[VHT-LINK-ADAPT{adapt}]")
+    if vht_cap & (1 << 28):
+        flags.append("[RX-ANTENNA-PATTERN]")
+    if vht_cap & (1 << 29):
+        flags.append("[TX-ANTENNA-PATTERN]")
+    return flags
+
+
 def mode_lines(
     band: str, width: int, generation: int, layout: ChannelLayout, encryption: str, fallback: bool = True,
+    capabilities: BandCapabilities | None = None,
 ) -> list[str]:
     """hostapd lines for the Wi-Fi generation and channel width (HAP-11).
 
@@ -88,17 +160,28 @@ def mode_lines(
     802.11ax is announced together with 802.11ac, as clients expect. wpa1 turns
     HT off: the network is 802.11a/g at 20 MHz. Without *fallback* only clients
     of the generation or newer can associate (`require_ht`/`require_vht`/`require_he`).
+    With the radio's *capabilities* (`enable_ht_vht_capab`) the optional 802.11n
+    and 802.11ac features it declares are announced (`ht_capab`, `vht_capab`);
+    without them the AP announces none and only the channel width.
     """
     if encryption == "wpa1":
         return ["ieee80211n=0"]
     lines = ["ieee80211n=1"]
+    ht_flags = []
     if width >= 40:
-        lines.append("ht_capab=[HT40+]" if layout.secondary_above else "ht_capab=[HT40-]")
+        ht_flags.append("[HT40+]" if layout.secondary_above else "[HT40-]")
+    if capabilities is not None:
+        ht_flags += ht_capab_flags(capabilities.ht_cap, band, width)
+    if ht_flags:
+        lines.append("ht_capab=" + "".join(ht_flags))
     vht_width = 1 if width == 80 else 0
     if band == "5ghz" and generation >= 5:
         lines += ["ieee80211ac=1", f"vht_oper_chwidth={vht_width}"]
         if width == 80:
             lines.append(f"vht_oper_centr_freq_seg0_idx={layout.center}")
+        vht_flags = vht_capab_flags(capabilities.vht_cap, width) if capabilities is not None else []
+        if vht_flags:
+            lines.append("vht_capab=" + "".join(vht_flags))
     if generation == 6:
         lines += ["ieee80211ax=1", f"he_oper_chwidth={vht_width}"]
         if width == 80:
@@ -273,6 +356,7 @@ class HostapdManager:
         channel_width: int = 20,
         wifi_generation: int = 4,
         generation_fallback: bool = True,
+        capabilities: BandCapabilities | None = None,
         layout: ChannelLayout | None = None,
     ) -> str:
         """
@@ -290,6 +374,8 @@ class HostapdManager:
             channel_width: 20, 40 or 80 MHz
             wifi_generation: 4 (802.11n), 5 (802.11ac) or 6 (802.11ax)
             generation_fallback: False accepts only clients of the generation or newer
+            capabilities: the radio's band capabilities, to announce its optional
+                802.11n/ac features (`ht_capab`, `vht_capab`); None announces none
             layout: channel block chosen by the channel manager; the first
                 possible one when omitted
 
@@ -336,7 +422,7 @@ class HostapdManager:
         config_lines.extend([
             f"country_code={country_code}",
             "ieee80211d=1",  # Advertise country code and apply regulatory domain
-            *mode_lines(band, channel_width, wifi_generation, layout, encryption, generation_fallback),
+            *mode_lines(band, channel_width, wifi_generation, layout, encryption, generation_fallback, capabilities),
             "wmm_enabled=1",  # WMM/QoS
         ])
 
@@ -360,6 +446,7 @@ class HostapdManager:
         channel_width: int = 20,
         wifi_generation: int = 4,
         generation_fallback: bool = True,
+        capabilities: BandCapabilities | None = None,
         layout: ChannelLayout | None = None,
         cancelled: Callable[[], bool] | None = None,
     ) -> HostapdInstance:
@@ -376,7 +463,8 @@ class HostapdManager:
             hidden: Hide SSID broadcast
             band: WiFi band (2.4ghz/5ghz)
             country_code: ISO 3166-1 alpha-2 country code
-            channel_width, wifi_generation, generation_fallback, layout: see :meth:`_generate_config`
+            channel_width, wifi_generation, generation_fallback, capabilities, layout: see
+                :meth:`_generate_config`
 
         Returns:
             Dictionary with hostapd instance info
@@ -390,7 +478,7 @@ class HostapdManager:
         try:
             config_content = self._generate_config(
                 interface, ssid, channel, encryption, password, hidden, band, country_code,
-                channel_width, wifi_generation, generation_fallback, layout,
+                channel_width, wifi_generation, generation_fallback, capabilities, layout,
             )
             instance_dir = tempfile.mkdtemp(prefix="ap-", dir=HOSTAPD_CONFIG_DIR)
             control_dir = os.path.join(instance_dir, "ctrl")

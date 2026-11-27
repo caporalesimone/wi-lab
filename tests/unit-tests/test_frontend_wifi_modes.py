@@ -37,3 +37,13 @@ def test_card_reads_the_capabilities_before_opening_the_form():
     assert "status?.radio?.channel_width as width" in card_html
     assert "width.reported !== width.requested" in card_html
     assert "capabilities" not in (ROOT / "app.component.ts").read_text()
+
+
+def test_card_shows_fallback_and_ht_vht_capab_and_the_dialog_sets_them():
+    card_html = (ROOT / "components/network-card/network-card.component.html").read_text()
+    assert "status?.radio?.enable_generation_fallback" in card_html
+    assert "status?.radio?.enable_ht_vht_capab" in card_html
+    assert "short guard interval, LDPC, STBC" in card_html          # the hover explanation
+    dialog_ts = DIALOG_TS.read_text()
+    assert "enable_ht_vht_capab: [true]" in dialog_ts and "enable_ht_vht_capab: value.enable_ht_vht_capab" in dialog_ts
+    assert 'formControlName="enable_ht_vht_capab"' in DIALOG_HTML.read_text()

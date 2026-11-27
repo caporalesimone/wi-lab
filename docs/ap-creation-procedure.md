@@ -201,6 +201,7 @@ are required; `internet` and `captive_portal` can be omitted.
 | `radio.channel_width` | no | `20`, `40` or `80` MHz. Default `20`, the previous behavior. See [2.2.1](#221-encryption-channel-width-and-wi-fi-generation). |
 | `radio.wifi_generation` | no | `4` (802.11n), `5` (802.11ac, 5 GHz only) or `6` (802.11ax). Default `4`, the previous behavior. |
 | `radio.enable_generation_fallback` | no | Default `true`: clients of an older generation can still connect (a Wi-Fi 6 AP also accepts Wi-Fi 5 and 4 clients, which connect in their own generation). `false`: only clients of `wifi_generation` or newer are accepted, the others are refused at association. Not with `wpa1` (`422`). |
+| `radio.enable_ht_vht_capab` | no | Default `true`: the AP announces the optional 802.11n/ac features its antenna supports (short guard interval, LDPC, STBC, larger frames, beamformee; hostapd `ht_capab` and `vht_capab` from `iw phy`), so Wi-Fi 4 and 5 links are faster and steadier. `false`: a minimal AP that announces none of them (the behavior before 4.1.0). |
 | `radio.tx_power_level` | yes | `1` (low) to `4` (maximum). |
 | `wifi.ssid` | yes | Network name: 1–32 bytes in UTF-8 (non-ASCII characters count as more than one byte), no control characters such as line breaks or tabs. |
 | `wifi.hidden` | no | Default `false`. |

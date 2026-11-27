@@ -134,6 +134,7 @@ export interface NetworkStatus {
     channel_width: { requested: ChannelWidth; reported: number | null };
     wifi_generation: WifiGeneration;
     enable_generation_fallback?: boolean;
+    enable_ht_vht_capab?: boolean;
     tx_power?: {
       requested_level: number;
       reported_level?: number | null;
@@ -165,6 +166,8 @@ export interface NetworkCreateRequest {
     wifi_generation?: WifiGeneration;
     /** Default true; false: only clients of wifi_generation or newer. */
     enable_generation_fallback?: boolean;
+    /** Default true; false: the AP announces none of the optional 802.11n/ac features. */
+    enable_ht_vht_capab?: boolean;
     tx_power_level: number;
   };
   wifi: {

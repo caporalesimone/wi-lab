@@ -24,7 +24,7 @@ from wilab.wifi.channels import (
     channel_layouts,
     parse_phy_capabilities,
 )
-from wilab.wifi.hostapd import SECURITY_LINES, HostapdManager
+from wilab.wifi.hostapd import SECURITY_LINES, HostapdManager, ht_capab_flags, vht_capab_flags
 
 BASE = {"ssid": "TestAP", "channel": 6, "password": "testpass123", "band": "2.4ghz", "tx_power_level": 4}
 
@@ -56,6 +56,12 @@ class TestPhyCapabilities:
             "channel_widths": {"2.4ghz": [20, 40], "5ghz": [20, 40, 80]},
             "wifi_generations": {"2.4ghz": [4, 6], "5ghz": [4, 5, 6]},
         }
+
+    def test_raw_ht_and_vht_capabilities_are_kept(self):
+        """The words hostapd ht_capab and vht_capab are built from (enable_ht_vht_capab)."""
+        caps = parse_phy_capabilities(MOCK_PHY_INFO)
+        assert (caps.bands["2.4ghz"].ht_cap, caps.bands["2.4ghz"].vht_cap) == (0x9FF, 0)
+        assert (caps.bands["5ghz"].ht_cap, caps.bands["5ghz"].vht_cap) == (0x9FF, 0x339071B2)
 
     def test_without_tkip_there_is_no_wpa1(self):
         caps = parse_phy_capabilities(MOCK_PHY_INFO.replace("* TKIP", "* XXXX"))
@@ -206,6 +212,41 @@ class TestHostapdMode:
         assert "require_" not in _config(band=band, channel=channel, wifi_generation=generation)
 
 
+class TestHtVhtCapab:
+    """enable_ht_vht_capab: the optional 802.11n/ac features the radio declares, nothing more."""
+
+    def test_mt7921u_flags(self):
+        assert ht_capab_flags(0x9FF, "5ghz", 80) == [
+            "[LDPC]", "[SHORT-GI-20]", "[SHORT-GI-40]", "[TX-STBC]", "[RX-STBC1]", "[MAX-AMSDU-7935]",
+        ]
+        assert vht_capab_flags(0x339071B2, 80) == [
+            "[MAX-MPDU-11454]", "[RXLDPC]", "[SHORT-GI-80]", "[TX-STBC-2BY1]", "[RX-STBC-1]",
+            "[SU-BEAMFORMEE]", "[BF-ANTENNA-4]", "[MU-BEAMFORMEE]", "[MAX-A-MPDU-LEN-EXP7]",
+            "[RX-ANTENNA-PATTERN]", "[TX-ANTENNA-PATTERN]",
+        ]
+
+    def test_width_dependent_flags_only_when_used(self):
+        assert "[SHORT-GI-40]" not in ht_capab_flags(0x9FF, "5ghz", 20)
+        assert "[SHORT-GI-80]" not in vht_capab_flags(0x339071B2, 40)
+        assert "[DSSS_CCK-40]" in ht_capab_flags(0x1000, "2.4ghz", 40)
+        assert ht_capab_flags(0x1000, "5ghz", 40) == []
+
+    def test_nothing_declared_nothing_announced(self):
+        assert ht_capab_flags(0, "5ghz", 80) == [] and vht_capab_flags(0, 80) == []
+
+    def test_config_with_and_without(self):
+        caps = parse_phy_capabilities(MOCK_PHY_INFO).bands["5ghz"]
+        on = _config(band="5ghz", channel=36, channel_width=80, wifi_generation=6, capabilities=caps)
+        assert "ht_capab=[HT40+][LDPC][SHORT-GI-20][SHORT-GI-40][TX-STBC][RX-STBC1][MAX-AMSDU-7935]\n" in on
+        assert "vht_capab=[MAX-MPDU-11454][RXLDPC][SHORT-GI-80]" in on
+        off = _config(band="5ghz", channel=36, channel_width=80, wifi_generation=6)
+        assert "ht_capab=[HT40+]\n" in off and "vht_capab" not in off
+        assert "ht_capab" not in _config(capabilities=caps, encryption="wpa1", password="testpass123")
+        wifi4 = _config(capabilities=parse_phy_capabilities(MOCK_PHY_INFO).bands["2.4ghz"])
+        assert "ht_capab=[LDPC][SHORT-GI-20][TX-STBC][RX-STBC1][MAX-AMSDU-7935]\n" in wifi4
+        assert "vht_capab" not in wifi4
+
+
 # --------------------------------------------------------------------------- request model
 
 class TestRequestModel:
@@ -225,6 +266,9 @@ class TestRequestModel:
     def test_wifi5_only_on_5ghz(self):
         with pytest.raises(ValidationError, match="only available on 5ghz"):
             _request(wifi_generation=5)
+
+    def test_ht_vht_capab_is_on_by_default(self):
+        assert _request().enable_ht_vht_capab is True
 
     def test_fallback_is_on_by_default_and_not_with_wpa1(self):
         assert _request().enable_generation_fallback is True
@@ -328,6 +372,24 @@ class TestManagerAndWatchdog:
         assert kwargs["layout"].center == 42
         assert (status.channel_width, status.wifi_generation) == (80, 6)
         assert kwargs["generation_fallback"] is True
+
+    def test_ht_vht_capab_reaches_hostapd_the_answer_and_the_same_body_check(self, clean_manager, monkeypatch):
+        start = Mock()
+        monkeypatch.setattr(clean_manager.hostapd_manager, "start", start)
+        monkeypatch.setattr(clean_manager.hostapd_manager, "is_running", Mock(return_value=True))
+        device = clean_manager.config.antennas[0].device_id
+        req = _request(band="5ghz", channel=44, wifi_generation=5)
+        status = clean_manager.start_network(device, req)
+        caps = start.call_args.kwargs["capabilities"]
+        assert caps is not None and caps.vht_cap == 0x339071B2      # on by default, from iw phy
+        assert status.enable_ht_vht_capab is True
+        clean_manager.stop_network(device)
+        off = req.model_copy(update={"enable_ht_vht_capab": False})
+        status = clean_manager.start_network(device, off)
+        assert start.call_args.kwargs["capabilities"] is None
+        radio = NetworkResponse.from_status(status).radio
+        assert radio is not None and radio.enable_ht_vht_capab is False
+        assert clean_manager.runs(device, off) and not clean_manager.runs(device, req)
 
     def test_no_fallback_reaches_hostapd_the_answer_and_the_same_body_check(self, clean_manager, monkeypatch):
         start = Mock()

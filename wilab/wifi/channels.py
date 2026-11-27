@@ -17,6 +17,7 @@ Design decision – disabled channels:
 
 import logging
 import re
+from typing import Any
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -129,6 +130,8 @@ class BandCapabilities:
     he: bool = False     # 802.11ax in AP mode
     he40: bool = False
     he80: bool = False
+    ht_cap: int = 0      # HT Capabilities Info word ("Capabilities: 0x..."), for hostapd ht_capab
+    vht_cap: int = 0     # VHT Capabilities Info word, for hostapd vht_capab
 
 
 @dataclass(frozen=True)
@@ -197,7 +200,7 @@ def parse_phy_capabilities(output: str) -> RadioCapabilities:
     """
     bands: dict[str, BandCapabilities] = {}
     tkip = False
-    flags: dict[str, bool] | None = None
+    flags: dict[str, Any] | None = None
     band: str | None = None
     he_ap = False
 
@@ -212,6 +215,7 @@ def parse_phy_capabilities(output: str) -> RadioCapabilities:
         if re.match(r"Band \d+:", line):
             flush()
             flags, band, he_ap = dict.fromkeys(("ht40", "vht", "he", "he40", "he80"), False), None, False
+            flags.update(ht_cap=0, vht_cap=0)
             continue
         if line.startswith("* TKIP"):
             tkip = True
@@ -231,6 +235,10 @@ def parse_phy_capabilities(output: str) -> RadioCapabilities:
             flags["ht40"] = True
         elif line.startswith("VHT Capabilities"):
             flags["vht"] = True
+            if match := re.search(r"\((0x[0-9a-fA-F]+)\)", line):
+                flags["vht_cap"] = int(match[1], 16)
+        elif line.startswith("Capabilities: 0x") and not flags["ht_cap"]:
+            flags["ht_cap"] = int(line.split(":", 1)[1].strip(), 16)
         elif he_ap and line.startswith("HE40"):
             flags["he40"] = True
             flags["he80"] = flags["he80"] or "HE80" in line

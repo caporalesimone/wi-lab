@@ -81,6 +81,10 @@
       matTooltip="Off: only clients of the chosen Wi-Fi generation or newer can connect">
       Accept older Wi-Fi generations
     </mat-checkbox>
+    <mat-checkbox formControlName="enable_ht_vht_capab"
+      matTooltip="Announce the optional Wi-Fi 4/5 features of the antenna (short guard interval, LDPC, STBC, larger frames, beamforming). Off: a minimal AP.">
+      Announce HT/VHT capabilities
+    </mat-checkbox>
     <div class="option-tile" [class.on]="form.get('captive_portal')?.value">
       <mat-icon class="option-icon">{{ form.get('captive_portal')?.value ? 'login' : 'public' }}</mat-icon>
       <div class="option-text">
