@@ -49,11 +49,11 @@ Content-Type: application/json
 ```
 
 `duration_seconds: 0` asks for an unlimited reservation. It is accepted only
-when the server allows it: `GET /api/v2/status` reports
+when the server allows it: `GET /api/v2/antennas` reports
 `reservation_policy.allow_unlimited` (with `min_seconds` and `max_seconds`).
 When it is `false`, `0` returns `422`.
 
-To reserve a given antenna, add its `interface` (from `antennas[]` of `GET /api/v2/status`):
+To reserve a given antenna, add its `interface` (from `antennas[]` of `GET /api/v2/antennas`):
 
 ```json
 {"duration_seconds": 600, "interface": "wlx7419f8176286"}
@@ -102,14 +102,14 @@ The reservation answer names the antenna (`interface`). Ask what a network on
 it can use; no reservation is needed, so a GUI can also show free antennas:
 
 ```http
-GET /api/v2/status                                → antennas[]: interface, display_name, reservation
+GET /api/v2/antennas                              → antennas[]: interface, display_name, reservation
 GET /api/v2/antennas/{interface}/capabilities     → encryptions, and per band the
                                                     Wi-Fi generations, widths and channels
 ```
 
 The capabilities do not change while the adapter stays the same: read them once per
 antenna. `GET /api/v2/antennas/{interface}` is the antenna now instead: where it is
-attached, its entry of `antennas[]` in `/status` (reservation, network, quarantine) and
+attached, its entry of `antennas[]` in `GET /api/v2/antennas` (reservation, network, quarantine) and
 its repair `health`.
 
 ```json
@@ -516,11 +516,13 @@ it (`POST /api/v2/reservations`), since another client may take the last free on
 in between.
 
 `degraded_reasons` says why, with a stable `code` and the `interface` it
-concerns (`null` for the whole service); `antennas[]` gives the state of each
-antenna:
+concerns (`null` for the whole service). `GET /api/v2/antennas` gives the state
+of each antenna, the same `free_antennas` and `reservation_policy`:
 
 ```json
+GET /api/v2/status
 {
+  "version": "4.1.0",
   "service": {
     "health": "degraded",
     "free_antennas": 0,
@@ -530,6 +532,15 @@ antenna:
     ],
     "restart_required": null
   },
+  "checked_at": "2026-11-19T22:51:00Z",
+  "check_interval_seconds": 10,
+  "checks": {"...": "the detail of every check"}
+}
+
+GET /api/v2/antennas
+{
+  "free_antennas": 0,
+  "reservation_policy": {"min_seconds": 60, "max_seconds": 86400, "allow_unlimited": false},
   "antennas": [
     {"interface": "wlx7419f8176286", "display_name": "antenna-1", "reservation": null,
      "network_active": false, "recovery_state": "unavailable"},
@@ -553,9 +564,9 @@ antenna:
 
 The checks that run host commands are refreshed every 10 s in the background,
 so a problem can take up to 10 s to appear. The detail of every check
-(processes, NAT rules, upstream link, stuck commands, stalled loops, time of
-the last check) is in `GET /api/v2/monitoring`, for operators and monitoring
-views; clients only need `/status`.
+(processes, NAT rules, upstream link, OS updates, stuck commands, stalled loops,
+time of the last check) is `checks` of `GET /api/v2/status`, for operators and
+monitoring views; clients only need `service`.
 
 - Each antenna has `reservation` (`null` when no reservation holds it;
   `{expires_at, expires_in}` otherwise, both `null` when unlimited) and
@@ -588,8 +599,8 @@ sequenceDiagram
 
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 0 - before reserving (optional, no reservation needed)
-    C->>W: GET /status
-    W-->>C: service, antennas[] (reservation, network_active, recovery_state), reservation_policy
+    C->>W: GET /antennas
+    W-->>C: free_antennas, reservation_policy, antennas[] (reservation, network_active, recovery_state)
     Note over C: allow_unlimited tells whether duration_seconds 0 is accepted.<br/>Entries with recovery_state are not allocatable.
     end
 

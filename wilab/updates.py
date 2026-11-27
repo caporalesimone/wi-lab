@@ -114,7 +114,7 @@ def reboot_packages(flag: Path | None = None, packages: Path | None = None) -> l
 
 
 def check() -> dict:
-    """The `os_updates` check of /monitoring: what needs a restart, and why."""
+    """The `os_updates` check of /status: what needs a restart, and why."""
     libraries = replaced_libraries()
     reboot = reboot_packages()
     return {

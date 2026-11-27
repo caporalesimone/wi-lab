@@ -78,11 +78,20 @@ export interface ServiceState {
   restart_required: RestartRequired | null;
 }
 
+/** GET /status: version, service health and the detail of the health checks. */
 export interface StatusResponse {
   version: string;
   service: ServiceState;
-  antennas: InterfaceInfo[];
+  checked_at?: string | null;
+  check_interval_seconds?: number;
+  checks?: Record<string, unknown>;
+}
+
+/** GET /antennas: the antennas, how many are free and the reservation limits. */
+export interface AntennaListResponse {
+  free_antennas: number;
   reservation_policy: ReservationPolicy;
+  antennas: InterfaceInfo[];
 }
 
 export interface RestartRequired {

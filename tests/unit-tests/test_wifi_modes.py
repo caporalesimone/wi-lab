@@ -278,7 +278,7 @@ class TestApi:
     def test_capabilities_are_in_their_own_endpoint(self, client, token, reservation_id, monkeypatch):
         self._create(client, token, reservation_id, monkeypatch)
         headers = {"Authorization": token}
-        networks = client.get("/api/v2/status", headers=headers).json()["antennas"]
+        networks = client.get("/api/v2/antennas", headers=headers).json()["antennas"]
         assert all("capabilities" not in n for n in networks)
         antenna = client.get(f"/api/v2/antennas/{networks[0]['interface']}/capabilities", headers=headers).json()
         widths = {g["wifi_generation"]: g["channel_widths"] for g in antenna["bands"]["5ghz"]["wifi_generations"]}

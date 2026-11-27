@@ -92,7 +92,7 @@ def test_create_answers_202_and_the_network_appears_by_polling(api):
     assert polled.json()["runtime_state"] == "starting"
     assert set(created.json()) == set(polled.json())  # same schema as GET (the library reads the body)
     status = client.get("/api/v2/status", headers=headers).json()
-    assert status["antennas"][0]["runtime_state"] == "starting"
+    assert client.get("/api/v2/antennas", headers=headers).json()["antennas"][0]["runtime_state"] == "starting"
     assert status["service"]["health"] != "degraded"
     script["release"].set()
     done = _wait_until(lambda: (r := _state(client, headers, url).json())["runtime_state"] is None and r)
@@ -452,8 +452,7 @@ def test_start_failed_does_not_pass_to_the_next_reservation_after_an_expiry(api,
     assert manager.start_jobs == {}   # gone at the expiry, not at the next call (REV-11 point 3)
     new = client.post(RESERVE, headers=headers, json={"duration_seconds": 300})
     assert new.status_code == 200 and new.json()["interface"] == old.device_id
-    status = client.get("/api/v2/status", headers=headers).json()
-    entry = next(a for a in status["antennas"] if a["interface"] == old.device_id)
+    entry = next(a for a in client.get("/api/v2/antennas", headers=headers).json()["antennas"] if a["interface"] == old.device_id)
     assert "runtime_state" not in entry
     state = _state(client, headers, f"{RESERVE}/{new.json()['reservation_id']}")
     assert state.status_code == 200
@@ -577,7 +576,7 @@ def test_release_during_a_start_whose_rollback_fails_is_a_release(stuck_rollback
     assert _state(client, headers, url).json()["detail"]["reason"] == "reservation_released"
     quarantine.assert_not_called()
     status = client.get("/api/v2/status", headers=headers).json()
-    antenna = next(a for a in status["antennas"] if a["interface"] == device)
+    antenna = next(a for a in client.get("/api/v2/antennas", headers=headers).json()["antennas"] if a["interface"] == device)
     assert antenna.get("recovery_state") in (None, "ok")
     assert any(r["code"] == "cleanup_failed" for r in status["service"]["degraded_reasons"])
     # Not the client's to repeat any more (REV-9).

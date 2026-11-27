@@ -96,12 +96,15 @@ allocated an adapter: do not blindly repeat it.
 Poll `GET /api/v2/status` to know whether the service is fully usable.
 Its `service` has `health` (`good` or `degraded`), `free_antennas` (how many
 antennas a reservation would get now), `degraded_reasons` and `restart_required`. `degraded` means an adapter is
-quarantined (`antennas[].recovery_state`), a reserved network is being
-repaired or lost DHCP (`antennas[].runtime_state`), or a health check failed
+quarantined, a reserved network is being repaired or lost DHCP, or a health check failed
 while networks are active: `service.degraded_reasons` lists each cause with a stable
-`code`, and `GET /api/v2/monitoring` gives the detail of every check. Show it
+`code`, and `checks` gives the detail of every check. Show it
 to the user with the affected adapter: fewer adapters may be allocatable than
 are listed.
+
+`GET /api/v2/antennas` lists the antennas, the same `free_antennas` and the
+reservation limits (`reservation_policy`). Each entry of its `antennas[]` shows
+the state of one adapter:
 
 | `antennas[]` field | Value | Client action |
 |---|---|---|
@@ -111,19 +114,19 @@ are listed.
 | `runtime_state` | `dhcp_failed` | DHCP could not be repaired alone; within 5 s the watchdog restarts the whole network (`restoring_ap`). Wait. |
 | `runtime_state` | `restore_failed` | AP down: the restart failed and the watchdog retries (15 s, 30 s, 60 s, 120 s, then every 5 min). Wait, or `DELETE .../network` to stop the retries, or create a new network. |
 
-`GET /api/v2/status` distinguishes quarantined adapters (`recovery_state`)
+`GET /api/v2/antennas` distinguishes quarantined adapters (`recovery_state`)
 from reserved networks being repaired (`runtime_state`). `reservation: null`
 does not make a quarantined adapter allocatable. During
-`restoring_ap` or `restoring_dhcp`, poll status instead of sending a new
+`restoring_ap` or `restoring_dhcp`, poll `GET .../network` instead of sending a new
 create. `dhcp_failed` is brief: the watchdog then restarts the whole network.
 """
 
 OPENAPI_TAGS = [
-    {"name": "System", "description": "Service health, reservations and per-adapter recovery state. Poll status; the detail of the health checks is in monitoring."},
+    {"name": "System", "description": "Service health and the detail of the health checks: poll status."},
     {"name": "Reservation", "description": "Allocate or release an adapter. Use the returned reservation ID for device operations."},
-    {"name": "Antennas", "description": "What a network on an antenna can use (encryptions, Wi-Fi "
-     "generations, channel widths, channels) and its repair health: fill a create form from here. The "
-     "antennas are `antennas[]` of `GET /status`. No reservation needed."},
+    {"name": "Antennas", "description": "The antennas with their state, how many are free and the "
+     "reservation limits; one antenna with its repair health; what a network on it can use (encryptions, "
+     "Wi-Fi generations, channel widths, channels): fill a create form from here. No reservation needed."},
     {"name": "Network", "description": "Create, stop and inspect an AP. The create is asynchronous: poll `GET .../network` for the outcome."},
     {"name": "Internet", "description": "Enable or disable Internet access for a reserved network."},
     {"name": "TX Power", "description": "**Under debugging, not stable:** the drivers in use do not "
@@ -134,7 +137,7 @@ OPENAPI_TAGS = [
     {"name": "Maintenance", "description": "Operator-only commands, not for clients; they may be "
      "removed in the future. Every one requires the X-Confirm-Password header matching "
      "protected_commands_password, besides the token. The detailed health checks are in "
-     "GET /monitoring (System)."},
+     "`checks` of GET /status (System)."},
 ]
 
 

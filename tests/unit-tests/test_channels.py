@@ -259,11 +259,12 @@ class TestAntennasAPI:
         assert client.get('/api/v2/antennas/wls16').status_code == 401
         assert client.get('/api/v2/antennas/wls16/capabilities').status_code == 401
 
-    def test_the_list_is_in_status_only(self, client, valid_token):
-        """GET /antennas repeated antennas[] of GET /status (removed 2026-11-27)."""
+    def test_the_list_is_antennas_not_status(self, client, valid_token):
+        """GET /antennas lists the antennas; /status has only the service (2026-11-27)."""
         headers = {'Authorization': valid_token}
-        assert client.get('/api/v2/antennas', headers=headers).status_code == 404
-        listed = client.get('/api/v2/status', headers=headers).json()["antennas"]
+        status = client.get('/api/v2/status', headers=headers).json()
+        assert "antennas" not in status and "reservation_policy" not in status
+        listed = client.get('/api/v2/antennas', headers=headers).json()["antennas"]
         assert {"interface": "wls16", "display_name": "bench-antenna-1"} in [
             {k: a[k] for k in ("interface", "display_name")} for a in listed
         ]
@@ -298,11 +299,11 @@ class TestAntennasAPI:
         assert all(c["frequency_mhz"] < 5925 for c in channels.values())   # no 6 GHz
         assert 14 not in {c["channel"] for c in data["bands"]["2.4ghz"]["channels"]}
 
-    def test_the_antenna_state_is_its_entry_of_status(self, client, valid_token, reservation_id, context, monkeypatch):
-        """Reserved and quarantined: the same fields and values as antennas[] of GET /status."""
+    def test_the_antenna_state_is_its_entry_of_the_list(self, client, valid_token, reservation_id, context, monkeypatch):
+        """Reserved and quarantined: the same fields and values as antennas[] of GET /antennas."""
         headers = {'Authorization': valid_token}
         monkeypatch.setattr(context.reservations, "recovery_snapshot", lambda: {"wls16": False})
-        status = {a["interface"]: a for a in client.get('/api/v2/status', headers=headers).json()["antennas"]}
+        status = {a["interface"]: a for a in client.get('/api/v2/antennas', headers=headers).json()["antennas"]}
         for interface, entry in status.items():
             antenna = client.get(f'/api/v2/antennas/{interface}', headers=headers).json()
             assert {k: antenna[k] for k in entry} == entry

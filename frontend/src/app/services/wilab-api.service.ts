@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { ApiError, RecoveryCode, isTransient, retryWhenBusy } from './recovery-response';
 import {
   AntennaCapabilities,
+  AntennaListResponse,
   StatusResponse,
   NetworkStatus,
   NetworkCreateRequest,
@@ -49,6 +50,15 @@ export class WilabApiService {
   }
 
   // ---- Antennas ----
+
+  /** The antennas with their state, how many are free and the reservation limits. */
+  public getAntennas(): Observable<AntennaListResponse> {
+    return this.http.get<AntennaListResponse>(`${this.apiUrl}/antennas`, {
+      headers: this.getHeaders()
+    }).pipe(
+      catchError(this.handleError)
+    );
+  }
 
   /** What a network on the antenna can use: fills the create form's lists. */
   public getCapabilities(iface: string): Observable<AntennaCapabilities> {

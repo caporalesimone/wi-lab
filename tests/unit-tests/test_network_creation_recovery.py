@@ -64,8 +64,9 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
         ]
         overall = client.get("/api/v2/status", headers=headers).json()
         # A quarantined adapter makes the service degraded even with no active network.
-        assert (overall["service"]["health"], sum(a["network_active"] for a in overall["antennas"])) == ("degraded", 0)
-        state = overall["antennas"][0]
+        listing = client.get("/api/v2/antennas", headers=headers).json()["antennas"]
+        assert (overall["service"]["health"], sum(a["network_active"] for a in listing)) == ("degraded", 0)
+        state = listing[0]
         assert state["recovery_state"] == ("recovering" if authorized_port else "unavailable")
 
         if authorized_port is None:
@@ -254,11 +255,13 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert [r["code"] for r in status_examples["degraded_quarantine"]["value"]["service"]["degraded_reasons"]] == [
         "antenna_quarantined", "network_being_repaired",
     ]
-    status = status_examples["degraded_quarantine"]["value"]
-    assert status["antennas"][0]["recovery_state"] == "unavailable"
-    assert status["antennas"][0]["reservation"] is None   # nulls kept in the examples
     assert status_examples["all_free"]["value"]["service"]["restart_required"] is None
-    assert status["antennas"][1]["runtime_state"] == "restoring_ap"
+    assert status_examples["all_free"]["value"]["checked_at"].endswith("Z")
+    listing = paths["/api/v2/antennas"]["get"]["responses"]["200"]["content"]["application/json"]["examples"]
+    antennas = listing["quarantine_and_repair"]["value"]["antennas"]
+    assert antennas[0]["recovery_state"] == "unavailable"
+    assert antennas[0]["reservation"] is None   # nulls kept in the examples
+    assert antennas[1]["runtime_state"] == "restoring_ap"
     content = paths["/api/v2/reservations/{reservation_id}/network"]["get"]["responses"]["200"]["content"]["application/json"]
     assert "example" not in content
     assert content["examples"]["restoring_dhcp"]["value"]["runtime_state"] == "restoring_dhcp"
@@ -373,7 +376,7 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch, 
         assert create.json()["detail"]["code"] == 1009  # restoration_in_progress
         system = client.get("/api/v2/status", headers=headers).json()
         assert system["service"]["health"] == "degraded"
-        assert system["antennas"][0]["runtime_state"] == "restoring_ap"
+        assert client.get("/api/v2/antennas", headers=headers).json()["antennas"][0]["runtime_state"] == "restoring_ap"
     radio_status.assert_not_called()
 
 

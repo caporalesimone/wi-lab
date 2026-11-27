@@ -46,7 +46,7 @@ def test_debug_is_removed(wilab: WiLab) -> None:
     antenna = wilab.reserve()
     assert wilab.http.get("/debug").status_code == 404
     assert antenna.reservation_id not in wilab.http.get("/status").text
-    assert antenna.reservation_id not in wilab.http.get("/monitoring").text
+    assert antenna.reservation_id not in wilab.http.get("/status").text
 
 
 # --------------------------------------------------------------------------- request contract
@@ -160,7 +160,7 @@ def test_expired_id_answers_404_with_the_reason(wilab: WiLab) -> None:
     The `reservation_invalidated` case is checked in test_e2e_device_loss.py,
     where an antenna is quarantined.
     """
-    duration = wilab.status()["reservation_policy"]["min_seconds"]
+    duration = wilab.antennas()["reservation_policy"]["min_seconds"]
     if duration > 90:
         pytest.skip(f"min_timeout is {duration} s; this test needs a reservation of 90 s at most")
     antenna = wilab.reserve(duration=duration)
@@ -350,8 +350,9 @@ def test_polling_during_a_create_gets_an_answer_within_the_busy_limit(wilab: WiL
 
 def test_every_antenna_lists_options_without_a_reservation(wilab: WiLab) -> None:
     """Antennas API: readable with the token only, for every managed antenna."""
-    assert wilab.http.get("/antennas").status_code == 404   # the list is antennas[] of /status
-    for entry in wilab.status()["antennas"]:
+    listing = wilab.antennas()
+    assert listing["free_antennas"] == wilab.status()["service"]["free_antennas"]
+    for entry in wilab.antennas()["antennas"]:
         antenna = wilab.antenna(entry["interface"])
         assert list(antenna)[0] == "interface"
         same = [k for k in entry if k != "reservation"]   # expires_in may tick between the calls

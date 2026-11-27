@@ -370,8 +370,14 @@ class WiLab:
         response.raise_for_status()
         return response.json()
 
+    def antennas(self) -> dict[str, Any]:
+        """GET /antennas: the antennas, `free_antennas` and `reservation_policy`."""
+        response = self.http.get("/antennas")
+        response.raise_for_status()
+        return response.json()
+
     def device(self, interface: str) -> dict[str, Any]:
-        for entry in self.status()["antennas"]:
+        for entry in self.antennas()["antennas"]:
             if entry["interface"] == interface:
                 return entry
         raise KeyError(interface)
@@ -400,7 +406,7 @@ class WiLab:
         )
 
     def interfaces(self) -> list[str]:
-        return [entry["interface"] for entry in self.status()["antennas"]]
+        return [entry["interface"] for entry in self.antennas()["antennas"]]
 
     def reserve(self, interface: str | None = None, duration: int = 3600) -> Antenna:
         """Reserve an antenna: the given one, or the first free one."""
@@ -522,7 +528,7 @@ def reserve_with_budget(wilab: WiLab, server: Server, ap: int = 0, dhcp: int = 0
 
     The watchdog budgets live in the running service and are read from the journal.
     """
-    for entry in wilab.status()["antennas"]:
+    for entry in wilab.antennas()["antennas"]:
         interface = entry["interface"]
         if entry.get("recovery_state"):
             continue

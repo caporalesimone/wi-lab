@@ -21,7 +21,7 @@ flowchart LR
     end
 
     subgraph Process["Wi-Lab process (Uvicorn + FastAPI)"]
-        R["Routes /api/v2<br/>reservations, antennas, network, internet,<br/>txpower, qos, status, monitoring"]
+        R["Routes /api/v2<br/>reservations, antennas, network, internet,<br/>txpower, qos, status"]
         D["AppContext (context.py)<br/>every singleton, start and stop"]
         RM["ReservationManager<br/>reservations, quarantine"]
         NM["NetworkManager<br/>AP lifecycle"]
@@ -1252,8 +1252,8 @@ is logged once as a warning. Set `upstream_interface` to force an interface.
   `journalctl -u wi-lab.service -g 'API failure operation='`.
 - Discovery logs every added antenna with its USB port (or `non-USB`) and
   subnet. The first scan also logs skipped interfaces with the reason.
-- `GET /api/v2/status` exposes `runtime_state` (watchdog) and `recovery_state`
-  (quarantine) per antenna; `GET /api/v2/monitoring` the detail of every
+- `GET /api/v2/antennas` exposes `runtime_state` (watchdog) and `recovery_state`
+  (quarantine) per antenna; `checks` of `GET /api/v2/status` the detail of every
   health check.
 
 ## 12. Known limitations
@@ -1265,7 +1265,7 @@ is logged once as a warning. Set `upstream_interface` to force an interface.
   caller gets `CommandStuck` (a `CommandTimeout`), so the operation fails and
   releases the device lock instead of blocking the thread, the lock and the API
   forever. The process is logged at `CRITICAL`, counted in
-  `GET /api/v2/monitoring` → `checks.commands.stuck`, and makes the service
+  `GET /api/v2/status` → `checks.commands.stuck`, and makes the service
   `degraded` until it exits. The process, and any kernel lock it holds, stays;
   other commands may then time out too. Recovering the adapter can require
   unplugging it or rebooting the VM or host, which is the maintainer's call:
@@ -1275,8 +1275,8 @@ is logged once as a warning. Set `upstream_interface` to force an interface.
   `WatchdogSec=90s`. Every background loop (`expiry`, `discovery`,
   `reprobe`, `health`, `watchdog:<interface>`) records a heartbeat per iteration
   (`wilab/heartbeat.py`), and a thread pings systemd every 20 s. If a loop
-  has not run for 3 minutes, `/monitoring` lists it in `checks.loops.stale` and
-  `/status` is `degraded` (`loop_stalled`). The pings stop, so systemd restarts the service, only while
+  has not run for 3 minutes, `/status` lists it in `checks.loops.stale` and is
+  `degraded` (`loop_stalled`). The pings stop, so systemd restarts the service, only while
   no reservation is valid and no USB recovery is running (read without
   locks, so a stalled lock holder cannot block the check). With a
   reservation active the service keeps running and restarts as soon as it

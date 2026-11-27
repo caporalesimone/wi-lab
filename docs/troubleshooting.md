@@ -206,7 +206,7 @@ sudo systemctl restart wi-lab     # service.restart_required.service
 sudo reboot                       # service.restart_required.system
 ```
 
-`GET /api/v2/monitoring` lists the replaced libraries and the packages (`checks.os_updates`).
+`GET /api/v2/status` lists the replaced libraries and the packages (`checks.os_updates`).
 Before 4.1.0 needrestart restarted Wi-Lab after such an upgrade, dropping every network.
 
 ## Performance Issues

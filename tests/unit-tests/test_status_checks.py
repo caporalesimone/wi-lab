@@ -40,8 +40,7 @@ def running(monkeypatch, context, app):
         def get():
             manager.active[device] = network()
             data = client.get("/api/v2/status", headers=headers).json()
-            # The detail of the checks is in /monitoring.
-            return {**data, "checks": client.get("/api/v2/monitoring", headers=headers).json()["checks"]}
+            return {**data, "antennas": client.get("/api/v2/antennas", headers=headers).json()["antennas"]}
 
         yield get, state, manager, device
 
@@ -66,7 +65,7 @@ def test_foreign_masquerade_does_not_count_for_a_network_with_internet(running):
 
 @pytest.mark.parametrize("internet", [False, True])
 def test_the_upstream_link_never_degrades(running, internet):
-    """The upstream is shown in /monitoring only (2026-11-27): a down link is not a reason."""
+    """The upstream is shown in checks only (2026-11-27): a down link is not a reason."""
     get, state, _manager, device = running
     state["internet"] = internet
     state["nat"] = f"-A POSTROUTING -s 192.168.120.0/24 -o eth0 -m comment --comment wilab-nat-{device} -j MASQUERADE"
@@ -115,7 +114,7 @@ def test_a_late_loop_does_not_leave_status_stale(monkeypatch, context):
 
 
 def test_degraded_reasons_name_the_problem_and_the_antenna(monkeypatch, context, app):
-    """/status gives coded reasons; /monitoring the detail of the same checks."""
+    """/status gives coded reasons and the detail of the same checks."""
     from wilab.api.routes import status as status_route
 
     config = context.config
@@ -127,14 +126,12 @@ def test_degraded_reasons_name_the_problem_and_the_antenna(monkeypatch, context,
     client = TestClient(app)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     status = client.get("/api/v2/status", headers=headers).json()
-    assert status["service"]["health"] == "degraded" and "checks" not in status
+    assert status["service"]["health"] == "degraded"
     codes = [(r["code"], r["interface"]) for r in status["service"]["degraded_reasons"]]
     assert ("hostapd_not_running", device) in codes and ("command_stuck", None) in codes
-    monitoring = client.get("/api/v2/monitoring", headers=headers).json()
-    assert monitoring["service"]["health"] == "degraded"
-    assert monitoring["checks"]["hostapd"]["missing"] == [device]
-    assert monitoring["check_interval_seconds"] == 10 and monitoring["checked_at"].endswith("Z")
-    assert client.get("/api/v2/monitoring").status_code == 401
+    assert status["checks"]["hostapd"]["missing"] == [device]
+    assert status["check_interval_seconds"] == 10 and status["checked_at"].endswith("Z")
+    assert client.get("/api/v2/status").status_code == 401
 
 
 def test_half_stopped_network_is_reported_as_stop_incomplete_only(running, monkeypatch):
@@ -152,7 +149,7 @@ def test_half_stopped_network_is_reported_as_stop_incomplete_only(running, monke
 
 
 def test_upstream_shows_the_interface_details(monkeypatch, context):
-    """In /monitoring: addresses, MAC, MTU and gateway instead of a bare has_ip (2026-11-27)."""
+    """In checks.upstream_interface: addresses, MAC, MTU and gateway instead of a bare has_ip (2026-11-27)."""
     link = json.dumps([{
         "ifname": "eth0", "operstate": "UP", "flags": ["UP", "LOWER_UP"], "mtu": 1500,
         "address": "bc:24:11:07:a6:9b",

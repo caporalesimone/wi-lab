@@ -9,17 +9,14 @@ from pydantic import BaseModel, Field
 from ... import health as health_module
 from ... import heartbeat
 from ...api.auth import require_token
-from ...api.dependencies import get_config, get_manager, get_reservation_manager
-from ...config import AppConfig
+from ...api.dependencies import get_manager, get_reservation_manager
 from ...devices import Device
-from ...models import ReservationInfo
 from ...network.commands import stuck_commands
 from ...reservation import ReservationManager
 from ...timestamps import format_utc_timestamp
 from ...version import __version__
 from ...wifi.manager import NetworkManager
 
-_POLICY_EXAMPLE = {"min_seconds": 60, "max_seconds": 86400, "allow_unlimited": False}
 _CHECKS_OK_EXAMPLE = {
     "commands": {"stuck": 0},
     "loops": {"stale": []},
@@ -33,6 +30,10 @@ _CHECKS_OK_EXAMPLE = {
     },
     "os_updates": {"service_restart_required": False, "replaced_libraries": [],
                 "system_reboot_required": False, "reboot_packages": [], "since": None},
+}
+
+_CHECKS_FIELDS_EXAMPLE = {
+    "checked_at": "2026-11-25T18:30:00Z", "check_interval_seconds": 10, "checks": _CHECKS_OK_EXAMPLE,
 }
 
 RESTART_MESSAGES = {
@@ -73,38 +74,20 @@ class ServiceState(BaseModel):
     )
 
 
-class AntennaState(BaseModel):
-    interface: str = Field(..., description="Linux interface name; identifies the antenna in this API")
-    display_name: str
-    reservation: ReservationInfo | None = Field(..., description="null when the antenna is not reserved")
-    network_active: bool
-    recovery_state: Literal["recovering", "unavailable"] | None = Field(
-        None, description="Present only while the antenna is quarantined",
-    )
-    runtime_state: str | None = Field(
-        None, description="Present only while a start, a repair or a half-done stop is in progress",
-    )
-
-
-class ReservationPolicy(BaseModel):
-    min_seconds: int
-    max_seconds: int
-    allow_unlimited: bool
-
-
 class SystemStatus(BaseModel):
     version: str
     service: ServiceState
-    antennas: list[AntennaState]
-    reservation_policy: ReservationPolicy
+    checked_at: str | None = Field(..., description=(
+        "Last run of the background checks that run host commands (UTC, RFC 3339); null before the first"
+    ))
+    check_interval_seconds: int = Field(..., description="How often those checks run")
+    checks: dict[str, Any] = Field(..., description="The detail of every check (table above)")
 
 
 @router.get(
     "/status",
     response_model=SystemStatus,
-    # Fields not computed are left out (recovery_state, runtime_state); null is kept.
-    response_model_exclude_unset=True,
-    summary="Read system and adapter status",
+    summary="Read the service health",
     responses={
         200: {
             "description": (
@@ -112,8 +95,8 @@ class SystemStatus(BaseModel):
                 "`service.free_antennas` how many antennas a reservation would get now; "
                 "`degraded` lists why in `service.degraded_reasons` (quarantined antenna, network "
                 "being repaired, dead hostapd or dnsmasq, missing NAT rule, "
-                "stuck host command, stalled loop). The detail is in `GET /monitoring`. A "
-                "reserved or quarantined adapter is not allocatable."
+                "stuck host command, stalled loop); `checks` gives the detail of every check. The "
+                "antennas one by one are in `GET /antennas`."
             ),
             "content": {"application/json": {"examples": {
                 "all_free": {
@@ -121,13 +104,7 @@ class SystemStatus(BaseModel):
                     "value": {
                         "version": "4.1.0",
                         "service": {"health": "good", "free_antennas": 2, "degraded_reasons": [], "restart_required": None},
-                        "antennas": [
-                            {"interface": "wlan0", "display_name": "Antenna A", "reservation": None,
-                             "network_active": False},
-                            {"interface": "wlan1", "display_name": "Antenna B", "reservation": None,
-                             "network_active": False},
-                        ],
-                        "reservation_policy": _POLICY_EXAMPLE,
+                        **_CHECKS_FIELDS_EXAMPLE,
                     },
                 },
                 "one_reserved": {
@@ -135,13 +112,7 @@ class SystemStatus(BaseModel):
                     "value": {
                         "version": "4.1.0",
                         "service": {"health": "good", "free_antennas": 1, "degraded_reasons": [], "restart_required": None},
-                        "antennas": [
-                            {"interface": "wlan0", "display_name": "Antenna A", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540},
-                             "network_active": True},
-                            {"interface": "wlan1", "display_name": "Antenna B", "reservation": None,
-                             "network_active": False},
-                        ],
-                        "reservation_policy": _POLICY_EXAMPLE,
+                        **_CHECKS_FIELDS_EXAMPLE,
                     },
                 },
                 "degraded_quarantine": {
@@ -157,13 +128,7 @@ class SystemStatus(BaseModel):
                             "service": True, "system": False, "since": "2026-11-27T06:39:50Z",
                             "message": RESTART_MESSAGES[(True, False)],
                         }},
-                        "antennas": [
-                            {"interface": "wlan0", "display_name": "Antenna A", "reservation": None,
-                             "network_active": False, "recovery_state": "unavailable"},
-                            {"interface": "wlan1", "display_name": "Antenna B", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 54},
-                             "network_active": False, "runtime_state": "restoring_ap"},
-                        ],
-                        "reservation_policy": _POLICY_EXAMPLE,
+                        **_CHECKS_FIELDS_EXAMPLE,
                     },
                 },
             }}},
@@ -172,13 +137,13 @@ class SystemStatus(BaseModel):
     },
 )
 def system_status(
-    manager: NetworkManager = Depends(get_manager), 
-    config=Depends(get_config),
+    manager: NetworkManager = Depends(get_manager),
     reservation_mgr: ReservationManager = Depends(get_reservation_manager),
     _: bool = Depends(require_token)
 ):
     """
-    Service health, antennas and reservation policy: the call clients poll.
+    Version, service health and the detail of the health checks: the call clients poll. The antennas, the
+    reservation limits and the same `free_antennas` are in `GET /antennas`.
 
     `service` is the state of Wi-Lab:
 
@@ -190,14 +155,15 @@ def system_status(
     | `restart_required` | `null`, or the security updates that need a restart (below). Always present. |
 
     A reserve is the only sure way to get an antenna: another client may take the
-    last free one in between. Which antennas run a network is `antennas[].network_active`.
+    last free one in between. Which antennas run a network is `antennas[].network_active`
+    of `GET /antennas`.
 
     Each `service.degraded_reasons` entry has a stable `code`, the `interface` it
     concerns (or `null`) and a `message` for display:
 
     | `code` | Meaning |
     |---|---|
-    | `antenna_quarantined` | The antenna has `recovery_state`: `recovering` (USB reset and probe running) or `unavailable` (re-probed every 30 s, backing off to 15 min). It may return by itself. Not allocatable, even with `reservation: null`. |
+    | `antenna_quarantined` | The antenna has `recovery_state` (in `GET /antennas`): `recovering` (USB reset and probe running) or `unavailable` (re-probed every 30 s, backing off to 15 min). It may return by itself. Not allocatable, even with `reservation: null`. |
     | `network_being_repaired` | A reserved network has `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`). Its owner waits. |
     | `network_stop_incomplete` | A `DELETE .../network` answered `503 / 1012`: the network is half stopped (`runtime_state: stop_failed`) until its owner repeats the DELETE. |
     | `hostapd_not_running`, `dnsmasq_not_running` | The AP or DHCP process of that network is dead; the watchdog normally repairs it within seconds. |
@@ -213,18 +179,38 @@ def system_status(
     when an update asks for a reboot (`/run/reboot-required`, or a kernel newer than
     the running one is installed); `since` is when it was first seen, `message` a
     sentence for display (the web UI shows it as a red bar). It does not make
-    `health` `degraded`; the replaced libraries and packages are in `GET /monitoring`.
+    `health` `degraded`; the replaced libraries and packages are in `checks.os_updates`.
 
-    The detail of every check is in `GET /monitoring`. Checks that run host
-    commands are refreshed every 10 s in the background: this call runs no
-    command and answers at once. A network with a start, stop or restore in
-    progress is not judged, so a create or delete never makes the status flap.
+    `checks` is the detail behind `service`, for operators and a monitoring view.
+    Checks that run host commands are refreshed every `check_interval_seconds`
+    (10 s) in the background, `checked_at` is their last run: this call runs no
+    command and answers at once. `commands` and `loops` are read live. A network
+    with a start, stop or restore in progress is not judged, so a create or
+    delete never makes the status flap.
+
+    | Check | Meaning |
+    |---|---|
+    | `commands.stuck` | Host commands that did not exit even after SIGKILL (hung driver). |
+    | `loops.stale` | Background loops that have not run for 3 minutes. |
+    | `hostapd`, `dnsmasq` | Every settled network has its process alive; `missing` lists the others. |
+    | `iptables_nat` | Every settled network with Internet has its `wilab-nat-<interface>` rule; `missing` lists the others, `errors` the failures reading the rules. |
+    | `os_updates` | Security updates of the operating system that need a restart: libraries this process loaded that an update replaced (`service_restart_required`, `replaced_libraries`), and a reboot asked by an update or a newer installed kernel (`system_reboot_required`, `reboot_packages`); `since` is when first seen. |
+    | `upstream_interface` | The host uplink, for information (it never makes `health` degraded): `name`, `operstate`, `mac`, `mtu`, global `ipv4` and `ipv6` addresses with prefix, IPv4 default `gateway`. |
+
 
     The former owner of a quarantined antenna is told by `404` with
-    `reason: reservation_invalidated` on every call with its ID. One antenna with its health is
-    `GET /antennas/{interface}`; what a network on it can use is `GET /antennas/{interface}/capabilities`.
+    `reason: reservation_invalidated` on every call with its ID. The antennas are
+    `GET /antennas`; one with its health `GET /antennas/{interface}`; what a network on it
+    can use `GET /antennas/{interface}/capabilities`.
     """
-    return _system_status(manager, config, reservation_mgr)
+    view = assess(manager, reservation_mgr)
+    return {
+        "version": __version__,
+        "service": view["service"],
+        "checked_at": view["checked_at"],
+        "check_interval_seconds": int(health_module.CHECK_INTERVAL),
+        "checks": view["checks"],
+    }
 
 
 # Stable codes of `degraded_reasons`.
@@ -280,11 +266,11 @@ def antenna_state(
     return entry, reasons
 
 
-def _assess(manager: NetworkManager, reservation_mgr: ReservationManager) -> dict[str, Any]:
-    """Status, the reasons for `degraded`, the antennas and the detailed checks.
+def assess(manager: NetworkManager, reservation_mgr: ReservationManager) -> dict[str, Any]:
+    """Service, the reasons for `degraded`, the antennas and the detailed checks.
 
-    Shared by /status (verdict and reasons) and /monitoring (detail), so
-    they never disagree (BUG-2). Host-command checks come from the background
+    Shared by /status (service and checks) and /antennas (the antennas and the
+    same `free_antennas`), so they never disagree (BUG-2). Host-command checks come from the background
     loop (wilab.health); nothing here runs a command.
     """
     health = manager.health.current()
@@ -344,69 +330,4 @@ def _restart_required(pending: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "service": service, "system": system, "since": pending.get("since"),
         "message": RESTART_MESSAGES[(service, system)],
-    }
-
-
-def _system_status(
-    manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager
-) -> dict[str, Any]:
-    view = _assess(manager, reservation_mgr)
-    return {
-        "version": __version__,
-        "service": view["service"],
-        "antennas": view["antennas"],
-        "reservation_policy": {
-            "min_seconds": config.min_timeout,
-            "max_seconds": config.max_timeout,
-            "allow_unlimited": config.allow_unlimited_reservation,
-        },
-    }
-
-
-@router.get(
-    "/monitoring",
-    summary="Read the detailed health checks",
-    responses={
-        200: {
-            "description": "The detail behind `service` of `GET /status`.",
-            "content": {"application/json": {"example": {
-                "service": {"health": "good", "free_antennas": 1, "degraded_reasons": [], "restart_required": None},
-                "checked_at": "2026-11-25T18:30:00Z", "check_interval_seconds": 10,
-                "checks": {**_CHECKS_OK_EXAMPLE,
-                           "hostapd": {"running": True, "instances": 1, "missing": []},
-                           "dnsmasq": {"running": True, "instances": 1, "missing": []}},
-            }}},
-        },
-        401: {"description": "Unauthorized (missing or invalid auth token)"},
-    },
-)
-def monitoring(
-    manager: NetworkManager = Depends(get_manager),
-    reservation_mgr: ReservationManager = Depends(get_reservation_manager),
-    _: bool = Depends(require_token),
-):
-    """Detailed health checks, for operators and a monitoring view.
-
-    `GET /status` gives the verdict and its reasons; this call gives the detail
-    of every check. Checks that run host commands are refreshed every
-    `check_interval_seconds` in the background (`checked_at` is the last run);
-    `commands` and `loops` are read live.
-
-    | Check | Meaning |
-    |---|---|
-    | `commands.stuck` | Host commands that did not exit even after SIGKILL (hung driver). |
-    | `loops.stale` | Background loops that have not run for 3 minutes. |
-    | `hostapd`, `dnsmasq` | Every settled network has its process alive; `missing` lists the others. |
-    | `iptables_nat` | Every settled network with Internet has its `wilab-nat-<interface>` rule; `missing` lists the others, `errors` the failures reading the rules. |
-    | `os_updates` | Security updates of the operating system that need a restart: libraries this process loaded that an update replaced (`service_restart_required`, `replaced_libraries`), and a reboot asked by an update or a newer installed kernel (`system_reboot_required`, `reboot_packages`); `since` is when first seen. |
-    | `upstream_interface` | The host uplink, for information (it never makes `health` degraded): `name`, `operstate`, `mac`, `mtu`, global `ipv4` and `ipv6` addresses with prefix, IPv4 default `gateway`. |
-
-    A network with a start, stop or restore in progress is not judged.
-    """
-    view = _assess(manager, reservation_mgr)
-    return {
-        "service": view["service"],
-        "checked_at": view["checked_at"],
-        "check_interval_seconds": int(health_module.CHECK_INTERVAL),
-        "checks": view["checks"],
     }

@@ -80,26 +80,28 @@ class TestStatusEndpoint:
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
-        assert data['service'] == {'health': 'good', 'free_antennas': len(data['antennas']), 'degraded_reasons': [], 'restart_required': None}
-        assert 'version' in data
-        assert 'antennas' in data and 'networks' not in data
-        assert 'checks' not in data and data["service"]["degraded_reasons"] == []
+        total = len(client.get('/api/v2/antennas', headers={'Authorization': valid_token}).json()['antennas'])
+        assert data['service'] == {'health': 'good', 'free_antennas': total, 'degraded_reasons': [], 'restart_required': None}
+        assert list(data) == ['version', 'service', 'checked_at', 'check_interval_seconds', 'checks']
     
     def test_free_antennas_counts_what_a_reserve_would_get(self, client, valid_token, context):
         """A reserved antenna, even without a network, and a quarantined one are not free."""
         from wilab.devices import Device
         context.devices.add(Device(interface="wlx-second", display_name="Second"))
         headers = {'Authorization': valid_token}
-        total = len(client.get('/api/v2/status', headers=headers).json()['antennas'])
+        total = len(client.get('/api/v2/antennas', headers=headers).json()['antennas'])
         assert total >= 2
         rid = client.post('/api/v2/reservations', headers=headers, json={'duration_seconds': 600}).json()['reservation_id']
         data = client.get('/api/v2/status', headers=headers).json()
         assert data['service'] == {'health': 'good', 'free_antennas': total - 1, 'degraded_reasons': [], 'restart_required': None}
-        assert not any(a['network_active'] for a in data['antennas'])
-        other = next(a['interface'] for a in data['antennas'] if a['reservation'] is None)
+        listing = client.get('/api/v2/antennas', headers=headers).json()
+        assert listing['free_antennas'] == total - 1
+        assert not any(a['network_active'] for a in listing['antennas'])
+        other = next(a['interface'] for a in listing['antennas'] if a['reservation'] is None)
         context.reservations._blocked[other] = False          # quarantined: degraded and not free
         data = client.get('/api/v2/status', headers=headers).json()
         assert data['service']['health'] == 'degraded' and data['service']['free_antennas'] == total - 2
+        assert client.get('/api/v2/antennas', headers=headers).json()['free_antennas'] == total - 2
         assert [r['code'] for r in data['service']['degraded_reasons']] == ['antenna_quarantined']
         context.reservations._blocked.pop(other)
         assert client.delete(f'/api/v2/reservations/{rid}', headers=headers).status_code == 200
@@ -108,17 +110,17 @@ class TestStatusEndpoint:
     def test_status_with_every_antenna_free(self, client, valid_token):
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         data = resp.json()
-        assert data['service'] == {'health': 'good', 'free_antennas': len(data['antennas']), 'degraded_reasons': [], 'restart_required': None}
-        assert not any(a['network_active'] for a in data['antennas'])
-        assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['commands'] == {'stuck': 0}
+        listing = client.get('/api/v2/antennas', headers={'Authorization': valid_token}).json()
+        assert data['service'] == {'health': 'good', 'free_antennas': len(listing['antennas']), 'degraded_reasons': [], 'restart_required': None}
+        assert not any(a['network_active'] for a in listing['antennas'])
+        assert data['checks']['commands'] == {'stuck': 0}
 
     def test_status_degraded_when_a_command_is_stuck_in_the_kernel(self, client, valid_token, monkeypatch):
         """STAB-1: a child that survived SIGKILL makes the service degraded, even in standby."""
         monkeypatch.setattr('wilab.api.routes.status.stuck_commands', lambda: 2)
         data = client.get('/api/v2/status', headers={'Authorization': valid_token}).json()
-        assert not any(a['network_active'] for a in data['antennas'])
         assert data["service"]["health"] == "degraded"
-        assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['commands'] == {'stuck': 2}
+        assert data['checks']['commands'] == {'stuck': 2}
     
     def test_status_response_structure(self, client, valid_token):
         """Test status response contains all required fields."""
@@ -128,14 +130,12 @@ class TestStatusEndpoint:
         # Check required top-level fields
         assert 'service' in data and 'status' not in data
         assert 'version' in data
-        assert 'antennas' in data
+        assert 'antennas' not in data and 'reservation_policy' not in data
         assert 'active_networks' not in data and 'degraded_reasons' not in data and 'restart_required' not in data
-        assert {'degraded_reasons', 'restart_required'} <= set(data['service']) and 'checks' not in data
-        
-        # Check version and networks
+        assert {'degraded_reasons', 'restart_required'} <= set(data['service'])
+        assert {'checked_at', 'check_interval_seconds', 'checks'} <= set(data)
         assert data['version'] is not None
         assert len(data['version']) > 0
-        assert isinstance(data['antennas'], list)
     
     def test_status_health_checks(self, client, valid_token):
         """Test status includes all health checks."""
@@ -143,25 +143,25 @@ class TestStatusEndpoint:
         assert resp.status_code == 200
         
         # Check all required checks
-        assert 'dnsmasq' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']
-        assert 'iptables_nat' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']
-        assert 'upstream_interface' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']
+        assert 'dnsmasq' in client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']
+        assert 'iptables_nat' in client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']
+        assert 'upstream_interface' in client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']
         
         # Check dnsmasq structure
-        assert 'running' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']
-        assert 'instances' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']
-        assert isinstance(client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['running'], bool)
-        assert isinstance(client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['instances'], int)
+        assert 'running' in client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']
+        assert 'instances' in client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']
+        assert isinstance(client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['running'], bool)
+        assert isinstance(client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['instances'], int)
         
         # Check iptables_nat structure
-        assert 'configured' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']
-        assert 'errors' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']
-        assert isinstance(client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']['configured'], bool)
-        assert isinstance(client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']['errors'], list)
+        assert 'configured' in client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']
+        assert 'errors' in client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']
+        assert isinstance(client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']['configured'], bool)
+        assert isinstance(client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['iptables_nat']['errors'], list)
         
         # Check upstream_interface structure
-        assert 'name' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']
-        upstream = client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']
+        assert 'name' in client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']
+        upstream = client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']
         assert {'operstate', 'mac', 'mtu', 'ipv4', 'ipv6', 'gateway'} <= set(upstream)
         assert 'reachable' not in upstream and 'up' not in upstream
     
@@ -184,7 +184,7 @@ class TestStatusEndpoint:
         data = resp.json()
         assert data["service"]["health"] == "degraded"
         assert [reason['code'] for reason in data["service"]["degraded_reasons"]] == ['dnsmasq_not_running']
-        assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['running'] is False
+        assert client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['running'] is False
     
     def test_status_upstream_error_handling(self, client, valid_token, monkeypatch):
         """Test status gracefully handles upstream interface errors."""
@@ -203,8 +203,8 @@ class TestStatusEndpoint:
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200  # Should not crash
         assert resp.json()["service"]["health"] in ("good", "degraded")
-        assert 'upstream_interface' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']
-        assert 'error' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']
+        assert 'upstream_interface' in client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']
+        assert 'error' in client.get('/api/v2/status', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']
 
 
 class TestDebugRemoved:
@@ -1053,7 +1053,7 @@ class TestStatusReservationInfo:
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         # Before a reservation: `reservation` is null
-        resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
+        resp = client.get('/api/v2/antennas', headers={'Authorization': valid_token})
         data = resp.json()
         net_entry = data['antennas'][0]
         assert 'display_name' in net_entry
@@ -1064,7 +1064,7 @@ class TestStatusReservationInfo:
 
     def test_status_reservation_expiry_after_reservation(self, client, valid_token, reservation_id):
         """A reserved antenna reports `reservation.expires_at` and `expires_in`."""
-        resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
+        resp = client.get('/api/v2/antennas', headers={'Authorization': valid_token})
         data = resp.json()
         net_entry = data['antennas'][0]
         assert net_entry['display_name'] == 'bench-antenna-1'
@@ -1269,13 +1269,13 @@ class TestUnlimitedReservationAPI:
         )
         assert resp.status_code == 422
 
-    def test_status_exposes_reservation_policy(self, client, valid_token, monkeypatch):
-        """/status includes reservation_policy with min, max, and allow_unlimited."""
+    def test_antennas_expose_reservation_policy(self, client, valid_token, monkeypatch):
+        """/antennas includes reservation_policy with min, max, and allow_unlimited."""
         cfg = load_config()
         rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
-        resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
+        resp = client.get('/api/v2/antennas', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
         assert 'reservation_policy' in data
@@ -1285,7 +1285,7 @@ class TestUnlimitedReservationAPI:
         assert policy['allow_unlimited'] is False
 
     def test_status_shows_null_expiry_for_unlimited(self, client, valid_token, monkeypatch):
-        """/status: an unlimited reservation is an object with null expiry, not a free antenna."""
+        """/antennas: an unlimited reservation is an object with null expiry, not a free antenna."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
         rmgr = ReservationManager(configured_devices(cfg))
@@ -1301,7 +1301,7 @@ class TestUnlimitedReservationAPI:
         assert resp.status_code == 200
 
         # Check status
-        resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
+        resp = client.get('/api/v2/antennas', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
         reserved_net = [n for n in data['antennas'] if n['reservation'] is not None]

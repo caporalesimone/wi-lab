@@ -110,7 +110,7 @@ container, on the Wi-Lab machine or anywhere else. Wi-Lab becomes API only.
 - Pages: antennas overview; antenna detail (capabilities, health, budget);
   reservation and network (settings, clients, restarts, Internet, QoS);
   events and logs (live, filtered by antenna and reservation); system
-  (version, `restart_required`, monitoring checks).
+  (version, `restart_required`, the health checks of `/status`).
 - Keep what REV-13/REV-14 fixed in the current UI: create polling rules,
   reservation IDs kept across reloads, every `404` reason as a sentence.
 - API functions the current UI does not use (Fable REV-15, moved here on
@@ -125,7 +125,7 @@ container, on the Wi-Lab machine or anywhere else. Wi-Lab becomes API only.
     polled: show `error.message` and `error.stage` under the state, on every
     card and after a reload.
   - **Choose the antenna.** `interface` of `POST /reservations` is never
-    sent: the reserve dialog offers the free antennas of `antennas[]` in `GET /status`.
+    sent: the reserve dialog offers the free antennas of `antennas[]` in `GET /antennas`.
   - **`health`** of `GET /antennas/{interface}` (budgets, quarantines, USB
     resets) on the antenna detail page.
   - Done already: compile check without publishing (`make frontend-check`) and

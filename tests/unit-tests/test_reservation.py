@@ -538,7 +538,7 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
             assert started.status_code == 200 and started.json()["active"] is True
             first_state = pool.submit(client.get, network(first_id), headers=headers).result(timeout=2)
             assert first_state.json()["runtime_state"] == "starting"   # answered while the start holds the device
-            status = pool.submit(client.get, "/api/v2/status", headers=headers).result(timeout=2)
+            status = pool.submit(client.get, "/api/v2/antennas", headers=headers).result(timeout=2)
             assert status.status_code == 200 and sum(a["network_active"] for a in status.json()["antennas"]) == 1
             assert all(n["reservation"] for n in status.json()["antennas"])
             assert [n["network_active"] for n in status.json()["antennas"]].count(True) == 1

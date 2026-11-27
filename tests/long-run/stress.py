@@ -225,7 +225,8 @@ def assert_clean(client: WiLab, server: Server, rec: Recorder, interfaces: list[
     deadline = time.monotonic() + RECOVERY_WAIT
     while True:
         status = client.status()
-        recovering = [a["display_name"] for a in status["antennas"] if a.get("recovery_state")]
+        listing = client.antennas()
+        recovering = [a["display_name"] for a in listing["antennas"] if a.get("recovery_state")]
         if not recovering or time.monotonic() > deadline:
             break
         rec.event("waiting_recovery", antennas=recovering)
@@ -235,7 +236,7 @@ def assert_clean(client: WiLab, server: Server, rec: Recorder, interfaces: list[
         problems.append(f"antennas still in recovery: {recovering}")
     if status["service"]["health"] == "degraded":
         problems.append(f"status degraded: {status["service"]["degraded_reasons"]}")
-    running = [a["interface"] for a in status["antennas"] if a["network_active"]]
+    running = [a["interface"] for a in listing["antennas"] if a["network_active"]]
     if running:
         problems.append(f"active networks: {running}")
     if server.pids("hostapd"):

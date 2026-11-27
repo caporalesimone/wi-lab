@@ -73,10 +73,10 @@ def _token() -> str:
 def wilab(_token: str) -> Iterator[WiLab]:
     """API client; skips when another run holds an antenna or an antenna is unhealthy."""
     client = WiLab(os.environ.get("WILAB_E2E_URL", "http://localhost:8080"), _token)
-    status = client.status()
-    busy = [entry["display_name"] for entry in status["antennas"] if entry.get("reservation")]
+    listing = client.antennas()
+    busy = [entry["display_name"] for entry in listing["antennas"] if entry.get("reservation")]
     unhealthy = [
-        entry["display_name"] for entry in status["antennas"]
+        entry["display_name"] for entry in listing["antennas"]
         if entry.get("recovery_state") or entry.get("runtime_state")
     ]
     if busy or unhealthy:

@@ -51,28 +51,29 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
   server configuration, besides the token, and is disabled (`403`) when that
   setting is missing. `DELETE /api/v2/reservations/all` releases
   **every** reservation and may be removed in a future version. The detail
-  of the health checks is in **System → Read the detailed health checks**
-  (`GET /api/v2/monitoring`).
+  of the health checks is `checks` of **System → Read the service health**
+  (`GET /api/v2/status`).
 
-- **Antennas** comes before **Network** (the antennas are `antennas[]` of `GET /api/v2/status`):
-  `GET /api/v2/antennas/{interface}` is the antenna now (attachment, reservation, network,
+- **Antennas** comes before **Network**: `GET /api/v2/antennas` lists the antennas with their
+  state, `free_antennas` and `reservation_policy` (the limits of a reservation);
+  `GET /api/v2/antennas/{interface}` is one antenna now (attachment, reservation, network,
   quarantine and repair health); `GET /api/v2/antennas/{interface}/capabilities` is what a
   network on it can use (encryptions, and per band the Wi-Fi generations, widths and usable
   channels). Only the token is needed, no reservation.
 
 ## Service health (`degraded`)
 
-Open **System → Read system and adapter status**. Under **Responses → 200 →
+Open **System → Read the service health**. Under **Responses → 200 →
 Examples** select `all_free`, `one_reserved` or `degraded_quarantine`. `service.free_antennas`
 is how many antennas a reservation would get now; `service.health:
 "degraded"` means at least one adapter is quarantined
-(`antennas[].recovery_state`: `recovering` or `unavailable`), a reserved
+(`recovery_state` in `antennas[]` of `GET /api/v2/antennas`: `recovering` or `unavailable`), a reserved
 network is being repaired, lost DHCP or could not be restarted
-(`antennas[].runtime_state`: `restoring_ap`, `restoring_dhcp`, `dhcp_failed`,
+(`runtime_state`: `restoring_ap`, `restoring_dhcp`, `dhcp_failed`,
 `restore_failed`), a host command is stuck in the kernel, a background loop
 stalled, or a health check failed while networks are active: each cause is an
-entry of `service.degraded_reasons` with a stable `code`. **System → Read the detailed
-health checks** (`GET /api/v2/monitoring`) gives the detail of every check.
+entry of `service.degraded_reasons` with a stable `code`. `checks` in the same answer
+gives the detail of every check.
 Clients must poll
 this endpoint to learn about quarantined adapters: a quarantined adapter can
 show `reservation: null` but is not allocatable, and only its former owner is

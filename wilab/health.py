@@ -87,7 +87,7 @@ def _nat_check(manager: NetworkManager, expected: list[str]) -> dict[str, Any]:
 
 
 def _upstream_check(manager: NetworkManager) -> dict[str, Any]:
-    """State, addresses and gateway of the upstream, from `ip -j`, shown in /monitoring.
+    """State, addresses and gateway of the upstream, from `ip -j`, shown in `checks` of /status.
 
     Information only: it never makes the service degraded (2026-11-27).
     """

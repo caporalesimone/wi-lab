@@ -12,6 +12,7 @@ import { NetworkCardComponent } from './components/network-card/network-card.com
 import { ReservationDialogComponent } from './components/reservation-dialog/reservation-dialog.component';
 import { ConfirmReleaseAllDialogComponent } from './components/confirm-release-all-dialog/confirm-release-all-dialog.component';
 import { TokenDialogComponent } from './components/token-dialog/token-dialog.component';
+import { forkJoin } from 'rxjs';
 import { WilabApiService } from './services/wilab-api.service';
 import { AuthService } from './services/auth.service';
 import {
@@ -21,7 +22,7 @@ import {
   ReservationPolicy,
   ReservationRequest,
   ReservationResponse,
-  NoDeviceAvailableError, RestartRequired, StatusResponse } from './models/network.models';
+  AntennaListResponse, NoDeviceAvailableError, RestartRequired, StatusResponse } from './models/network.models';
 import { ApiError, RecoveryCode, apiErrorToast, retryAfterSeconds } from './services/recovery-response';
 
 /** Unified view-model for each interface card. */
@@ -194,14 +195,14 @@ export class AppComponent implements OnInit, OnDestroy {
   public loadStatus(): void {
     this.loading = true;
     this.error = null;
-    this.apiService.getStatus().subscribe({
-      next: (response) => {
-        this.version = response.version;
-        this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
+    this.overview().subscribe({
+      next: ({ status, antennas }) => {
+        this.version = status.version;
+        this.reservationPolicy = antennas.reservation_policy ?? this.reservationPolicy;
         this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
         this.title = `Wi-Lab Network Management - ${this.version}`;
-        this.buildSlots(response.antennas);
-        this.showDegradedReasons(response);
+        this.buildSlots(antennas.antennas);
+        this.showDegradedReasons(status, antennas);
         this.loading = false;
       },
       error: (err) => {
@@ -216,21 +217,26 @@ export class AppComponent implements OnInit, OnDestroy {
 
   /** Silent refresh (no loading spinner). */
   private refreshStatus(): void {
-    this.apiService.getStatus().subscribe({
-      next: (response) => {
-        this.reservationPolicy = response.reservation_policy ?? this.reservationPolicy;
+    this.overview().subscribe({
+      next: ({ status, antennas }) => {
+        this.reservationPolicy = antennas.reservation_policy ?? this.reservationPolicy;
         this.allowUnlimitedReservation = this.reservationPolicy.allow_unlimited;
-        this.buildSlots(response.antennas);
-        this.showDegradedReasons(response);
+        this.buildSlots(antennas.antennas);
+        this.showDegradedReasons(status, antennas);
       }
     });
   }
 
-  private showDegradedReasons(response: StatusResponse): void {
-    const names = new Map(response.antennas.map(a => [a.interface, a.display_name]));
-    this.degradedReasons = (response.service?.degraded_reasons ?? []).map(r =>
+  /** GET /status (service health) and GET /antennas (the antennas and the policy) together. */
+  private overview() {
+    return forkJoin({ status: this.apiService.getStatus(), antennas: this.apiService.getAntennas() });
+  }
+
+  private showDegradedReasons(status: StatusResponse, list: AntennaListResponse): void {
+    const names = new Map(list.antennas.map(a => [a.interface, a.display_name]));
+    this.degradedReasons = (status.service?.degraded_reasons ?? []).map(r =>
       r.interface ? `${names.get(r.interface) ?? r.interface}: ${r.message}` : r.message);
-    this.restartRequired = response.service?.restart_required ?? null;
+    this.restartRequired = status.service?.restart_required ?? null;
   }
 
   private buildSlots(antennas: InterfaceInfo[]): void {

@@ -71,10 +71,10 @@ def resources_at_start(server: Server) -> dict[str, int]:
 def idle(base_url: str, token: str) -> Iterator[WiLab]:
     """A client on an idle service: fails (not skips) when the service is busy or unhealthy."""
     client = WiLab(base_url, token)
-    status = client.status()
-    busy = [a["display_name"] for a in status["antennas"] if a.get("reservation")]
-    unhealthy = [a["display_name"] for a in status["antennas"] if a.get("recovery_state") or a.get("runtime_state")]
+    listing = client.antennas()
+    busy = [a["display_name"] for a in listing["antennas"] if a.get("reservation")]
+    unhealthy = [a["display_name"] for a in listing["antennas"] if a.get("recovery_state") or a.get("runtime_state")]
     assert not busy and not unhealthy, f"service not idle (reserved: {busy}, unhealthy: {unhealthy})"
-    assert len(status["antennas"]) >= 2, "the long run needs two antennas"
+    assert len(listing["antennas"]) >= 2, "the long run needs two antennas"
     yield client
     client.close()

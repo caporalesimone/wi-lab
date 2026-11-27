@@ -61,7 +61,7 @@ and an unsupported TX power is `422`.
 
 Not errors: `GET /status` lists why the service is `degraded`, one
 `{code, interface, message}` per cause (`interface` is `null` for the whole
-service). The detail of each check is in `GET /monitoring`.
+service). The detail of each check is `checks` of the same answer.
 
 | Code | `interface` | Meaning |
 |---|---|---|

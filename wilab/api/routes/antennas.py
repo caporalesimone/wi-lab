@@ -1,7 +1,8 @@
 """Antennas: the Wi-Fi radios Wi-Lab manages, how each is now, and what a network on it can use.
 
 An antenna is the physical radio; a network is the AP a reservation runs on it.
-`GET /antennas/{interface}` is the antenna now (attachment, state, health);
+`GET /antennas` lists them with how many are free and the reservation limits;
+`GET /antennas/{interface}` is one antenna now (attachment, state, health);
 `GET /antennas/{interface}/capabilities` what a create on it can ask, which does
 not change while the adapter stays the same. Both need only the token.
 `interface` is the first field of every antenna object.
@@ -13,7 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...api.auth import require_token
-from ...api.dependencies import get_channel_manager, get_devices, get_manager, get_reservation_manager
+from ...api.dependencies import get_channel_manager, get_config, get_devices, get_manager, get_reservation_manager
+from ...config import AppConfig
 from ...devices import Device, DeviceRegistry
 from ...models import ReservationInfo
 from ...reservation import ReservationManager
@@ -22,9 +24,82 @@ from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager, band_options
 from ...wifi.discovery import detect_device
 from ...wifi.manager import NetworkManager
-from .status import antenna_state
+from .status import antenna_state, assess
 
 router = APIRouter(prefix="/antennas", tags=["Antennas"])
+
+class AntennaState(BaseModel):
+    interface: str = Field(..., description="Linux interface name; identifies the antenna in this API")
+    display_name: str
+    reservation: ReservationInfo | None = Field(..., description="null when the antenna is not reserved")
+    network_active: bool
+    recovery_state: Literal["recovering", "unavailable"] | None = Field(
+        None, description="Present only while the antenna is quarantined",
+    )
+    runtime_state: str | None = Field(
+        None, description="Present only while a start, a repair or a half-done stop is in progress",
+    )
+
+
+class ReservationPolicy(BaseModel):
+    min_seconds: int
+    max_seconds: int
+    allow_unlimited: bool
+
+
+class AntennaList(BaseModel):
+    free_antennas: int = Field(description=(
+        "Antennas a reservation would get now: not reserved, not quarantined, not held by a "
+        "failed cleanup. The same value as `service.free_antennas` of `GET /status`"
+    ))
+    reservation_policy: ReservationPolicy = Field(description="Limits of `duration_seconds` in `POST /reservations`")
+    antennas: list[AntennaState]
+
+
+_POLICY_EXAMPLE = {"min_seconds": 60, "max_seconds": 86400, "allow_unlimited": False}
+_LIST_EXAMPLES = {
+    "all_free": {
+        "summary": "Both antennas free",
+        "value": {
+            "free_antennas": 2,
+            "reservation_policy": _POLICY_EXAMPLE,
+            "antennas": [
+                {"interface": "wlx7419f8176286", "display_name": "antenna-1", "reservation": None,
+                 "network_active": False},
+                {"interface": "wlx7419f817651c", "display_name": "antenna-2", "reservation": None,
+                 "network_active": False},
+            ],
+        },
+    },
+    "one_reserved": {
+        "summary": "One antenna reserved with a network, one free",
+        "value": {
+            "free_antennas": 1,
+            "reservation_policy": _POLICY_EXAMPLE,
+            "antennas": [
+                {"interface": "wlx7419f8176286", "display_name": "antenna-1",
+                 "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540}, "network_active": True},
+                {"interface": "wlx7419f817651c", "display_name": "antenna-2", "reservation": None,
+                 "network_active": False},
+            ],
+        },
+    },
+    "quarantine_and_repair": {
+        "summary": "One antenna quarantined, the other's network being repaired",
+        "value": {
+            "free_antennas": 0,
+            "reservation_policy": _POLICY_EXAMPLE,
+            "antennas": [
+                {"interface": "wlx7419f8176286", "display_name": "antenna-1", "reservation": None,
+                 "network_active": False, "recovery_state": "unavailable"},
+                {"interface": "wlx7419f817651c", "display_name": "antenna-2",
+                 "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 54},
+                 "network_active": False, "runtime_state": "restoring_ap"},
+            ],
+        },
+    },
+}
+
 
 class DeviceDetails(BaseModel):
     bus: str = Field(description="`usb`, `pci` (also cards built into the motherboard) or `sdio`")
@@ -78,7 +153,7 @@ class QuarantineInfo(BaseModel):
 
 
 class AntennaHealth(BaseModel):
-    """How the watchdog sees this antenna over time; the state right now is in `GET /status`."""
+    """How the watchdog sees this antenna over time; the state right now is in `GET /antennas`."""
 
     ap_restores: RepairBudgetUse = Field(description="Restarts of the whole network by the watchdog")
     dhcp_restarts: RepairBudgetUse = Field(description="Restarts of DHCP alone by the watchdog")
@@ -181,6 +256,59 @@ _CAPABILITIES_EXAMPLE = {
 }
 
 
+@router.get(
+    "",
+    response_model=AntennaList,
+    # Fields not computed are left out (recovery_state, runtime_state); null is kept.
+    response_model_exclude_unset=True,
+    summary="List the antennas, how many are free and the reservation limits",
+    responses={
+        200: {"content": {"application/json": {"examples": _LIST_EXAMPLES}}},
+        401: {"description": "Unauthorized (missing or invalid auth token)"},
+    },
+)
+def list_antennas(
+    manager: NetworkManager = Depends(get_manager),
+    reservation_mgr: ReservationManager = Depends(get_reservation_manager),
+    config: AppConfig = Depends(get_config),
+    _auth: bool = Depends(require_token),
+) -> dict:
+    """The managed antennas and what a reserve can ask.
+
+    `free_antennas` is what a reservation would get now, the same value as
+    `service.free_antennas` of `GET /status`. A reserve is the only sure way to
+    get an antenna: another client may take the last free one in between.
+
+    Each entry of `antennas` has `reservation` (`null` when free; both fields
+    `null` for an unlimited one) and `network_active`. Two fields appear only
+    when they apply:
+
+    - `recovery_state`: `recovering` (USB reset and probe running) or
+      `unavailable` (re-probed every 30 s, backing off to 15 min). The antenna is
+      quarantined and not allocatable, even with `reservation: null`; it may
+      return by itself.
+    - `runtime_state`: a start (`starting`, `start_failed`), a repair by the
+      watchdog (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`)
+      or a half-done stop (`stop_failed`) of the reservation's network.
+
+    `reservation_policy` gives the limits of `duration_seconds` in
+    `POST /reservations` (`0` only with `allow_unlimited: true`).
+
+    One antenna with its health is `GET /antennas/{interface}`; what a network on
+    it can use, `GET /antennas/{interface}/capabilities`.
+    """
+    view = assess(manager, reservation_mgr)
+    return {
+        "free_antennas": view["service"]["free_antennas"],
+        "reservation_policy": {
+            "min_seconds": config.min_timeout,
+            "max_seconds": config.max_timeout,
+            "allow_unlimited": config.allow_unlimited_reservation,
+        },
+        "antennas": view["antennas"],
+    }
+
+
 def _known(devices: DeviceRegistry, interface: str) -> Device:
     entry = devices.get(interface)
     if entry is None:
@@ -200,7 +328,7 @@ def _known(devices: DeviceRegistry, interface: str) -> Device:
     },
 )
 def get_antenna(
-    interface: str = Path(..., description="Interface name from `antennas[]` of `GET /status`"),
+    interface: str = Path(..., description="Interface name from `antennas[]` of `GET /antennas`"),
     devices: DeviceRegistry = Depends(get_devices),
     manager: NetworkManager = Depends(get_manager),
     reservation_mgr: ReservationManager = Depends(get_reservation_manager),
@@ -209,7 +337,7 @@ def get_antenna(
     """The antenna as it is now.
 
     `reservation`, `network_active` and, when they apply, `recovery_state` and
-    `runtime_state` are the antenna's entry of `antennas[]` in `GET /status`.
+    `runtime_state` are the antenna's entry of `antennas[]` in `GET /antennas`.
     `device` is where it is attached (bus, port, kernel driver).
 
     `health` tells how close the antenna is to a quarantine: the watchdog's
@@ -243,7 +371,7 @@ def get_antenna(
     },
 )
 def get_capabilities(
-    interface: str = Path(..., description="Interface name from `antennas[]` of `GET /status`"),
+    interface: str = Path(..., description="Interface name from `antennas[]` of `GET /antennas`"),
     devices: DeviceRegistry = Depends(get_devices),
     channel_mgr: ChannelManager = Depends(get_channel_manager),
     _auth: bool = Depends(require_token),

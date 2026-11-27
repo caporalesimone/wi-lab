@@ -6,7 +6,7 @@ a loop has not beaten for `STALE_AFTER` seconds *and* Wi-Lab is idle (no
 reservation, no USB recovery running). Only then does it stop, so systemd
 (`WatchdogSec`) restarts the service: a hang inside Wi-Lab costs nobody a
 network. While a reservation exists the service keeps running, reports the
-stale loops in `GET /monitoring` (`checks.loops`; `GET /status` is `degraded`) and restarts as
+stale loops in `GET /status` (`checks.loops`, and `service.health` is `degraded`) and restarts as
 soon as it is idle.
 
 A command stuck in the kernel (`checks.commands.stuck`) does not trigger a

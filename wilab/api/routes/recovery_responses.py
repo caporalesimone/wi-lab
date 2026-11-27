@@ -6,7 +6,7 @@ from ..errors import ApiErrorCode, domain_error
 
 _MESSAGES = {
     ApiErrorCode.DEVICE_RECOVERING: "Every free antenna is recovering; retry after Retry-After",
-    ApiErrorCode.DEVICE_UNAVAILABLE: "No antenna is usable; check GET /status",
+    ApiErrorCode.DEVICE_UNAVAILABLE: "No antenna is usable; check GET /antennas",
 }
 
 

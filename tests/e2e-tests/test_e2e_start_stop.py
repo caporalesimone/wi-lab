@@ -111,7 +111,7 @@ def test_expiry_stops_the_network(wilab: WiLab, server: Server) -> None:
     reservation_expired`, the radio is no longer an AP, no rule is left and
     `/status` shows the antenna free with no network. Takes about 75 s.
     """
-    duration = wilab.status()["reservation_policy"]["min_seconds"]
+    duration = wilab.antennas()["reservation_policy"]["min_seconds"]
     if duration > 90:
         pytest.skip(f"min_timeout is {duration} s; this test needs a reservation of 90 s at most")
     antenna = wilab.reserve(duration=duration)
