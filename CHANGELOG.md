@@ -31,6 +31,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ### ✨ Features
 
+- `GET /antennas/{interface}` has `health`: the watchdog's AP restores and DHCP restarts used in their sliding window against the limit of the antenna's driver, when the oldest frees, the quarantines (count, last, whether it started a USB reset) and the last USB reset, since the service started. It tells how close an antenna is to a quarantine.
 - The watchdog's repair budgets are configurable in an optional `watchdog:` section of `config.yaml`: AP restores and DHCP restarts per antenna in a sliding window (default 3 in 60 minutes, as before), with their own values per kernel driver (`watchdog.drivers.mt7921u.ap_restores.limit: 5`), since chipsets fail differently. The journal shows each antenna's driver and budget when it is added.
 - `GET /status` has `restart_required`: `null`, or which security updates installed on the host need a restart of Wi-Lab (a loaded library was replaced) or a reboot (`/run/reboot-required`, or a kernel newer than the running one installed), since when, and a sentence; the web UI shows it as a red bar. Wi-Lab never restarts by itself: the installer excludes it from needrestart, which after an unattended upgrade restarted the service and dropped every network (seen on 2026-11-27 with `libexpat1`). Run the installer again, or create `/etc/needrestart/conf.d/wilab.conf` as in `install/02-install-stages/06-needrestart.sh`.
 - Startup prechecks: the service exits with code `78` when it does not run as root or a command it needs is missing, and systemd does not restart it (reinstall the systemd unit to get `RestartPreventExitStatus=78`); an active NetworkManager, a Wi-Lab radio held by `wpa_supplicant` and leftover Wi-Lab rules are a `WARNING` in the journal (Fable NM-1).
@@ -114,6 +115,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - A watchdog restore whose cleanup fails once now shows `runtime_state: restore_failed` and is retried, instead of `404 reservation_invalidated` (REV-10).
 - QoS (experimental): `POST .../qos/profile` with different `download_quality` and `upload_quality`, or a quality with `advanced`, is now `422` (NET-11).
 - `GET /status` has a new field `restart_required` (`null` or `{service, system, since, message}`); `GET /monitoring` a new check `updates`. Additive: it never makes the status `degraded`.
+- `GET /antennas/{interface}` has a new object `health` (repair budgets, quarantines, USB resets). Additive.
 - Channels 120, 124 and 128 (5 GHz) are no longer listed by `GET /antennas/{interface}` and are `422` in the create (HAP-9).
 - `POST .../network` can answer `503 / 1006` with `Retry-After: 2`, only when the same body finds the network already running (the `200` case) and another operation holds the adapter: repeat it. It was possible before but documented as never happening (REV-11).
 

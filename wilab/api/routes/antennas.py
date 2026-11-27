@@ -8,11 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...api.auth import require_token
-from ...api.dependencies import get_channel_manager, get_devices
+from ...api.dependencies import get_channel_manager, get_devices, get_manager
 from ...devices import DeviceRegistry
 from ...network.commands import CommandError
+from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager, band_options
 from ...wifi.discovery import detect_device
+from ...wifi.manager import NetworkManager
 
 router = APIRouter(prefix="/antennas", tags=["Antennas"])
 
@@ -59,15 +61,51 @@ class Bands(BaseModel):
     band_5ghz: BandOptions = Field(alias="5ghz", description="`radio.band: 5ghz`")
 
 
+class RepairBudgetUse(BaseModel):
+    used: int = Field(description="Repairs in the current window")
+    limit: int = Field(description="Repairs allowed in any window; the next failure after them quarantines the antenna")
+    window_minutes: int = Field(description="Length of the sliding window")
+    frees_at: str | None = Field(None, description=(
+        "When the oldest repair in the window leaves it and frees one (UTC, RFC 3339); null when none is used"
+    ))
+
+
+class QuarantineInfo(BaseModel):
+    count: int = Field(description="Quarantines since the service started")
+    last_at: str | None = Field(None, description="UTC time of the last one; null if none")
+    last_usb_recovery: bool | None = Field(None, description=(
+        "The last one started a USB reset (radio fault on a USB adapter); false: only re-probed; null if none"
+    ))
+
+
+class AntennaHealth(BaseModel):
+    """How the watchdog sees this antenna over time; the state right now is in `GET /status`."""
+
+    ap_restores: RepairBudgetUse = Field(description="Restarts of the whole network by the watchdog")
+    dhcp_restarts: RepairBudgetUse = Field(description="Restarts of DHCP alone by the watchdog")
+    quarantines: QuarantineInfo
+    last_usb_reset_at: str | None = Field(None, description="UTC time of the last USB reset; null if none since the service started")
+
+
 class AntennaDetails(AntennaSummary):
     device: DeviceDetails | None = Field(description="Where the antenna is attached; null if sysfs does not show it")
     encryptions: list[str] = Field(description="Encryptions a create can ask; `wpa1` only at 20 MHz with 802.11n")
     bands: Bands = Field(description="Options per band, keyed like `radio.band`")
+    health: AntennaHealth = Field(description=(
+        "Repair budgets of the watchdog (by the antenna's driver, `watchdog` in config.yaml), "
+        "quarantines and USB resets. Counted since the service started."
+    ))
 
 
 _DETAILS_EXAMPLE = {
     "display_name": "antenna-1",
     "interface": "wlx7419f8176286",
+    "health": {
+        "ap_restores": {"used": 1, "limit": 3, "window_minutes": 60, "frees_at": "2026-11-27T09:12:00Z"},
+        "dhcp_restarts": {"used": 0, "limit": 3, "window_minutes": 60, "frees_at": None},
+        "quarantines": {"count": 0, "last_at": None, "last_usb_recovery": None},
+        "last_usb_reset_at": None,
+    },
     "device": {"bus": "usb", "address": "2-1", "driver": "mt7921u"},
     "encryptions": ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"],
     "bands": {
@@ -142,6 +180,7 @@ def get_antenna(
     interface: str = Path(..., description="Interface name from `GET /antennas`"),
     devices: DeviceRegistry = Depends(get_devices),
     channel_mgr: ChannelManager = Depends(get_channel_manager),
+    manager: NetworkManager = Depends(get_manager),
     _auth: bool = Depends(require_token),
 ) -> AntennaDetails:
     """The options of a create on this antenna, to fill a form's lists.
@@ -155,6 +194,11 @@ def get_antenna(
     DFS channels (5 GHz 52-144) are listed, with `dfs: true`, only when the
     antenna has `show_dfs_channels: true` in the configuration. The data comes from the
     radio and is cached; no reservation is needed.
+
+    `health` tells how close the antenna is to a quarantine: the watchdog's
+    repairs in its sliding window against the limit (from the antenna's driver,
+    `watchdog` in config.yaml), when the oldest one frees, past quarantines and
+    USB resets.
     """
     entry = devices.get(interface)
     if entry is None:
@@ -187,4 +231,23 @@ def get_antenna(
         device=DeviceDetails(bus=device.bus, address=device.address, driver=device.driver) if device else None,
         encryptions=info.capabilities.encryptions(),
         bands=Bands.model_validate(bands),
+        health=_health(manager, interface),
+    )
+
+
+def _health(manager: NetworkManager, interface: str) -> AntennaHealth:
+    def use(kind: str) -> RepairBudgetUse:
+        used, limit, window, frees_at = manager.watchdog.budget_use(interface, kind)
+        return RepairBudgetUse(
+            used=used, limit=limit, window_minutes=window, frees_at=format_utc_timestamp(frees_at),
+        )
+
+    count, last_at, usb = manager.quarantines.get(interface, (0, None, None))
+    reset_at = manager.recovery.last_usb_reset.get(interface)
+    return AntennaHealth(
+        ap_restores=use("ap_restores"), dhcp_restarts=use("dhcp_restarts"),
+        quarantines=QuarantineInfo(
+            count=count, last_at=format_utc_timestamp(last_at), last_usb_recovery=usb,
+        ),
+        last_usb_reset_at=format_utc_timestamp(reset_at),
     )

@@ -147,6 +147,8 @@ class NetworkManager:
         self._cleanup_retry_at: dict[str, float] = {}
         self.expire_reservations: Callable[[], None] | None = None
         self.recovery = RadioRecovery(self)
+        # device -> (quarantines since the service started, wall time of the last, USB recovery)
+        self.quarantines: dict[str, tuple[int, float, bool]] = {}
         self.watchdog = NetworkWatchdog(self)
         # A lost control connection or AP-DISABLED runs the antenna's next check now (PERF-4).
         self.hostapd_manager.on_change = self.watchdog.wake
@@ -321,6 +323,8 @@ class NetworkManager:
         if not radio_fault or self.config.upstream_interface == device:
             port = None
         reservations.quarantine(reservation, recovering=port is not None)
+        count = self.quarantines.get(device, (0, 0.0, False))[0] + 1
+        self.quarantines[device] = (count, time.time(), port is not None)
         if port is not None:
             try:
                 self.recovery.schedule(reservations, device, port, band, channel)

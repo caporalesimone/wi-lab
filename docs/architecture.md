@@ -987,7 +987,8 @@ answers either.
   any hour (a sliding window; `watchdog.ap_restores` in `config.yaml`, with its own
   values per kernel driver under `watchdog.drivers`). A further failure inside the
   window quarantines it. DHCP-only restarts have their own budget
-  (`watchdog.dhcp_restarts`). The budget belongs to the antenna, not to the network:
+  (`watchdog.dhcp_restarts`). `GET /antennas/{interface}` shows the use of both
+  (`health`), with past quarantines and USB resets. The budget belongs to the antenna, not to the network:
   deleting and recreating the network does not reset it. A long-lived
   reservation can therefore survive one outage a day indefinitely, while an AP
   that keeps dying is taken out of the pool.

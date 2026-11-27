@@ -111,6 +111,7 @@ class NetworkWatchdog:
     def __init__(self, manager: "NetworkManager") -> None:
         self.manager = manager
         self._wakeups: dict[str, threading.Event] = {}
+        self._watches: dict[str, DeviceWatch] = {}   # read by GET /antennas/{interface} (health)
         self._wakeups_lock = threading.Lock()
         self.stopping = _Stopping(self._wake_all)
         self.states: dict[str, tuple[Reservation, str]] = {}
@@ -164,7 +165,7 @@ class NetworkWatchdog:
 
     def _watch(self, reservations: ReservationManager, device: str) -> None:
         log.bind(antenna=device)   # this thread watches one antenna for its whole life
-        watch = DeviceWatch(device)
+        watch = self._watches.setdefault(device, DeviceWatch(device))
         while not self._pause(device):
             heartbeat.beat(f"watchdog:{device}")
             self.tick(reservations, watch)
@@ -305,6 +306,24 @@ class NetworkWatchdog:
         if failed and reservations.snapshot().get(device) is reservation:
             watch.restart_network = f"DHCP on {device} cannot be repaired alone"
             watch.restart_reason = "dhcp_failed"
+
+    def budget_use(self, device: str, kind: str) -> tuple[int, int, int, float | None]:
+        """Repairs of *kind* in the window, the limit, the window in minutes, and when
+        (wall time) the oldest of them leaves the window; for GET /antennas health."""
+        limit, window = self._budget(device, kind)
+        watch = self._watches.get(device)
+        times: list[float] = []
+        if watch is not None:
+            for _ in range(3):   # the watchdog thread may append meanwhile
+                try:
+                    times = list(watch.restores if kind == "ap_restores" else watch.dhcp_restores)
+                    break
+                except RuntimeError:
+                    continue
+        now = time.monotonic()
+        recent = [t for t in times if now - t <= window]
+        frees_at = time.time() + (min(recent) + window - now) if recent else None
+        return len(recent), limit, int(window // 60), frees_at
 
     def _budget(self, device: str, kind: str) -> tuple[int, float]:
         """`limit` and window in seconds of *kind* for *device*, by its driver (config.yaml)."""

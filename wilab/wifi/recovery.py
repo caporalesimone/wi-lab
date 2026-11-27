@@ -79,6 +79,8 @@ class RadioRecovery:
         # device -> (band, channel) of the last network, used for the probe AP
         self._last_radio: dict[str, tuple[str, int]] = {}
         self._reprobe_started = False
+        # device -> wall time of the last `usbreset` (GET /antennas/{interface} health)
+        self.last_usb_reset: dict[str, float] = {}
 
     def stop(self) -> None:
         self._stopping.set()
@@ -188,6 +190,7 @@ class RadioRecovery:
                         mac = current_mac
                         logger.warning("USB recovery attempt %d/%d for %s", attempt, RESET_ATTEMPTS, interface)
                         execute_command(["usbreset", target], timeout=15)
+                        self.last_usb_reset[interface] = time.time()
                         if self._verify(interface, port, mac):
                             if self._stopping.is_set():
                                 return
