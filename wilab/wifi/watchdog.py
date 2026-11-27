@@ -509,7 +509,8 @@ class NetworkWatchdog:
                 if not self.manager.dhcp_server.is_running(device):
                     raise DhcpServerError("Restarted DHCP process is not running")
         except DhcpServerError:
-            logger.exception("DHCP restart failed on %s", device)
+            # The next tick restores the whole network (WD-3): a WARNING (ARCH-10).
+            logger.warning("DHCP restart failed on %s", device, exc_info=True)
             try:
                 self.manager.dhcp_server.stop(device, keep_leases=True)
             except DhcpServerError:

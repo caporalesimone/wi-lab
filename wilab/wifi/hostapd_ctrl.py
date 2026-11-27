@@ -299,5 +299,5 @@ class HostapdMonitor:
             return
         try:
             self._on_change()
-        except Exception:  # noqa: BLE001 - a callback must never kill the monitor
+        except Exception:
             logger.warning("hostapd monitor callback failed on %s", self.interface, exc_info=True)
