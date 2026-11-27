@@ -87,22 +87,16 @@ def _nat_check(manager: NetworkManager, expected: list[str]) -> dict[str, Any]:
 
 
 def _upstream_check(manager: NetworkManager) -> dict[str, Any]:
-    """State, addresses and gateway of the upstream, from `ip -j` (BUG-2).
+    """State, addresses and gateway of the upstream, from `ip -j`, shown in /monitoring.
 
-    `reachable` (UP with a global IPv4 address) decides `upstream_unreachable`;
-    the rest is shown in /monitoring.
-
-    A link with state UNKNOWN (VPN, some virtual NICs) is up when the kernel
-    reports LOWER_UP.
+    Information only: it never makes the service degraded (2026-11-27).
     """
     try:
         name = manager.nat_manager.get_upstream_interface()
         links = json.loads(execute_command(["ip", "-j", "addr", "show", "dev", name]) or "[]")
     except (CommandError, RuntimeError, ValueError) as exc:
-        return {"name": manager.config.upstream_interface, "reachable": False, "error": str(exc)}
+        return {"name": manager.config.upstream_interface, "error": str(exc)}
     link = links[0] if links else {}
-    state = link.get("operstate")
-    up = state == "UP" or (state == "UNKNOWN" and "LOWER_UP" in link.get("flags", []))
 
     def addresses(family: str) -> list[str]:
         return [
@@ -110,11 +104,9 @@ def _upstream_check(manager: NetworkManager) -> dict[str, Any]:
             if a.get("family") == family and a.get("scope", "global") == "global" and "local" in a
         ]
 
-    ipv4 = addresses("inet")
     return {
-        "name": name, "up": up, "reachable": up and bool(ipv4),
-        "operstate": state, "mac": link.get("address"), "mtu": link.get("mtu"),
-        "ipv4": ipv4, "ipv6": addresses("inet6"), "gateway": _default_gateway(name),
+        "name": name, "operstate": link.get("operstate"), "mac": link.get("address"), "mtu": link.get("mtu"),
+        "ipv4": addresses("inet"), "ipv6": addresses("inet6"), "gateway": _default_gateway(name),
     }
 
 

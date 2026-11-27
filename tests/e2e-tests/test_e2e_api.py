@@ -262,7 +262,7 @@ def test_24ghz_40mhz_reports_the_width_it_got(wilab: WiLab, server: Server) -> N
 def test_network_without_internet_is_not_degraded(wilab: WiLab) -> None:
     antenna = wilab.reserve()
     assert wilab.create(antenna, internet_enabled=False).status_code == 200
-    assert wilab.status()["status"]["health"] == "good"
+    assert wilab.status()["service"]["health"] == "good"
 
 
 @pending("BUG-7")
@@ -295,7 +295,7 @@ def test_status_never_flaps_to_degraded_during_create_delete(wilab: WiLab) -> No
 
     def poll() -> None:
         while not stop.is_set():
-            seen.append(wilab.status()["status"]["health"])
+            seen.append(wilab.status()["service"]["health"])
 
     poller = threading.Thread(target=poll, daemon=True)
     poller.start()

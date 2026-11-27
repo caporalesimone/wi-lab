@@ -164,7 +164,7 @@ def stuck_release(monkeypatch, context, app):
 
 
 def _cleanup_reason(client, headers):
-    reasons = client.get("/api/v2/status", headers=headers).json()["status"]["degraded_reasons"]
+    reasons = client.get("/api/v2/status", headers=headers).json()["service"]["degraded_reasons"]
     return next((r for r in reasons if r["code"] == "cleanup_failed"), None)
 
 

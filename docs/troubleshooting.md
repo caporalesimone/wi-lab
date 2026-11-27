@@ -191,7 +191,7 @@ host's own network (the default-route interface or `upstream_interface`).
 Reloading resets every adapter of that module, including any not managed by
 Wi-Lab.
 
-### Issue 8: Red Bar "Security updates installed" (`restart_required` in `/status`)
+### Issue 8: Red Bar "Security updates installed" (`service.restart_required` in `/status`)
 
 Unattended upgrades installed security updates, and the running service still uses the
 old code: a library it had loaded was replaced (`service`), or an update asks for a reboot
@@ -202,8 +202,8 @@ restart stops every active network.
 When no network is in use:
 
 ```bash
-sudo systemctl restart wi-lab     # restart_required.service
-sudo reboot                       # restart_required.system
+sudo systemctl restart wi-lab     # service.restart_required.service
+sudo reboot                       # service.restart_required.system
 ```
 
 `GET /api/v2/monitoring` lists the replaced libraries and the packages (`checks.updates`).

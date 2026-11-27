@@ -1047,9 +1047,9 @@ class TestReservationDeleteStopsNetwork:
         assert resp.status_code == 409  # still held by the failed cleanup
         assert resp.json()["detail"]["code"] == 1005
         status = client.get("/api/v2/status", headers={"Authorization": valid_token}).json()
-        assert status["status"]["health"] == "degraded"
+        assert status["service"]["health"] == "degraded"
         assert {"code": "cleanup_failed", "interface": device_id} in [
-            {k: r[k] for k in ("code", "interface")} for r in status["status"]["degraded_reasons"]
+            {k: r[k] for k in ("code", "interface")} for r in status["service"]["degraded_reasons"]
         ]
 
         def successful_stop(did):

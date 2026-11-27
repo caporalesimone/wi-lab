@@ -32,7 +32,7 @@ All system packages (hostapd, dnsmasq, iptables, iw, python3 …) are installed 
 **Why Ubuntu only.** Wi-Lab relies on what Ubuntu Server provides: `apt` packages, systemd-networkd
 with netplan, and its unattended security upgrades with needrestart, from which the installer
 excludes Wi-Lab so that an upgrade never restarts it and drops every network (`GET /status`
-reports `restart_required` instead). Other distributions may work but are neither tested nor
+reports `service.restart_required` instead). Other distributions may work but are neither tested nor
 supported.
 
 ---

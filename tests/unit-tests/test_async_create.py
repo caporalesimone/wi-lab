@@ -93,7 +93,7 @@ def test_create_answers_202_and_the_network_appears_by_polling(api):
     assert set(created.json()) == set(polled.json())  # same schema as GET (the library reads the body)
     status = client.get("/api/v2/status", headers=headers).json()
     assert status["antennas"][0]["runtime_state"] == "starting"
-    assert status["status"]["health"] != "degraded"
+    assert status["service"]["health"] != "degraded"
     script["release"].set()
     done = _wait_until(lambda: (r := _state(client, headers, url).json())["runtime_state"] is None and r)
     assert done["active"] is True and done["error"] is None
@@ -579,9 +579,9 @@ def test_release_during_a_start_whose_rollback_fails_is_a_release(stuck_rollback
     status = client.get("/api/v2/status", headers=headers).json()
     antenna = next(a for a in status["antennas"] if a["interface"] == device)
     assert antenna.get("recovery_state") in (None, "ok")
-    assert any(r["code"] == "cleanup_failed" for r in status["status"]["degraded_reasons"])
+    assert any(r["code"] == "cleanup_failed" for r in status["service"]["degraded_reasons"])
     # Not the client's to repeat any more (REV-9).
-    assert not any(r["code"] == "network_stop_incomplete" for r in status["status"]["degraded_reasons"])
+    assert not any(r["code"] == "network_stop_incomplete" for r in status["service"]["degraded_reasons"])
     assert manager.has_leftovers(device)
 
 

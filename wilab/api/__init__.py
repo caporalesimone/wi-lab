@@ -94,11 +94,11 @@ allocated an adapter: do not blindly repeat it.
 ### Service health and quarantined adapters
 
 Poll `GET /api/v2/status` to know whether the service is fully usable.
-Its `status` has `health` (`good` or `degraded`) and `free_antennas` (how many
-antennas a reservation would get now). `degraded` means an adapter is
+Its `service` has `health` (`good` or `degraded`), `free_antennas` (how many
+antennas a reservation would get now), `degraded_reasons` and `restart_required`. `degraded` means an adapter is
 quarantined (`antennas[].recovery_state`), a reserved network is being
 repaired or lost DHCP (`antennas[].runtime_state`), or a health check failed
-while networks are active: `status.degraded_reasons` lists each cause with a stable
+while networks are active: `service.degraded_reasons` lists each cause with a stable
 `code`, and `GET /api/v2/monitoring` gives the detail of every check. Show it
 to the user with the affected adapter: fewer adapters may be allocatable than
 are listed.
@@ -159,7 +159,7 @@ def _keep_example_nulls(paths: dict, routes: list) -> None:
     """Put back the null values of the routes' own response examples.
 
     FastAPI builds the schema with exclude_none, which also drops every null
-    from the examples: `restart_required: null` or `reservation: null` vanished
+    from the examples: `service.restart_required: null` or `reservation: null` vanished
     from Swagger although the API always sends them. The examples are the
     route's own, copied as written; nothing is added.
     """

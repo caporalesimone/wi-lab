@@ -104,7 +104,7 @@ def test_failed_restore_is_reported_and_retried(wilab: WiLab, server: Server) ->
             lambda: _network(wilab, antenna).get("runtime_state") == "restore_failed", timeout=45, interval=2,
         )
         assert _network(wilab, antenna)["active"] is False
-        assert wilab.status()["status"]["health"] == "degraded"
+        assert wilab.status()["service"]["health"] == "degraded"
         assert not wilab.device(antenna.interface).get("recovery_state")
     # Port free again: the next retry (15 s, then 30 s) brings the network back.
     assert wait_for(lambda: _restored(wilab, antenna), timeout=90, interval=3)

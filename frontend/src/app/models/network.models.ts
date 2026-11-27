@@ -69,22 +69,22 @@ export interface ReservationPolicy {
   allow_unlimited: boolean;
 }
 
-export interface ServiceStatus {
+export interface ServiceState {
   /** `degraded`: at least one entry in `degraded_reasons`. */
   health: 'good' | 'degraded';
   /** Antennas a reservation would get now. */
   free_antennas: number;
   /** Why the service is degraded; empty when health is good. */
   degraded_reasons: { code: string; interface: string | null; message: string }[];
+  /** Security updates installed on the host that need a restart; never done automatically. */
+  restart_required: RestartRequired | null;
 }
 
 export interface StatusResponse {
   version: string;
-  status: ServiceStatus;
+  service: ServiceState;
   antennas: InterfaceInfo[];
   reservation_policy: ReservationPolicy;
-  /** Security updates installed on the host that need a restart; never done automatically. */
-  restart_required?: RestartRequired | null;
 }
 
 export interface RestartRequired {

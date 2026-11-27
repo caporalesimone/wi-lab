@@ -96,7 +96,7 @@ container, on the Wi-Lab machine or anywhere else. Wi-Lab becomes API only.
   - logs: a ring buffer of structured records (`wilab/log.py` already adds
     antenna and reservation) with `GET /api/v2/logs` and its stream; who may
     read them depends on the accounts decision;
-  - `restart_required` of `/status` (done) for the red bar.
+  - `service.restart_required` of `/status` (done) for the red bar.
 
 ## Application
 

@@ -324,7 +324,7 @@ def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch, conte
         assert (result.status_code, result.json()["detail"]["reason"]) == (404, "reservation_invalidated")
         schedule.assert_not_called()
         status = client.get("/api/v2/status", headers=headers).json()
-        assert status["status"]["health"] == "degraded"
+        assert status["service"]["health"] == "degraded"
         assert status["antennas"][0]["recovery_state"] == "unavailable"
         assert client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).status_code == 503
 

@@ -57,7 +57,7 @@ carries one of the four reasons above: a missing QoS
 profile in the catalogue is `422`, a missing running profile is `409 / 1011`,
 and an unsupported TX power is `422`.
 
-## `status.degraded_reasons` codes (`GET /status`)
+## `service.degraded_reasons` codes (`GET /status`)
 
 Not errors: `GET /status` lists why the service is `degraded`, one
 `{code, interface, message}` per cause (`interface` is `null` for the whole
@@ -71,7 +71,6 @@ service). The detail of each check is in `GET /monitoring`.
 | `hostapd_not_running` | the antenna | The AP process of that network is dead. |
 | `dnsmasq_not_running` | the antenna | The DHCP process of that network is dead. |
 | `nat_rule_missing` | the antenna | The network has Internet enabled but its NAT rule is missing. |
-| `upstream_unreachable` | `null` | The host uplink is down or has no IPv4 address while a network has Internet. |
 | `command_stuck` | `null` | A host command did not exit even after SIGKILL (hung driver). |
 | `loop_stalled` | `null` | A background loop has not run for 3 minutes. |
 | `cleanup_failed` | the antenna | The cleanup after a release or expiry failed (for example hostapd stuck in the kernel). The antenna is held, not allocatable; the server repeats the cleanup after 5 s, 15 s, 60 s, then every 5 min. |

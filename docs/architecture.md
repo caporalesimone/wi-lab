@@ -102,7 +102,7 @@ flowchart LR
 | `wilab/wifi/txpower.py` | `TxPowerControl`: the four TX power levels of a channel, setting and reading them with `iw`, `TxPowerMismatchError`. |
 | `wilab/wifi/clients.py` | `ClientLister`: associated stations with a DHCP lease, the 1.5 s client cache, the client MAC lookup of the captive portal. |
 | `wilab/network/subnet_allocator.py` | `SubnetAllocator`: one `/24` per antenna from `dhcp_base_network`, never one in use on the host. |
-| `wilab/health.py` | Health checks that run host commands (hostapd and dnsmasq alive, NAT rules, upstream link), refreshed every 10 s by the `health-checks` thread; `/status` reads the latest result and runs no command (recomputed by the reader only if older than 20 s). |
+| `wilab/health.py` | Health checks that run host commands (hostapd and dnsmasq alive, NAT rules; the upstream link only for display), refreshed every 10 s by the `health-checks` thread; `/status` reads the latest result and runs no command (recomputed by the reader only if older than 20 s). |
 | `wilab/wifi/hostapd.py` | hostapd configuration, process ownership, readiness check. |
 | `wilab/wifi/watchdog.py` | Post-start supervision and bounded AP/DHCP restoration. |
 | `wilab/wifi/recovery.py` | Automatic USB reset and verification of quarantined antennas. |

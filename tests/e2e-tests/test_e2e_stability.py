@@ -49,8 +49,8 @@ def test_network_stays_up_for_15_minutes(wilab: WiLab, server: Server) -> None:
     while time.monotonic() < end:
         status = wilab.status()
         entry = wilab.device(antenna.interface)
-        if entry.get("runtime_state") or entry.get("recovery_state") or status["status"] == "degraded":
-            anomalies.append((time.strftime("%H:%M:%S"), status["status"], entry))
+        if entry.get("runtime_state") or entry.get("recovery_state") or status["service"]["health"] == "degraded":
+            anomalies.append((time.strftime("%H:%M:%S"), status["service"]["health"], entry))
         time.sleep(10)
     assert anomalies == []
     assert wilab.http.get(f"/reservations/{antenna.reservation_id}/network").status_code == 200

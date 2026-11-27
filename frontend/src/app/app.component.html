@@ -36,7 +36,7 @@
     <!-- Main content (not loading, no error) -->
     <div *ngIf="!loading && !error">
 
-      <!-- Security updates installed on the host need a restart (GET /status restart_required) -->
+      <!-- Security updates installed on the host need a restart (GET /status service.restart_required) -->
       <div *ngIf="restartRequired" class="restart-banner" role="alert">
         <mat-icon>security_update_warning</mat-icon>
         <div>

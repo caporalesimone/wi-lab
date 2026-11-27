@@ -498,7 +498,7 @@ Notes:
 The client must check `GET /api/v2/status` to know whether every antenna is
 usable. Poll it (for example every 10–30 s) and show the result to the user.
 
-`status` is an object:
+`service` is the state of Wi-Lab:
 
 | Field | Value | Meaning |
 |---|---|---|
@@ -506,6 +506,7 @@ usable. Poll it (for example every 10–30 s) and show the result to the user.
 | `health` | `degraded` | At least one entry in `degraded_reasons`. |
 | `degraded_reasons` | list | Why `health` is `degraded`; empty when `good`. |
 | `free_antennas` | `N` | Antennas a reservation would get now: not reserved, not quarantined, not held by a failed cleanup. `0`: a reserve answers `409 / 1005` or `503 / 1002`, `1003`. |
+| `restart_required` | `null` or object | Security updates on the host that need a restart of Wi-Lab or a reboot; never done automatically and never `degraded`. Always present. |
 
 `free_antennas` is a hint for a dashboard or a queue: to get an antenna, reserve
 it (`POST /api/v2/reservations`), since another client may take the last free one
@@ -517,13 +518,14 @@ antenna:
 
 ```json
 {
-  "status": {
+  "service": {
     "health": "degraded",
     "free_antennas": 0,
     "degraded_reasons": [
       {"code": "antenna_quarantined", "interface": "wlx7419f8176286",
        "message": "Antenna quarantined (unavailable)"}
-    ]
+    ],
+    "restart_required": null
   },
   "antennas": [
     {"display_name": "antenna-1", "interface": "wlx7419f8176286", "reservation": null,
@@ -535,14 +537,13 @@ antenna:
 }
 ```
 
-| `status.degraded_reasons[].code` | Meaning | Client action |
+| `service.degraded_reasons[].code` | Meaning | Client action |
 |---|---|---|
 | `antenna_quarantined` | The antenna has `recovery_state`: `recovering` (Wi-Lab is resetting and probing it) or `unavailable` (no USB reset running; re-probed after 30 s, backing off to every 15 min). | Do not count it as available. It may return by itself; report it if `unavailable` persists. |
 | `network_being_repaired` | A reserved AP has `runtime_state`: `restoring_ap`, `restoring_dhcp`, `dhcp_failed` (whole network restarted within 5 s) or `restore_failed` (AP down, retried with backoff). See [2.6](#26-after-the-ap-is-running). | Owner: wait (or `DELETE .../network` on `restore_failed`). Others: nothing to do. |
 | `network_stop_incomplete` | A `DELETE .../network` on that antenna answered `503 / 1012`: the network is half stopped (`runtime_state: stop_failed`). | Its owner repeats the DELETE; others do nothing. |
 | `hostapd_not_running`, `dnsmasq_not_running` | The AP or DHCP process of that network is not alive. | Report it; the watchdog normally repairs it within seconds. |
 | `nat_rule_missing` | That network has Internet enabled but lost its NAT rule. | Report it; Internet does not work there until the watchdog repairs it. |
-| `upstream_unreachable` | The host uplink is down or has no IPv4 address, while a network has Internet. | Report it; Internet access does not work. |
 | `command_stuck` | A host command (`ip`, `iw`, `usbreset`, ...) did not exit even after SIGKILL: usually a hung Wi-Fi driver. Set also when no antenna is reserved. | Report it: the adapter may need a reset or the host a reboot. |
 | `loop_stalled` | A Wi-Lab background loop has not run for 3 minutes. Wi-Lab restarts itself as soon as no reservation is active. | Report it; release reservations you no longer need. |
 | `cleanup_failed` | The cleanup after a release or expiry failed (for example hostapd stuck in the kernel). The antenna is held, not reservable; Wi-Lab repeats the cleanup after 5 s, 15 s, 60 s, then every 5 minutes. | Nothing: reserve another antenna, or wait. If it persists, an operator checks the host. |
@@ -585,7 +586,7 @@ sequenceDiagram
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 0 - before reserving (optional, no reservation needed)
     C->>W: GET /status
-    W-->>C: status, antennas[] (reservation, network_active, recovery_state), reservation_policy
+    W-->>C: service, antennas[] (reservation, network_active, recovery_state), reservation_policy
     Note over C: allow_unlimited tells whether duration_seconds 0 is accepted.<br/>Entries with recovery_state are not allocatable.
     end
 
@@ -702,7 +703,7 @@ sequenceDiagram
         end
     and Anyone polls the service (every 10 to 30 s)
         C->>W: GET /status
-        W-->>C: status {health, free_antennas, degraded_reasons}, recovery_state, runtime_state
+        W-->>C: service {health, free_antennas, degraded_reasons, restart_required}, recovery_state, runtime_state
         Note over C: Show degraded with the affected antenna
     end
     opt Change the running network
