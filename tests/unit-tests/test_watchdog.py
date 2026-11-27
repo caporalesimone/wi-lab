@@ -41,7 +41,7 @@ def _setup(context, monkeypatch, times, recreate_at=None):
 
     monkeypatch.setattr(manager.watchdog, "_restore_ap", restore)
     monkeypatch.setattr(
-        manager.watchdog.stopping, "wait", Mock(side_effect=[False] * len(times) + [True]),
+        manager.watchdog, "_pause", Mock(side_effect=[False] * len(times) + [True]),
     )
     manager.watchdog._watch(reservations, device)
     return flags
@@ -135,7 +135,7 @@ def _run_ticks(monkeypatch, manager, reservations, device, times):
         return False
 
     monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: now[0])
-    monkeypatch.setattr(manager.watchdog.stopping, "wait", wait)
+    monkeypatch.setattr(manager.watchdog, "_pause", wait)
     manager.watchdog._watch(reservations, device)
 
 
@@ -237,7 +237,7 @@ def _dhcp_setup(context, monkeypatch, ticks, dhcp_restart_works=True):
 
     monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: clock["now"])
     monkeypatch.setattr(manager.dhcp_server, "is_running", lambda _device: clock["dhcp"])
-    monkeypatch.setattr(manager.watchdog.stopping, "wait", wait)
+    monkeypatch.setattr(manager.watchdog, "_pause", wait)
     events: list[str] = []
     states: list[str | None] = []
 
@@ -383,7 +383,7 @@ def _watch_until_a_restart(context, monkeypatch, ticks, *, dhcp_restart_works=Tr
         return False
 
     monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: tick["now"])
-    monkeypatch.setattr(manager.watchdog.stopping, "wait", wait)
+    monkeypatch.setattr(manager.watchdog, "_pause", wait)
     monkeypatch.setattr(manager.hostapd_manager, "is_running", lambda _device: tick["alive"])
     monkeypatch.setattr(manager.hostapd_manager, "is_enabled", lambda _device: tick["enabled"])
     monkeypatch.setattr(manager.dhcp_server, "is_running", lambda _device: tick["dhcp"])
@@ -534,3 +534,22 @@ def test_slow_probes_count_half(monkeypatch, answers, restarted, context):
     _watch_until_a_restart(context, monkeypatch, ticks)
     manager = context.manager
     assert manager.watchdog._restore_ap.called is restarted
+
+
+# --------------------------------------------------------------------------- PERF-4 wake-up
+
+
+def test_wake_runs_the_next_tick_early_and_stop_ends_the_wait(context):
+    """The hostapd control monitor wakes the antenna's watchdog: no waiting for the 5 s tick."""
+    watchdog = context.manager.watchdog
+    timer = threading.Timer(0.1, watchdog.wake, args=("wlan0",))
+    timer.start()
+    began = time.monotonic()
+    assert watchdog._pause("wlan0") is False
+    assert time.monotonic() - began < watchdog_module.TICK - 1   # woken, after WAKE_GAP at least
+    assert time.monotonic() - began >= watchdog_module.WAKE_GAP - 0.05
+    timer = threading.Timer(0.1, watchdog.stopping.set)
+    timer.start()
+    began = time.monotonic()
+    assert watchdog._pause("wlan0") is True
+    assert time.monotonic() - began < 1

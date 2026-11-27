@@ -385,7 +385,7 @@ def test_watchdog_waits_for_confirmed_ap_failure(monkeypatch, ap_alive, checks, 
     readiness_at_restart = []
     restore = Mock(side_effect=lambda *_: readiness_at_restart.append(enabled.call_count))
     monkeypatch.setattr(manager.watchdog, "_restore_ap", restore)
-    monkeypatch.setattr(manager.watchdog.stopping, "wait", Mock(side_effect=[False] * checks + [True]))
+    monkeypatch.setattr(manager.watchdog, "_pause", Mock(side_effect=[False] * checks + [True]))
 
     manager.watchdog._watch(reservations, device)
     restore.assert_called_once_with(reservations, reservation, status, False)

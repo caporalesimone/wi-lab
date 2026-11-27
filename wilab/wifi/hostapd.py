@@ -7,7 +7,8 @@ import signal
 import tempfile
 import time
 from collections.abc import Callable
-from typing import TypedDict
+from functools import partial
+from typing import NotRequired, TypedDict
 
 from ..network.commands import (
     CommandError,
@@ -21,6 +22,7 @@ from ..network.commands import (
 from ..paths import HOSTAPD_RUNTIME_DIR, make_private_dir
 from .channels import ChannelLayout, channel_layouts
 from .failures import FailureKind
+from .hostapd_ctrl import ControlError, HostapdMonitor, parse_fields
 from .interface import interface_present
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,9 @@ _TRANSIENT_INIT_EVENTS = frozenset({"beacon_failed", "interface_init_failed"})
 # Seconds to wait for hostapd to exit after it reports DISABLED (HAP-2).
 DISABLED_SETTLE = 0.5
 DFS_READY_TIMEOUT = 75.0
+# Hold a persistent control connection per running AP (PERF-4); the unit tests
+# turn it off where hostapd is a fake without a control socket.
+MONITOR_CONTROL = True
 _STARTUP_STATES = frozenset({
     "UNINITIALIZED", "DISABLED", "COUNTRY_UPDATE", "ACS", "HT_SCAN", "DFS",
     "NO_IR", "ENABLED",
@@ -139,6 +144,7 @@ class HostapdInstance(TypedDict):
     control_dir: str
     ssid: str
     process: ForegroundProcess | None
+    monitor: NotRequired[HostapdMonitor | None]
 
 
 DEBUG_TAIL_LINES = 400      # `hostapd -d` lines kept per start when hostapd_debug_dir is set
@@ -208,15 +214,20 @@ def save_failure(
 class HostapdManager:
     """Manages hostapd processes for WiFi AP networks."""
     
-    def __init__(self, *, debug_dir: str | None = None) -> None:
+    def __init__(
+        self, *, debug_dir: str | None = None, on_change: Callable[[str], None] | None = None,
+    ) -> None:
         """Initialize hostapd manager.
 
         Args:
             debug_dir: `hostapd_debug_dir`: where to save the `hostapd -d` output and
                 configuration of every start that fails (None: not saved).
+            on_change: called with the network id when its control connection is
+                lost or hostapd reports AP-DISABLED (the watchdog wakes up, PERF-4).
         """
         self._instances: dict[str, HostapdInstance] = {}
         self._debug_dir = debug_dir
+        self.on_change = on_change
         self._ensure_dirs()
     
     def _ensure_dirs(self) -> None:
@@ -394,6 +405,13 @@ class HostapdManager:
                 if self._debug_dir:
                     save_failure(self._debug_dir, interface, exc, process, config_content)
                 raise
+            if MONITOR_CONTROL:
+                monitor = HostapdMonitor(
+                    os.path.join(control_dir, interface), instance_dir, interface,
+                    on_change=partial(self._changed, net_id),
+                )
+                instance["monitor"] = monitor
+                monitor.start()
             logger.info("hostapd started for %s on %s", net_id, interface)
             return instance
 
@@ -520,6 +538,13 @@ class HostapdManager:
             interface = instance["interface"]
             process = instance["process"]
 
+            # First, so a hostapd going away is not reported as a lost connection,
+            # and its client sockets leave the instance directory before rmdir.
+            monitor = instance.get("monitor")
+            if monitor is not None:
+                monitor.close()
+                instance["monitor"] = None
+
             if process is not None:
                 process.stop()
                 instance["process"] = None
@@ -606,20 +631,44 @@ class HostapdManager:
         if instance is None or not self.is_running(net_id):
             return False
         interface = instance["interface"]
-        try:
-            status = execute_command(
-                ["hostapd_cli", "-p", instance["control_dir"], "-i", interface, "status"],
-                check=False, timeout=1.0,
-            )
-        except CommandTimeout:
-            return None
-        except CommandError:
-            return False
-        fields = dict(line.split("=", 1) for line in status.splitlines() if "=" in line)
+        monitor = instance.get("monitor")
+        fields: dict[str, str] | None = None
+        if monitor is not None and monitor.connected:
+            # The persistent connection: no process per probe (PERF-4).
+            try:
+                fields = monitor.status(STATUS_PROBE_TIMEOUT)
+            except ControlError:
+                fields = None   # lost meanwhile: the monitor reconnects, this probe falls back
+        if fields is None:
+            try:
+                status = execute_command(
+                    ["hostapd_cli", "-p", instance["control_dir"], "-i", interface, "status"],
+                    check=False, timeout=STATUS_PROBE_TIMEOUT,
+                )
+            except CommandTimeout:
+                return None
+            except CommandError:
+                return False
+            fields = parse_fields(status)
         # The control socket is private to this instance, so state and interface
         # are enough; hostapd escapes the SSID in this output.
         return fields.get("state") == "ENABLED" and fields.get("bss[0]") == interface
     
+    def stations(self, net_id: str) -> set[str] | None:
+        """Associated stations from the control connection; None when it is not connected."""
+        instance = self._instances.get(net_id)
+        monitor = instance.get("monitor") if instance is not None else None
+        return monitor.stations() if monitor is not None else None
+
+    def control_connected(self, net_id: str) -> bool:
+        instance = self._instances.get(net_id)
+        monitor = instance.get("monitor") if instance is not None else None
+        return monitor is not None and monitor.connected
+
+    def _changed(self, net_id: str) -> None:
+        if self.on_change is not None:
+            self.on_change(net_id)
+
     def status(self) -> dict:
         """Return status of all hostapd instances."""
         instances = []

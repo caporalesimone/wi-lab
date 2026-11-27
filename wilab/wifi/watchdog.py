@@ -4,7 +4,8 @@ import logging
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Literal
 
@@ -31,6 +32,10 @@ DHCP_RESTORE_LIMIT = 3
 # Ticks (5 s each) between checks of what a running network needs beyond its
 # processes: gateway address, firewall rules, captive portal (WD-7).
 VERIFY_EVERY = 6
+# Seconds between two ticks of one antenna, and the least time between two
+# ticks when the hostapd control monitor wakes the watchdog early (PERF-4).
+TICK = 5.0
+WAKE_GAP = 0.5
 # Probe misses that restart the AP, counted in half misses: hostapd answering
 # "not ENABLED" (or not running) counts 2, a probe that timed out counts 1. So
 # 3 real answers restart the AP, while only 6 slow probes in a row do (WD-10).
@@ -56,6 +61,25 @@ _ON_RESTORE_FAILURE: dict[FailureKind, Literal["isolate", "quarantine", "retry_l
 
 
 @dataclass
+class DeviceWatch:
+    """What the watchdog remembers about one antenna between two ticks (Fable 4.1).
+
+    The restore budgets belong to the adapter, so they are not reset when the
+    client recreates the network.
+    """
+
+    device: str
+    current: "ActiveNetwork | None" = None   # the network the counters below are about
+    misses: int = 0                          # probe misses, in half misses (WD-10)
+    restores: deque[float] = field(default_factory=deque)        # monotonic times of AP restores
+    dhcp_restores: deque[float] = field(default_factory=deque)   # same, DHCP-only restarts (WD-3)
+    restart_network: str = ""   # why the whole network must be restored on the next tick (WD-3, WD-7)
+    restart_reason: str = ""    # the same, as the stable reason shown in GET .../network restarts
+    healthy_ticks: int = 0      # since the last network check (WD-7)
+    last_error: str = ""        # log a repeated failure's traceback once (WD-9)
+
+
+@dataclass
 class _Pending:
     """A network the watchdog still owes to its reservation after a failed restore."""
 
@@ -67,10 +91,24 @@ class _Pending:
     next_try: float = 0.0
 
 
+class _Stopping(threading.Event):
+    """The watchdog's stop flag: setting it also wakes every watcher waiting for its tick."""
+
+    def __init__(self, on_set: Callable[[], None]) -> None:
+        super().__init__()
+        self._on_set = on_set
+
+    def set(self) -> None:
+        super().set()
+        self._on_set()
+
+
 class NetworkWatchdog:
     def __init__(self, manager: "NetworkManager") -> None:
         self.manager = manager
-        self.stopping = threading.Event()
+        self._wakeups: dict[str, threading.Event] = {}
+        self._wakeups_lock = threading.Lock()
+        self.stopping = _Stopping(self._wake_all)
         self.states: dict[str, tuple[Reservation, str]] = {}
         self._reservations: ReservationManager | None = None
         # device -> network owed after a failed restore; guarded by the device lock
@@ -90,124 +128,177 @@ class NetworkWatchdog:
             name=f"ap-watchdog-{device.device_id}", daemon=True,
         ).start()
 
+    def wake(self, device: str) -> None:
+        """Run the next tick of *device* now, not at the end of its 5 s (PERF-4).
+
+        Called by the hostapd control monitor when its connection is lost or
+        hostapd reports AP-DISABLED: a crash is restored in about a second.
+        """
+        self._wakeup(device).set()
+
+    def _wakeup(self, device: str) -> threading.Event:
+        with self._wakeups_lock:
+            return self._wakeups.setdefault(device, threading.Event())
+
+    def _wake_all(self) -> None:
+        with self._wakeups_lock:
+            for event in self._wakeups.values():
+                event.set()
+
+    def _pause(self, device: str) -> bool:
+        """Wait for the next tick of *device*; True when the watchdog stops.
+
+        TICK seconds, or less when woken; a woken tick still waits WAKE_GAP after
+        the previous one, so a burst of wake-ups cannot run ticks back to back.
+        """
+        wakeup = self._wakeup(device)
+        if self.stopping.wait(WAKE_GAP):
+            return True
+        if wakeup.wait(TICK - WAKE_GAP):
+            wakeup.clear()
+        return self.stopping.is_set()
+
     def _watch(self, reservations: ReservationManager, device: str) -> None:
         log.bind(antenna=device)   # this thread watches one antenna for its whole life
-        current = None
-        misses = 0
-        # Monotonic times of recent AP restores. The budget belongs to the adapter,
-        # so it is not reset when the client recreates the network.
-        restores: deque[float] = deque()
-        dhcp_restores: deque[float] = deque()  # same, for DHCP-only restarts (WD-3)
-        restart_network = ""  # why the whole network must be restored on the next tick (WD-3, WD-7)
-        restart_reason = ""  # the same, as the stable reason shown in GET .../network restarts
-        healthy_ticks = 0  # since the last network check (WD-7)
-        last_error = ""  # log a repeated failure's traceback once (WD-9)
-        while not self.stopping.wait(5):
+        watch = DeviceWatch(device)
+        while not self._pause(device):
             heartbeat.beat(f"watchdog:{device}")
-            lock = self.manager.devices.lock(device)
-            if not lock.acquire(blocking=False):
-                continue
-            try:
-                status = self.manager.active.get(device)
-                reservation = reservations.snapshot().get(device)
-                pending = self._pending.get(device)
-                if pending is not None and (
-                    status is not None  # restored, or the client created a network itself
-                    or reservation is not pending.reservation  # released, expired or quarantined
-                    or self._cancelled(pending.reservation)
-                ):
-                    self._drop_pending(device)
-                elif pending is not None:
-                    if time.monotonic() >= pending.next_try:
-                        self._retry_pending(reservations, pending)
-                        current, misses = self.manager.active.get(device), 0
-                    continue
-                if reservation is None or status is None:
-                    self.states.pop(device, None)
-                if status is not current:
-                    self.states.pop(device, None)
-                    current, misses = status, 0
-                    restart_network = restart_reason = ""
-                if status is None or reservation is None or self._cancelled(reservation):
-                    continue
-                if self.manager.stop_failed(device):
-                    # Half stopped on purpose: repairing it would undo the client's stop.
-                    continue
-                alive = self.manager.hostapd_manager.is_running(device)
-                enabled = self.manager.hostapd_manager.is_enabled(device) if alive else False
-                misses = 0 if enabled else misses + (1 if enabled is None else 2)
-                if not alive or misses >= MISS_LIMIT or restart_network:
-                    if restart_network:
-                        logger.warning("%s; restarting the network", restart_network)
-                    if not alive:
-                        self.manager.hostapd_manager.report_exit(device)
-                    reservation.record_restart("ap", (
-                        "hostapd_not_running" if not alive
-                        else restart_reason or (
-                            "hostapd_not_enabled" if misses >= MISS_LIMIT else "network_check_failed"
-                        )
-                    ))
-                    restart_network = restart_reason = ""
-                    self.states[device] = (reservation, "restoring_ap")
-                    now = time.monotonic()
-                    while restores and now - restores[0] > RESTORE_WINDOW:
-                        restores.popleft()
-                    exhausted = len(restores) >= RESTORE_LIMIT
-                    if exhausted:
-                        logger.warning(
-                            "AP on %s failed again after %d restores in %.0f s; quarantining",
-                            device, len(restores), RESTORE_WINDOW,
-                        )
-                    else:
-                        logger.warning(
-                            "Restoring AP on %s (restore %d of %d in the last hour)",
-                            device, len(restores) + 1, RESTORE_LIMIT,
-                        )
-                    try:
-                        self._restore_ap(reservations, reservation, status, exhausted)
-                        current = self.manager.active.get(device)
-                        restores.append(now)
-                        misses = 0
-                    finally:
-                        if self.states.get(device, (None, ""))[1] == "restoring_ap":
-                            self.states.pop(device, None)
-                elif misses == 0 and not self.manager.dhcp_server.is_running(device):
-                    now = time.monotonic()
-                    while dhcp_restores and now - dhcp_restores[0] > RESTORE_WINDOW:
-                        dhcp_restores.popleft()
-                    if len(dhcp_restores) < DHCP_RESTORE_LIMIT:
-                        dhcp_restores.append(now)
-                        logger.warning(
-                            "Restarting DHCP on %s (restart %d of %d in the last hour)",
-                            device, len(dhcp_restores), DHCP_RESTORE_LIMIT,
-                        )
-                        reservation.record_restart("dhcp", "dnsmasq_not_running")
-                        self._restore_dhcp(reservations, reservation, status)
-                        failed = self.state(reservation) == "dhcp_failed"
-                    else:
-                        self.states[device] = (reservation, "dhcp_failed")
-                        failed = True
-                    # On the next tick, restore the whole network through the AP
-                    # budget (WD-1); dhcp_failed stays visible until then.
-                    if failed and reservations.snapshot().get(device) is reservation:
-                        restart_network = f"DHCP on {device} cannot be repaired alone"
-                        restart_reason = "dhcp_failed"
-                elif misses == 0:
-                    if self.state(reservation) == "dhcp_failed":
-                        self.states.pop(device, None)
-                    healthy_ticks += 1
-                    if healthy_ticks >= VERIFY_EVERY:
-                        healthy_ticks = 0
-                        restart_network = self._verify(device)
-                        restart_reason = "network_check_failed" if restart_network else ""
-            except Exception as exc:  # this loop must survive anything (WD-9)
-                if repr(exc) != last_error:
-                    logger.exception("Could not check or restore network on %s", device)
-                last_error = repr(exc)
-            else:
-                last_error = ""
-            finally:
-                lock.release()
+            self.tick(reservations, watch)
+
+    def tick(self, reservations: ReservationManager, watch: "DeviceWatch") -> None:
+        """One check of one antenna: everything the watchdog remembers is in *watch*.
+
+        Skipped when another operation holds the antenna. Never raises: the loop
+        must survive anything (WD-9); a repeated failure logs its traceback once.
+        """
+        device = watch.device
+        lock = self.manager.devices.lock(device)
+        if not lock.acquire(blocking=False):
+            return
+        try:
+            reservation = reservations.snapshot().get(device)
+            with log.context(reservation=reservation.reservation_id if reservation is not None else None):
+                self._tick(reservations, watch, reservation)
+        except Exception as exc:  # this loop must survive anything (WD-9)
+            if repr(exc) != watch.last_error:
+                logger.exception("Could not check or restore network on %s", device)
+            watch.last_error = repr(exc)
+        else:
+            watch.last_error = ""
+        finally:
+            lock.release()
+
+    def _tick(
+        self, reservations: ReservationManager, watch: "DeviceWatch", reservation: Reservation | None,
+    ) -> None:
+        device = watch.device
+        status = self.manager.active.get(device)
+        pending = self._pending.get(device)
+        if pending is not None and (
+            status is not None  # restored, or the client created a network itself
+            or reservation is not pending.reservation  # released, expired or quarantined
+            or self._cancelled(pending.reservation)
+        ):
+            self._drop_pending(device)
+        elif pending is not None:
+            if time.monotonic() >= pending.next_try:
+                self._retry_pending(reservations, pending)
+                watch.current, watch.misses = self.manager.active.get(device), 0
+            return
+        if reservation is None or status is None:
+            self.states.pop(device, None)
+        if status is not watch.current:
+            self.states.pop(device, None)
+            watch.current, watch.misses = status, 0
+            watch.restart_network = watch.restart_reason = ""
+        if status is None or reservation is None or self._cancelled(reservation):
+            return
+        if self.manager.stop_failed(device):
+            # Half stopped on purpose: repairing it would undo the client's stop.
+            return
+        alive = self.manager.hostapd_manager.is_running(device)
+        enabled = self.manager.hostapd_manager.is_enabled(device) if alive else False
+        watch.misses = 0 if enabled else watch.misses + (1 if enabled is None else 2)
+        if not alive or watch.misses >= MISS_LIMIT or watch.restart_network:
+            self._restart(reservations, watch, reservation, status, alive)
+        elif watch.misses == 0 and not self.manager.dhcp_server.is_running(device):
+            self._repair_dhcp(reservations, watch, reservation, status)
+        elif watch.misses == 0:
+            if self.state(reservation) == "dhcp_failed":
+                self.states.pop(device, None)
+            watch.healthy_ticks += 1
+            if watch.healthy_ticks >= VERIFY_EVERY:
+                watch.healthy_ticks = 0
+                watch.restart_network = self._verify(device)
+                watch.restart_reason = "network_check_failed" if watch.restart_network else ""
+
+    def _restart(
+        self, reservations: ReservationManager, watch: "DeviceWatch", reservation: Reservation,
+        status: "ActiveNetwork", alive: bool,
+    ) -> None:
+        """Restore the whole network through the AP budget (WD-1)."""
+        device = watch.device
+        if watch.restart_network:
+            logger.warning("%s; restarting the network", watch.restart_network)
+        if not alive:
+            self.manager.hostapd_manager.report_exit(device)
+        reservation.record_restart("ap", (
+            "hostapd_not_running" if not alive
+            else watch.restart_reason or (
+                "hostapd_not_enabled" if watch.misses >= MISS_LIMIT else "network_check_failed"
+            )
+        ))
+        watch.restart_network = watch.restart_reason = ""
+        self.states[device] = (reservation, "restoring_ap")
+        now = time.monotonic()
+        while watch.restores and now - watch.restores[0] > RESTORE_WINDOW:
+            watch.restores.popleft()
+        exhausted = len(watch.restores) >= RESTORE_LIMIT
+        if exhausted:
+            logger.warning(
+                "AP on %s failed again after %d restores in %.0f s; quarantining",
+                device, len(watch.restores), RESTORE_WINDOW,
+            )
+        else:
+            logger.warning(
+                "Restoring AP on %s (restore %d of %d in the last hour)",
+                device, len(watch.restores) + 1, RESTORE_LIMIT,
+            )
+        try:
+            self._restore_ap(reservations, reservation, status, exhausted)
+            watch.current = self.manager.active.get(device)
+            watch.restores.append(now)
+            watch.misses = 0
+        finally:
+            if self.states.get(device, (None, ""))[1] == "restoring_ap":
+                self.states.pop(device, None)
+
+    def _repair_dhcp(
+        self, reservations: ReservationManager, watch: "DeviceWatch", reservation: Reservation,
+        status: "ActiveNetwork",
+    ) -> None:
+        """Restart dnsmasq alone, within its own budget (WD-3)."""
+        device = watch.device
+        now = time.monotonic()
+        while watch.dhcp_restores and now - watch.dhcp_restores[0] > RESTORE_WINDOW:
+            watch.dhcp_restores.popleft()
+        if len(watch.dhcp_restores) < DHCP_RESTORE_LIMIT:
+            watch.dhcp_restores.append(now)
+            logger.warning(
+                "Restarting DHCP on %s (restart %d of %d in the last hour)",
+                device, len(watch.dhcp_restores), DHCP_RESTORE_LIMIT,
+            )
+            reservation.record_restart("dhcp", "dnsmasq_not_running")
+            self._restore_dhcp(reservations, reservation, status)
+            failed = self.state(reservation) == "dhcp_failed"
+        else:
+            self.states[device] = (reservation, "dhcp_failed")
+            failed = True
+        # On the next tick, restore the whole network through the AP budget
+        # (WD-1); dhcp_failed stays visible until then.
+        if failed and reservations.snapshot().get(device) is reservation:
+            watch.restart_network = f"DHCP on {device} cannot be repaired alone"
+            watch.restart_reason = "dhcp_failed"
 
     def _verify(self, device: str) -> str:
         """Check and repair the network on `device` in place.

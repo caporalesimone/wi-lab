@@ -307,7 +307,8 @@ flowchart TB
     end
     subgraph Background["Daemon threads"]
         EX["expiry loop (5 s)<br/>stop expired APs, sweep reservations"]
-        WDT["ap-watchdog-ANTENNA (5 s)<br/>one per antenna"]
+        WDT["ap-watchdog-ANTENNA (5 s, or woken)<br/>one per antenna"]
+        HM["hostapd-ctrl-ANTENNA<br/>one per running AP: events, PING, reconnect"]
         UR["usb-recovery-ANTENNA<br/>one per quarantined USB antenna"]
         RP["unavailable-reprobe (5 s tick)<br/>probe unavailable antennas with backoff"]
         DS["device-discovery<br/>every 5 s while no antenna, then every 30 s"]
@@ -906,7 +907,39 @@ sequenceDiagram
 
 ## 7. After start: watchdog
 
-Each antenna has a watchdog thread that wakes up every 5 seconds.
+Each antenna has a watchdog thread that wakes up every 5 seconds, or sooner when
+the control connection of its hostapd wakes it (below). One pass is
+`NetworkWatchdog.tick(reservations, watch)`: everything the watchdog remembers
+about the antenna between two passes (probe misses, restore times, a pending
+network restart) is in its `DeviceWatch`, so a test can run thousands of ticks
+with a fake clock and no thread.
+
+### Control connection to hostapd (PERF-4)
+
+Every running AP has a `HostapdMonitor` ([wilab/wifi/hostapd_ctrl.py](../wilab/wifi/hostapd_ctrl.py)):
+two client sockets on hostapd's private control socket, one `ATTACH`ed for
+events, one for commands, held for the life of the network.
+
+```mermaid
+stateDiagram-v2
+    [*] --> connecting: AP ENABLED
+    connecting --> connected: ATTACH OK, STATUS, STA-FIRST/STA-NEXT
+    connecting --> connecting: failed, backoff 0.2, 0.5, 1, 2 s, then 2 s
+    connected --> connected: events (stations, AP-ENABLED/AP-DISABLED)
+    connected --> lost: socket error, or PING unanswered in 1 s after 2 s of silence
+    lost --> connecting: wake the watchdog
+    connected --> [*]: network stopped (closed first in hostapd stop)
+```
+
+- The watchdog's "AP ENABLED?" probe asks `STATUS` on this connection: no
+  `hostapd_cli` process every 5 s. When the monitor is not connected, the probe
+  falls back to `hostapd_cli status`, so no answer ever depends on it.
+- A crash is still decided by the process (`poll()`): the socket file can stay
+  on disk after hostapd died. The monitor only makes it faster: a lost
+  connection or `AP-DISABLED` wakes the antenna's watchdog, which then ticks
+  after 0.5 s instead of at the end of its 5 s.
+- After every reconnection the station list is read again in full, since the
+  events of the gap are lost.
 
 ```mermaid
 flowchart TD
@@ -916,7 +949,7 @@ flowchart TD
     A -->|no| CLR["clear runtime_state"] --> T
     A -->|yes| P{"hostapd process alive?"}
     P -->|no| RA
-    P -->|yes| E{"AP ENABLED?<br/>(hostapd_cli, 1 s)"}
+    P -->|yes| E{"AP ENABLED?<br/>(STATUS on the control connection,<br/>else hostapd_cli; 1 s)"}
     E -->|"no answer in 1 s"| MH["misses += 1/2"] --> M3
     E -->|"not ENABLED"| M["misses += 1"] --> M3{"3 misses in a row?"}
     M3 -->|no| T

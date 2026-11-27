@@ -119,8 +119,8 @@ class Server:
         out = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True, check=False).stdout
         return [int(pid) for pid in out.split()]
 
-    def kill(self, pid: int) -> None:
-        self.sudo(["kill", "-9", str(pid)])
+    def kill(self, pid: int, signal: str = "KILL") -> None:
+        self.sudo(["kill", f"-{signal}", str(pid)])
 
     @staticmethod
     def dnsmasq_pids(interface: str) -> list[int]:

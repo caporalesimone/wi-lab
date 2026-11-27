@@ -201,7 +201,7 @@ def test_watchdog_checks_every_sixth_healthy_tick_and_restores_on_request(monkey
     monkeypatch.setattr(mgr.watchdog, "_restore_ap", restore)
     ticks = 13
     monkeypatch.setattr(
-        mgr.watchdog.stopping, "wait", Mock(side_effect=[False] * ticks + [True]),
+        mgr.watchdog, "_pause", Mock(side_effect=[False] * ticks + [True]),
     )
     monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: 0.0)
     mgr.watchdog._watch(reservations, device)

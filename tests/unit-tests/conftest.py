@@ -156,7 +156,11 @@ def mock_network_operations(monkeypatch, tmp_path):
     """Auto-mock network operations that require root privileges."""
     from wilab.network import captive, commands, dhcp, nat, subnet
     from wilab.wifi import channels, clients, hostapd, manager, startup, txpower
-    
+
+    # No control connection to a hostapd that only the tests' fakes play (PERF-4):
+    # test_hostapd_ctrl.py turns it on with its own fake hostapd.
+    monkeypatch.setattr(hostapd, "MONITOR_CONTROL", False)
+
     # Mock execute_ip to avoid RTNETLINK errors (requires root)
     def mock_execute_ip(args):
         # Return empty string for most commands, simulate success

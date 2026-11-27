@@ -148,6 +148,8 @@ class NetworkManager:
         self.expire_reservations: Callable[[], None] | None = None
         self.recovery = RadioRecovery(self)
         self.watchdog = NetworkWatchdog(self)
+        # A lost control connection or AP-DISABLED runs the antenna's next check now (PERF-4).
+        self.hostapd_manager.on_change = self.watchdog.wake
         # Background expiry checker to auto-stop networks at timeout; started by
         # start(), never by the constructor (ARCH-5).
         self._expiry_thread: threading.Thread | None = None

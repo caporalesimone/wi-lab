@@ -1,4 +1,4 @@
-"""Watchdog on the real service: AP restores after hostapd dies (WD-1, WD-2),
+"""Watchdog on the real service: AP restores after hostapd dies (WD-1, WD-2, PERF-4),
 DHCP repair after dnsmasq dies (WD-3), the `restarts` counters of
 GET .../network (e2e-test-6) and a create sent during a repair (e2e-test-7).
 
@@ -48,6 +48,44 @@ def test_ap_is_restored_after_each_hostapd_crash(wilab: WiLab, server: Server) -
     journal = server.journal(start)
     assert "quarantin" not in journal.lower()
     assert wilab.http.get(f"/reservations/{antenna.reservation_id}").status_code == 200
+
+
+def test_hostapd_segfault_wakes_the_watchdog_and_the_control_connection_follows(
+    wilab: WiLab, server: Server,
+) -> None:
+    """PERF-4: `kill -SEGV` of hostapd with the network up (47 segfaults in the 2-hour run).
+
+    The control connection notices within about 3 s (a PING to a socket nobody
+    reads), wakes the watchdog instead of leaving it to its 5 s tick, and the
+    restore starts a new hostapd with its own connection. Nothing is
+    quarantined, the counters say why, and the old connection is gone.
+    """
+    antenna = reserve_with_budget(wilab, server, ap=1)
+    start = time.time()
+    assert wilab.create(antenna).status_code == 200
+    time.sleep(3)   # the monitor of the new AP is connected
+    pids = server.pids("hostapd")
+    assert len(pids) == 1, f"expected one hostapd, found {pids}"
+    killed = time.monotonic()
+    server.kill(pids[0], "SEGV")
+
+    def restored_by_a_new_hostapd() -> bool:
+        now = server.pids("hostapd")
+        return len(now) == 1 and now[0] != pids[0] and _restored(wilab, antenna)
+
+    assert wait_for(restored_by_a_new_hostapd, timeout=45, interval=0.5)
+    seconds = time.monotonic() - killed
+    print(f"\nhostapd SIGSEGV -> network restored in {seconds:.1f} s")
+    body = _network(wilab, antenna)
+    assert (body["restarts"]["ap"], body["restarts"]["last_reason"]) == (1, "hostapd_not_running"), body
+    time.sleep(6)   # one more tick on the restored network: still healthy, no second restore
+    assert _network(wilab, antenna)["restarts"]["ap"] == 1
+    journal = server.journal(start)
+    assert journal.count(f"Restoring AP on {antenna.interface} (") == 1
+    assert "quarantin" not in journal.lower()
+    # The monitor of the dead hostapd saw it before the restore closed that monitor.
+    assert f"Control connection to hostapd on {antenna.interface} lost" in journal
+    assert seconds < 15, f"restore took {seconds:.1f} s"
 
 
 def _network(wilab: WiLab, antenna: Antenna) -> dict:

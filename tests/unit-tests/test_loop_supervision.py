@@ -38,7 +38,7 @@ def test_watchdog_survives_any_exception_and_logs_it_once(monkeypatch, caplog, c
     monkeypatch.setattr(manager.hostapd_manager, "is_running", probe)
     monkeypatch.setattr(manager.hostapd_manager, "is_enabled", Mock(return_value=True))
     monkeypatch.setattr(manager.dhcp_server, "is_running", Mock(return_value=True))
-    monkeypatch.setattr(manager.watchdog.stopping, "wait", Mock(side_effect=[False] * 4 + [True]))
+    monkeypatch.setattr(manager.watchdog, "_pause", Mock(side_effect=[False] * 4 + [True]))
     monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: 0.0)
     caplog.set_level(logging.ERROR)
     manager.watchdog._watch(reservations, device)
