@@ -59,6 +59,21 @@ class TestStatusEndpoint:
         """Test status endpoint requires authentication."""
         resp = client.get('/api/v2/status')
         assert resp.status_code == 401
+
+    @pytest.mark.parametrize("token", ["invalid-token-12345", "", "é-not-ascii"])
+    def test_a_wrong_token_is_refused(self, client, valid_token, token):
+        # Bytes: the test client refuses a non-ASCII str header, a real client may send one.
+        resp = client.get('/api/v2/status', headers={"Authorization": f"Bearer {token}".encode()})
+        assert resp.status_code == 401
+
+    def test_the_token_is_compared_in_constant_time(self, client, valid_token, monkeypatch):
+        """BUG-8: hmac.compare_digest, never `!=`."""
+        from wilab.api import auth
+        calls = []
+        real = auth.hmac.compare_digest
+        monkeypatch.setattr(auth.hmac, "compare_digest", lambda a, b: calls.append(1) or real(a, b))
+        assert client.get('/api/v2/status', headers={"Authorization": valid_token}).status_code == 200
+        assert calls
     
     def test_status(self, client, valid_token):
         """Test status endpoint returns valid response."""

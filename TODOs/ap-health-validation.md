@@ -46,6 +46,16 @@ IMPORTANT COMMENT:
 
 Before starting this development, evaluate the cost of keeping an API waiting more than 5 seconds for a response.
 The impact of switching to a request/job-id/polling pattern is high, as it requires clients to refactor their existing code.
+**Measured on 2026-11-27 (mt7921u, kernel 7.0.0-44, Fable WD-7):** with the AP up
+and no client, `tx_packets` grew by 3 in 10 s, and `iw dev <if> survey dump` gives
+no data in AP mode: MediaTek sends beacons from the firmware and the counter does
+not see them. The TX delta check therefore needs to know the driver: enable it
+only for drivers that count beacons (`rtw88_8822bu` does), for example with a
+per-driver option next to the watchdog budgets in `config.yaml`
+(`watchdog.drivers.<driver>`). For the other drivers the only proof of beacons is
+a second radio that scans for the SSID, which a lab with all radios reserved
+cannot spare.
+
 A lighter alternative could be to check the beacon rate (beacons/sec) over a 5-second window at startup of Wi-Lab, and mark any underperforming networks as unavailable.
 
 Checking all configured Wi-Fi networks at startup has the additional advantage of proactively marking unavailable any network whose driver is not functioning correctly, preventing it from ever being presented to the user as an option.However, it remains essential to provide a clear and easily accessible way for the user to understand why certain networks have been disabled — for example, through a dedicated status log or a visible warning indicating that the network was excluded due to a driver failure detected at startup.

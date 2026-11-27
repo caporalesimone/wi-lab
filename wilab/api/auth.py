@@ -15,7 +15,9 @@ async def require_token(
 ):
     if credentials is None or credentials.scheme.lower() != 'bearer':
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid auth scheme')
-    if credentials.credentials != config.auth_token:
+    # Constant time, like the confirm password: a plain comparison stops at the first
+    # different character and lets the token be guessed from timings (BUG-8).
+    if not hmac.compare_digest(credentials.credentials.encode(), config.auth_token.encode()):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Invalid token')
     return True
 
