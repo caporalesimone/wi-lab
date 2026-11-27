@@ -419,7 +419,7 @@ of them. Further rules:
   | `restoring_ap` | The AP is being restarted. Clients will need to reconnect. | Wait. Do not send a create. |
   | `restoring_dhcp` | Only DHCP is being restarted. The AP stays up. | Wait. |
   | `dhcp_failed` | DHCP could not be repaired alone (a restart failed, or dnsmasq died more than 3 times in an hour). Within 5 s the watchdog restarts the whole network (`restoring_ap`). | Wait. |
-  | `restore_failed` | The AP restart failed for a non-radio reason. The AP is down (`active: false`); the watchdog retries after 15 s, 30 s, 60 s, 120 s, then every 5 minutes while the reservation is valid. | Wait for `runtime_state` to clear, or `DELETE .../network` to stop the retries (the reservation stays valid), or create a new network. |
+  | `restore_failed` | The AP restart failed for a non-radio reason (also a cleanup that failed once). The AP is down (`active: false`); the watchdog retries after 15 s, 30 s, 60 s, 120 s, then every 5 minutes while the reservation is valid. | Wait for `runtime_state` to clear, or `DELETE .../network` to stop the retries (the reservation stays valid), or create a new network. |
   | `stop_failed` | After a `DELETE .../network` answered `503 / 1012` (also in `GET /status`). Only the owner's stop sets it: a failed expiry, rollback or background cleanup is retried by the server and shows as `cleanup_failed`: the stop did not complete, usually because hostapd stayed stuck in the kernel for a few seconds after a driver firmware timeout. The network is half stopped and the watchdog leaves it alone. | Repeat `DELETE .../network` after `Retry-After` (5 s). |
 
 - An AP restart clears traffic shaping and QoS profiles: reapply them after a

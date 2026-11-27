@@ -965,14 +965,14 @@ flowchart TD
     RA -->|no| RS["restoring_ap: teardown, start again with the<br/>original settings and the internal retry"]
     RA -->|yes| Q["quarantine, invalidate reservation"]
     RS -->|success| T
-    RS -->|"radio failure or unsafe cleanup"| Q
-    RS -->|"other failure"| RF["runtime_state = restore_failed<br/>reservation kept"]
+    RS -->|"radio failure, or cleanup failed<br/>with the adapter gone"| Q
+    RS -->|"other failure, or cleanup failed<br/>with the adapter present (REV-10)"| RF["runtime_state = restore_failed<br/>reservation kept"]
     RF --> RT{"retry due?<br/>15, 30, 60, 120 s, then 300 s"}
     RT -->|"no, or client created / deleted the network"| T
     RT -->|yes| RS2["teardown, start again"]
     RS2 -->|success| T
     RS2 -->|"other failure"| RF
-    RS2 -->|"radio failure or unsafe cleanup"| Q
+    RS2 -->|"radio failure, or cleanup failed again"| Q
     RD -->|"cleanup unsafe"| Q2["teardown, quarantine without USB reset"]
 ```
 
@@ -1012,8 +1012,13 @@ answers either.
   when a retry succeeds, the reservation is released, expires or is
   quarantined, or the client creates a network (`POST`) or gives it up
   (`DELETE .../network` returns `200` and keeps the reservation). A radio
-  failure or unsafe cleanup during a retry quarantines as usual. Retries do
-  not count against the restore budget.
+  failure during a retry quarantines as usual. Retries do not count against
+  the restore budget.
+- **Failed cleanup (REV-10):** a restore whose cleanup (or whose start's
+  rollback) fails while the adapter is present is a failed restore like the
+  above: each retry cleans up first, and only a second failure in a row
+  quarantines the antenna, without USB reset. With the adapter gone it is a
+  radio fault (USB recovery).
 - The restart keeps the reservation and its expiry. Clients must reconnect; QoS
   is cleared by the teardown and must be reapplied.
 - Every AP restore and DHCP-only restart is counted on the `Reservation`

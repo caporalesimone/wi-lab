@@ -15,6 +15,7 @@ from ..network.commands import CommandError
 from ..network.dhcp import DhcpServerError
 from ..reservation import Reservation, ReservationManager
 from .failures import FailureKind
+from .interface import interface_present
 
 if TYPE_CHECKING:
     from ..devices import Device
@@ -51,8 +52,13 @@ RETRY_BACKOFF = (15.0, 30.0, 60.0, 120.0, 300.0)
 #   nothing instead (a later attempt of an owed network quarantines all the same)
 # - retry_later: owe the network and try again after RETRY_BACKOFF
 # A quarantine counts as a radio fault (USB recovery) when kind.radio.
+# A failed cleanup with the adapter present is tried once more (REV-10, T-20):
+# the owed retry starts with a cleanup, and only a second failure quarantines,
+# without a USB reset. One xtables lock held by another tool no longer costs
+# the client its reservation. If the release ends the reservation meanwhile,
+# its own cleanup (with the WD-6 backoff) takes over the leftovers.
 _ON_RESTORE_FAILURE: dict[FailureKind, Literal["isolate", "quarantine", "retry_later"]] = {
-    FailureKind.CLEANUP_FAILED: "isolate",
+    FailureKind.CLEANUP_FAILED: "retry_later",
     FailureKind.RADIO_CLEANUP_FAILED: "isolate",
     FailureKind.TRANSIENT_RADIO: "quarantine",
     FailureKind.CONFIGURATION: "retry_later",
@@ -363,10 +369,13 @@ class NetworkWatchdog:
         try:
             self.manager.release_device(device)  # leftovers of the previous attempt
         except RuntimeError:
+            # Second failed cleanup in a row: someone must look (ARCH-10). Radio
+            # fault only if the adapter is gone (REV-10).
             logger.exception("Unsafe cleanup before AP restore retry on %s", device)
             self._drop_pending(device)
             self.manager.quarantine_radio(
-                reservations, reservation, radio_fault=False, band=pending.band, channel=pending.channel,
+                reservations, reservation, radio_fault=not interface_present(device),
+                band=pending.band, channel=pending.channel,
             )
             return
         try:
@@ -423,11 +432,18 @@ class NetworkWatchdog:
             return
         try:
             self.manager.release_device(device)
-        except RuntimeError:
-            logger.exception("Unsafe AP watchdog cleanup on %s", device)
-            self.manager.quarantine_radio(
-                reservations, reservation, radio_fault=True, band=band, channel=channel,
-            )
+        except RuntimeError as exc:
+            if not interface_present(network.interface):
+                # The adapter is gone under the network: a radio fault, USB recovery.
+                logger.warning("AP watchdog cleanup on %s failed with the adapter gone", device, exc_info=True)
+                self.manager.quarantine_radio(
+                    reservations, reservation, radio_fault=True, band=band, channel=channel,
+                )
+            elif not self._cancelled(reservation):
+                # Not a radio fault (REV-10): the owed restore cleans up again first,
+                # and quarantines (without USB reset) only if that fails too.
+                logger.warning("AP watchdog cleanup on %s failed", device, exc_info=True)
+                self._owe(reservation, network.restart_request(), band, channel, exc)
             return
         if self._cancelled(reservation):
             return

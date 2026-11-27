@@ -553,3 +553,120 @@ def test_wake_runs_the_next_tick_early_and_stop_ends_the_wait(context):
     began = time.monotonic()
     assert watchdog._pause("wlan0") is True
     assert time.monotonic() - began < 1
+
+
+# --------------------------------------------------------------------------- unit-test-14 / REV-10
+
+
+def _gone_reason(reservations, reservation) -> str:
+    return reservations.ended_reason(reservation.reservation_id)
+
+
+@pytest.fixture
+def faulty(monkeypatch, context):
+    """A reservation with a running network; quarantine is real, the USB recovery is recorded."""
+    manager = context.manager
+    reservations = context.reservations
+    reservation = reservations.create(0)
+    device = reservation.device_id
+    schedule = Mock()
+    monkeypatch.setattr(manager.recovery, "schedule", schedule)
+    monkeypatch.setitem(manager.active, device, active_network(interface=device, subnet="192.0.2.0/24"))
+    return manager, reservations, reservation, device, schedule
+
+
+def test_dhcp_stop_failing_in_the_repair_quarantines_without_usb_reset(monkeypatch, faulty):
+    """unit-test-14 (1): dnsmasq cannot even be stopped -> tear down, unavailable, no USB reset."""
+    from wilab.network.dhcp import DhcpServerError
+
+    manager, reservations, reservation, device, schedule = faulty
+    monkeypatch.setattr(manager.dhcp_server, "stop", Mock(side_effect=DhcpServerError("stuck")))
+    release = Mock()
+    monkeypatch.setattr(manager, "release_device", release)
+    manager.watchdog._restore_dhcp(reservations, reservation, manager.active[device])
+    release.assert_called_once_with(device)
+    schedule.assert_not_called()   # radio_fault=False: no USB reset
+    assert reservations.get(reservation.reservation_id) is None
+    assert _gone_reason(reservations, reservation) == "reservation_invalidated"
+    assert reservations.recovery_snapshot() == {device: False}   # unavailable, not recovering
+
+
+def test_cleanup_failing_on_the_owed_retry_quarantines_without_usb_reset(monkeypatch, faulty):
+    """unit-test-14 (2): the second failed cleanup in a row quarantines, radio_fault=False."""
+    manager, reservations, reservation, device, schedule = faulty
+    pending = watchdog_module._Pending(reservation, _restorable(device).restart_request(), "2.4ghz", 1)
+    manager.watchdog._pending[device] = pending
+    monkeypatch.setattr(manager, "release_device", Mock(side_effect=RuntimeError("iptables busy")))
+    start = Mock()
+    monkeypatch.setattr(manager, "start_network", start)
+    manager.watchdog._retry_pending(reservations, pending)
+    start.assert_not_called()
+    schedule.assert_not_called()
+    assert device not in manager.watchdog._pending
+    assert _gone_reason(reservations, reservation) == "reservation_invalidated"
+    assert reservations.recovery_snapshot() == {device: False}
+
+
+def test_release_right_after_a_successful_retry_cleans_up(monkeypatch, faulty):
+    """unit-test-14 (3): the owed restore succeeds, the client released meanwhile -> released again."""
+    manager, reservations, reservation, device, schedule = faulty
+    pending = watchdog_module._Pending(reservation, _restorable(device).restart_request(), "2.4ghz", 1)
+    manager.watchdog._pending[device] = pending
+    release = Mock()
+    monkeypatch.setattr(manager, "release_device", release)
+
+    def start(*_args, **_kwargs):
+        reservation.release_requests += 1   # the client's DELETE arrived during the start
+
+    monkeypatch.setattr(manager, "start_network", start)
+    manager.watchdog._retry_pending(reservations, pending)
+    assert release.call_count == 2   # leftovers before the start, the restored AP after it
+    schedule.assert_not_called()
+    assert reservations.recovery_snapshot() == {}
+
+
+def test_unsafe_cleanup_of_a_restore_is_retried_not_a_usb_reset(monkeypatch, faulty):
+    """REV-10: a cleanup that fails once (iptables lock) no longer quarantines with a USB reset.
+
+    The restore is owed (restore_failed), its retry cleans up again and brings the
+    network back; the reservation is kept throughout.
+    """
+    manager, reservations, reservation, device, schedule = faulty
+    monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: 1000.0)
+    release = Mock(side_effect=[RuntimeError("xtables lock held"), None])
+    monkeypatch.setattr(manager, "release_device", release)
+    start = Mock()
+    monkeypatch.setattr(manager, "start_network", start)
+    manager.watchdog._restore_ap(reservations, reservation, _restorable(device), False)
+    schedule.assert_not_called()
+    assert reservations.get(reservation.reservation_id) is reservation
+    assert manager.watchdog.state(reservation) == "restore_failed"
+    start.assert_not_called()
+    manager.watchdog._retry_pending(reservations, manager.watchdog._pending[device])
+    start.assert_called_once()
+    assert device not in manager.watchdog._pending
+    assert reservations.recovery_snapshot() == {}
+
+
+def test_unsafe_cleanup_with_the_adapter_gone_is_a_radio_fault(monkeypatch, faulty):
+    manager, reservations, reservation, device, schedule = faulty
+    monkeypatch.setattr(watchdog_module, "interface_present", lambda _interface: False)
+    monkeypatch.setattr(manager, "release_device", Mock(side_effect=RuntimeError("no such device")))
+    manager.devices.get(device).usb_port = "2-1"
+    manager.watchdog._restore_ap(reservations, reservation, _restorable(device), False)
+    schedule.assert_called_once()   # USB recovery
+    assert _gone_reason(reservations, reservation) == "reservation_invalidated"
+
+
+def test_failed_rollback_of_a_restore_is_retried(monkeypatch, faulty):
+    """REV-10: a restore whose rollback failed (CLEANUP_FAILED) is owed, not quarantined at once."""
+    manager, reservations, reservation, device, schedule = faulty
+    monkeypatch.setattr(manager, "release_device", Mock())
+    monkeypatch.setattr(
+        manager, "start_network",
+        Mock(side_effect=StartupFailure("rollback failed", kind=FailureKind.CLEANUP_FAILED)),
+    )
+    manager.watchdog._restore_ap(reservations, reservation, _restorable(device), False)
+    schedule.assert_not_called()
+    assert reservations.get(reservation.reservation_id) is reservation
+    assert manager.watchdog.state(reservation) == "restore_failed"
