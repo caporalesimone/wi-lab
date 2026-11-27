@@ -69,9 +69,16 @@ export interface ReservationPolicy {
   allow_unlimited: boolean;
 }
 
+export interface ServiceStatus {
+  /** `degraded`: at least one entry in `degraded_reasons`. */
+  health: 'good' | 'degraded';
+  /** Antennas a reservation would get now. */
+  free_antennas: number;
+}
+
 export interface StatusResponse {
   version: string;
-  status: string;
+  status: ServiceStatus;
   antennas: InterfaceInfo[];
   active_networks: number;
   reservation_policy: ReservationPolicy;

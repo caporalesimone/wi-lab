@@ -190,7 +190,7 @@ def test_api_reports_restore_failed_and_delete_stops_retries(monkeypatch, contex
         network = client.get(path, headers=headers).json()
         assert (network["active"], network["runtime_state"]) == (False, "restore_failed")
         system = client.get("/api/v2/status", headers=headers).json()
-        assert system["status"] == "degraded"
+        assert system["status"]["health"] == "degraded"
         assert system["antennas"][0]["runtime_state"] == "restore_failed"
         assert client.delete(path, headers=headers).status_code == 200
         assert manager.watchdog.state(reservation) is None

@@ -47,17 +47,18 @@ router = APIRouter(
     responses={
         200: {
             "description": (
-                "Health and allocation snapshot. `status` is `standby`, `in_use` or `degraded`; "
+                "Health and allocation snapshot. `status.health` is `good` or `degraded`, "
+                "`status.free_antennas` how many antennas a reservation would get now; "
                 "`degraded` lists why in `degraded_reasons` (quarantined antenna, network "
                 "being repaired, dead hostapd or dnsmasq, missing NAT rule, upstream down, "
                 "stuck host command, stalled loop). The detail is in `GET /monitoring`. A "
                 "reserved or quarantined adapter is not allocatable."
             ),
             "content": {"application/json": {"examples": {
-                "standby": {
-                    "summary": "standby - no antenna reserved, every adapter healthy",
+                "all_free": {
+                    "summary": "good - both antennas free",
                     "value": {
-                        "version": "4.1.0", "status": "standby", "degraded_reasons": [], "active_networks": 0,
+                        "version": "4.1.0", "status": {"health": "good", "free_antennas": 2}, "degraded_reasons": [], "active_networks": 0,
                         "antennas": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reservation": None,
                              "network_active": False},
@@ -68,10 +69,10 @@ router = APIRouter(
                         "reservation_policy": _POLICY_EXAMPLE,
                     },
                 },
-                "in_use": {
-                    "summary": "in_use - an antenna reserved, everything healthy",
+                "one_reserved": {
+                    "summary": "good - one antenna reserved with a network, one free",
                     "value": {
-                        "version": "4.1.0", "status": "in_use", "degraded_reasons": [], "active_networks": 1,
+                        "version": "4.1.0", "status": {"health": "good", "free_antennas": 1}, "degraded_reasons": [], "active_networks": 1,
                         "antennas": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540},
                              "network_active": True},
@@ -85,7 +86,8 @@ router = APIRouter(
                 "degraded_quarantine": {
                     "summary": "degraded - one adapter quarantined, another being repaired",
                     "value": {
-                        "version": "4.1.0", "status": "degraded", "active_networks": 1,
+                        "version": "4.1.0", "status": {"health": "degraded", "free_antennas": 0},
+                        "active_networks": 1,
                         "degraded_reasons": [
                             {"code": "antenna_quarantined", "interface": "wlan0",
                              "message": "Antenna quarantined (unavailable)"},
@@ -119,15 +121,15 @@ def system_status(
     """
     Service health, antennas and reservation policy: the call clients poll.
 
-    Overall `status`:
+    `status` is an object:
 
-    | Value | Meaning |
+    | Field | Meaning |
     |---|---|
-    | `standby` | No antenna is reserved and nothing is wrong. |
-    | `in_use` | At least one antenna is reserved (with or without a network) and nothing is wrong. |
-    | `degraded` | At least one entry in `degraded_reasons`, whatever the reservations. |
+    | `health` | `good`: nothing is wrong. `degraded`: at least one entry in `degraded_reasons`. |
+    | `free_antennas` | Antennas a reservation would get now: not reserved, not quarantined, not held by a failed cleanup. `0` means a reserve answers `409 / 1005` or `503`. |
 
-    How many networks run is `active_networks`.
+    How many networks run is `active_networks`. A reserve is the only sure way to
+    get an antenna: another client may take the last free one in between.
 
     Each `degraded_reasons` entry has a stable `code`, the `interface` it
     concerns (or `null`) and a `message` for display:
@@ -252,8 +254,9 @@ def _assess(manager: NetworkManager, reservation_mgr: ReservationManager) -> dic
     if checks["loops"]["stale"]:
         reasons.append(_reason("loop_stalled", loops=", ".join(checks["loops"]["stale"])))
 
-    # in_use: someone holds an antenna, with or without a network (not only active networks).
-    status = "degraded" if reasons else ("in_use" if reservations else "standby")
+    # Free: what a reserve would get now (ReservationManager._first_available).
+    free = sum(1 for d in manager.devices.ids() if d not in reservations and d not in recovery)
+    status = {"health": "degraded" if reasons else "good", "free_antennas": free}
     return {
         "restart_required": _restart_required(checks.get("updates") or {}),
         "status": status, "degraded_reasons": reasons, "active_networks": len(snapshot),
@@ -297,9 +300,9 @@ def _system_status(
     summary="Read the detailed health checks",
     responses={
         200: {
-            "description": "The detail behind `status` and `degraded_reasons` of `GET /status`.",
+            "description": "The detail behind `status.health` and `degraded_reasons` of `GET /status`.",
             "content": {"application/json": {"example": {
-                "status": "in_use", "degraded_reasons": [],
+                "status": {"health": "good", "free_antennas": 1}, "degraded_reasons": [],
                 "checked_at": "2026-11-25T18:30:00Z", "check_interval_seconds": 10,
                 "checks": {**_CHECKS_OK_EXAMPLE,
                            "hostapd": {"running": True, "instances": 1, "missing": []},

@@ -93,7 +93,7 @@ def test_create_answers_202_and_the_network_appears_by_polling(api):
     assert set(created.json()) == set(polled.json())  # same schema as GET (the library reads the body)
     status = client.get("/api/v2/status", headers=headers).json()
     assert status["antennas"][0]["runtime_state"] == "starting"
-    assert status["status"] != "degraded"
+    assert status["status"]["health"] != "degraded"
     script["release"].set()
     done = _wait_until(lambda: (r := _state(client, headers, url).json())["runtime_state"] is None and r)
     assert done["active"] is True and done["error"] is None

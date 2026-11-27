@@ -64,7 +64,7 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
         ]
         overall = client.get("/api/v2/status", headers=headers).json()
         # A quarantined adapter makes the service degraded even with no active network.
-        assert (overall["status"], overall["active_networks"]) == ("degraded", 0)
+        assert (overall["status"]["health"], overall["active_networks"]) == ("degraded", 0)
         state = overall["antennas"][0]
         assert state["recovery_state"] == ("recovering" if authorized_port else "unavailable")
 
@@ -248,7 +248,9 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert reserve["503"]["content"]["application/json"]["examples"]["device_recovering"]["value"]["detail"]["code"] == 1002
     status_examples = paths["/api/v2/status"]["get"]["responses"]["200"]["content"]["application/json"]["examples"]
     assert {name: e["value"]["status"] for name, e in status_examples.items()} == {
-        "standby": "standby", "in_use": "in_use", "degraded_quarantine": "degraded",
+        "all_free": {"health": "good", "free_antennas": 2},
+        "one_reserved": {"health": "good", "free_antennas": 1},
+        "degraded_quarantine": {"health": "degraded", "free_antennas": 0},
     }
     status = status_examples["degraded_quarantine"]["value"]
     assert status["antennas"][0]["recovery_state"] == "unavailable"
@@ -367,7 +369,7 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch, 
         assert create.status_code == 409 and "Retry-After" not in create.headers
         assert create.json()["detail"]["code"] == 1009  # restoration_in_progress
         system = client.get("/api/v2/status", headers=headers).json()
-        assert system["status"] == "degraded"
+        assert system["status"]["health"] == "degraded"
         assert system["antennas"][0]["runtime_state"] == "restoring_ap"
     radio_status.assert_not_called()
 

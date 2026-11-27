@@ -80,25 +80,34 @@ class TestStatusEndpoint:
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
-        assert data['status'] in ['in_use', 'degraded', 'standby']
+        assert data['status'] == {'health': 'good', 'free_antennas': len(data['antennas'])}
         assert 'version' in data
         assert 'antennas' in data and 'networks' not in data
         assert 'checks' not in data and data['degraded_reasons'] == []
     
-    def test_a_reserved_antenna_without_network_is_in_use(self, client, valid_token):
-        """`in_use` means an antenna is held, not that a network runs (2026-11-27)."""
+    def test_free_antennas_counts_what_a_reserve_would_get(self, client, valid_token, context):
+        """A reserved antenna, even without a network, and a quarantined one are not free."""
+        from wilab.devices import Device
+        context.devices.add(Device(interface="wlx-second", display_name="Second"))
         headers = {'Authorization': valid_token}
+        total = len(client.get('/api/v2/status', headers=headers).json()['antennas'])
+        assert total >= 2
         rid = client.post('/api/v2/reservations', headers=headers, json={'duration_seconds': 600}).json()['reservation_id']
         data = client.get('/api/v2/status', headers=headers).json()
-        assert data['status'] == 'in_use' and data['active_networks'] == 0
+        assert data['status'] == {'health': 'good', 'free_antennas': total - 1}
+        assert data['active_networks'] == 0
+        other = next(a['interface'] for a in data['antennas'] if a['reservation'] is None)
+        context.reservations._blocked[other] = False          # quarantined: degraded and not free
+        data = client.get('/api/v2/status', headers=headers).json()
+        assert data['status'] == {'health': 'degraded', 'free_antennas': total - 2}
+        context.reservations._blocked.pop(other)
         assert client.delete(f'/api/v2/reservations/{rid}', headers=headers).status_code == 200
-        assert client.get('/api/v2/status', headers=headers).json()['status'] == 'standby'
+        assert client.get('/api/v2/status', headers=headers).json()['status'] == {'health': 'good', 'free_antennas': total}
 
-    def test_status_standby_mode(self, client, valid_token):
-        """Test status endpoint in standby mode (no active networks)."""
+    def test_status_with_every_antenna_free(self, client, valid_token):
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         data = resp.json()
-        assert data['status'] == 'standby'
+        assert data['status'] == {'health': 'good', 'free_antennas': len(data['antennas'])}
         assert data['active_networks'] == 0
         assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['commands'] == {'stuck': 0}
 
@@ -107,7 +116,7 @@ class TestStatusEndpoint:
         monkeypatch.setattr('wilab.api.routes.status.stuck_commands', lambda: 2)
         data = client.get('/api/v2/status', headers={'Authorization': valid_token}).json()
         assert data['active_networks'] == 0
-        assert data['status'] == 'degraded'
+        assert data["status"]["health"] == "degraded"
         assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['commands'] == {'stuck': 2}
     
     def test_status_response_structure(self, client, valid_token):
@@ -171,7 +180,7 @@ class TestStatusEndpoint:
         
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         data = resp.json()
-        assert data['status'] == 'degraded'
+        assert data["status"]["health"] == "degraded"
         assert data['active_networks'] == 1
         assert [reason['code'] for reason in data['degraded_reasons']] == ['dnsmasq_not_running']
         assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['running'] is False
@@ -192,7 +201,7 @@ class TestStatusEndpoint:
         
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200  # Should not crash
-        assert resp.json()["status"] in ("standby", "in_use", "degraded")
+        assert resp.json()["status"]["health"] in ("good", "degraded")
         assert 'upstream_interface' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']
         assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']['reachable'] is False
         assert 'error' in client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['upstream_interface']

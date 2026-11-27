@@ -498,11 +498,17 @@ Notes:
 The client must check `GET /api/v2/status` to know whether every antenna is
 usable. Poll it (for example every 10–30 s) and show the result to the user.
 
-| `status` | Meaning |
-|---|---|
-| `standby` | No antenna is reserved and nothing is wrong. |
-| `in_use` | At least one antenna is reserved (with or without an AP) and every health check passes. |
-| `degraded` | At least one entry in `degraded_reasons`. |
+`status` is an object:
+
+| Field | Value | Meaning |
+|---|---|---|
+| `health` | `good` | Every health check passes. |
+| `health` | `degraded` | At least one entry in `degraded_reasons`. |
+| `free_antennas` | `N` | Antennas a reservation would get now: not reserved, not quarantined, not held by a failed cleanup. `0`: a reserve answers `409 / 1005` or `503 / 1002`, `1003`. |
+
+`free_antennas` is a hint for a dashboard or a queue: to get an antenna, reserve
+it (`POST /api/v2/reservations`), since another client may take the last free one
+in between.
 
 `degraded_reasons` says why, with a stable `code` and the `interface` it
 concerns (`null` for the whole service); `antennas[]` gives the state of each
@@ -533,7 +539,7 @@ antenna:
 | `hostapd_not_running`, `dnsmasq_not_running` | The AP or DHCP process of that network is not alive. | Report it; the watchdog normally repairs it within seconds. |
 | `nat_rule_missing` | That network has Internet enabled but lost its NAT rule. | Report it; Internet does not work there until the watchdog repairs it. |
 | `upstream_unreachable` | The host uplink is down or has no IPv4 address, while a network has Internet. | Report it; Internet access does not work. |
-| `command_stuck` | A host command (`ip`, `iw`, `usbreset`, ...) did not exit even after SIGKILL: usually a hung Wi-Fi driver. Set in standby too. | Report it: the adapter may need a reset or the host a reboot. |
+| `command_stuck` | A host command (`ip`, `iw`, `usbreset`, ...) did not exit even after SIGKILL: usually a hung Wi-Fi driver. Set also when no antenna is reserved. | Report it: the adapter may need a reset or the host a reboot. |
 | `loop_stalled` | A Wi-Lab background loop has not run for 3 minutes. Wi-Lab restarts itself as soon as no reservation is active. | Report it; release reservations you no longer need. |
 | `cleanup_failed` | The cleanup after a release or expiry failed (for example hostapd stuck in the kernel). The antenna is held, not reservable; Wi-Lab repeats the cleanup after 5 s, 15 s, 60 s, then every 5 minutes. | Nothing: reserve another antenna, or wait. If it persists, an operator checks the host. |
 
@@ -692,7 +698,7 @@ sequenceDiagram
         end
     and Anyone polls the service (every 10 to 30 s)
         C->>W: GET /status
-        W-->>C: standby, in_use or degraded, degraded_reasons, recovery_state, runtime_state
+        W-->>C: status {health, free_antennas}, degraded_reasons, recovery_state, runtime_state
         Note over C: Show degraded with the affected antenna
     end
     opt Change the running network

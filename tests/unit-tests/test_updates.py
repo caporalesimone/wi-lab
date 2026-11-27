@@ -46,7 +46,7 @@ def test_status_shows_the_restart_without_degrading(monkeypatch, tmp_path, conte
         required = status["restart_required"]
         assert required["service"] is True and required["system"] is False
         assert "restart Wi-Lab" in required["message"] and required["since"]
-        assert status["status"] == "standby"   # informational, not degraded
+        assert status["status"]["health"] == "good"   # informational, not degraded
         assert sum("Security updates need a restart" in r.getMessage() for r in caplog.records) == 1
         since = required["since"]
         assert client.get("/api/v2/status", headers=headers).json()["restart_required"]["since"] == since

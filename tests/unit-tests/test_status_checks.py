@@ -49,7 +49,7 @@ def running(monkeypatch, context, app):
 def test_network_without_internet_is_ok_on_a_host_without_nat_rules(running):
     get, _state, _manager, _device = running
     data = get()
-    assert data["status"] == "in_use"  # before BUG-2: degraded (no MASQUERADE anywhere)
+    assert data["status"]["health"] == "good"  # before BUG-2: degraded (no MASQUERADE anywhere)
     assert data["checks"]["iptables_nat"] == {"configured": True, "missing": [], "errors": []}
 
 
@@ -58,10 +58,10 @@ def test_foreign_masquerade_does_not_count_for_a_network_with_internet(running):
     state["internet"] = True
     state["nat"] = "-A POSTROUTING -s 172.17.0.0/16 ! -o docker0 -j MASQUERADE"  # Docker's rule
     data = get()
-    assert data["status"] == "degraded"
+    assert data["status"]["health"] == "degraded"
     assert data["checks"]["iptables_nat"]["missing"] == [device]
     state["nat"] += f'\n-A POSTROUTING -s 192.168.120.0/24 -o eth0 -m comment --comment wilab-nat-{device} -j MASQUERADE'
-    assert get()["status"] == "in_use"
+    assert get()["status"]["health"] == "good"
 
 
 def test_link_with_up_flag_but_state_down_is_not_up(running):
@@ -82,7 +82,7 @@ def test_unknown_state_with_lower_up_is_up(running):
 def test_upstream_down_does_not_degrade_networks_without_internet(running):
     get, state, _manager, _device = running
     state["link"] = _link("DOWN", ["UP"], inet=False)
-    assert get()["status"] == "in_use"
+    assert get()["status"]["health"] == "good"
 
 
 def test_dead_hostapd_is_reported_and_degrades(running):
@@ -90,7 +90,7 @@ def test_dead_hostapd_is_reported_and_degrades(running):
     manager.hostapd_manager.is_running.return_value = False
     data = get()
     assert data["checks"]["hostapd"] == {"running": False, "instances": 0, "missing": [device]}
-    assert data["status"] == "degraded"
+    assert data["status"]["health"] == "degraded"
 
 
 def test_status_reads_the_background_checks_without_running_commands(monkeypatch, context, app):
@@ -135,11 +135,11 @@ def test_degraded_reasons_name_the_problem_and_the_antenna(monkeypatch, context,
     client = TestClient(app)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     status = client.get("/api/v2/status", headers=headers).json()
-    assert status["status"] == "degraded" and "checks" not in status
+    assert status["status"]["health"] == "degraded" and "checks" not in status
     codes = [(r["code"], r["interface"]) for r in status["degraded_reasons"]]
     assert ("hostapd_not_running", device) in codes and ("command_stuck", None) in codes
     monitoring = client.get("/api/v2/monitoring", headers=headers).json()
-    assert monitoring["status"] == "degraded"
+    assert monitoring["status"]["health"] == "degraded"
     assert monitoring["checks"]["hostapd"]["missing"] == [device]
     assert monitoring["check_interval_seconds"] == 10 and monitoring["checked_at"].endswith("Z")
     assert client.get("/api/v2/monitoring").status_code == 401

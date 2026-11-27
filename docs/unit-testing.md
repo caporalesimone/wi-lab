@@ -198,7 +198,7 @@ $ pytest tests/unit-tests/test_api.py -v
 
 tests/unit-tests/test_api.py::TestStatusEndpoint::test_status_requires_auth PASSED       [  1%]
 tests/unit-tests/test_api.py::TestStatusEndpoint::test_status PASSED                     [  2%]
-tests/unit-tests/test_api.py::TestStatusEndpoint::test_status_standby_mode PASSED        [  3%]
+tests/unit-tests/test_api.py::TestStatusEndpoint::test_status_with_every_antenna_free PASSED        [  3%]
 tests/unit-tests/test_api.py::TestAuthentication::test_request_without_auth FAILED       [  4%]
 
 FAILED tests/unit-tests/test_api.py::TestAuthentication::test_request_without_auth

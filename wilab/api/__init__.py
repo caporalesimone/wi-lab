@@ -93,8 +93,8 @@ allocated an adapter: do not blindly repeat it.
 ### Service health and quarantined adapters
 
 Poll `GET /api/v2/status` to know whether the service is fully usable.
-Its `status` is `standby` (no antenna reserved, all adapters healthy), `in_use`
-(at least one antenna reserved, with or without a network, all healthy) or `degraded`. `degraded` means an adapter is
+Its `status` has `health` (`good` or `degraded`) and `free_antennas` (how many
+antennas a reservation would get now). `degraded` means an adapter is
 quarantined (`antennas[].recovery_state`), a reserved network is being
 repaired or lost DHCP (`antennas[].runtime_state`), or a health check failed
 while networks are active: `degraded_reasons` lists each cause with a stable

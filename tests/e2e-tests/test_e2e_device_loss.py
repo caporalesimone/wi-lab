@@ -87,7 +87,7 @@ def _quarantine_while_gone(wilab: WiLab, server: Server, interface: str) -> str:
     assert set(answers.values()) == {(404, "reservation_invalidated")}, answers
     status = wilab.status()
     assert wilab.device(interface)["recovery_state"] == "recovering"
-    assert status["status"] == "degraded"
+    assert status["status"]["health"] == "degraded"
     return port
 
 

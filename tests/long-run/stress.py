@@ -233,7 +233,7 @@ def assert_clean(client: WiLab, server: Server, rec: Recorder, interfaces: list[
     problems = []
     if recovering:
         problems.append(f"antennas still in recovery: {recovering}")
-    if status["status"] == "degraded":
+    if status["status"]["health"] == "degraded":
         problems.append(f"status degraded: {status.get('degraded_reasons')}")
     if status["active_networks"]:
         problems.append(f"active networks: {status['active_networks']}")

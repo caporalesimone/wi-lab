@@ -51,7 +51,7 @@ def test_non_radio_failure_ends_in_start_failed(wilab: WiLab, server: Server) ->
         assert wilab.http.get(f"/reservations/{antenna.reservation_id}").status_code == 200
         _nothing_left(wilab, server, antenna)
         status = wilab.status()
-        assert status["status"] != "degraded", status["degraded_reasons"]
+        assert status["status"]["health"] != "degraded", status["degraded_reasons"]
         assert wilab.device(antenna.interface).get("runtime_state") == "start_failed"
 
         assert wilab.delete_network(antenna) == 200
