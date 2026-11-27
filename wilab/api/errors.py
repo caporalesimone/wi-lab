@@ -70,8 +70,15 @@ def api_error_response(
     payload = error_detail(status_code, detail)
     if 500 <= status_code < 600:
         operation = getattr(request.scope.get("route"), "name", None) or "unknown"
-        logger.error(
-            "API failure operation=%s http_status=%d detail_code=%d",
+        # ERROR only for a 500 (a bug); a 503 tells the client to repeat later:
+        # device_busy is ordinary contention, the others a state the server repairs (ARCH-10).
+        level = (
+            logging.ERROR if status_code == 500
+            else logging.INFO if payload["code"] == ApiErrorCode.DEVICE_BUSY.value
+            else logging.WARNING
+        )
+        logger.log(
+            level, "API failure operation=%s http_status=%d detail_code=%d",
             operation, status_code, payload["code"],
         )
     return JSONResponse(status_code=status_code, headers=headers, content={"detail": payload})

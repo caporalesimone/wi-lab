@@ -136,7 +136,7 @@ class QosManager:
         state.upload_quality_advanced = None
         state.download_netem_params = None
         state.upload_netem_params = None
-        logger.info(f"QoS cleared for {interface}")
+        logger.info("QoS cleared for %s", interface)
 
     def get_status(self, interface: str) -> _InterfaceQosState | None:
         return self._state.get(interface)
@@ -221,7 +221,7 @@ class QosManager:
             state.htb_installed = True
         else:
             state.ifb_htb_installed = True
-        logger.debug(f"HTB tree ensured on {device}")
+        logger.debug("HTB tree ensured on %s", device)
 
     def _change_class_rate(self, device: str, rate_kbit: int) -> None:
         burst = self._calc_burst(rate_kbit)
@@ -229,7 +229,7 @@ class QosManager:
             "class", "change", "dev", device, "parent", "1:", "classid", "1:10",
             "htb", "rate", f"{rate_kbit}kbit", "ceil", f"{rate_kbit}kbit", "burst", burst,
         ])
-        logger.debug(f"HTB rate set to {rate_kbit}kbit on {device}")
+        logger.debug("HTB rate set to %skbit on %s", rate_kbit, device)
 
     # ------------------------------------------------------------------
     # IFB management (for upload direction)
@@ -248,7 +248,7 @@ class QosManager:
         try:
             execute_command(["modprobe", "ifb"])
         except CommandError as e:
-            logger.warning(f"modprobe ifb failed (may already be loaded): {e}")
+            logger.warning("modprobe ifb failed (may already be loaded): %s", e)
 
         # Bring IFB device up
         try:
@@ -271,7 +271,7 @@ class QosManager:
 
         # Build HTB tree on IFB
         self._ensure_htb(ifb, state, direction="upload")
-        logger.info(f"IFB {ifb} configured for upload shaping on {interface}")
+        logger.info("IFB %s configured for upload shaping on %s", ifb, interface)
 
     def _remove_ifb(self, interface: str, state: _InterfaceQosState) -> None:
         ifb = state.ifb_device
@@ -297,7 +297,7 @@ class QosManager:
         state.ifb_device = None
         state.ifb_htb_installed = False
         state.upload_netem_installed = False
-        logger.debug(f"IFB removed for {interface}")
+        logger.debug("IFB removed for %s", interface)
 
     def _allocate_ifb(self) -> str:
         with self._ifb_lock:
@@ -396,7 +396,7 @@ class QosManager:
             else:
                 state.upload_netem_installed = True
 
-        logger.debug(f"netem applied on {device} ({direction}): {params}")
+        logger.debug("netem applied on %s (%s): %s", device, direction, params)
 
     def _remove_netem(self, device: str, state: _InterfaceQosState, direction: str) -> None:
         """Remove netem qdisc from *device*."""

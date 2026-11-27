@@ -30,7 +30,7 @@ def list_wilab_rules() -> dict:
                 rules["forward"].append(line.strip())
     
     except Exception as e:
-        logger.warning(f"Could not list iptables rules: {e}")
+        logger.warning("Could not list iptables rules: %s", e)
     
     return rules
 

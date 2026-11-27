@@ -17,7 +17,7 @@ from ..network.commands import CommandError, execute_ip
 from ..network.dhcp import DhcpServerError
 from .channels import ChannelLayout
 from .failures import FailureKind
-from .hostapd import HostapdError
+from .hostapd import HostapdCancelled, HostapdError
 from .interface import interface_present
 
 if TYPE_CHECKING:
@@ -221,7 +221,9 @@ def _roll_back(
     try:
         manager.release_device(plan.device_id)
     except RuntimeError:
-        logger.exception("Startup rollback failed for %s", plan.device_id)
+        # The background cleanup repeats it with backoff and raises the level
+        # if it keeps failing (NetworkManager._tracked_stop).
+        logger.warning("Startup rollback failed for %s", plan.device_id, exc_info=True)
         raise _failure(
             message, stage, _cleanup_failed(radio or not interface_present(plan.interface)),
         ) from cause
@@ -241,7 +243,16 @@ def run_startup(
             attempt.run()
         except (HostapdError, CommandError, DhcpServerError, CaptivePortalError) as e:
             stage = attempt.stage
-            logger.error("Failed to %s for %s: %s", stage, device_id, e)
+            if isinstance(e, HostapdCancelled) or (plan.cancelled is not None and plan.cancelled()):
+                # The client released the reservation or stopped the network (ARCH-10).
+                logger.info("AP start on %s cancelled during %s", device_id, stage)
+            else:
+                # The outcome of the whole start is logged once by its caller;
+                # an attempt that the retry may still recover is not an error.
+                logger.warning(
+                    "Failed to %s for %s (attempt %d/%d): %s",
+                    stage, device_id, attempt_number, policy.attempts, e,
+                )
             # Only hostapd tells a radio failure apart; every other cause is a stage failure.
             cause = e.kind if isinstance(e, HostapdError) else FailureKind.CONFIGURATION
             radio_seen = radio_seen or cause is FailureKind.TRANSIENT_RADIO

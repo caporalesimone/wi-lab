@@ -68,7 +68,7 @@ class ClientLister:
         try:
             station_output = execute_iw(["dev", interface, "station", "dump"])
         except Exception as e:
-            logger.warning(f"Could not get station dump for {interface}: {e}")
+            logger.warning("Could not get station dump for %s: %s", interface, e)
             return clients
 
         # Parse iw station dump output to extract MAC addresses
@@ -113,7 +113,7 @@ class ClientLister:
                         if len(parts) >= 3 and parts[0].isdigit() and int(parts[0]) > now:
                             mac_to_ip[parts[1].lower()] = parts[2]
             except OSError as e:
-                logger.warning(f"Could not read lease file: {e}")
+                logger.warning("Could not read lease file: %s", e)
         return mac_to_ip
 
     def mac_of(self, device_id: str, ip: str) -> str | None:

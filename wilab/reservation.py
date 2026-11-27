@@ -424,7 +424,8 @@ class ReservationManager:
                     logger.warning("Failed to clean up device %s again: %s", device, exc)
                 else:
                     self._failing_cleanup.add(device)
-                    logger.exception("Failed to clean up device %s", device)
+                    # Retried by the background sweep: an ERROR only if it keeps failing (ARCH-10).
+                    logger.warning("Failed to clean up device %s", device, exc_info=True)
                 raise ReservationCleanupError(
                     f"Failed to clean up device {device}"
                 ) from exc

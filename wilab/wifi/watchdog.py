@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, Literal
 
-from .. import heartbeat
+from .. import heartbeat, log
 from ..models import NetworkCreateRequest
 from ..network.commands import CommandError
 from ..network.dhcp import DhcpServerError
@@ -91,6 +91,7 @@ class NetworkWatchdog:
         ).start()
 
     def _watch(self, reservations: ReservationManager, device: str) -> None:
+        log.bind(antenna=device)   # this thread watches one antenna for its whole life
         current = None
         misses = 0
         # Monotonic times of recent AP restores. The budget belongs to the adapter,

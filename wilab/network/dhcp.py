@@ -43,7 +43,7 @@ class DhcpServer:
         try:
             make_private_dir(DNSMASQ_CONFIG_DIR)
         except OSError as e:
-            logger.warning(f"Could not create dnsmasq dir: {e}")
+            logger.warning("Could not create dnsmasq dir: %s", e)
     
     def _parse_subnet(self, subnet: str) -> tuple[str, str, str]:
         """
@@ -152,7 +152,7 @@ class DhcpServer:
             DhcpServerError: If server fails to start or already running
         """
         if net_id in self._instances:
-            logger.warning(f"DHCP server already running for {net_id}, skipping start")
+            logger.warning("DHCP server already running for %s, skipping start", net_id)
             return self._instances[net_id]
         
         try:
@@ -187,7 +187,7 @@ class DhcpServer:
             with open(config_file, "w") as f:
                 f.write(config_content)
             
-            logger.info(f"Generated dnsmasq config at {config_file}")
+            logger.info("Generated dnsmasq config at %s", config_file)
             
             # No separate `dnsmasq --version` (PERF-1): the config test below fails with
             # "Command not found: dnsmasq" when it is missing.
@@ -212,9 +212,9 @@ class DhcpServer:
             )
             instance["process"] = process
             self._check_started(process, net_id)
-            logger.info(f"dnsmasq started for {net_id} on {interface}")
+            logger.info("dnsmasq started for %s on %s", net_id, interface)
             
-            logger.info(f"DHCP server started for {net_id}: {subnet} (gateway: {gateway_addr})")
+            logger.info("DHCP server started for %s: %s (gateway: %s)", net_id, subnet, gateway_addr)
             
             return self._instances[net_id]
         
@@ -250,7 +250,7 @@ class DhcpServer:
         """
         if net_id not in self._instances:
             # Normal after a startup that failed before DHCP started (NET-5).
-            logger.debug(f"No DHCP server running for {net_id}")
+            logger.debug("No DHCP server running for %s", net_id)
             return
         
         try:
@@ -264,7 +264,7 @@ class DhcpServer:
             # Remove config file
             if os.path.exists(config_file):
                 os.remove(config_file)
-                logger.info(f"Removed dnsmasq config {config_file}")
+                logger.info("Removed dnsmasq config %s", config_file)
             if not keep_leases:
                 try:
                     os.remove(instance["lease_file"])
@@ -272,10 +272,10 @@ class DhcpServer:
                     pass
             
             del self._instances[net_id]
-            logger.info(f"DHCP server stopped for {net_id}")
+            logger.info("DHCP server stopped for %s", net_id)
         
         except Exception as e:
-            logger.error(f"Error stopping DHCP server for {net_id}: {e}")
+            logger.warning("Error stopping DHCP server for %s: %s", net_id, e)
             raise DhcpServerError(f"Failed to stop DHCP server for {net_id}: {e}") from e
     
     def get_subnet_info(self, net_id: str) -> dict | None:

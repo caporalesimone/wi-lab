@@ -32,7 +32,7 @@ class TxPowerControl:
                 if m:
                     return float(m.group(1))
         except Exception as e:
-            logger.warning(f"Failed to read current txpower for {interface}: {e}")
+            logger.warning("Failed to read current txpower for %s: %s", interface, e)
         return None
 
     def channel_capabilities(self, interface: str, channel: int) -> dict:
@@ -99,7 +99,7 @@ class TxPowerControl:
             # Compare requested vs reported directly.
             if power_after is not None and abs(power_after - desired_dbm) > 0.5:
                 logger.warning(
-                    f"{interface}: TX power mismatch (requested={desired_dbm}, reported={power_after})"
+                    "%s: TX power mismatch (requested=%s, reported=%s)", interface, desired_dbm, power_after
                 )
                 raise TxPowerMismatchError("Interface does not support dynamic power change.")
 
@@ -127,7 +127,7 @@ class TxPowerControl:
 
         # Keep mismatch as server-side observability; GET payload no longer exposes warning.
         if reported_dbm is not None and abs(reported_dbm - expected_dbm) > 0.5:
-            logger.info(f"{device_id}: Power mismatch - expected {expected_dbm} dBm, reported {reported_dbm} dBm")
+            logger.info("%s: Power mismatch - expected %s dBm, reported %s dBm", device_id, expected_dbm, reported_dbm)
 
         result = {
             "interface": interface,
@@ -158,7 +158,7 @@ class TxPowerControl:
                         key=lambda lvl: abs(levels_dbm[lvl] - reported_dbm),  # type: ignore[operator]
                     )
             except Exception as exc:
-                logger.warning(f"Failed to build tx_power status for {device_id}: {exc}")
+                logger.warning("Failed to build tx_power status for %s: %s", device_id, exc)
 
         return NetworkTxPower(
             requested_level=requested_level,

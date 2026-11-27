@@ -91,6 +91,7 @@ test-e2e-usb: venv
 lint: venv
 	@echo "Running ruff linter..."
 	$(VENV)/bin/ruff check wilab/ tests/ --color=always
+	$(VENV)/bin/ruff check wilab/ main.py --select G004 --color=always
 	@echo "✓ Lint check completed"
 
 lint-fix: venv

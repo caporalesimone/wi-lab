@@ -8,6 +8,7 @@ from typing import Literal, NamedTuple
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
+from ... import log
 from ...api.auth import require_token
 from ...api.dependencies import (
     ReservationManagerDep,
@@ -572,6 +573,7 @@ def _run_job(
 ) -> None:
     """Background body of an asynchronous create; the outcome is read with GET .../network."""
     device_id = job.reservation.device_id
+    log.bind(antenna=device_id, reservation=job.reservation.reservation_id)   # this thread's whole life
     try:
         try:
             outcome = _run_start(manager, channel_mgr, reservation_mgr, job.reservation, job.request, job.cancel)

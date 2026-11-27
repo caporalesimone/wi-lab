@@ -46,9 +46,12 @@ _stuck_lock = Lock()
 def _remember_stuck(process: subprocess.Popen[Any], what: str) -> None:
     with _stuck_lock:
         _stuck_children.append(process)
-    logger.critical(
+    # A WARNING: the cleanup that ran into it is repeated in the background, and
+    # only a cleanup that keeps failing is an ERROR (ARCH-10). Seen to clear by
+    # itself within seconds on mt7921u.
+    logger.warning(
         "%s (pid %d) did not exit after SIGKILL; it is stuck in the kernel. "
-        "The adapter may need a reset or the host a reboot",
+        "If it does not exit, the adapter may need a reset or the host a reboot",
         what, process.pid,
     )
 

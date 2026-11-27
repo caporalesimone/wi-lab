@@ -1,4 +1,5 @@
 import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .. import log
 from ..config import AppConfig, load_config
 from ..reservation import DeviceBusyError, ReservationCleanupError
 from ..version import __version__
@@ -27,6 +29,9 @@ from .routes import router as api_router
 from .routes.recovery_responses import device_busy_detail
 
 logger = logging.getLogger(__name__)
+
+# The reservation in a request path, for the log context (ARCH-10).
+_RESERVATION_PATH = re.compile(r"^/api/v\d+/reservations/([0-9a-f]+)(?:/|$)")
 
 API_DESCRIPTION = """
 ## Reservation and network lifecycle
@@ -169,6 +174,20 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         return api_error_response(request, exc.status_code, exc.detail, headers=exc.headers)
 
     @app.middleware("http")
+    async def log_context(request: Request, call_next):
+        """Every record written for a request on a reservation carries it and its antenna (ARCH-10)."""
+        match = _RESERVATION_PATH.match(request.url.path)
+        if match is None:
+            return await call_next(request)
+        reservation_id = match[1]
+        antenna = next((
+            device for device, reservation in app.state.context.reservations.snapshot().items()
+            if reservation.reservation_id == reservation_id
+        ), None)
+        with log.context(antenna=antenna, reservation=reservation_id):
+            return await call_next(request)
+
+    @app.middleware("http")
     async def answer_unexpected_errors(request: Request, call_next):
         """Answer an unexpected exception here, keeping the connection open.
 
@@ -222,7 +241,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             allow_headers=["*"],
             expose_headers=["Retry-After"],
         )
-        logger.info(f"CORS enabled for origins: {config.cors_origins}")
+        logger.info("CORS enabled for origins: %s", config.cors_origins)
     else:
         logger.info("CORS disabled (no cors_origins configured)")
 
@@ -286,10 +305,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 return FileResponse(index_path)
             return {"error": "Frontend not found"}
 
-        logger.info(f"Frontend static files served from {frontend_path}")
+        logger.info("Frontend static files served from %s", frontend_path)
     else:
         tried = ", ".join(str(path) for path in frontend_candidates)
-        logger.warning(f"Frontend directory not found. Tried: {tried}. Skipping static file serving.")
+        logger.warning("Frontend directory not found. Tried: %s. Skipping static file serving.", tried)
 
     # Inject examples for OpenAPI/Swagger documentation
     def custom_openapi():

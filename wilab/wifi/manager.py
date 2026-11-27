@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from ipaddress import IPv4Network
 from typing import Any
 
-from .. import heartbeat
+from .. import heartbeat, log
 from ..config import AppConfig
 from ..devices import DeviceRegistry
 from ..health import HealthChecks
@@ -52,6 +52,11 @@ logger = logging.getLogger(__name__)
 # number of consecutive failures; the last value repeats (WD-6). A client's
 # explicit DELETE is never delayed.
 CLEANUP_BACKOFF = (5.0, 15.0, 60.0, 300.0)
+# Consecutive failed cleanups of one device after which the failure is logged
+# as an ERROR: the background retries did not clear it, someone must look (ARCH-10).
+CLEANUP_ERROR_AFTER = 3
+# A TX power level the driver refuses is refused on every start (TXP-1).
+TXPOWER_WARNING_INTERVAL = 3600.0
 # Longest wait for a running AP start to notice a cancel (release, stop) and roll back.
 CANCEL_TIMEOUT = 30.0
 # Channel of the recovery probe when the last one is DFS: a probe never waits for a
@@ -206,7 +211,8 @@ class NetworkManager:
             self._cleanup_failures[device_id] = failures
             self._cleanup_retry_at[device_id] = time.monotonic() + delay
             if failures > 1:
-                logger.warning(
+                logger.log(
+                    logging.ERROR if failures >= CLEANUP_ERROR_AFTER else logging.WARNING,
                     "Cleanup of %s failed %d times in a row; next background attempt in %.0f s",
                     device_id, failures, delay,
                 )
@@ -371,7 +377,7 @@ class NetworkManager:
                 kind=FailureKind.CONFLICT,
             )
         # Logged only for a create that really starts (a refused one used to log it too).
-        logger.info(f"Starting network {device_id} with SSID '{req.ssid}'")
+        logger.info("Starting network %s with SSID '%s'", device_id, req.ssid)
         
         # Clear any tracked resources left by a failed startup before retrying.
         try:
@@ -389,13 +395,13 @@ class NetworkManager:
         subnet = self._get_subnet(device_id)
         
         # Validate interface
-        logger.info(f"Validating interface {cfg_net.interface}")
+        logger.info("Validating interface %s", cfg_net.interface)
         try:
             # Wireless and AP capability were established by discovery and cannot change
             # for this interface; only its presence can (PERF-1, BUG-6).
             validate_interface_exists(cfg_net.interface)
         except InterfaceError as e:
-            logger.error(f"Interface validation failed: {e}")
+            logger.warning("Interface validation failed: %s", e)
             if not interface_present(cfg_net.interface):
                 # The adapter disconnected (USB drop or driver reset): a radio
                 # fault, so the client may retry and the adapter can be recovered.
@@ -441,9 +447,13 @@ class NetworkManager:
         try:
             self.tx_power.set_level(cfg_net.interface, tx_power_level, req.channel)
             runtime_dbm = self.tx_power.read_dbm(cfg_net.interface)
-            logger.info(f"TX power set for {device_id}: requested level {tx_power_level}, runtime reported {runtime_dbm} dBm")
+            logger.info("TX power set for %s: requested level %s, runtime reported %s dBm", device_id, tx_power_level, runtime_dbm)
         except Exception as e:
-            logger.warning(f"Failed to set TX power for {device_id}: {e}")
+            # Same cause on every start (mt7921u: -95, TXP-1): once an hour per antenna (ARCH-10).
+            log.every(
+                logger, logging.WARNING, ("txpower", device_id, str(e)),
+                "Failed to set TX power for %s: %s", device_id, e, interval=TXPOWER_WARNING_INTERVAL,
+            )
         
         network = ActiveNetwork(
             interface=cfg_net.interface,
@@ -456,7 +466,7 @@ class NetworkManager:
             deadline=deadline,
         )
         self.active[device_id] = network
-        logger.info(f"Network {device_id} started successfully (expires at {expires_at_str})")
+        logger.info("Network %s started successfully (expires at %s)", device_id, expires_at_str)
         
         return network.status()
 
@@ -478,7 +488,7 @@ class NetworkManager:
         Args:
             device_id: Device identifier (interface name)
         """
-        logger.info(f"Stopping network {device_id}")
+        logger.info("Stopping network %s", device_id)
         errors: list[str] = []
         
         # Get interface and subnet before removing from active dict
@@ -497,7 +507,7 @@ class NetworkManager:
                     self.qos_profile_manager.stop_profile(cfg_net.interface, self.qos_manager)
                 self.qos_manager.clear_qos(cfg_net.interface)
             except Exception as e:
-                logger.error(f"Error clearing QoS rules: {e}")
+                logger.warning("Error clearing QoS rules: %s", e)
                 errors.append(f"QoS: {e}")
 
         # Stop hostapd
@@ -506,7 +516,7 @@ class NetworkManager:
             self.hostapd_manager.stop(device_id)
             hostapd_stopped = True
         except Exception as e:
-            logger.error(f"Error stopping hostapd: {e}")
+            logger.warning("Error stopping hostapd: %s", e)
             errors.append(f"hostapd: {e}")
         
         # Disable NAT if it was enabled
@@ -515,7 +525,7 @@ class NetworkManager:
                 with self._firewall_lock:
                     self.nat_manager.release_network(cfg_net.interface, device_id)
             except Exception as e:
-                logger.error(f"Error disabling NAT: {e}")
+                logger.warning("Error disabling NAT: %s", e)
                 errors.append(f"NAT: {e}")
 
         portal = self.captive_portals.get(device_id)
@@ -524,7 +534,7 @@ class NetworkManager:
                 portal.stop()
                 self.captive_portals.pop(device_id, None)
             except CaptivePortalError as e:
-                logger.error("Error stopping captive portal: %s", e)
+                logger.warning("Error stopping captive portal: %s", e)
                 errors.append(f"captive portal: {e}")
         
         # The host guard (SEC-3) and the isolation rules stay while hostapd may
@@ -537,7 +547,7 @@ class NetworkManager:
                 with self._firewall_lock:
                     self.host_guard.remove(device_id)
             except CommandError as e:
-                logger.error("Error removing host guard: %s", e)
+                logger.warning("Error removing host guard: %s", e)
                 errors.append(f"host guard: {e}")
 
         # Remove isolation rules
@@ -545,16 +555,16 @@ class NetworkManager:
             try:
                 with self._firewall_lock:
                     self.isolation_manager.remove_network(subnet)
-                logger.info(f"Isolation rules removed for {device_id} ({subnet})")
+                logger.info("Isolation rules removed for %s (%s)", device_id, subnet)
             except Exception as e:
-                logger.error(f"Error removing isolation rules: {e}")
+                logger.warning("Error removing isolation rules: %s", e)
                 errors.append(f"isolation: {e}")
         
         # Stop DHCP server
         try:
             self.dhcp_server.stop(device_id)
         except Exception as e:
-            logger.error(f"Error stopping DHCP server: {e}")
+            logger.warning("Error stopping DHCP server: %s", e)
             errors.append(f"DHCP: {e}")
 
         if errors:
@@ -567,7 +577,7 @@ class NetworkManager:
         self.clients.forget(device_id)
         self._stop_failed.discard(device_id)
         
-        logger.info(f"Network {device_id} stopped")
+        logger.info("Network %s stopped", device_id)
 
     def get_status(self, device_id: str) -> NetworkStatus | None:
         with self.devices.lock(device_id):
@@ -611,7 +621,7 @@ class NetworkManager:
         
         # Check if network has expired (monotonic deadline, STAB-5)
         if network.expired(time.monotonic()):
-            logger.info(f"Network {device_id} expired, stopping")
+            logger.info("Network %s expired, stopping", device_id)
             self.stop_network(device_id)
             cfg_net = self.devices.get(device_id)
             if not cfg_net:
@@ -644,7 +654,7 @@ class NetworkManager:
         Returns:
             Updated NetworkStatus
         """
-        logger.info(f"Enabling Internet for network {device_id}")
+        logger.info("Enabling Internet for network %s", device_id)
         
         st = self.active_status(device_id)
         if st is None:
@@ -660,13 +670,13 @@ class NetworkManager:
             try:
                 with self._firewall_lock:
                     self.nat_manager.enable_nat(cfg_net.interface, device_id, st.subnet or self._get_subnet(device_id))
-                logger.info(f"NAT rules applied for {device_id}")
+                logger.info("NAT rules applied for %s", device_id)
             except Exception as e:
-                logger.error(f"Failed to enable NAT: {e}")
+                logger.warning("Failed to enable NAT: %s", e)
                 raise RuntimeError(f"Cannot enable Internet: {e}") from e
         
         st.internet_enabled = True
-        logger.info(f"Internet enabled for {device_id}")
+        logger.info("Internet enabled for %s", device_id)
         
         return st.status()
 
@@ -680,7 +690,7 @@ class NetworkManager:
         Returns:
             Updated NetworkStatus
         """
-        logger.info(f"Disabling Internet for network {device_id}")
+        logger.info("Disabling Internet for network %s", device_id)
         
         st = self.active_status(device_id)
         if st is None:
@@ -696,13 +706,13 @@ class NetworkManager:
             try:
                 with self._firewall_lock:
                     self.nat_manager.disable_nat(cfg_net.interface, device_id, st.subnet or self._get_subnet(device_id))
-                logger.info(f"NAT rules removed for {device_id}")
+                logger.info("NAT rules removed for %s", device_id)
             except Exception as e:
-                logger.error(f"Failed to disable NAT: {e}")
+                logger.warning("Failed to disable NAT: %s", e)
                 raise RuntimeError(f"Cannot disable Internet: {e}") from e
         
         st.internet_enabled = False
-        logger.info(f"Internet disabled for {device_id}")
+        logger.info("Internet disabled for %s", device_id)
         
         return st.status()
 
@@ -890,6 +900,10 @@ class NetworkManager:
     def _expire_network(self, device_id: str, status: ActiveNetwork, now: float) -> None:
         if not status.expired(now):
             return
+        with log.context(antenna=device_id):
+            self._expire_now(device_id, status)
+
+    def _expire_now(self, device_id: str, status: ActiveNetwork) -> None:
         lock = self.devices.lock(device_id)
         if not lock.acquire(blocking=False):
             return
@@ -898,12 +912,12 @@ class NetworkManager:
                 return
             first = device_id not in self._cleanup_failures
             if first:
-                logger.info(f"[expiry-loop] Network {device_id} expired, stopping")
+                logger.info("[expiry-loop] Network %s expired, stopping", device_id)
             try:
                 self._tracked_stop(device_id)
             except RuntimeError as e:
                 if first:
-                    logger.error(f"[expiry-loop] Failed stopping {device_id}: {e}")
+                    logger.warning("[expiry-loop] Failed stopping %s: %s", device_id, e)
         finally:
             lock.release()
 

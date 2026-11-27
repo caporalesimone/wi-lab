@@ -111,6 +111,10 @@ class HostapdError(Exception):
     kind = FailureKind.CONFIGURATION
 
 
+class HostapdCancelled(HostapdError):
+    """The start was cancelled (release or stop of the client): not a failure (ARCH-10)."""
+
+
 class HostapdRadioFailure(HostapdError):
     """Radio startup failed without a confirmed configuration error."""
 
@@ -220,7 +224,7 @@ class HostapdManager:
         try:
             make_private_dir(HOSTAPD_CONFIG_DIR)
         except OSError as e:
-            logger.warning(f"Could not create hostapd dirs: {e}")
+            logger.warning("Could not create hostapd dirs: %s", e)
     
     def _generate_config(
         self,
@@ -365,7 +369,7 @@ class HostapdManager:
             with open(config_file, "w", encoding="utf-8") as f:
                 f.write(config_content + f"ctrl_interface={control_dir}\n")
 
-            logger.info(f"Preparing interface {interface} for AP mode")
+            logger.info("Preparing interface %s for AP mode", interface)
             try:
                 execute_command(["ip", "link", "set", interface, "down"])
                 execute_iw(["dev", interface, "set", "type", "managed"])
@@ -383,12 +387,14 @@ class HostapdManager:
             timeout = DFS_READY_TIMEOUT if dfs else AP_READY_TIMEOUT
             try:
                 self._wait_until_ready(process, interface, control_dir, timeout, cancelled)
+            except HostapdCancelled:
+                raise   # what the client asked for: no failure report
             except (HostapdError, CommandError) as exc:
                 log_tail(interface, f"failed to start ({type(exc).__name__})", process)
                 if self._debug_dir:
                     save_failure(self._debug_dir, interface, exc, process, config_content)
                 raise
-            logger.info(f"hostapd started for {net_id} on {interface}")
+            logger.info("hostapd started for %s on %s", net_id, interface)
             return instance
 
         except (CommandError, OSError) as e:
@@ -437,7 +443,7 @@ class HostapdManager:
                 if cancelled is not None and cancelled():
                     # The client released the reservation or stopped the network
                     # during the start (up to 75 s on DFS): stop waiting.
-                    raise HostapdError(f"AP start on {interface} cancelled")
+                    raise HostapdCancelled(f"AP start on {interface} cancelled")
                 check_process()
                 fields: dict[str, str] = {}
                 if os.path.exists(os.path.join(control_dir, interface)):
@@ -484,6 +490,8 @@ class HostapdManager:
             if state == "DISABLED" and _TRANSIENT_INIT_EVENTS <= set(process.output_events()):
                 raise HostapdInitFailure(f"hostapd disabled the AP on {interface}: beacon setup failed")
             raise HostapdRadioFailure(f"AP not ready on {interface} (hostapd state: {last_state})")
+        except HostapdCancelled:
+            raise
         except (HostapdError, CommandError) as exc:
             elapsed = time.monotonic() - started
             logger.warning(
@@ -503,7 +511,7 @@ class HostapdManager:
             net_id: Network identifier
         """
         if net_id not in self._instances:
-            logger.warning(f"No hostapd running for {net_id}")
+            logger.warning("No hostapd running for %s", net_id)
             return
         
         try:
@@ -519,7 +527,7 @@ class HostapdManager:
             # Remove config file
             if os.path.exists(config_file):
                 os.remove(config_file)
-                logger.info(f"Removed hostapd config {config_file}")
+                logger.info("Removed hostapd config %s", config_file)
 
             control_dir = instance["control_dir"]
             for path, remove in (
@@ -537,17 +545,17 @@ class HostapdManager:
                 execute_command(["ip", "link", "set", interface, "down"])
                 execute_command(["iw", "dev", interface, "set", "type", "managed"])
                 execute_command(["ip", "addr", "flush", "dev", interface])
-                logger.info(f"Reset interface {interface} to managed mode, down")
+                logger.info("Reset interface %s to managed mode, down", interface)
             else:
                 # The adapter disconnected: there is nothing to reset, and a
                 # re-enumerated netdev starts down and managed with no address.
                 logger.warning("Interface %s is gone; skipping interface reset", interface)
 
             del self._instances[net_id]
-            logger.info(f"hostapd stopped for {net_id}")
+            logger.info("hostapd stopped for %s", net_id)
 
         except (CommandError, OSError) as e:
-            logger.error(f"Error stopping hostapd for {net_id}: {e}")
+            logger.warning("Error stopping hostapd for %s: %s", net_id, e)
             raise HostapdError(f"Failed to stop hostapd for {net_id}: {e}") from e
     
     def is_tracked(self, net_id: str) -> bool:

@@ -2,22 +2,20 @@ import os
 import argparse
 import logging
 import uvicorn
+from wilab import log
 from wilab.api import create_app
 from wilab.config import load_config
 from wilab.version import __version__
 from wilab.network.safety import log_host_impact_warning
 from wilab.precheck import EXIT_PRECHECK_FAILED, log_findings, run_prechecks
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+# The only logging configuration of the service (ARCH-10).
+log.setup()
 logger = logging.getLogger(__name__)
 
 
 def main():
-    logger.info(f"Wi-Lab v{__version__} starting...")
+    logger.info("Wi-Lab v%s starting...", __version__)
 
     # What the host must offer (NM-1). A fatal finding stops here with 78:
     # the unit does not restart on it (RestartPreventExitStatus=78).
@@ -29,7 +27,7 @@ def main():
     
     # Load configuration (exits with descriptive error on failure)
     config = load_config()
-    logger.info(f"Configuration loaded from {os.environ.get('CONFIG_PATH', 'default')}")
+    logger.info("Configuration loaded from %s", os.environ.get("CONFIG_PATH", "default"))
     logger.info(
         "Wi-Fi adapters are added by device discovery (subnets from %s)", config.dhcp_base_network,
     )
@@ -44,6 +42,7 @@ def main():
     uvicorn.run(
         app, host="0.0.0.0", port=config.api_port, server_header=False,
         headers=[("x-app-version", __version__)], timeout_graceful_shutdown=10,
+        log_config=None,   # uvicorn's loggers go through log.setup() (ARCH-10)
     )
 
 

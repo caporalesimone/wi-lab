@@ -24,10 +24,10 @@ class IsolationManager:
             subnet: CIDR subnet (e.g., "192.168.10.0/24")
         """
         if subnet in self._active_subnets:
-            logger.warning(f"Subnet {subnet} already has isolation rules")
+            logger.warning("Subnet %s already has isolation rules", subnet)
             return
         
-        logger.info(f"Adding isolation rules for subnet {subnet}")
+        logger.info("Adding isolation rules for subnet %s", subnet)
         
         # Add rules to block traffic between this subnet and all existing subnets.
         # All or nothing (NET-2): on failure the rules already added are removed
@@ -44,7 +44,7 @@ class IsolationManager:
             raise
         
         self._active_subnets.add(subnet)
-        logger.info(f"Isolation rules added for {subnet}")
+        logger.info("Isolation rules added for %s", subnet)
     
     def remove_network(self, subnet: str) -> None:
         """
@@ -55,10 +55,10 @@ class IsolationManager:
         """
         if subnet not in self._active_subnets:
             # Normal after a startup that failed before isolation was applied.
-            logger.debug(f"Subnet {subnet} has no isolation rules to remove")
+            logger.debug("Subnet %s has no isolation rules to remove", subnet)
             return
         
-        logger.info(f"Removing isolation rules for subnet {subnet}")
+        logger.info("Removing isolation rules for subnet %s", subnet)
         
         # Remove rules blocking traffic between this subnet and others
         for other_subnet in self._active_subnets:
@@ -67,7 +67,7 @@ class IsolationManager:
                 self._unblock_traffic(other_subnet, subnet)
         
         self._active_subnets.discard(subnet)
-        logger.info(f"Isolation rules removed for {subnet}")
+        logger.info("Isolation rules removed for %s", subnet)
     
     def _block_traffic(self, source: str, destination: str) -> None:
         """
@@ -95,9 +95,9 @@ class IsolationManager:
                 "-m", "comment",
                 "--comment", "wilab-isolation"
             ])
-            logger.debug(f"Blocked traffic: {source} -> {destination}")
+            logger.debug("Blocked traffic: %s -> %s", source, destination)
         except CommandError as e:
-            logger.error(f"Failed to block traffic {source} -> {destination}: {e}")
+            logger.warning("Failed to block traffic %s -> %s: %s", source, destination, e)
             raise
     
     def _unblock_traffic(self, source: str, destination: str) -> None:
@@ -119,10 +119,10 @@ class IsolationManager:
                 "-m", "comment",
                 "--comment", "wilab-isolation"
             ])
-            logger.debug(f"Unblocked traffic: {source} -> {destination}")
+            logger.debug("Unblocked traffic: %s -> %s", source, destination)
         except CommandError as e:
             # Don't fail if rule doesn't exist (might have been cleaned up already)
-            logger.warning(f"Could not remove block rule {source} -> {destination}: {e}")
+            logger.warning("Could not remove block rule %s -> %s: %s", source, destination, e)
     
     def verify(self) -> list[str]:
         """Re-add isolation rules that disappeared from FORWARD (WD-7); returns the repairs."""

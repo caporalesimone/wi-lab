@@ -32,7 +32,7 @@ class NatManager:
         self._upstream_by_network: dict[str, str] = {}
         self._blocked_rules: dict[str, list[list[str]]] = {}
         self._nat_networks: set[str] = set()
-        logger.info(f"NatManager initialized with upstream={upstream_interface}")
+        logger.info("NatManager initialized with upstream=%s", upstream_interface)
 
     def remove_stale_rules(self) -> None:
         """Remove only rules owned by Wi-Lab from the chains it manages."""
@@ -95,7 +95,7 @@ class NatManager:
             raise RuntimeError("No default route found")
         
         except Exception as e:
-            logger.error(f"Failed to discover upstream interface: {e}")
+            logger.warning("Failed to discover upstream interface: %s", e)
             raise RuntimeError(f"Cannot determine upstream interface: {e}") from e
     
     def get_upstream_interface(self) -> str:
@@ -120,7 +120,7 @@ class NatManager:
             execute_sysctl("net.ipv4.ip_forward", "1")
             logger.info("IP forwarding enabled")
         except Exception as e:
-            logger.error(f"Failed to enable IP forwarding: {e}")
+            logger.warning("Failed to enable IP forwarding: %s", e)
             raise RuntimeError(f"Cannot enable IP forwarding: {e}") from e
     
     def _rule_exists(self, table: str | None, args: list) -> bool:
@@ -259,7 +259,7 @@ class NatManager:
         self._upstream_by_network[net_id] = upstream
         self._nat_networks.add(net_id)
         
-        logger.info(f"Enabling NAT for {net_id}: {wifi_interface} -> {upstream}")
+        logger.info("Enabling NAT for %s: %s -> %s", net_id, wifi_interface, upstream)
         
         try:
             # SAFETY: Check default FORWARD policy first
@@ -293,7 +293,7 @@ class NatManager:
                     else:
                         logger.debug("FORWARD protection rule already exists")
             except Exception as e:
-                logger.warning(f"Could not check FORWARD policy: {e}")
+                logger.warning("Could not check FORWARD policy: %s", e)
             
             # Enable IP forwarding first
             self.enable_ip_forwarding()
@@ -305,10 +305,10 @@ class NatManager:
                     logger.debug("Added %s rule for %s", rule[0], net_id)
 
             self.unblock_internet(net_id)
-            logger.info(f"NAT enabled for {net_id} ({wifi_interface})")
+            logger.info("NAT enabled for %s (%s)", net_id, wifi_interface)
         
         except Exception as e:
-            logger.error(f"Failed to enable NAT for {net_id} ({wifi_interface}): {e}")
+            logger.warning("Failed to enable NAT for %s (%s): %s", net_id, wifi_interface, e)
             raise RuntimeError(f"Cannot enable NAT: {e}") from e
     
     def disable_nat(self, wifi_interface: str, net_id: str, subnet: str) -> None:

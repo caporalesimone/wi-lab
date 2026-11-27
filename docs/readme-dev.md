@@ -332,15 +332,46 @@ The setup stages under `install/` then write their own keys (for example
 
 ## Debugging
 
+### Logging rules
+
+Logging is configured only in [wilab/log.py](../wilab/log.py) (`log.setup()`, called by
+`main.py`); modules only do `logger = logging.getLogger(__name__)`. The journal is how the
+service's health is read, so the levels follow three rules, checked by
+`tests/unit-tests/test_logging_rules.py`:
+
+1. **ERROR means someone must act.** Only a final outcome that the service cannot repair by
+   itself: a bug (a `500`), a cleanup that kept failing after its background retries, a
+   start that cannot be cancelled. Not an ERROR:
+   - a failed attempt that is retried (an AP start attempt, a rollback or a cleanup the
+     background repeats): **WARNING**;
+   - a check that answers "no", a `503` that tells the client to repeat: **WARNING**;
+   - what a user asked for (a cancel, a release, `device_busy`): **INFO**.
+2. **A message that repeats for the same cause is written at most once a minute**: use
+   `log.every(logger, level, key, message, *args, interval=...)`, which adds how many it held back.
+3. **Never format the message yourself**: `logger.info("... %s", value)`, not an f-string
+   (ruff `G004`; `make lint` checks it).
+
+Every record carries the antenna and the reservation of the operation running when there
+is one (`[ant=wlx... res=1a2b3c4d]`): the API middleware sets them for requests on
+`/reservations/{id}`, the create thread and the watchdog bind their own. To follow one
+reservation: `journalctl -u wi-lab | grep res=1a2b3c4d`. In a new background thread, call
+`log.bind(antenna=...)` first, or wrap the work in `with log.context(antenna=..., reservation=...)`.
+
+Under systemd each line starts with its syslog priority, so `journalctl -p` works:
+
+```bash
+sudo journalctl -u wi-lab -p err --since today      # what needs someone
+sudo journalctl -u wi-lab -p warning --since today  # also recovered failures
+```
+
 ### Enable Verbose Logging
 
 ```bash
 # Set Python verbosity
 PYTHONVERBOSE=2 python main.py
 
-# Or add logging in code
-import logging
-logging.basicConfig(level=logging.DEBUG)
+# Or, for a quick local run, raise the level of the one configuration
+python -c "import logging; from wilab import log; log.setup(logging.DEBUG); import runpy; runpy.run_path('main.py', run_name='__main__')"
 ```
 
 ### Use Python Debugger
@@ -362,8 +393,8 @@ def my_function():
 # If running via systemd
 sudo journalctl -u wi-lab.service -f
 
-# View recent errors
-sudo journalctl -u wi-lab.service | grep ERROR
+# What needs someone (ERROR and above, by journal priority)
+sudo journalctl -u wi-lab.service -p err
 ```
 
 ---
