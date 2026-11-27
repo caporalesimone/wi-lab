@@ -328,8 +328,9 @@ Band 2:
     # Patch in manager module (where they're imported)
     monkeypatch.setattr(manager, "validate_interface_exists", lambda iface: None)
     # Test interfaces are not in /sys/class/net: treat every adapter as present.
+    from wilab.api import discovery as api_discovery
     from wilab.wifi import recovery, watchdog
-    for module in (manager, startup, hostapd, recovery, watchdog):
+    for module in (manager, startup, hostapd, recovery, watchdog, api_discovery):
         monkeypatch.setattr(module, "interface_present", lambda iface: True)
     monkeypatch.setattr(manager, "execute_iw", mock_execute_iw)
     monkeypatch.setattr(manager, "execute_ip", mock_execute_ip)

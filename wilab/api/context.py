@@ -69,7 +69,10 @@ class AppContext:
             on_expiry=manager.forget_finished_start,
         )
         manager.expire_reservations = reservations.expire
-        discovery = DeviceDiscovery(config, devices, channels)
+        devices.on_retire(manager.forget_device)
+        discovery = DeviceDiscovery(
+            config, devices, channels, retire=lambda device: reservations.retire(device, manager.unused),
+        )
         return cls(
             config=config, devices=devices, channels=channels, qos=qos, qos_profiles=qos_profiles,
             manager=manager, reservations=reservations, discovery=discovery,

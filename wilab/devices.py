@@ -1,7 +1,8 @@
 """The managed Wi-Fi devices: one registry shared by every manager (ARCH-4).
 
-Discovery adds devices; nothing removes them. The configuration only holds the
-labels of config.yaml (display names, disable, show_dfs_channels).
+Discovery adds devices, and retires one whose interface stayed gone while
+nothing used it (WD-5). The configuration only holds the labels of config.yaml
+(display names, disable, show_dfs_channels).
 """
 
 import threading
@@ -43,6 +44,7 @@ class DeviceRegistry:
         # Locks handed out for interfaces not managed (yet); a device added later adopts its lock.
         self._unmanaged_locks: dict[str, RLock] = {}
         self._subscribers: list[Callable[[Device], None]] = []
+        self._retire_subscribers: list[Callable[[Device], None]] = []
         for device in devices:
             self.add(device)
 
@@ -64,6 +66,23 @@ class DeviceRegistry:
             self._subscribers.append(callback)
             for device in self._devices.values():
                 callback(device)
+
+    def on_retire(self, callback: Callable[[Device], None]) -> None:
+        """Call *callback* for each device retired from now on (under the registry lock)."""
+        with self._guard:
+            self._retire_subscribers.append(callback)
+
+    def retire(self, interface: str) -> Device | None:
+        """Stop managing *interface* (WD-5); the caller checked that nothing uses it.
+
+        If the interface comes back, discovery adds it again as a new device.
+        """
+        with self._guard:
+            device = self._devices.pop(interface, None)
+            if device is not None:
+                for callback in self._retire_subscribers:
+                    callback(device)
+            return device
 
     def get(self, interface: str) -> Device | None:
         with self._guard:

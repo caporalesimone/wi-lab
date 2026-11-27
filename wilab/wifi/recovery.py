@@ -85,6 +85,12 @@ class RadioRecovery:
     def stop(self) -> None:
         self._stopping.set()
 
+    def forget(self, device: str) -> None:
+        """Drop the re-probe, last radio and last USB reset of a retired device (WD-5)."""
+        self._reprobe.pop(device, None)
+        self._last_radio.pop(device, None)
+        self.last_usb_reset.pop(device, None)
+
     def remember_radio(self, device: str, band: str, channel: int) -> None:
         if band in ("2.4ghz", "5ghz") and channel > 0:
             self._last_radio[device] = (band, channel)

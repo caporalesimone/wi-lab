@@ -10,7 +10,7 @@ from typing import Any
 
 from .. import heartbeat, log
 from ..config import AppConfig
-from ..devices import DeviceRegistry
+from ..devices import Device, DeviceRegistry
 from ..health import HealthChecks
 from ..models import ClientInfo, NetworkCreateRequest, NetworkStatus
 from ..network.captive import CaptivePortal, CaptivePortalError
@@ -297,6 +297,26 @@ class NetworkManager:
     def cleanup_failures(self) -> dict[str, int]:
         """Devices whose last cleanup failed, with the failures in a row."""
         return dict(self._cleanup_failures)
+
+    def unused(self, device_id: str) -> bool:
+        """Nothing of a network is left on *device_id* (retirement, WD-5; device lock held)."""
+        with self.start_jobs_lock:
+            starting = device_id in self.start_jobs
+        return not (
+            starting or device_id in self.active or device_id in self._cleanup_failures
+            or self.stop_failed(device_id) or self.hostapd_manager.is_tracked(device_id)
+            or self.dhcp_server.get_subnet_info(device_id) is not None
+            or self.watchdog.owes(device_id)
+        )
+
+    def forget_device(self, device: Device) -> None:
+        """Drop what the service remembers about a retired device (WD-5)."""
+        device_id = device.device_id
+        self.quarantines.pop(device_id, None)
+        self.subnets.release(device_id)
+        self.recovery.forget(device_id)
+        self.watchdog.retire(device_id)
+        self._channel_manager.invalidate(device_id)
 
     def cleanup_due(self, device_id: str) -> bool:
         """False while a failed cleanup of this device waits for its next background attempt."""

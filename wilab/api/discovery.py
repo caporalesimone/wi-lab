@@ -2,6 +2,7 @@
 
 import logging
 import threading
+from collections.abc import Callable
 
 from .. import heartbeat
 from ..config import AppConfig, scan_new_networks
@@ -10,7 +11,7 @@ from ..network.commands import CommandError
 from ..network.unmanaged import exclude_from_host_managers
 from ..precheck import warn_wpa_supplicant
 from ..wifi.channels import ChannelManager
-from ..wifi.interface import reset_interface
+from ..wifi.interface import interface_present, reset_interface
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,9 @@ DISCOVERY_FAST_INTERVAL = 5.0
 DISCOVERY_SLOW_INTERVAL = 30.0
 # Longest wait for the discovery thread at shutdown (STAB-8).
 DISCOVERY_JOIN_TIMEOUT = 10.0
+# Scans an interface must be missing before its device is retired (WD-5): two
+# minutes at the 30 s interval, longer than a USB re-enumeration.
+RETIRE_AFTER_SCANS = 4
 
 
 class DeviceDiscovery:
@@ -27,10 +31,16 @@ class DeviceDiscovery:
     watchdog read it, so nothing else is told about a new device.
     """
 
-    def __init__(self, config: AppConfig, devices: DeviceRegistry, channels: ChannelManager) -> None:
+    def __init__(
+        self, config: AppConfig, devices: DeviceRegistry, channels: ChannelManager,
+        retire: Callable[[str], bool] | None = None,
+    ) -> None:
         self.config = config
         self.devices = devices
         self.channels = channels
+        # Retires a gone device if nothing holds it (ReservationManager.retire); None: never.
+        self._retire = retire
+        self._missing: dict[str, int] = {}   # interface -> consecutive scans without it
         self._scan_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -52,6 +62,7 @@ class DeviceDiscovery:
     def scan(self, *, quiet: bool = False) -> list[Device]:
         """Add newly found Wi-Fi interfaces to the allocatable pool."""
         with self._scan_lock:
+            self._retire_gone()
             managed = self.devices.all()
             added = scan_new_networks(self.config, managed, quiet=quiet)
             if not added:
@@ -80,6 +91,29 @@ class DeviceDiscovery:
                 name="channel-cache-scan", daemon=True,
             ).start()
             return added
+
+    def _retire_gone(self) -> None:
+        """Retire devices whose interface is gone for RETIRE_AFTER_SCANS scans (WD-5).
+
+        An adapter that comes back under another name (a new USB enumeration)
+        is added as a new device; without this the old entry stayed
+        `unavailable` and `/status` `degraded` until a restart. A device still
+        reserved, recovering, running or with a failed cleanup is kept.
+        """
+        if self._retire is None:
+            return
+        for device in self.devices.all():
+            name = device.interface
+            if interface_present(name):
+                self._missing.pop(name, None)
+                continue
+            self._missing[name] = self._missing.get(name, 0) + 1
+            if self._missing[name] >= RETIRE_AFTER_SCANS and self._retire(name):
+                self._missing.pop(name, None)
+                logger.warning(
+                    "Retired %s (%r): its interface has been gone for %d scans; "
+                    "it is added again if it comes back", name, device.display_name, RETIRE_AFTER_SCANS,
+                )
 
     def loop(self, stop: threading.Event) -> None:
         """Add antennas for the whole service lifetime.

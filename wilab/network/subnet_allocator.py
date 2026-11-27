@@ -27,6 +27,11 @@ class SubnetAllocator:
         """The subnet last given to *device_id*, None before its first start."""
         return self._assigned.get(device_id)
 
+    def release(self, device_id: str) -> None:
+        """Forget the subnet of a retired device (WD-5): another device may use it."""
+        with self._lock:
+            self._assigned.pop(device_id, None)
+
     def allocate(self, device_id: str) -> str:
         """Allocate or reuse a non-overlapping /24 before a new AP start.
 

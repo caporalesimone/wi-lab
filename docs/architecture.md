@@ -1282,10 +1282,12 @@ is logged once as a warning. Set `upstream_interface` to force an interface.
   reservation active the service keeps running and restarts as soon as it
   is idle. Only the Wi-Lab service restarts, never the machine. Restarts
   count towards the unit's start limit.
-- Antennas are added at runtime but never removed: an antenna unplugged while in
-  the pool stays listed (as `unavailable` once it fails) until the service
-  restarts. A returning adapter keeps its `wlx<MAC>` name and is re-probed; one
-  that comes back under a different name is added as a new antenna and the old
-  entry stays listed (Fable WD-5, point 3, depends on ARCH-4).
+- Antennas are added at runtime, and retired when their interface has been gone
+  for 4 discovery scans (about 2 minutes) while nothing holds them: no
+  reservation, no USB recovery running, no network, process or failed cleanup
+  left. An `unavailable` quarantine ends with the entry. A returning adapter
+  keeps its `wlx<MAC>` name and is re-probed, or, once retired, added again as a
+  new antenna (fresh watchdog budgets); one that comes back under a different
+  name is added as a new antenna while the old entry is retired (Fable WD-5).
 - All coordination state is in memory and assumes a single Wi-Lab process per
   host.

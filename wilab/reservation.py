@@ -229,6 +229,19 @@ class ReservationManager:
             else:
                 self._blocked[device_id] = False
 
+    def retire(self, device_id: str, unused: Callable[[str], bool]) -> bool:
+        """Retire a device that is gone, if nothing holds it (WD-5).
+
+        Not while it is reserved or a USB recovery runs on it; *unused* checks
+        the rest (network, processes, a failed cleanup) under the device lock.
+        An "unavailable" quarantine ends with the device.
+        """
+        with self._devices.lock(device_id), self._lock:
+            if device_id in self._device_to_rid or self._blocked.get(device_id) or not unused(device_id):
+                return False
+            self._blocked.pop(device_id, None)
+            return self._devices.retire(device_id) is not None
+
     def recovery_snapshot(self) -> dict[str, bool]:
         with self._lock:
             return self._blocked.copy()

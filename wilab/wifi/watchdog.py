@@ -165,10 +165,26 @@ class NetworkWatchdog:
             wakeup.clear()
         return self.stopping.is_set()
 
+    def owes(self, device: str) -> bool:
+        """True while a network is owed to a reservation after a failed restore."""
+        return device in self._pending
+
+    def retire(self, device: str) -> None:
+        """Drop the counters of a retired device (WD-5); its watcher thread ends by itself."""
+        self._watches.pop(device, None)
+        self._pending.pop(device, None)
+        self.states.pop(device, None)
+        self.wake(device)
+
     def _watch(self, reservations: ReservationManager, device: str) -> None:
         log.bind(antenna=device)   # this thread watches one antenna for its whole life
         watch = self._watches.setdefault(device, DeviceWatch(device))
+        me = self.manager.devices.get(device)
         while not self._pause(device):
+            if self.manager.devices.get(device) is not me:
+                # Retired (WD-5); if it came back, a new watcher started for it.
+                heartbeat.forget(f"watchdog:{device}")
+                return
             heartbeat.beat(f"watchdog:{device}")
             self.tick(reservations, watch)
 
