@@ -46,13 +46,57 @@ def main():
     )
 
 
+# --reload-drivers refused because the service is running (ARCH-11 D1).
+EXIT_SERVICE_RUNNING = 3
+
+
+def reload_drivers_only(path: str | None) -> int:
+    """Reload the driver of the adapters Wi-Lab would manage; the service must be stopped."""
+    from wilab.config import load_config
+    from wilab.wifi.discovery import default_route_interfaces, discover_radios
+    from wilab.wifi.drivers import reload_drivers, service_is_running
+
+    if service_is_running():
+        print(
+            "ERROR: Wi-Lab is running. Reloading a driver resets every adapter it drives, so every "
+            "network must be off.\n       Stop the service ('make stop'), then run this again.",
+        )
+        return EXIT_SERVICE_RUNNING
+    config = load_config(path)
+    host = default_route_interfaces()
+    if config.upstream_interface != "auto":
+        host.add(config.upstream_interface)
+    disabled = {a.interface for a in config.antennas if a.disable}
+    radios = [r.interface for r in discover_radios(quiet=True) if r.interface not in host | disabled]
+    if not radios:
+        print("No Wi-Fi adapter to reload.")
+        return 0
+    failed = False
+    for result in reload_drivers(radios, host):
+        names = ", ".join(result.interfaces)
+        if result.ok:
+            print(f"OK      {result.module}: reloaded ({names})")
+        else:
+            failed = True
+            print(f"FAILED  {result.module} ({names}): {result.error}")
+    if not failed:
+        print("Drivers reloaded. Start the service with 'make start'.")
+    return 1 if failed else 0
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Wi-Lab access point manager")
     parser.add_argument("--validate-config", action="store_true", help="validate configuration without starting the service")
-    parser.add_argument("--config", help="configuration file (only with --validate-config)")
+    parser.add_argument(
+        "--reload-drivers", action="store_true",
+        help="reload the kernel driver of the Wi-Fi adapters and exit (root, service stopped)",
+    )
+    parser.add_argument("--config", help="configuration file (with --validate-config or --reload-drivers)")
     args = parser.parse_args()
-    if args.config and not args.validate_config:
-        parser.error("--config requires --validate-config")
+    if args.config and not (args.validate_config or args.reload_drivers):
+        parser.error("--config requires --validate-config or --reload-drivers")
+    if args.reload_drivers:
+        raise SystemExit(reload_drivers_only(args.config))
     if args.validate_config:
         from wilab.config import config_path
         from wilab.config_validation import validate_config_file

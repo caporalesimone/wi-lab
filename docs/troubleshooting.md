@@ -174,6 +174,23 @@ To see why the initialization fails:
    `gdb -batch -ex "info symbol 0xaaf3a" /usr/sbin/hostapd` with the same
    debug directory names the function.
 
+If one adapter fails at every start and its firmware keeps timing out (the
+kernel log repeats `Message ... timeout` for it), reload its driver with the
+service stopped:
+
+```bash
+make stop
+make reload-drivers      # sudo bash scripts/reload-drivers.sh
+make start
+```
+
+It unloads and loads the kernel module of every adapter Wi-Lab manages, once
+per module, and waits for the interfaces to come back. It refuses to run while
+the service runs (exit code 3), and never reloads a module that also drives the
+host's own network (the default-route interface or `upstream_interface`).
+Reloading resets every adapter of that module, including any not managed by
+Wi-Lab.
+
 ### Issue 8: Red Bar "Security updates installed" (`restart_required` in `/status`)
 
 Unattended upgrades installed security updates, and the running service still uses the

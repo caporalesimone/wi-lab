@@ -4,7 +4,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help venv lock frontend-check frontend-test test-local test-local-quick test-local-cov test-e2e test-e2e-usb clean-venv lint lint-fix type-check stop start restart build-frontend
+.PHONY: help venv lock frontend-check frontend-test test-local test-local-quick test-local-cov test-e2e test-e2e-usb clean-venv lint lint-fix type-check stop start restart reload-drivers build-frontend
 
 # Default target: show help
 help:
@@ -39,6 +39,7 @@ help:
 	@echo "  make stop              Stop Wi-Lab systemd service"
 	@echo "  make start             Start Wi-Lab systemd service"
 	@echo "  make restart           Restart Wi-Lab systemd service"
+	@echo "  make reload-drivers    Reload the Wi-Fi adapters' kernel driver (service stopped)"
 
 # Virtual environment setup
 venv: $(VENV)/bin/activate
@@ -132,6 +133,11 @@ restart: stop
 	@echo "Waiting 5 seconds before restart..."
 	@sleep 5
 	@sudo bash scripts/start-service.sh
+
+# Reload the kernel driver of the adapters (ARCH-11 D1): a hung firmware that crashes
+# hostapd at every start. Refused while the service runs.
+reload-drivers:
+	@sudo bash scripts/reload-drivers.sh
 
 # Frontend targets
 build-frontend:
