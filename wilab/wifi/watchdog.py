@@ -23,13 +23,11 @@ if TYPE_CHECKING:
     from .manager import NetworkManager
 
 logger = logging.getLogger(__name__)
-# AP restore budget per adapter: at most RESTORE_LIMIT restores in any RESTORE_WINDOW
-# seconds. The next failure inside the window quarantines the adapter.
-RESTORE_LIMIT = 3
-RESTORE_WINDOW = 3600.0
-# DHCP restart budget per adapter, same window (WD-3). When it is used up, or a
-# DHCP restart fails, the watchdog restarts the whole network instead.
-DHCP_RESTORE_LIMIT = 3
+# Repair budgets per adapter come from config.yaml (`watchdog:`, by default 3 in
+# any 60 minutes, a driver may have its own): at most `limit` AP restores in the
+# window, and the next failure inside it quarantines the adapter. DHCP restarts
+# have their own budget (WD-3): when it is used up, or a DHCP restart fails, the
+# watchdog restarts the whole network instead.
 # Ticks (5 s each) between checks of what a running network needs beyond its
 # processes: gateway address, firewall rules, captive portal (WD-7).
 VERIFY_EVERY = 6
@@ -257,18 +255,19 @@ class NetworkWatchdog:
         watch.restart_network = watch.restart_reason = ""
         self.states[device] = (reservation, "restoring_ap")
         now = time.monotonic()
-        while watch.restores and now - watch.restores[0] > RESTORE_WINDOW:
+        limit, window = self._budget(device, "ap_restores")
+        while watch.restores and now - watch.restores[0] > window:
             watch.restores.popleft()
-        exhausted = len(watch.restores) >= RESTORE_LIMIT
+        exhausted = len(watch.restores) >= limit
         if exhausted:
             logger.warning(
-                "AP on %s failed again after %d restores in %.0f s; quarantining",
-                device, len(watch.restores), RESTORE_WINDOW,
+                "AP on %s failed again after %d restores in %.0f min; quarantining",
+                device, len(watch.restores), window / 60,
             )
         else:
             logger.warning(
-                "Restoring AP on %s (restore %d of %d in the last hour)",
-                device, len(watch.restores) + 1, RESTORE_LIMIT,
+                "Restoring AP on %s (restore %d of %d in the last %.0f min)",
+                device, len(watch.restores) + 1, limit, window / 60,
             )
         try:
             self._restore_ap(reservations, reservation, status, exhausted)
@@ -286,13 +285,14 @@ class NetworkWatchdog:
         """Restart dnsmasq alone, within its own budget (WD-3)."""
         device = watch.device
         now = time.monotonic()
-        while watch.dhcp_restores and now - watch.dhcp_restores[0] > RESTORE_WINDOW:
+        limit, window = self._budget(device, "dhcp_restarts")
+        while watch.dhcp_restores and now - watch.dhcp_restores[0] > window:
             watch.dhcp_restores.popleft()
-        if len(watch.dhcp_restores) < DHCP_RESTORE_LIMIT:
+        if len(watch.dhcp_restores) < limit:
             watch.dhcp_restores.append(now)
             logger.warning(
-                "Restarting DHCP on %s (restart %d of %d in the last hour)",
-                device, len(watch.dhcp_restores), DHCP_RESTORE_LIMIT,
+                "Restarting DHCP on %s (restart %d of %d in the last %.0f min)",
+                device, len(watch.dhcp_restores), limit, window / 60,
             )
             reservation.record_restart("dhcp", "dnsmasq_not_running")
             self._restore_dhcp(reservations, reservation, status)
@@ -305,6 +305,12 @@ class NetworkWatchdog:
         if failed and reservations.snapshot().get(device) is reservation:
             watch.restart_network = f"DHCP on {device} cannot be repaired alone"
             watch.restart_reason = "dhcp_failed"
+
+    def _budget(self, device: str, kind: str) -> tuple[int, float]:
+        """`limit` and window in seconds of *kind* for *device*, by its driver (config.yaml)."""
+        managed = self.manager.devices.get(device)
+        budget = self.manager.config.watchdog.budget(kind, managed.driver if managed is not None else None)
+        return budget.limit, budget.window_minutes * 60.0
 
     def _verify(self, device: str) -> str:
         """Check and repair the network on `device` in place.

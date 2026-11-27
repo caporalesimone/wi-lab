@@ -46,7 +46,9 @@ from wilab.wifi.hostapd import (
     HostapdSegfault,
 )
 from wilab.wifi.manager import NetworkManager
-from wilab.wifi.watchdog import RESTORE_WINDOW, DeviceWatch
+from wilab.wifi.watchdog import DeviceWatch
+
+RESTORE_WINDOW = 3600.0   # the default budget window (config.yaml watchdog)
 
 pytestmark = pytest.mark.slow
 

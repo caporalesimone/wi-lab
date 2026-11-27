@@ -6,9 +6,10 @@
 # IMPORTANT: Review and update parameters before starting Wi-Lab!
 #
 # Every setting is REQUIRED: Wi-Lab does not start if one is missing, so each
-# value is a deliberate choice. Only two may be left out: hostapd_debug_dir
-# (diagnostics, off when absent) and the antennas section (radios are found
-# automatically). protected_commands_password and cors_origins are required
+# value is a deliberate choice. Only three may be left out: hostapd_debug_dir
+# (diagnostics, off when absent), the antennas section (radios are found
+# automatically) and the watchdog section (tuning, with defaults).
+# protected_commands_password and cors_origins are required
 # keys but may be null to turn their feature off.
 
 # ==================================================================================================
@@ -209,3 +210,21 @@ antennas:
   # - interface: "wlan0"
   #   disable: true
   #   show_dfs_channels: false
+
+# ==================================================================================================
+# WATCHDOG REPAIR BUDGETS (optional; the values below are the defaults)
+# ==================================================================================================
+# The watchdog restarts a network whose hostapd or dnsmasq died. Each antenna may be repaired at
+# most `limit` times in any `window_minutes` (a sliding window: an older repair no longer counts);
+# the next failure inside the window quarantines the antenna, so an adapter that keeps failing
+# leaves the pool instead of dropping its clients again and again. DHCP-only restarts have their
+# own budget. Chipsets fail differently: `drivers` gives a kernel driver its own values (the name
+# shown by GET /api/v2/antennas/{interface} as device.driver); what it leaves out comes from the
+# default. The journal shows the budget of each antenna when it is added.
+#
+# watchdog:
+#   ap_restores:   {limit: 3, window_minutes: 60}
+#   dhcp_restarts: {limit: 3, window_minutes: 60}
+#   drivers:
+#     mt7921u:
+#       ap_restores: {limit: 5}

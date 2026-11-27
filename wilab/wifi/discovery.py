@@ -27,6 +27,7 @@ class DiscoveredRadio:
     interface: str
     phy: str
     usb_port: str | None
+    driver: str | None = None
 
 
 def _list_wifi_interfaces() -> list[tuple[str, str]]:
@@ -139,8 +140,9 @@ def _ready_radio(
         if not trust_name and props.get("ID_NET_NAME", interface) != interface:
             return _Renaming(phy, props["ID_NET_NAME"])
         port = detect_usb_port(interface)
+        info = detect_device(interface)
         if (path / "ifindex").read_text().strip() == ifindex:
-            return DiscoveredRadio(interface, phy, port)
+            return DiscoveredRadio(interface, phy, port, info.driver if info is not None else None)
     except (OSError, CommandError):
         logger.debug("Cannot confirm readiness of Wi-Fi interface %s", interface)
     return None

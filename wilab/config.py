@@ -5,7 +5,7 @@ from ipaddress import IPv4Address, IPv4Network
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from .devices import Device
 
@@ -28,11 +28,66 @@ class NetworkEntry(BaseModel):
         """Stable internal identifier derived from interface name."""
         return self.interface
 
+class RepairBudget(BaseModel):
+    """At most `limit` repairs of one kind in any `window_minutes` on one antenna."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    limit: int = Field(3, ge=1, le=100)
+    window_minutes: int = Field(60, ge=1, le=1440)
+
+
+class RepairBudgetOverride(BaseModel):
+    """A driver's own values; what is left out comes from the default budget."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    limit: int | None = Field(None, ge=1, le=100)
+    window_minutes: int | None = Field(None, ge=1, le=1440)
+
+
+class DriverWatchdog(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ap_restores: RepairBudgetOverride | None = None
+    dhcp_restarts: RepairBudgetOverride | None = None
+
+
+class WatchdogConfig(BaseModel):
+    """Repair budgets of the watchdog (`watchdog:` in config.yaml, optional).
+
+    The budget belongs to the antenna and is a sliding window: a repair older
+    than the window no longer counts. The next failure after `limit` repairs in
+    the window quarantines the antenna. Chipsets fail differently (mt7921u
+    crashes hostapd more than others), so a driver can have its own values,
+    keyed by the kernel driver name shown in `GET /antennas/{interface}`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ap_restores: RepairBudget = Field(default_factory=RepairBudget)
+    dhcp_restarts: RepairBudget = Field(default_factory=RepairBudget)
+    drivers: dict[str, DriverWatchdog] = Field(default_factory=dict)
+
+    def budget(self, kind: str, driver: str | None) -> RepairBudget:
+        """The budget of *kind* (`ap_restores` or `dhcp_restarts`) for an antenna with *driver*."""
+        default: RepairBudget = getattr(self, kind)
+        override = getattr(self.drivers.get(driver or ""), kind, None) if driver else None
+        if override is None:
+            return default
+        return RepairBudget(
+            limit=override.limit if override.limit is not None else default.limit,
+            window_minutes=(
+                override.window_minutes if override.window_minutes is not None else default.window_minutes
+            ),
+        )
+
+
 class AppConfig(BaseModel):
     # Every rule lives here, so `--validate-config` and the service startup give
     # the same verdict (BUG-3). Messages never repeat the configured values.
     # Every setting is required, so whoever writes config.yaml chooses it: only
-    # hostapd_debug_dir and the antennas section may be left out.
+    # hostapd_debug_dir, the antennas section and the watchdog section may be left out.
     # protected_commands_password and cors_origins may be null (feature off).
     auth_token: str
     api_port: int = Field(..., ge=1, le=65535)
@@ -57,6 +112,9 @@ class AppConfig(BaseModel):
     # Optional display names and settings of the discovered radios (`antennas:`),
     # as read from config.yaml; never changed at runtime (ARCH-4).
     antennas: list[NetworkEntry] = Field(default_factory=list)
+    # Optional: repair budgets of the watchdog, by default and per driver. Tuning,
+    # not a deliberate choice for every installation, so it has defaults.
+    watchdog: WatchdogConfig = Field(default_factory=WatchdogConfig)
     cors_origins: list[str] | None = Field(
         ...,
         description="CORS allowed origins. If None or empty, CORS is disabled (secure for production). "
@@ -212,6 +270,7 @@ def resolve_networks(
             interface=r.interface,
             display_name=names.get(r.interface, r.interface),
             usb_port=r.usb_port,
+            driver=getattr(r, "driver", None),
             show_dfs_channels=show_dfs_channels.get(r.interface, True),
         ))
     return networks

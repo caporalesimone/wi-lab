@@ -196,3 +196,43 @@ def test_every_setting_is_required(key):
 def test_only_hostapd_debug_dir_and_antennas_may_be_omitted():
     config = make_config(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8")
     assert config.hostapd_debug_dir is None and config.antennas == []
+
+
+# --------------------------------------------------------------------------- watchdog budgets
+
+
+def test_watchdog_section_is_optional_with_the_historic_defaults():
+    from conftest import make_config
+
+    config = make_config(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="1.1.1.1")
+    budget = config.watchdog.budget("ap_restores", "mt7921u")
+    assert (budget.limit, budget.window_minutes) == (3, 60)
+    assert config.watchdog.budget("dhcp_restarts", None).limit == 3
+
+
+def test_watchdog_driver_override_takes_what_it_sets_and_the_rest_from_the_default():
+    from wilab.config import WatchdogConfig
+
+    watchdog = WatchdogConfig.model_validate({
+        "ap_restores": {"limit": 3, "window_minutes": 30},
+        "drivers": {"mt7921u": {"ap_restores": {"limit": 6}}},
+    })
+    mt = watchdog.budget("ap_restores", "mt7921u")
+    assert (mt.limit, mt.window_minutes) == (6, 30)
+    assert watchdog.budget("ap_restores", "rtw88_8822bu").limit == 3
+    assert watchdog.budget("dhcp_restarts", "mt7921u").limit == 3
+
+
+@pytest.mark.parametrize("section", [
+    {"ap_restores": {"limit": 0}},
+    {"ap_restore": {"limit": 3}},                                   # typo
+    {"drivers": {"mt7921u": {"ap_restores": {"limt": 3}}}},         # typo
+    {"dhcp_restarts": {"window_minutes": 0}},
+])
+def test_watchdog_section_mistakes_stop_the_service(section):
+    from pydantic import ValidationError
+
+    from wilab.config import WatchdogConfig
+
+    with pytest.raises(ValidationError):
+        WatchdogConfig.model_validate(section)

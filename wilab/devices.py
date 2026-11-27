@@ -18,6 +18,8 @@ class Device:
     display_name: str
     # Detected from sysfs; set only for USB adapters (USB recovery resets this port).
     usb_port: str | None = None
+    # Kernel driver (mt7921u, rtw88_8822bu, ...): selects the watchdog budget of config.yaml.
+    driver: str | None = None
     # DFS channels (5 GHz 52-144) are listed and accepted only when true.
     show_dfs_channels: bool = True
     # Serializes start, stop, status, cleanup, restore and USB recovery of this device.

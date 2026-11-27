@@ -66,10 +66,14 @@ class DeviceDiscovery:
                 # Clean what a previous run left on the radio (STAB-4); nobody uses it yet.
                 with device.lock:
                     reset_interface(device.interface)
+            budgets = self.config.watchdog
             for device in added:
+                ap, dhcp = budgets.budget("ap_restores", device.driver), budgets.budget("dhcp_restarts", device.driver)
                 logger.info(
-                    "Added %s as %r (%s)", device.interface, device.display_name,
+                    "Added %s as %r (%s, driver %s; watchdog: %d AP restores and %d DHCP restarts "
+                    "per %d/%d min)", device.interface, device.display_name,
                     f"USB port {device.usb_port}" if device.usb_port else "non-USB",
+                    device.driver or "unknown", ap.limit, dhcp.limit, ap.window_minutes, dhcp.window_minutes,
                 )
             threading.Thread(
                 target=_warm_channels, args=(self.channels, [d.interface for d in added]),

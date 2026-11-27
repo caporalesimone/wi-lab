@@ -31,6 +31,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ### ✨ Features
 
+- The watchdog's repair budgets are configurable in an optional `watchdog:` section of `config.yaml`: AP restores and DHCP restarts per antenna in a sliding window (default 3 in 60 minutes, as before), with their own values per kernel driver (`watchdog.drivers.mt7921u.ap_restores.limit: 5`), since chipsets fail differently. The journal shows each antenna's driver and budget when it is added.
 - `GET /status` has `restart_required`: `null`, or which security updates installed on the host need a restart of Wi-Lab (a loaded library was replaced) or a reboot (`/run/reboot-required`, or a kernel newer than the running one installed), since when, and a sentence; the web UI shows it as a red bar. Wi-Lab never restarts by itself: the installer excludes it from needrestart, which after an unattended upgrade restarted the service and dropped every network (seen on 2026-11-27 with `libexpat1`). Run the installer again, or create `/etc/needrestart/conf.d/wilab.conf` as in `install/02-install-stages/06-needrestart.sh`.
 - Startup prechecks: the service exits with code `78` when it does not run as root or a command it needs is missing, and systemd does not restart it (reinstall the systemd unit to get `RestartPreventExitStatus=78`); an active NetworkManager, a Wi-Lab radio held by `wpa_supplicant` and leftover Wi-Lab rules are a `WARNING` in the journal (Fable NM-1).
 

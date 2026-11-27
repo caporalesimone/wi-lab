@@ -984,8 +984,10 @@ answers either.
 
 - No connected stations is not a failure.
 - **Restore budget (WD-1):** an antenna can have its AP restored up to 3 times in
-  any hour (`RESTORE_LIMIT`, `RESTORE_WINDOW`). A further failure inside that
-  hour quarantines it. The budget belongs to the antenna, not to the network:
+  any hour (a sliding window; `watchdog.ap_restores` in `config.yaml`, with its own
+  values per kernel driver under `watchdog.drivers`). A further failure inside the
+  window quarantines it. DHCP-only restarts have their own budget
+  (`watchdog.dhcp_restarts`). The budget belongs to the antenna, not to the network:
   deleting and recreating the network does not reset it. A long-lived
   reservation can therefore survive one outage a day indefinitely, while an AP
   that keeps dying is taken out of the pool.
@@ -1000,8 +1002,8 @@ answers either.
   are gone, the whole network is restored instead, through the AP restore
   budget. Whether the radio really transmits (beacons) is not checked yet.
 - **DHCP repair (WD-3):** a dead dnsmasq is restarted alone, keeping the AP
-  up, up to 3 times in any hour per antenna (`DHCP_RESTORE_LIMIT`, same
-  window). If a DHCP restart fails, or dnsmasq dies a fourth time within the
+  up, up to 3 times in any hour per antenna (`watchdog.dhcp_restarts`, by default
+  3 in 60 minutes). If a DHCP restart fails, or dnsmasq dies once more within the
   hour, the next tick restores the whole network, which goes through the AP
   restore budget above. `dhcp_failed` is visible only in the 5 s between the
   two ticks.
