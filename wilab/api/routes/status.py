@@ -1,15 +1,17 @@
 """System status endpoint."""
 
 from math import ceil
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 
 from ... import health as health_module
 from ... import heartbeat
 from ...api.auth import require_token
 from ...api.dependencies import get_config, get_manager, get_reservation_manager
 from ...config import AppConfig
+from ...models import ReservationInfo
 from ...network.commands import stuck_commands
 from ...reservation import ReservationManager
 from ...timestamps import format_utc_timestamp
@@ -23,7 +25,11 @@ _CHECKS_OK_EXAMPLE = {
     "hostapd": {"running": True, "instances": 0, "missing": []},
     "dnsmasq": {"running": True, "instances": 0, "missing": []},
     "iptables_nat": {"configured": True, "missing": [], "errors": []},
-    "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
+    "upstream_interface": {
+        "name": "eth0", "up": True, "reachable": True, "operstate": "UP", "mac": "bc:24:11:07:a6:9b",
+        "mtu": 1500, "ipv4": ["192.168.10.146/24"], "ipv6": ["fd15:fccc:74a7:0:be24:11ff:fe07:a69b/64"],
+        "gateway": "192.168.10.1",
+    },
     "updates": {"service_restart_required": False, "replaced_libraries": [],
                 "system_reboot_required": False, "reboot_packages": [], "since": None},
 }
@@ -41,8 +47,61 @@ router = APIRouter(
 )
 
 
+class DegradedReason(BaseModel):
+    code: str = Field(..., description="Stable code, see docs/error-codes.md")
+    interface: str | None = Field(..., description="The antenna it concerns; null for the whole service")
+    message: str = Field(..., description="A sentence for display")
+
+
+class ServiceStatus(BaseModel):
+    health: Literal["good", "degraded"] = Field(
+        ..., description="`degraded`: at least one entry in `degraded_reasons`",
+    )
+    free_antennas: int = Field(..., description="Antennas a reservation would get now")
+    degraded_reasons: list[DegradedReason] = Field(..., description="Why `health` is `degraded`; empty when `good`")
+
+
+class AntennaState(BaseModel):
+    display_name: str
+    interface: str
+    reservation: ReservationInfo | None = Field(..., description="null when the antenna is not reserved")
+    network_active: bool
+    recovery_state: Literal["recovering", "unavailable"] | None = Field(
+        None, description="Present only while the antenna is quarantined",
+    )
+    runtime_state: str | None = Field(
+        None, description="Present only while a start, a repair or a half-done stop is in progress",
+    )
+
+
+class RestartRequired(BaseModel):
+    service: bool = Field(..., description="A library Wi-Lab loaded was replaced: `systemctl restart wi-lab`")
+    system: bool = Field(..., description="An update asks for a reboot of the host")
+    since: str | None = Field(..., description="When it was first seen (UTC, RFC 3339)")
+    message: str = Field(..., description="A sentence for display")
+
+
+class ReservationPolicy(BaseModel):
+    min_seconds: int
+    max_seconds: int
+    allow_unlimited: bool
+
+
+class SystemStatus(BaseModel):
+    version: str
+    status: ServiceStatus
+    antennas: list[AntennaState]
+    restart_required: RestartRequired | None = Field(
+        ..., description="Always present: null, or the security updates that need a restart (never automatic)",
+    )
+    reservation_policy: ReservationPolicy
+
+
 @router.get(
     "/status",
+    response_model=SystemStatus,
+    # Fields not computed are left out (recovery_state, runtime_state); null is kept.
+    response_model_exclude_unset=True,
     summary="Read system and adapter status",
     responses={
         200: {
@@ -329,7 +388,7 @@ def monitoring(
     | `hostapd`, `dnsmasq` | Every settled network has its process alive; `missing` lists the others. |
     | `iptables_nat` | Every settled network with Internet has its `wilab-nat-<interface>` rule; `missing` lists the others, `errors` the failures reading the rules. |
     | `updates` | Security updates that need a restart: libraries this process loaded that an update replaced (`service_restart_required`, `replaced_libraries`), and a reboot asked by an update or a newer installed kernel (`system_reboot_required`, `reboot_packages`); `since` is when first seen. |
-    | `upstream_interface` | Host uplink state UP (or UNKNOWN with LOWER_UP) and an IPv4 address; it counts only while a network has Internet. |
+    | `upstream_interface` | The host uplink: `name`, `operstate`, `mac`, `mtu`, global `ipv4` and `ipv6` addresses with prefix, IPv4 default `gateway`; `up` is UP (or UNKNOWN with LOWER_UP), `reachable` is up with an IPv4 address and counts only while a network has Internet. |
 
     A network with a start, stop or restore in progress is not judged.
     """

@@ -23,10 +23,6 @@ class AntennaSummary(BaseModel):
     interface: str = Field(description="Linux interface name; identifies the antenna in this API")
 
 
-class AntennaList(BaseModel):
-    antennas: list[AntennaSummary] = Field(description="Every managed antenna, reserved or not")
-
-
 class DeviceDetails(BaseModel):
     bus: str = Field(description="`usb`, `pci` (also cards built into the motherboard) or `sdio`")
     address: str = Field(description="USB port (`2-1.3`), PCI address (`0000:02:00.0`) or SDIO device")
@@ -141,31 +137,6 @@ _DETAILS_EXAMPLE = {
 
 
 @router.get(
-    "",
-    response_model=AntennaList,
-    summary="List the antennas",
-    responses={
-        200: {"content": {"application/json": {"example": {"antennas": [
-            {"display_name": "antenna-1", "interface": "wlx7419f8176286"},
-            {"display_name": "antenna-2", "interface": "wlx7419f817651c"},
-        ]}}}},
-        401: {"description": "Unauthorized (missing or invalid auth token)"},
-    },
-)
-def list_antennas(
-    devices: DeviceRegistry = Depends(get_devices),
-    _auth: bool = Depends(require_token),
-) -> AntennaList:
-    """Every antenna Wi-Lab manages, reserved or not, in allocation order.
-
-    Reservation, quarantine and repair states are in `GET /status`.
-    """
-    return AntennaList(antennas=[
-        AntennaSummary(display_name=n.display_name, interface=n.interface) for n in devices.all()
-    ])
-
-
-@router.get(
     "/{interface}",
     response_model=AntennaDetails,
     summary="Read what a network on an antenna can use",
@@ -177,7 +148,7 @@ def list_antennas(
     },
 )
 def get_antenna(
-    interface: str = Path(..., description="Interface name from `GET /antennas`"),
+    interface: str = Path(..., description="Interface name from `antennas[]` of `GET /status`"),
     devices: DeviceRegistry = Depends(get_devices),
     channel_mgr: ChannelManager = Depends(get_channel_manager),
     manager: NetworkManager = Depends(get_manager),

@@ -53,7 +53,7 @@ when the server allows it: `GET /api/v2/status` reports
 `reservation_policy.allow_unlimited` (with `min_seconds` and `max_seconds`).
 When it is `false`, `0` returns `422`.
 
-To reserve a given antenna, add its `interface` (from `GET /api/v2/antennas`):
+To reserve a given antenna, add its `interface` (from `antennas[]` of `GET /api/v2/status`):
 
 ```json
 {"duration_seconds": 600, "interface": "wlx7419f8176286"}
@@ -102,7 +102,7 @@ The reservation answer names the antenna (`interface`). Ask what a network on
 it can use; no reservation is needed, so a GUI can also show free antennas:
 
 ```http
-GET /api/v2/antennas                 → every antenna: display_name, interface
+GET /api/v2/status                   → antennas[]: display_name, interface, reservation
 GET /api/v2/antennas/{interface}     → device, encryptions, and per band the
                                        Wi-Fi generations, widths and channels
 ```

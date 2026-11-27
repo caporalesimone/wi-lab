@@ -243,7 +243,7 @@ class TestChannelManagerResolve:
 
 
 # ---------------------------------------------------------------------------
-# API tests – GET /api/v2/antennas
+# API tests – GET /api/v2/antennas/{interface}
 # ---------------------------------------------------------------------------
 
 def _set_show_dfs_channels(context, value: bool) -> None:
@@ -256,13 +256,16 @@ class TestAntennasAPI:
     """Antennas: the managed radios and the options of a create on each."""
 
     def test_requires_auth(self, client):
-        assert client.get('/api/v2/antennas').status_code == 401
         assert client.get('/api/v2/antennas/wls16').status_code == 401
 
-    def test_list_needs_no_reservation(self, client, valid_token):
-        resp = client.get('/api/v2/antennas', headers={'Authorization': valid_token})
-        assert resp.status_code == 200
-        assert {"display_name": "bench-antenna-1", "interface": "wls16"} in resp.json()["antennas"]
+    def test_the_list_is_in_status_only(self, client, valid_token):
+        """GET /antennas repeated antennas[] of GET /status (removed 2026-11-27)."""
+        headers = {'Authorization': valid_token}
+        assert client.get('/api/v2/antennas', headers=headers).status_code == 404
+        listed = client.get('/api/v2/status', headers=headers).json()["antennas"]
+        assert {"display_name": "bench-antenna-1", "interface": "wls16"} in [
+            {k: a[k] for k in ("display_name", "interface")} for a in listed
+        ]
 
     def test_unknown_antenna_returns_404(self, client, valid_token):
         resp = client.get('/api/v2/antennas/wlan99', headers={'Authorization': valid_token})

@@ -98,7 +98,7 @@ export interface RestartRequired {
 
 export interface ReservationRequest {
   duration_seconds: number;
-  /** Reserve this antenna only (from GET /antennas); omitted: the first free one. */
+  /** Reserve this antenna only (from antennas[] of GET /status); omitted: the first free one. */
   interface?: string | null;
 }
 

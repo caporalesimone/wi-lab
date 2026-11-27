@@ -356,7 +356,7 @@ class NetworkWatchdog:
 
     def budget_use(self, device: str, kind: str) -> tuple[int, int, int, float | None]:
         """Repairs of *kind* in the window, the limit, the window in minutes, and when
-        (wall time) the oldest of them leaves the window; for GET /antennas health."""
+        (wall time) the oldest of them leaves the window; for the health of GET /antennas/{interface}."""
         limit, window = self._budget(device, kind)
         watch = self._watches.get(device)
         times: list[float] = []

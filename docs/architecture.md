@@ -182,7 +182,7 @@ Notes:
   reverses them at shutdown.
 - The managed devices exist once, in the `DeviceRegistry` (Fable ARCH-4).
   Reservations allocate in its order, the subnet allocator numbers subnets in
-  its order, `/status` and `GET /antennas` list it, and each `Device` carries
+  its order, `/status` lists it, and each `Device` carries
   its device lock. Nothing else keeps a device list, and the configuration is
   never changed at runtime. The watchdog subscribes to the registry when it
   starts: one watcher thread for each device, also for the ones added later.

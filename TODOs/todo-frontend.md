@@ -125,7 +125,7 @@ container, on the Wi-Lab machine or anywhere else. Wi-Lab becomes API only.
     polled: show `error.message` and `error.stage` under the state, on every
     card and after a reload.
   - **Choose the antenna.** `interface` of `POST /reservations` is never
-    sent: the reserve dialog offers the free antennas of `GET /antennas`.
+    sent: the reserve dialog offers the free antennas of `antennas[]` in `GET /status`.
   - **`health`** of `GET /antennas/{interface}` (budgets, quarantines, USB
     resets) on the antenna detail page.
   - Done already: compile check without publishing (`make frontend-check`) and

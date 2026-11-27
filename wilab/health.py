@@ -87,7 +87,10 @@ def _nat_check(manager: NetworkManager, expected: list[str]) -> dict[str, Any]:
 
 
 def _upstream_check(manager: NetworkManager) -> dict[str, Any]:
-    """Operational state and IPv4 address of the upstream, from `ip -j` (BUG-2).
+    """State, addresses and gateway of the upstream, from `ip -j` (BUG-2).
+
+    `reachable` (UP with a global IPv4 address) decides `upstream_unreachable`;
+    the rest is shown in /monitoring.
 
     A link with state UNKNOWN (VPN, some virtual NICs) is up when the kernel
     reports LOWER_UP.
@@ -100,8 +103,28 @@ def _upstream_check(manager: NetworkManager) -> dict[str, Any]:
     link = links[0] if links else {}
     state = link.get("operstate")
     up = state == "UP" or (state == "UNKNOWN" and "LOWER_UP" in link.get("flags", []))
-    has_ip = any(a.get("family") == "inet" for a in link.get("addr_info", []))
-    return {"name": name, "up": up, "has_ip": has_ip, "reachable": up and has_ip}
+
+    def addresses(family: str) -> list[str]:
+        return [
+            f"{a['local']}/{a['prefixlen']}" for a in link.get("addr_info", [])
+            if a.get("family") == family and a.get("scope", "global") == "global" and "local" in a
+        ]
+
+    ipv4 = addresses("inet")
+    return {
+        "name": name, "up": up, "reachable": up and bool(ipv4),
+        "operstate": state, "mac": link.get("address"), "mtu": link.get("mtu"),
+        "ipv4": ipv4, "ipv6": addresses("inet6"), "gateway": _default_gateway(name),
+    }
+
+
+def _default_gateway(name: str) -> str | None:
+    """The IPv4 default gateway through *name*; None without one or when ip cannot tell."""
+    try:
+        routes = json.loads(execute_command(["ip", "-j", "-4", "route", "show", "default", "dev", name]) or "[]")
+    except (CommandError, ValueError):
+        return None
+    return next((r["gateway"] for r in routes if r.get("gateway")), None)
 
 
 class HealthChecks:

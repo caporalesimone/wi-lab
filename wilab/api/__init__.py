@@ -120,8 +120,9 @@ create. `dhcp_failed` is brief: the watchdog then restarts the whole network.
 OPENAPI_TAGS = [
     {"name": "System", "description": "Service health, reservations and per-adapter recovery state. Poll status; the detail of the health checks is in monitoring."},
     {"name": "Reservation", "description": "Allocate or release an adapter. Use the returned reservation ID for device operations."},
-    {"name": "Antennas", "description": "The managed radios and what a network on each can use "
-     "(encryptions, Wi-Fi generations, channel widths, channels): fill a create form from here. No reservation needed."},
+    {"name": "Antennas", "description": "What a network on an antenna can use (encryptions, Wi-Fi "
+     "generations, channel widths, channels) and its repair health: fill a create form from here. The "
+     "antennas are `antennas[]` of `GET /status`. No reservation needed."},
     {"name": "Network", "description": "Create, stop and inspect an AP. The create is asynchronous: poll `GET .../network` for the outcome."},
     {"name": "Internet", "description": "Enable or disable Internet access for a reserved network."},
     {"name": "TX Power", "description": "**Under debugging, not stable:** the drivers in use do not "
@@ -151,6 +152,38 @@ async def lifespan(app: FastAPI):
     context.start()
     yield
     context.stop()
+
+
+def _keep_example_nulls(paths: dict, routes: list) -> None:
+    """Put back the null values of the routes' own response examples.
+
+    FastAPI builds the schema with exclude_none, which also drops every null
+    from the examples: `restart_required: null` or `reservation: null` vanished
+    from Swagger although the API always sends them. The examples are the
+    route's own, copied as written; nothing is added.
+    """
+    from fastapi import routing
+    from fastapi.openapi.utils import _get_api_route_for_openapi
+
+    # The same walk as FastAPI's get_openapi (routers are included lazily).
+    for context in routing.iter_route_contexts(routes):
+        route = _get_api_route_for_openapi(context)
+        if route is None:
+            continue
+        for method in route.methods or ():
+            operation = paths.get(route.path_format, {}).get(method.lower())
+            if operation is None:
+                continue
+            for code, response in (route.responses or {}).items():
+                media = response.get("content", {}).get("application/json", {})
+                target = operation.get("responses", {}).get(str(code), {}).get("content", {}).get("application/json")
+                if target is None:
+                    continue
+                if "example" in media:
+                    target["example"] = media["example"]
+                for name, entry in media.get("examples", {}).items():
+                    if "value" in entry and name in target.get("examples", {}):
+                        target["examples"][name]["value"] = entry["value"]
 
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
@@ -314,6 +347,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         # Examples live next to their model or route (API-9); only the shared error
         # envelope is added here.
         document_errors(openapi_schema["paths"])
+        _keep_example_nulls(openapi_schema["paths"], app.routes)
         app.openapi_schema = openapi_schema
         return app.openapi_schema
 

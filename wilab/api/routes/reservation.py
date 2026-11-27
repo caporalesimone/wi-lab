@@ -51,7 +51,7 @@ class ReservationCreateRequest(BaseModel):
         json_schema_extra={"example": 3600}
     )
     interface: str | None = Field(
-        None, description="Optional: reserve this antenna (an `interface` from `GET /antennas`). "
+        None, description="Optional: reserve this antenna (an `interface` from `antennas[]` of `GET /status`). "
         "Omitted or null: the first free antenna. Taken: `409 / 1005` with its expiry; "
         "quarantined: `503 / 1002` or `1003`; not a managed antenna: `422`.",
         json_schema_extra={"example": "wlx7419f8176286"},
@@ -141,7 +141,7 @@ def create_reservation(
     Taken by another reservation: **409 / 1005**, with `next_available_at` and
     `next_available_in` of that reservation (`null` if unlimited). Being recovered:
     **503 / 1002**; quarantined: **503 / 1003**. Not a managed antenna (see
-    `GET /antennas`): **422** `interface: ...`.
+    `antennas[]` of `GET /status`): **422** `interface: ...`.
     """
     # Validate duration against config bounds
     duration = req.duration_seconds
@@ -167,7 +167,7 @@ def create_reservation(
         r = mgr.create(duration, req.interface)
     except UnknownDeviceError as exc:
         raise HTTPException(
-            status_code=422, detail=f"interface: {exc} is not a managed antenna (see GET /antennas)",
+            status_code=422, detail=f"interface: {exc} is not a managed antenna (see antennas[] of GET /status)",
         ) from exc
     except DeviceRecoveryUnavailable as exc:
         if exc.recovering:

@@ -350,9 +350,8 @@ def test_polling_during_a_create_gets_an_answer_within_the_busy_limit(wilab: WiL
 
 def test_every_antenna_lists_options_without_a_reservation(wilab: WiLab) -> None:
     """Antennas API: readable with the token only, for every managed antenna."""
-    listed = wilab.http.get("/antennas").json()["antennas"]
-    assert {a["interface"] for a in listed} == set(wilab.interfaces())
-    for entry in listed:
+    assert wilab.http.get("/antennas").status_code == 404   # the list is antennas[] of /status
+    for entry in wilab.status()["antennas"]:
         details = wilab.antenna(entry["interface"])
         assert details["bands"]["2.4ghz"]["channels"] or details["bands"]["5ghz"]["channels"]
         for options in details["bands"].values():

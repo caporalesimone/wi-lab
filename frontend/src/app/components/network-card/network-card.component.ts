@@ -45,7 +45,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   /** Captive portal choice for the next start; preselects the start dialog. */
   captivePortalChoice = false;
   private creation?: Subscription;
-  /** GET /antennas is running for the start dialog: a second click opens nothing (REV-14). */
+  /** GET /antennas/{interface} is running for the start dialog: a second click opens nothing (REV-14). */
   private openingForm = false;
   pollingSubscription?: Subscription;
   countdownSubscription?: Subscription;

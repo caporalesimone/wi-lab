@@ -157,3 +157,23 @@ def test_half_stopped_network_is_reported_as_stop_incomplete_only(running, monke
     entry = next(a for a in data["antennas"] if a["interface"] == device)
     assert entry["runtime_state"] == "stop_failed"
     assert [r["code"] for r in data["status"]["degraded_reasons"]] == ["network_stop_incomplete"]
+
+
+def test_upstream_shows_the_interface_details(monkeypatch, context):
+    """In /monitoring: addresses, MAC, MTU and gateway instead of a bare has_ip (2026-11-27)."""
+    link = json.dumps([{
+        "ifname": "eth0", "operstate": "UP", "flags": ["UP", "LOWER_UP"], "mtu": 1500,
+        "address": "bc:24:11:07:a6:9b",
+        "addr_info": [
+            {"family": "inet", "local": "192.0.2.10", "prefixlen": 24, "scope": "global"},
+            {"family": "inet6", "local": "2001:db8::10", "prefixlen": 64, "scope": "global"},
+            {"family": "inet6", "local": "fe80::1", "prefixlen": 64, "scope": "link"},
+        ],
+    }])
+    route = json.dumps([{"dst": "default", "gateway": "192.0.2.1", "dev": "eth0"}])
+    monkeypatch.setattr(status_module, "execute_command", lambda cmd, **kw: route if "route" in cmd else link)
+    monkeypatch.setattr(context.manager.nat_manager, "get_upstream_interface", lambda: "eth0")
+    assert status_module._upstream_check(context.manager) == {
+        "name": "eth0", "up": True, "reachable": True, "operstate": "UP", "mac": "bc:24:11:07:a6:9b",
+        "mtu": 1500, "ipv4": ["192.0.2.10/24"], "ipv6": ["2001:db8::10/64"], "gateway": "192.0.2.1",
+    }
