@@ -34,6 +34,15 @@ def _serve(endpoint, full_path: str):
     return asyncio.run(endpoint(full_path))
 
 
+def test_absolute_and_escaping_paths_are_a_404(frontend):
+    """`GET //etc/passwd` and `..` out of the directory: 404, not even the page (e2e SEC-1)."""
+    endpoint, _app_dir, secret = frontend
+    for path in ("/etc/passwd", "/" + str(secret), "../secret.txt", "app/../../secret.txt"):
+        with pytest.raises(StarletteHTTPException) as exc:
+            _serve(endpoint, path)
+        assert exc.value.status_code == 404, path
+
+
 @pytest.mark.parametrize("make_path", [
     lambda secret: "../secret.txt",
     lambda secret: str(secret),

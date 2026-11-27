@@ -294,9 +294,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 raise StarletteHTTPException(status_code=404)
 
             # Never serve anything outside the frontend directory (SEC-1): an absolute
-            # path (`GET //etc/shadow`) or `..` segments must not leave it.
-            candidate = (frontend_root / full_path.lstrip("/")).resolve()
-            if not candidate.is_relative_to(frontend_root):
+            # path (`GET //etc/shadow`, no frontend URL starts with "//") or `..`
+            # segments that leave it are a 404, not even the page.
+            candidate = (frontend_root / full_path).resolve()
+            if full_path.startswith("/") or not candidate.is_relative_to(frontend_root):
                 raise StarletteHTTPException(status_code=404)
             if candidate.is_file():
                 return FileResponse(candidate)
