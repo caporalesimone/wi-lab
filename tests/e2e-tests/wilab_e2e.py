@@ -256,6 +256,19 @@ class Server:
         match = re.search(r"width:\s+(\d+)\s+MHz", out)
         return int(match[1]) if match else None
 
+    def hostapd_pid(self, interface: str) -> int | None:
+        """PID of the hostapd Wi-Lab runs on `interface`, from its private instance directory."""
+        sockets = self.sudo_output(["find", "/run/wilab/hostapd", "-type", "s", "-name", interface]).split()
+        if not sockets:
+            return None
+        instance = str(Path(sockets[0]).parent.parent)
+        out = subprocess.run(["pgrep", "-af", "^hostapd "], capture_output=True, text=True, check=False).stdout
+        for line in out.splitlines():
+            pid, _, command = line.partition(" ")
+            if f"{instance}/" in command:
+                return int(pid)
+        return None
+
     def hostapd_config(self, interface: str) -> dict[str, str]:
         """`hostapd_cli get_config` of the AP on `interface` (HAP-10)."""
         socket = self.sudo_output(

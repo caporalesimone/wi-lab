@@ -9,7 +9,8 @@ Environment:
                               each test gets its share (see WEIGHTS in stress.py)
     WILAB_LONG_SEED           seed of the random choices (default: time-based, printed)
     WILAB_E2E_URL, WILAB_E2E_TOKEN, WILAB_E2E_CONFIG, WILAB_E2E_SUDO_FILE
-                              as in tests/e2e-tests (same helpers)
+                              as in tests/e2e-tests (same helpers); the burst test's
+                              chaos monkey kills hostapd and dnsmasq with sudo
 
 Run:  WILAB_LONG_RUN=1 .venv/bin/pytest tests/long-run -s
 The events of every run are written to tests/long-run/results/ (git-ignored).

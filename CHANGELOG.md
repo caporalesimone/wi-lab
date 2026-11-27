@@ -96,6 +96,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The frontend route is tested against `..`, absolute and `//` paths by calling the route directly, since an HTTP client normalises them (T-01, SEC-1); the three e2e SEC-1 checks are no longer expected to fail.
 - Frontend specs for the create (`make frontend-test`, Node's test runner in the build image, no browser): `202` then the network, `200` at once, `start_failed`, the four `404` reasons as sentences, polls without an answer or with a `5xx`, a `401`, a cancelled start, unsubscribe, the 10-minute limit and a busy create repeated after `Retry-After` (unit-test-15).
 - New e2e tests: `kill -SEGV` of hostapd restored within 15 s with the control connection following (PERF-4), and the stop of a hostapd frozen with `SIGSTOP` (e2e-test-8).
+- Long run: a burst test on every antenna in parallel (reserve, 10-40 random networks back to back with cancels, conflicts and networks left up, release, again) with a chaos monkey that kills hostapd (`SIGSEGV`) and dnsmasq of dwelling networks within the watchdog budgets and checks each comes back by itself within 45 s.
 - Unit tests create networks through the real asynchronous path (`202`, then polling) with the `create_network` helper (REV-16).
 
 ### 🔌 API changes from 4.0.0 (client migration)

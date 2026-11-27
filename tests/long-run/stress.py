@@ -18,7 +18,7 @@ from wilab_e2e import Antenna, Server, WiLab, detail_code, gone_reason
 RESULTS = Path(__file__).resolve().parent / "results"
 
 # Share of WILAB_LONG_MINUTES given to each test; they add up to 1 (two hours by default).
-WEIGHTS = {"sequential": 0.25, "parallel": 0.30, "chaos": 0.20, "hold": 0.25}
+WEIGHTS = {"sequential": 0.15, "parallel": 0.20, "chaos": 0.15, "hold": 0.15, "burst": 0.35}
 
 START_TIMEOUT = 360        # a start never takes longer (DFS excluded; the server retries inside)
 RECOVERY_WAIT = 20 * 60    # an antenna in quarantine comes back within about 11-15 minutes
@@ -255,3 +255,178 @@ def seed() -> int:
 
 def stop_or_gone(response: httpx.Response) -> bool:
     return response.status_code == 200 or (response.status_code == 409 and detail_code(response) == 1007)
+
+
+# --------------------------------------------------------------------------- burst and fault injection
+
+# Faults the chaos monkey injects per antenna and rolling hour: below the watchdog
+# budgets (3 AP restores, 3 DHCP restarts), so a quarantine is never its doing.
+MONKEY_AP_KILLS_PER_HOUR = 2
+MONKEY_DHCP_KILLS_PER_HOUR = 2
+RESTORE_LIMIT_S = 45       # a killed hostapd or dnsmasq is back within this time
+
+
+class Targets:
+    """Networks that dwell (up, nobody touching them) and may be hit by the monkey."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._dwelling: dict[str, tuple[WiLab, Antenna]] = {}
+        self._busy: dict[str, threading.Event] = {}
+
+    def offer(self, client: WiLab, antenna: Antenna) -> None:
+        with self._lock:
+            self._dwelling[antenna.interface] = (client, antenna)
+
+    def withdraw(self, interface: str) -> None:
+        """The worker wants its network back: wait until the monkey is done with it."""
+        with self._lock:
+            self._dwelling.pop(interface, None)
+            busy = self._busy.get(interface)
+        if busy is not None:
+            busy.wait(RESTORE_LIMIT_S + 30)
+
+    def take(self, rng: random.Random, allowed: Callable[[str], bool]) -> tuple[WiLab, Antenna, threading.Event] | None:
+        with self._lock:
+            choices = [i for i in self._dwelling if allowed(i)]
+            if not choices:
+                return None
+            interface = rng.choice(choices)
+            client, antenna = self._dwelling.pop(interface)
+            done = threading.Event()
+            self._busy[interface] = done
+            return client, antenna, done
+
+    def give_back(self, interface: str, done: threading.Event) -> None:
+        with self._lock:
+            self._busy.pop(interface, None)
+        done.set()
+
+
+def _restarts(client: WiLab, antenna: Antenna) -> dict[str, Any] | None:
+    response = client.network(antenna)
+    return response.json() if response.status_code == 200 else None
+
+
+def chaos_monkey(server: Server, targets: Targets, rng: random.Random, rec: Recorder, stop: threading.Event) -> None:
+    """Kill hostapd (SIGSEGV) or dnsmasq (SIGKILL) of dwelling networks; check each comes back."""
+    kills: dict[tuple[str, str], list[float]] = {}
+
+    def recent(interface: str, kind: str) -> int:
+        now = time.monotonic()
+        times = kills.setdefault((interface, kind), [])
+        times[:] = [t for t in times if now - t < 3600]
+        return len(times)
+
+    while not stop.wait(rng.uniform(10, 30)):
+        kind = "ap" if rng.random() < 0.7 else "dhcp"
+        limit = MONKEY_AP_KILLS_PER_HOUR if kind == "ap" else MONKEY_DHCP_KILLS_PER_HOUR
+        def allowed(interface: str, kind: str = kind, limit: int = limit) -> bool:
+            return recent(interface, kind) < limit
+
+        taken = targets.take(rng, allowed)
+        if taken is None:
+            continue
+        client, antenna, done = taken
+        try:
+            _strike(server, client, antenna, kind, rec)
+            kills[(antenna.interface, kind)].append(time.monotonic())
+        except Exception as exc:  # noqa: BLE001 - recorded, the run goes on
+            rec.fail("monkey_error", interface=antenna.interface, fault=kind, error=repr(exc))
+        finally:
+            targets.give_back(antenna.interface, done)
+
+
+def _strike(server: Server, client: WiLab, antenna: Antenna, kind: str, rec: Recorder) -> None:
+    before = _restarts(client, antenna)
+    if before is None or not before.get("active") or before.get("runtime_state"):
+        return   # not a healthy dwelling network after all
+    if kind == "ap":
+        pid = server.hostapd_pid(antenna.interface)
+        signal = "SEGV"
+    else:
+        pids = server.dnsmasq_pids(antenna.interface)
+        pid, signal = (pids[0] if pids else None), "KILL"
+    if pid is None:
+        rec.fail("monkey_no_process", interface=antenna.interface, fault=kind)
+        return
+    struck = time.monotonic()
+    server.kill(pid, signal)
+    rec.event("monkey_kill", interface=antenna.interface, fault=kind, pid=pid, signal=signal)
+    deadline = struck + RESTORE_LIMIT_S
+    while time.monotonic() < deadline:
+        state = _restarts(client, antenna)
+        if (
+            state is not None and state.get("active") and not state.get("runtime_state")
+            and state["restarts"][kind] == before["restarts"][kind] + 1
+        ):
+            if kind == "ap":
+                back = server.hostapd_pid(antenna.interface)
+            else:
+                dnsmasq = server.dnsmasq_pids(antenna.interface)
+                back = dnsmasq[0] if dnsmasq else None
+            if back is not None and back != pid:
+                rec.event("monkey_recovered", interface=antenna.interface, fault=kind,
+                          seconds=round(time.monotonic() - struck, 1),
+                          reason=state["restarts"]["last_reason"])
+                return
+        time.sleep(0.5)
+    rec.fail("monkey_not_recovered", interface=antenna.interface, fault=kind,
+             state=_restarts(client, antenna), seconds=RESTORE_LIMIT_S)
+
+
+def burst(client: WiLab, interface: str, rng: random.Random, rec: Recorder, until: float, targets: Targets) -> None:
+    """Reserve, run 10-40 networks back to back with random settings and actions, release; again."""
+    details = client.antenna(interface)
+    while time.monotonic() < until:
+        antenna = wait_reserve(client, interface, rec, duration=rng.choice([600, 1800, 3600, 0]))
+        count = rng.randint(10, 40)
+        rec.event("burst_begin", interface=interface, networks=count, reservation=antenna.reservation_id)
+        running = False
+        for _ in range(count):
+            if time.monotonic() >= until:
+                break
+            body = random_settings(rng, details)
+            if running:   # left up by "keep": another body is refused, then it is stopped
+                refused = client.post_network(antenna, **dict(body, ssid="burst-kept-" + str(rng.randint(0, 999))))
+                if not (refused.status_code == 409 and detail_code(refused) == 1008):
+                    rec.fail("burst_kept_conflict", interface=interface, status=refused.status_code,
+                             code=detail_code(refused))
+                stop_network(client, antenna, rec)
+                running = False
+            action = rng.choices(["plain", "cancel", "conflict", "dwell", "keep"], weights=[50, 15, 10, 15, 10])[0]
+            if action == "cancel":
+                posted = client.post_network(antenna, **body)
+                time.sleep(rng.uniform(0, 2.5))
+                stop_network(client, antenna, rec)
+                after = client.network(antenna)
+                if posted.status_code == 202 and after.status_code == 200 and after.json().get("active"):
+                    rec.fail("cancel_left_network", interface=interface)
+                rec.event("burst_cancel", interface=interface)
+                continue
+            outcome = create(client, antenna, body, rec)
+            if outcome == "lost":
+                antenna = wait_reserve(client, interface, rec)
+                running = False
+                continue
+            running = outcome == "up"
+            if running and action == "conflict":
+                other = dict(body, ssid="burst-other-" + str(rng.randint(0, 999)))
+                refused = client.post_network(antenna, **other)
+                if not (refused.status_code == 409 and detail_code(refused) == 1008):
+                    rec.fail("burst_conflict", interface=interface, status=refused.status_code,
+                             code=detail_code(refused))
+            elif running and action == "dwell":
+                targets.offer(client, antenna)
+                time.sleep(rng.uniform(20, 40))
+                targets.withdraw(interface)
+            elif running and action == "keep":
+                continue   # no stop: the next create must refuse (other body) or the release cleans up
+            stop_network(client, antenna, rec)
+            running = False
+        # A network left up is stopped half of the time; otherwise the release cleans it up.
+        if running and rng.random() < 0.5:
+            stop_network(client, antenna, rec)
+            running = False
+        rec.event("burst_release", interface=interface, network_running=running)
+        client.release(antenna)

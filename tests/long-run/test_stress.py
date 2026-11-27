@@ -1,4 +1,4 @@
-"""Two hours (WILAB_LONG_MINUTES) of networks created through the API, on both antennas.
+"""Two hours (WILAB_LONG_MINUTES) of networks created through the API, on every antenna.
 
 Every test runs for its share of the time, then checks that nothing is left
 behind. An unexpected answer is a failure; a start that ends the reservation
@@ -8,13 +8,17 @@ with 404 (radio fault, quarantine) is recorded and waited out, not a failure.
 from __future__ import annotations
 
 import random
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 from stress import (
     Recorder,
+    Targets,
     assert_clean,
     budget,
+    burst,
+    chaos_monkey,
     churn,
     create,
     exercise,
@@ -190,3 +194,42 @@ def test_hold_while_the_other_antenna_churns(idle: WiLab, server, base_url, toke
         churn_client.close()
     assert_clean(idle, server, rec, [holder, churner])
     _finish(rec, errors)
+
+
+def test_burst_on_every_antenna_with_fault_injection(idle: WiLab, server, base_url, token):
+    """Every antenna in parallel: reserve, 10-40 random networks back to back, release, again.
+
+    Random bands, channels, widths, generations, encryptions, SSIDs, hidden and
+    captive portal; cancels during a start, conflicting creates, networks left
+    up for the next create or for the release. Meanwhile a chaos monkey kills
+    hostapd (SIGSEGV) or dnsmasq (SIGKILL) of networks that dwell, within the
+    watchdog budgets, and each must come back by itself within 45 s with the
+    `restarts` counter telling why. Afterwards nothing is left behind.
+    """
+    rec = Recorder("burst")
+    base = seed()
+    rec.event("seed", seed=base)
+    interfaces = idle.interfaces()
+    until = time.monotonic() + budget("burst")
+    clients = [WiLab(base_url, token) for _ in interfaces]
+    targets = Targets()
+    stop = threading.Event()
+    monkey = threading.Thread(
+        target=chaos_monkey, args=(server, targets, random.Random(base + 400), rec, stop), daemon=True,
+    )
+    monkey.start()
+    try:
+        errors = in_threads(*[
+            (lambda c=c, i=i, n=n: burst(c, i, random.Random(base + 300 + n), rec, until, targets))
+            for n, (c, i) in enumerate(zip(clients, interfaces))
+        ])
+    finally:
+        stop.set()
+        monkey.join(120)
+        for client in clients:
+            client.close()
+    assert_clean(idle, server, rec, interfaces)
+    kills, recovered = rec.counts["monkey_kill"], rec.counts["monkey_recovered"]
+    print(f"\nchaos monkey: {kills} kills, {recovered} recovered by themselves")
+    _finish(rec, errors)
+    assert kills >= 5, f"the monkey struck only {kills} times"
