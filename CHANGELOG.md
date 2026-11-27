@@ -19,10 +19,6 @@ All notable changes to Wi-Lab are documented in this file.
 
 Counts are the entries of the sections below and `git rev-list --count aca248e..HEAD` (`aca248e` is the last 4.0.0 commit), as of 2026-11-26.
 
-### 🛑 Known issue (not fixed in 4.1.0)
-
-- The frontend route serves any file of the host without authentication (`GET //etc/shadow`, `config.yaml` with the auth token). It stays open on purpose until the frontend is rewritten: do not expose the API port outside a trusted lab network (Fable SEC-1).
-
 ### ⚠️ Breaking Changes
 
 - NetworkManager is no longer supported: Wi-Lab requires Ubuntu Server with the host network on systemd-networkd and no longer releases radios from NetworkManager (`nmcli` is never run; the runtime file under `/run/NetworkManager/conf.d` is gone). The installer now detects NetworkManager and `wpa_supplicant` and offers to disable and mask them, never when NetworkManager manages the host's network or the host uses `wpa_supplicant` as a Wi-Fi client; `uninstall.sh` offers to re-enable them. When upgrading, run the installer again, or check that NetworkManager manages no interface (`nmcli device status`) and run `sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager` (Fable NM-1).
@@ -38,6 +34,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ### 🐛 Bug Fixes
 
+- **Security:** the frontend route no longer serves files outside the frontend directory: `GET //etc/shadow` or `/../config.yaml` (sent with `curl --path-as-is`) let anyone who reached the API port read any file of the host, including the auth token, without authentication; they now answer `404`, as do `/docs/...`, `/redoc/...` and `/openapi.json` sub-paths that answered `200` with `null`. On a machine whose API port was reachable from outside the lab, change `auth_token` and `protected_commands_password` (Fable SEC-1).
 - A create on an antenna that disappeared just before it no longer answers a generic `500` when the channel list was not cached: it is accepted (`202`) and ends like any lost antenna, retried by the server and then `404 reservation_invalidated`.
 - A start that fails with an unexpected error (for example too many open files) is rolled back like any other failure: the AP no longer keeps transmitting after `start_failed`, `DELETE .../network` stops whatever a failed start left, and the watchdog reports such a failed restore as `restore_failed` and retries it (Fable REV-1).
 - A stop that cannot stop hostapd keeps the host guard and the isolation rules until a repeated stop succeeds, so clients of an AP still transmitting cannot reach the host or other networks (Fable REV-7).
@@ -96,6 +93,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - Unit tests for the watchdog's failure branches: dnsmasq that cannot be stopped, a cleanup failing on the owed retry, a release right after a successful retry, a failed cleanup with the adapter present or gone (unit-test-14, REV-10).
 - A 14-hour simulation (`test_soak.py`, T-20, about 1 s): four antennas, random hostapd and dnsmasq crashes, slow probes, xtables lock failures and start failures of every class inside the watchdog budgets; afterwards every reservation keeps its network, nothing is quarantined, the firewall bookkeeping matches the networks and no `ERROR` was logged. It found a recovered DHCP restart failure logged as `ERROR`.
 - QoS catalogue and inline request tests: a wrong profile next to a valid one, an unreadable schema, qualities that cannot be applied (T-19, BUG-9, NET-11).
+- The frontend route is tested against `..`, absolute and `//` paths by calling the route directly, since an HTTP client normalises them (T-01, SEC-1); the three e2e SEC-1 checks are no longer expected to fail.
 - Unit tests create networks through the real asynchronous path (`202`, then polling) with the `create_network` helper (REV-16).
 
 ### 🔌 API changes from 4.0.0 (client migration)

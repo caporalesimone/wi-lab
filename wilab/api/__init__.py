@@ -277,30 +277,31 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     frontend_path = next((path for path in frontend_candidates if path.is_dir()), None)
 
     if frontend_path:
+        frontend_root = frontend_path.resolve()
+
         @app.get("/", include_in_schema=False)
         async def serve_index():
-            index_path = frontend_path / "index.html"
+            index_path = frontend_root / "index.html"
             if index_path.is_file():
                 return FileResponse(index_path)
             return {"error": "Frontend index.html not found"}
 
         @app.get("/{full_path:path}", include_in_schema=False)
         async def serve_frontend(full_path: str):
-            # Unknown API paths, including the removed /api/v1, are a JSON 404.
-            if is_api_path("/" + full_path):
+            # Unknown API paths, including the removed /api/v1, and the paths of the
+            # API documentation are never the frontend: a 404.
+            if is_api_path("/" + full_path) or full_path.split("/", 1)[0] in {"docs", "redoc", "openapi.json"}:
                 raise StarletteHTTPException(status_code=404)
-            if (
-                full_path == "docs"
-                or full_path.startswith("docs/")
-                or full_path == "openapi.json"
-            ):
-                return None
 
-            file_path = frontend_path / full_path
-            if file_path.is_file():
-                return FileResponse(file_path)
+            # Never serve anything outside the frontend directory (SEC-1): an absolute
+            # path (`GET //etc/shadow`) or `..` segments must not leave it.
+            candidate = (frontend_root / full_path.lstrip("/")).resolve()
+            if not candidate.is_relative_to(frontend_root):
+                raise StarletteHTTPException(status_code=404)
+            if candidate.is_file():
+                return FileResponse(candidate)
 
-            index_path = frontend_path / "index.html"
+            index_path = frontend_root / "index.html"
             if index_path.is_file():
                 return FileResponse(index_path)
             return {"error": "Frontend not found"}

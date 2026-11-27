@@ -36,7 +36,6 @@ def _raw_get(path: str) -> int:
 
 # --------------------------------------------------------------------------- security
 
-@pending("SEC-1")
 @pytest.mark.parametrize("path", ["//etc/passwd", "/../config.yaml", "/%2e%2e/config.yaml"])
 def test_static_files_never_leave_the_frontend(wilab: WiLab, path: str) -> None:
     assert _raw_get(path) == 404
