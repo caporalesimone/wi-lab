@@ -7,7 +7,6 @@ from unittest.mock import Mock
 from conftest import active_network, network_body
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
 from wilab.wifi import manager as manager_module
 from wilab.wifi.manager import StartupFailure
 
@@ -38,11 +37,10 @@ def _restorable(device):
     )
 
 
-def test_release_during_a_watchdog_restore_is_immediate(monkeypatch):
+def test_release_during_a_watchdog_restore_is_immediate(monkeypatch, context):
     """unit-test-5 (a): the release stops a watchdog restore instead of waiting for it."""
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(300)
     device = reservation.device_id
     started = threading.Event()
@@ -67,16 +65,16 @@ def test_release_during_a_watchdog_restore_is_immediate(monkeypatch):
     assert manager.watchdog.state(reservation) is None
 
 
-def test_shutdown_cancels_a_running_create(monkeypatch):
+def test_shutdown_cancels_a_running_create(monkeypatch, context, app):
     """unit-test-5 (b): shutdown_all cancels a create instead of waiting for its lock."""
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    monkeypatch.setattr(dependencies.get_channel_manager(), "validate_network", Mock())
+    config = context.config
+    manager = context.manager
+    monkeypatch.setattr(context.channels, "validate_network", Mock())
     started = threading.Event()
     monkeypatch.setattr(manager, "_start_network", _blocking_start(started))
     release = Mock()
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         rid = client.post(
             "/api/v2/reservations", headers=headers, json={"duration_seconds": 300},
         ).json()["reservation_id"]
@@ -93,9 +91,9 @@ def test_shutdown_cancels_a_running_create(monkeypatch):
     assert release.called
 
 
-def test_recovery_probe_avoids_dfs_channels(monkeypatch):
+def test_recovery_probe_avoids_dfs_channels(monkeypatch, context):
     """REV-6: the probe of a recovered radio never waits for a radar check under the lock."""
-    manager = dependencies.get_manager(dependencies.get_config())
+    manager = context.manager
     device = manager.config.antennas[0].device_id
     start = Mock()
     monkeypatch.setattr(manager.hostapd_manager, "start", start)
@@ -119,9 +117,9 @@ def _three_antennas(monkeypatch, manager) -> list[str]:
     return sorted({n.device_id for n in manager.config.antennas} | manager.active.keys())
 
 
-def test_shutdown_releases_the_antennas_in_parallel(monkeypatch):
+def test_shutdown_releases_the_antennas_in_parallel(monkeypatch, context):
     """STAB-8: slow releases overlap, so the shutdown fits the unit's stop timeout."""
-    manager = dependencies.get_manager(dependencies.get_config())
+    manager = context.manager
     devices = _three_antennas(monkeypatch, manager)
     released: list[str] = []
 
@@ -136,9 +134,9 @@ def test_shutdown_releases_the_antennas_in_parallel(monkeypatch):
     assert sorted(released) == sorted(devices)
 
 
-def test_shutdown_gives_up_on_a_stuck_release(monkeypatch, caplog):
+def test_shutdown_gives_up_on_a_stuck_release(monkeypatch, caplog, context):
     """A release that never ends is logged, and the shutdown still returns in time."""
-    manager = dependencies.get_manager(dependencies.get_config())
+    manager = context.manager
     stuck = threading.Event()
     monkeypatch.setattr(manager_module, "SHUTDOWN_TIMEOUT", 0.2)
     monkeypatch.setattr(manager, "release_device", lambda device: stuck.wait(5))
@@ -149,8 +147,8 @@ def test_shutdown_gives_up_on_a_stuck_release(monkeypatch, caplog):
     assert any("not released within" in r.getMessage() for r in caplog.records)
 
 
-def test_a_failed_release_does_not_stop_the_others(monkeypatch, caplog):
-    manager = dependencies.get_manager(dependencies.get_config())
+def test_a_failed_release_does_not_stop_the_others(monkeypatch, caplog, context):
+    manager = context.manager
     devices = _three_antennas(monkeypatch, manager)
     released: list[str] = []
 

@@ -6,13 +6,13 @@ REV-9: on a half-stopped network (the client's stop did not complete) 409 / 1012
 import pytest
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
+from wilab.api import create_app
 from wilab.config import load_config
 
 
 @pytest.fixture
-def idle_reservation():
-    with TestClient(create_app()) as client:
+def idle_reservation(app):
+    with TestClient(app) as client:
         headers = {"Authorization": f"Bearer {load_config().auth_token}"}
         rid = client.post(
             "/api/v2/reservations", headers=headers, json={"duration_seconds": 600},
@@ -42,10 +42,10 @@ def test_action_without_network_is_409_1007(idle_reservation, method, path, body
 
 
 @pytest.mark.parametrize(("method", "path", "body"), ACTIONS)
-def test_action_on_a_half_stopped_network_is_409_1012(idle_reservation, method, path, body):
+def test_action_on_a_half_stopped_network_is_409_1012(idle_reservation, method, path, body, context):
     """REV-9: after a client stop that did not complete, the network is not acted on."""
     client, headers, rid = idle_reservation
-    manager = dependencies.get_manager(dependencies.get_config())
+    manager = context.manager
     device = manager.config.antennas[0].device_id
     manager._stop_failed.add(device)
     try:
@@ -79,10 +79,10 @@ def test_openapi_documents_1007():
     ("post", "/internet/disable", "disable_internet"),
     ("get", "/txpower", "get_tx_power_info"),
 ])
-def test_an_internal_error_on_a_valid_reservation_is_never_404(idle_reservation, monkeypatch, method, path, manager_call):
+def test_an_internal_error_on_a_valid_reservation_is_never_404(idle_reservation, monkeypatch, method, path, manager_call, context):
     """REV-11 point 2: a 404 on these calls always means the reservation ended."""
     client, headers, rid = idle_reservation
-    manager = dependencies.get_manager(dependencies.get_config())
+    manager = context.manager
 
     def broken(*args, **kwargs):
         raise ValueError("Channel unknown for this network")

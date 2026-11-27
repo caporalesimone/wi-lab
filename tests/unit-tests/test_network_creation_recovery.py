@@ -5,7 +5,7 @@ import pytest
 from conftest import active_network, create_network, network_body
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
+from wilab.api import create_app
 from wilab.api.routes import network
 from wilab.models import NetworkStatus
 from wilab.network.commands import CommandError
@@ -23,12 +23,12 @@ PAYLOAD = {
 
 
 @pytest.mark.parametrize("authorized_port", [None, "2-1"])
-def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog, authorized_port):
+def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog, authorized_port, context, app):
     """A: the server pauses 5 s and 10 s and starts again itself; the client sends one create."""
-    config = dependencies.get_config()
+    config = context.config
     radio = config.antennas[0]
     monkeypatch.setattr(radio, "usb_recovery_port", authorized_port)
-    manager = dependencies.get_manager(config)
+    manager = context.manager
     start = Mock(side_effect=StartupFailure("radio timeout", kind=FailureKind.TRANSIENT_RADIO))
     schedule = Mock()
     monkeypatch.setattr(manager, "start_network", start)
@@ -37,7 +37,7 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
     monkeypatch.setattr(network, "_pause", lambda _cancel, seconds: pauses.append(seconds) or False)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
 
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         reservation = client.post(RESERVE, headers=headers, json={"duration_seconds": 300})
         assert reservation.status_code == 200
         rid = reservation.json()["reservation_id"]
@@ -70,16 +70,16 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
         if authorized_port is None:
             schedule.assert_not_called()
         else:
-            reservations = dependencies.get_reservation_manager(config)
+            reservations = context.reservations
             schedule.assert_called_once_with(reservations, radio.device_id, authorized_port, "2.4ghz", 1)
             reservations.finish_recovery(radio.device_id, recovered=True)
             assert client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).status_code == 200
 
 
-def test_radio_failure_recovered_by_a_later_start_answers_200(monkeypatch):
+def test_radio_failure_recovered_by_a_later_start_answers_200(monkeypatch, context, app):
     """A: the second start succeeds after the 5 s pause; the client never sees an error."""
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
+    config = context.config
+    manager = context.manager
     calls = []
 
     def start(*args, **kwargs):
@@ -91,24 +91,24 @@ def test_radio_failure_recovered_by_a_later_start_answers_200(monkeypatch):
     pauses = []
     monkeypatch.setattr(network, "_pause", lambda _cancel, seconds: pauses.append(seconds) or False)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
         _, result = create_network(client, headers, f"{RESERVE}/{rid}/network", network_body(**PAYLOAD))
     assert result.status_code == 200 and result.json()["active"] is True
     assert (calls, pauses) == ([True, False], [5])
 
 
-def test_reservation_too_short_for_another_start_is_released_without_quarantine(monkeypatch):
+def test_reservation_too_short_for_another_start_is_released_without_quarantine(monkeypatch, context, app):
     """A: no time left for the next start -> 404 reservation_expired, antenna free again, no quarantine."""
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
+    config = context.config
+    manager = context.manager
     start = Mock(side_effect=StartupFailure("radio timeout", kind=FailureKind.TRANSIENT_RADIO))
     monkeypatch.setattr(manager, "start_network", start)
     monkeypatch.setattr(manager.recovery, "schedule", Mock())
     pauses = []
     monkeypatch.setattr(network, "_pause", lambda _cancel, seconds: pauses.append(seconds) or False)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         reserved = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()
         monkeypatch.setattr(network, "START_MARGIN", 400)   # the next start would not fit
         _, result = create_network(
@@ -117,14 +117,14 @@ def test_reservation_too_short_for_another_start_is_released_without_quarantine(
         assert result.status_code == 404
         assert result.json()["detail"]["reason"] == "reservation_expired"
         assert (start.call_count, pauses) == (1, [])
-        reservations = dependencies.get_reservation_manager(config)
+        reservations = context.reservations
         assert reservations.recovery_snapshot() == {}
         assert not reservations.is_device_reserved(reserved["interface"])
 
 
 @pytest.mark.parametrize("verified_after", [2, None])
-def test_usb_recovery_is_bounded_and_only_verified_radio_is_released(monkeypatch, verified_after):
-    manager = dependencies.get_manager(dependencies.get_config())
+def test_usb_recovery_is_bounded_and_only_verified_radio_is_released(monkeypatch, verified_after, context):
+    manager = context.manager
     radio = manager.config.antennas[0].device_id
     reservations = ReservationManager([radio])
     reservations.quarantine(reservations.create(60), recovering=True)
@@ -156,8 +156,8 @@ def test_usb_recovery_is_bounded_and_only_verified_radio_is_released(monkeypatch
         probe.assert_not_called()
 
 
-def test_usb_recovery_refuses_unsafe_target(monkeypatch):
-    manager = dependencies.get_manager(dependencies.get_config())
+def test_usb_recovery_refuses_unsafe_target(monkeypatch, context):
+    manager = context.manager
     radio = manager.config.antennas[0].device_id
     reservations = ReservationManager([radio])
     reservations.quarantine(reservations.create(60), recovering=True)
@@ -195,8 +195,8 @@ class _HostLink:
 
 
 @pytest.mark.parametrize("upstream", [False, True])
-def test_usb_recovery_takes_back_a_radio_raised_by_host_managers(monkeypatch, upstream):
-    manager = dependencies.get_manager(dependencies.get_config())
+def test_usb_recovery_takes_back_a_radio_raised_by_host_managers(monkeypatch, upstream, context):
+    manager = context.manager
     radio = manager.config.antennas[0].device_id
     reservations = ReservationManager([radio])
     reservations.quarantine(reservations.create(60), recovering=True)
@@ -258,9 +258,8 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert content["examples"]["restoring_dhcp"]["value"]["runtime_state"] == "restoring_dhcp"
 
 
-def test_framework_and_unexpected_api_errors_have_codes(monkeypatch, caplog):
-    app = create_app()
-    config = dependencies.get_config()
+def test_framework_and_unexpected_api_errors_have_codes(monkeypatch, caplog, context, app):
+    config = context.config
     headers = {"Authorization": f"Bearer {config.auth_token}"}
 
     with TestClient(app, raise_server_exceptions=False) as client:
@@ -273,7 +272,7 @@ def test_framework_and_unexpected_api_errors_have_codes(monkeypatch, caplog):
             assert response.status_code == status
             assert response.json()["detail"]["code"] == status
         monkeypatch.setattr(
-            dependencies.get_reservation_manager(config), "snapshot",
+            context.reservations, "snapshot",
             Mock(side_effect=RuntimeError("internal detail must not be sent")),
         )
         response = client.get("/api/v2/status", headers=headers)
@@ -286,10 +285,9 @@ def test_framework_and_unexpected_api_errors_have_codes(monkeypatch, caplog):
 
 
 @pytest.mark.parametrize("cancel", [None, "release", "expiry"])
-def test_watchdog_restores_original_network_or_cleans_up_on_cancellation(monkeypatch, cancel):
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+def test_watchdog_restores_original_network_or_cleans_up_on_cancellation(monkeypatch, cancel, context):
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(60)
     device = reservation.device_id
     deadline = reservation.expires_at
@@ -320,10 +318,10 @@ def test_watchdog_restores_original_network_or_cleans_up_on_cancellation(monkeyp
         assert reservations.get(reservation.reservation_id) is reservation
 
 
-def test_watchdog_dhcp_failure_does_not_restart_ap_or_schedule_usb(monkeypatch):
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+def test_watchdog_dhcp_failure_does_not_restart_ap_or_schedule_usb(monkeypatch, context):
+    config = context.config
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(60)
     device = reservation.device_id
     status = active_network(interface=device, subnet="192.0.2.0/24")
@@ -345,10 +343,10 @@ def test_watchdog_dhcp_failure_does_not_restart_ap_or_schedule_usb(monkeypatch):
     assert manager.watchdog.state(reservation) == "dhcp_failed"
 
 
-def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch):
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch, context, app):
+    config = context.config
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(60)
     monkeypatch.setitem(manager.watchdog.states, reservation.device_id, (reservation, "restoring_ap"))
     radio_status = Mock(side_effect=AssertionError("Should not query the recovering radio"))
@@ -356,7 +354,7 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch):
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     path = f"/api/v2/reservations/{reservation.reservation_id}/network"
 
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         response = client.get(path, headers=headers)
         assert response.status_code == 200 and not response.json()["active"]
         assert response.json()["runtime_state"] == "restoring_ap"
@@ -374,10 +372,9 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch):
 
 
 @pytest.mark.parametrize("ap_alive,checks", [(False, 1), (True, 3)])
-def test_watchdog_waits_for_confirmed_ap_failure(monkeypatch, ap_alive, checks):
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+def test_watchdog_waits_for_confirmed_ap_failure(monkeypatch, ap_alive, checks, context):
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(60)
     device = reservation.device_id
     status = active_network(interface=device)
@@ -395,8 +392,8 @@ def test_watchdog_waits_for_confirmed_ap_failure(monkeypatch, ap_alive, checks):
     assert readiness_at_restart == [checks if ap_alive else 0]
 
 
-def test_recovery_probe_checks_ap_and_dhcp_and_tears_down_on_failure(monkeypatch):
-    manager = dependencies.get_manager(dependencies.get_config())
+def test_recovery_probe_checks_ap_and_dhcp_and_tears_down_on_failure(monkeypatch, context):
+    manager = context.manager
     device = manager.config.antennas[0].device_id
     ap = Mock()
     dhcp = Mock()

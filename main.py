@@ -2,8 +2,8 @@ import os
 import argparse
 import logging
 import uvicorn
-from wilab.api.dependencies import get_config
 from wilab.api import create_app
+from wilab.config import load_config
 from wilab.version import __version__
 from wilab.network.safety import log_host_impact_warning
 from wilab.precheck import EXIT_PRECHECK_FAILED, log_findings, run_prechecks
@@ -28,13 +28,14 @@ def main():
     log_host_impact_warning()
     
     # Load configuration (exits with descriptive error on failure)
-    config = get_config()
+    config = load_config()
     logger.info(f"Configuration loaded from {os.environ.get('CONFIG_PATH', 'default')}")
     logger.info(
         "Wi-Fi adapters are added by device discovery (subnets from %s)", config.dhcp_base_network,
     )
     
-    app = create_app()
+    # The app's context uses this same config object (ARCH-5).
+    app = create_app(config)
     logger.info("Starting REST API server on 0.0.0.0:%s", config.api_port)
     logger.info("Visit http://localhost:%s/docs for Swagger UI", config.api_port)
     

@@ -10,7 +10,6 @@ import pytest
 from conftest import create_network, network_body
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
 from wilab.config import load_config
 from wilab.models import NetworkCreateRequest
 from wilab.network.commands import CommandError
@@ -88,9 +87,9 @@ def test_successful_start_logs_no_false_isolation_line(manager, caplog):
     assert "Isolation disabled for testing" not in caplog.text
 
 
-def test_api_reports_start_failed_and_keeps_the_reservation(monkeypatch):
-    config = dependencies.get_config()
-    mgr = dependencies.get_manager(config)
+def test_api_reports_start_failed_and_keeps_the_reservation(monkeypatch, context, app):
+    config = context.config
+    mgr = context.manager
     monkeypatch.setattr(mgr.hostapd_manager, "start", Mock())
     monkeypatch.setattr(mgr.hostapd_manager, "stop", Mock())
     monkeypatch.setattr(mgr.dhcp_server, "start", Mock(return_value={}))
@@ -101,7 +100,7 @@ def test_api_reports_start_failed_and_keeps_the_reservation(monkeypatch):
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     body = {"ssid": "fw", "channel": 6, "band": "2.4ghz", "encryption": "open",
             "tx_power_level": 4, "internet_enabled": True}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 60}).json()[
             "reservation_id"
         ]

@@ -7,7 +7,6 @@ import pytest
 from conftest import active_network
 
 from wilab import heartbeat
-from wilab.api import dependencies
 from wilab.network import captive, isolation, nat
 from wilab.network.commands import CommandError
 from wilab.network.isolation import IsolationManager
@@ -124,9 +123,9 @@ def test_lost_isolation_rules_are_restored(firewall):
 
 
 @pytest.fixture
-def running(monkeypatch):
-    config = dependencies.get_config()
-    mgr = dependencies.get_manager(config)
+def running(monkeypatch, context):
+    config = context.config
+    mgr = context.manager
     device = config.antennas[0].device_id
     status = active_network(interface=device, subnet="192.168.10.0/24")
     monkeypatch.setitem(mgr.active, device, status)
@@ -186,10 +185,9 @@ def test_captive_portal_problems_detects_a_dead_server_and_missing_rules(firewal
 # --------------------------------------------------------------------------- watchdog
 
 
-def test_watchdog_checks_every_sixth_healthy_tick_and_restores_on_request(monkeypatch):
-    config = dependencies.get_config()
-    mgr = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+def test_watchdog_checks_every_sixth_healthy_tick_and_restores_on_request(monkeypatch, context):
+    mgr = context.manager
+    reservations = context.reservations
     reservation = reservations.create(0)
     device = reservation.device_id
     monkeypatch.setitem(mgr.active, device, active_network(interface=device))
@@ -236,10 +234,9 @@ def test_failed_rule_checks_raise_instead_of_repairing(monkeypatch, firewall):
     assert firewall.rules == before
 
 
-def test_failed_check_skips_the_watchdog_round(monkeypatch):
+def test_failed_check_skips_the_watchdog_round(monkeypatch, context):
     """The watchdog reads a failed check as "cannot verify now", never as a broken network."""
-    config = dependencies.get_config()
-    mgr = dependencies.get_manager(config)
+    mgr = context.manager
     watchdog = watchdog_module.NetworkWatchdog(mgr)
     monkeypatch.setattr(mgr, "verify_network", Mock(side_effect=CommandError("lock", returncode=4)))
     assert watchdog._verify("wls16") == ""

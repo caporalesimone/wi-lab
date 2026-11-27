@@ -6,16 +6,15 @@ import pytest
 from conftest import active_network
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
 from wilab.config import load_config
 
 
 @pytest.fixture
-def stopping_network(monkeypatch):
+def stopping_network(monkeypatch, context, app):
     """An active network whose DHCP is already gone, as in the middle of a stop."""
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         headers = {"Authorization": f"Bearer {load_config().auth_token}"}
-        manager = dependencies.get_manager(dependencies.get_config())
+        manager = context.manager
         device = manager.config.antennas[0].device_id
         monkeypatch.setitem(
             manager.active, device,

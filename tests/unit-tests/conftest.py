@@ -79,38 +79,45 @@ def config():
 
 @pytest.fixture(autouse=True)
 def _test_config_env(monkeypatch):
-    """Point load_config() to the test config and reset cached dependency singletons."""
+    """Point load_config() to the test config; never touch the host from tests."""
     from wilab import config as config_module
-    from wilab.api import dependencies
+    from wilab.api import context as context_module
+    from wilab.api import discovery as discovery_service
     from wilab.wifi import discovery
     monkeypatch.setattr(config_module, '_initial_networks', _configured_networks_only)
     # The discovery service runs with every app; it must not probe real hardware.
     monkeypatch.setattr(discovery, 'discover_radios', lambda **kwargs: [])
     monkeypatch.setattr(discovery, 'default_route_interfaces', set)
     # Never write host network manager rules under /run from tests.
-    monkeypatch.setattr(dependencies, 'exclude_from_host_managers', lambda interfaces: None)
-    monkeypatch.setattr(dependencies, 'warn_wpa_supplicant', lambda interfaces: None)
+    monkeypatch.setattr(discovery_service, 'exclude_from_host_managers', lambda interfaces: None)
+    monkeypatch.setattr(discovery_service, 'warn_wpa_supplicant', lambda interfaces: None)
     # Startup cleanup kills Wi-Lab's hostapd/dnsmasq and empties /tmp/wilab-*: on the
     # Wi-Lab machine that would hit the real service (STAB-4). Never run it from tests.
-    import wilab.api as api_module
-    monkeypatch.setattr(api_module, 'cleanup_runtime', lambda: None)
-    monkeypatch.setattr(api_module, 'remove_stale_guards', lambda: None)
-    monkeypatch.setattr(dependencies, 'reset_interface', lambda interface: None)
+    monkeypatch.setattr(context_module, 'cleanup_runtime', lambda: None)
+    monkeypatch.setattr(context_module, 'remove_stale_guards', lambda: None)
+    monkeypatch.setattr(discovery_service, 'reset_interface', lambda interface: None)
     monkeypatch.setenv('CONFIG_PATH', TEST_CONFIG_PATH)
-    monkeypatch.setattr(dependencies, '_config', None)
-    monkeypatch.setattr(dependencies, '_manager', None)
-    monkeypatch.setattr(dependencies, '_reservation_manager', None)
-    monkeypatch.setattr(dependencies, '_channel_manager', None)
-    monkeypatch.setattr(dependencies, '_qos_manager', None)
-    monkeypatch.setattr(dependencies, '_qos_profile_manager', None)
+
+
+@pytest.fixture
+def app():
+    """The application built from the test config; its context starts with a TestClient."""
+    from wilab.api import create_app
+    return create_app()
+
+
+@pytest.fixture
+def context(app):
+    """The AppContext of `app` (ARCH-5): its config, managers and discovery."""
+    return app.state.context
 
 
 @pytest.fixture(autouse=True)
 def _stop_background_threads(monkeypatch):
     """Stop the loops of every NetworkManager a test created.
 
-    Each manager starts an expiry loop, and a watchdog per antenna and a re-probe
-    loop once it is wired to the reservations. Left running they outlive the
+    A started manager runs an expiry loop, a watchdog per antenna and a re-probe
+    loop (AppContext.start, or a test starting them itself). Left running they outlive the
     test's mocks (the next tick would run the real host commands) and add up to
     about 400 threads by the end of a run.
     """

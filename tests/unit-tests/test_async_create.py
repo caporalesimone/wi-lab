@@ -16,7 +16,6 @@ import pytest
 from conftest import active_network, network_body
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
 from wilab.api.routes import network
 from wilab.models import NetworkStatus
 from wilab.wifi.failures import FailureKind
@@ -38,12 +37,12 @@ def _wait_until(predicate, timeout: float = 5.0):
 
 
 @pytest.fixture
-def api(monkeypatch):
+def api(monkeypatch, context, app):
     """Background creates on, a scripted start_network, and a reserved antenna."""
     monkeypatch.setattr(network, "CREATE_RETRY_DELAYS", (0, 0))
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    monkeypatch.setattr(dependencies.get_channel_manager(), "validate_network", Mock())
+    config = context.config
+    manager = context.manager
+    monkeypatch.setattr(context.channels, "validate_network", Mock())
     script = {"outcome": "ok", "release": threading.Event(), "calls": 0}
     script["release"].set()
 
@@ -68,7 +67,7 @@ def api(monkeypatch):
     )
     monkeypatch.setattr(manager.recovery, "schedule", Mock())
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
         yield client, headers, f"{RESERVE}/{rid}", script, manager
         script["release"].set()
@@ -177,7 +176,7 @@ def test_create_during_a_watchdog_repair_is_1009(api, monkeypatch, watchdog_stat
     assert (resp.status_code, resp.json()["detail"]["code"]) == (409, 1009)
 
 
-def test_the_same_create_sent_twice_at_once_starts_one_ap_and_both_get_202(api):
+def test_the_same_create_sent_twice_at_once_starts_one_ap_and_both_get_202(api, context):
     client, headers, url, script, manager = api
     script["release"].clear()
     inside, go = threading.Event(), threading.Event()
@@ -186,14 +185,14 @@ def test_the_same_create_sent_twice_at_once_starts_one_ap_and_both_get_202(api):
         inside.set()
         go.wait(5)
 
-    dependencies.get_channel_manager().validate_network.side_effect = slow_validation
+    context.channels.validate_network.side_effect = slow_validation
     answers = []
     first = threading.Thread(
         target=lambda: answers.append(client.post(f"{url}/network", headers=headers, json=BODY).status_code),
     )
     first.start()
     assert inside.wait(5)  # the first request is past the job check, not yet registered
-    dependencies.get_channel_manager().validate_network.side_effect = None
+    context.channels.validate_network.side_effect = None
     assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
     go.set()
     first.join(5)
@@ -221,11 +220,11 @@ def test_start_failed_always_carries_1013_also_for_an_unexpected_error(api):
 
 
 @pytest.fixture
-def real_start(monkeypatch):
+def real_start(monkeypatch, context, app):
     """Background creates with the real start_network: hostapd and DHCP are fakes that track state."""
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    monkeypatch.setattr(dependencies.get_channel_manager(), "validate_network", Mock())
+    config = context.config
+    manager = context.manager
+    monkeypatch.setattr(context.channels, "validate_network", Mock())
     monkeypatch.setattr(manager._channel_manager, "validate_network", Mock())
     monkeypatch.setattr(manager.recovery, "schedule", Mock())
     instances = manager.hostapd_manager._instances
@@ -240,7 +239,7 @@ def real_start(monkeypatch):
     monkeypatch.setattr(manager.dhcp_server, "stop", Mock())
     monkeypatch.setattr(manager.dhcp_server, "list_active", Mock(return_value=[]))
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
         yield client, headers, f"{RESERVE}/{rid}", manager, stop
         with manager.start_jobs_lock:
@@ -404,7 +403,7 @@ def test_release_during_each_phase_of_the_real_start_leaves_nothing(tracked_star
 # --------------------------------------------------------------------------- unit-test-10
 
 
-def test_release_during_the_pause_between_two_starts_returns_at_once(api, monkeypatch):
+def test_release_during_the_pause_between_two_starts_returns_at_once(api, monkeypatch, context):
     """unit-test-10: radio failure, release during the 5 s pause: no second start, no quarantine."""
     client, headers, url, script, manager = api
     monkeypatch.setattr(network, "CREATE_RETRY_DELAYS", (5, 10))
@@ -428,7 +427,7 @@ def test_release_during_the_pause_between_two_starts_returns_at_once(api, monkey
     assert job.done.is_set()
     assert pauses == [5]
     assert script["calls"] == 1   # no second start
-    reservations = dependencies.get_reservation_manager(dependencies.get_config())
+    reservations = context.reservations
     assert reservations.recovery_snapshot() == {}   # no quarantine
     manager.recovery.schedule.assert_not_called()
     assert _state(client, headers, url).json()["detail"]["reason"] == "reservation_released"
@@ -438,13 +437,13 @@ def test_release_during_the_pause_between_two_starts_returns_at_once(api, monkey
 # --------------------------------------------------------------------------- unit-test-11 (b)
 
 
-def test_start_failed_does_not_pass_to_the_next_reservation_after_an_expiry(api):
+def test_start_failed_does_not_pass_to_the_next_reservation_after_an_expiry(api, context):
     """unit-test-11 (b): start_failed, then expiry and cleanup (not a release), then a new reservation."""
     client, headers, url, script, manager = api
     script["outcome"] = "stage"
     assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
     _wait_until(lambda: _state(client, headers, url).json()["runtime_state"] == "start_failed")
-    reservations = dependencies.get_reservation_manager(dependencies.get_config())
+    reservations = context.reservations
     rid = url.rsplit("/", 1)[1]
     old = reservations.get(rid)
     old.expires_at = time.time() - 1
@@ -465,7 +464,7 @@ def test_start_failed_does_not_pass_to_the_next_reservation_after_an_expiry(api)
 # --------------------------------------------------------------------------- unit-test-12
 
 
-def test_reservation_expiring_during_the_start(real_start, monkeypatch):
+def test_reservation_expiring_during_the_start(real_start, monkeypatch, context):
     """unit-test-12: the reservation expires while the start runs; the sweep then frees everything."""
     client, headers, url, manager, _stop = real_start
     instances = manager.hostapd_manager._instances
@@ -489,7 +488,7 @@ def test_reservation_expiring_during_the_start(real_start, monkeypatch):
     finish.set()
     job.thread.join(5)
     assert not job.thread.is_alive()
-    dependencies.get_reservation_manager(dependencies.get_config()).expire()
+    context.reservations.expire()
     assert device not in manager.active
     assert device not in instances
     assert not manager.has_leftovers(device)
@@ -498,7 +497,7 @@ def test_reservation_expiring_during_the_start(real_start, monkeypatch):
     assert free.status_code == 200 and free.json()["interface"] == device
 
 
-def test_create_when_the_channel_list_cannot_be_read_is_not_a_500(api, monkeypatch):
+def test_create_when_the_channel_list_cannot_be_read_is_not_a_500(api, monkeypatch, context):
     """An antenna that disappears just before the create: `iw` fails, the route must not answer 500.
 
     Found by the USB e2e test on 2026-11-26 with an empty channel cache: the start
@@ -508,7 +507,7 @@ def test_create_when_the_channel_list_cannot_be_read_is_not_a_500(api, monkeypat
 
     client, headers, url, _script, _manager = api
     monkeypatch.setattr(
-        dependencies.get_channel_manager(), "validate_network",
+        context.channels, "validate_network",
         Mock(side_effect=CommandError("Command 'iw' failed with code 1: ", returncode=1)),
     )
     created = client.post(f"{url}/network", headers=headers, json=BODY)

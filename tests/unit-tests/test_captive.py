@@ -7,7 +7,6 @@ from unittest.mock import Mock
 import pytest
 from conftest import active_network
 
-from wilab.api import dependencies
 from wilab.config import load_config
 from wilab.models import NetworkCreateRequest
 from wilab.network import captive
@@ -253,10 +252,9 @@ def test_portal_failure_rolls_back_the_network(monkeypatch, iptables):
     stop_ap.assert_called()
 
 
-def test_watchdog_restart_keeps_the_portal(monkeypatch):
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+def test_watchdog_restart_keeps_the_portal(monkeypatch, context):
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(60)
     status = active_network(
         interface=reservation.device_id, ssid="Portal", channel=1, band="2.4ghz",

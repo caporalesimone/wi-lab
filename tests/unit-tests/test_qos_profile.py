@@ -526,11 +526,9 @@ class TestQosProfileAPI:
     """Tests for QoS Profile API endpoints."""
 
     @pytest.fixture
-    def client(self, monkeypatch):
+    def client(self, monkeypatch, app):
         from fastapi.testclient import TestClient
 
-        from wilab.api import create_app
-        from wilab.config import load_config
         from wilab.network import qos as qos_mod
 
         self.tc_calls = []
@@ -545,8 +543,6 @@ class TestQosProfileAPI:
         monkeypatch.setattr(qos_mod, "execute_tc", mock_tc)
         monkeypatch.setattr(qos_mod, "execute_command", mock_command)
 
-        load_config()
-        app = create_app()
         return TestClient(app)
 
     @pytest.fixture
@@ -554,15 +550,14 @@ class TestQosProfileAPI:
         return {"Authorization": f"Bearer {config.auth_token}"}
 
     @pytest.fixture
-    def reservation_id(self, client, auth_headers, monkeypatch):
+    def reservation_id(self, client, auth_headers, monkeypatch, context):
         """Create a reservation and start a network, return reservation_id."""
-        from wilab.api import dependencies
         from wilab.config import load_config
         from wilab.reservation import ReservationManager
 
         cfg = load_config()
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+        monkeypatch.setattr(context, 'reservations', rmgr)
 
         # Reserve a device
         resp = client.post(
@@ -574,11 +569,7 @@ class TestQosProfileAPI:
         rid = resp.json()["reservation_id"]
 
         # Mock DHCP so start_network works without root
-        mgr = dependencies._manager
-        if mgr is None:
-            client.get(f"/api/v2/reservations/{rid}/network", headers=auth_headers)
-            mgr = dependencies._manager
-        assert mgr is not None
+        mgr = context.manager
 
         monkeypatch.setattr(mgr.dhcp_server, 'start', lambda *a, **kw: {
             'gateway': '192.168.120.1',

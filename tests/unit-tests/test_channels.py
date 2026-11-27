@@ -6,7 +6,7 @@ import pytest
 from conftest import create_network, network_body
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
+from wilab.api import create_app
 from wilab.config import load_config
 from wilab.reservation import ReservationManager
 from wilab.wifi.channels import (
@@ -21,10 +21,8 @@ from wilab.wifi.channels import (
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def client():
+def client(app):
     """Create a FastAPI test client."""
-    load_config()
-    app = create_app()
     return TestClient(app)
 
 
@@ -35,13 +33,11 @@ def valid_token():
 
 
 @pytest.fixture
-def reservation_id(client, valid_token, monkeypatch):
+def reservation_id(client, valid_token, monkeypatch, context):
     """Create a reservation and return the reservation_id token."""
     cfg = load_config()
     rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-    monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
-    # Reset channel manager singleton so tests are isolated
-    monkeypatch.setattr(dependencies, '_channel_manager', None, raising=False)
+    monkeypatch.setattr(context, 'reservations', rmgr)
 
     resp = client.post(
         '/api/v2/reservations',
@@ -250,10 +246,10 @@ class TestChannelManagerResolve:
 # API tests – GET /api/v2/antennas
 # ---------------------------------------------------------------------------
 
-def _set_show_dfs_channels(value: bool) -> None:
-    config = dependencies.get_config()
+def _set_show_dfs_channels(context, value: bool) -> None:
+    config = context.config
     config.antennas = [n.model_copy(update={"show_dfs_channels": value}) for n in config.antennas]
-    dependencies.get_channel_manager().invalidate()
+    context.channels.invalidate()
 
 
 class TestAntennasAPI:
@@ -299,11 +295,11 @@ class TestAntennasAPI:
         data = client.get('/api/v2/antennas/wls16', headers={'Authorization': valid_token}).json()
         assert data["device"] is None
 
-    def test_every_listed_choice_is_accepted_by_the_create_check(self, client, valid_token):
+    def test_every_listed_choice_is_accepted_by_the_create_check(self, client, valid_token, context):
         """The lists and the create use the same rules: no combination is refused."""
-        _set_show_dfs_channels(True)
+        _set_show_dfs_channels(context, True)
         data = client.get('/api/v2/antennas/wls16', headers={'Authorization': valid_token}).json()
-        mgr = dependencies.get_channel_manager()
+        mgr = context.channels
         checked = 0
         for band, options in data["bands"].items():
             for generation in options["wifi_generations"]:
@@ -335,9 +331,10 @@ class TestLifespanChannelCacheWarmup:
         monkeypatch.setattr(discovery, "discover_radios", lambda **kwargs: [
             DiscoveredRadio("wls16", "phy0", None),
         ])
-        with TestClient(create_app()):
+        app = create_app()   # no configured antenna: discovery adds wls16
+        with TestClient(app):
             deadline = time.monotonic() + 5
-            while "wls16" not in dependencies.get_channel_manager()._cache:
+            while "wls16" not in app.state.context.channels._cache:
                 assert time.monotonic() < deadline, "channel cache was not warmed"
                 time.sleep(0.01)
 
@@ -354,8 +351,6 @@ class TestLifespanChannelCacheWarmup:
             return original_execute_iw(args)
 
         monkeypatch.setattr(ch_mod, "execute_iw", failing_execute_iw)
-        # Reset the singleton so the lifespan creates a fresh one
-        monkeypatch.setattr(dependencies, '_channel_manager', None, raising=False)
 
         app = create_app()
         # App should start without raising despite iw failures
@@ -469,12 +464,11 @@ class TestNetworkCreationChannelValidation:
 
     @pytest.mark.parametrize("show_dfs_channels", [False, True])
     def test_show_dfs_channels_applies_to_listing_and_creation(
-        self, client, valid_token, reservation_id, monkeypatch, show_dfs_channels,
+        self, client, valid_token, reservation_id, monkeypatch, show_dfs_channels, context,
     ):
-        _set_show_dfs_channels(show_dfs_channels)
-        config = dependencies.get_config()
+        _set_show_dfs_channels(context, show_dfs_channels)
         start_network = Mock()
-        monkeypatch.setattr(dependencies.get_manager(config), "start_network", start_network)
+        monkeypatch.setattr(context.manager, "start_network", start_network)
         url = f"/api/v2/reservations/{reservation_id}/network"
         headers = {"Authorization": valid_token}
 
@@ -572,11 +566,9 @@ class TestChannelCacheRefresh:
             mgr.validate_channel("wlan0", 36, "5ghz")
         assert sum(1 for c in calls if c[-1] == "channels") == 2
 
-    def test_manager_and_api_share_one_cache(self):
-        from wilab.api import dependencies
-
-        manager = dependencies.get_manager(dependencies.get_config())
-        assert manager._channel_manager is dependencies.get_channel_manager()
+    def test_manager_and_api_share_one_cache(self, context):
+        manager = context.manager
+        assert manager._channel_manager is context.channels
 
 
 class TestWeatherRadarChannels:

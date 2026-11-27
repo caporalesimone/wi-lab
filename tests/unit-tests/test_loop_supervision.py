@@ -8,7 +8,6 @@ import pytest
 from conftest import active_network
 
 from wilab import heartbeat
-from wilab.api import dependencies
 from wilab.config import _read_raw_config, load_config
 from wilab.wifi import watchdog as watchdog_module
 
@@ -17,22 +16,20 @@ def _stop_after(event: threading.Event, ticks: int) -> Mock:
     return Mock(side_effect=[False] * ticks + [True])
 
 
-def test_discovery_survives_any_exception(monkeypatch, caplog):
+def test_discovery_survives_any_exception(monkeypatch, caplog, context):
     calls = Mock(side_effect=[TypeError("boom"), TypeError("boom"), []])
-    monkeypatch.setattr(dependencies, "scan_devices", calls)
+    monkeypatch.setattr(context.discovery, "scan", calls)
     stop = threading.Event()
     monkeypatch.setattr(stop, "wait", _stop_after(stop, 3))
-    config = dependencies.get_config()
     caplog.set_level(logging.ERROR)
-    dependencies.discovery_loop(config, stop)
+    context.discovery.loop(stop)
     assert calls.call_count == 3  # before WD-9 the thread died on the TypeError
     assert sum("Device discovery failed" in r.getMessage() for r in caplog.records) == 1
 
 
-def test_watchdog_survives_any_exception_and_logs_it_once(monkeypatch, caplog):
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+def test_watchdog_survives_any_exception_and_logs_it_once(monkeypatch, caplog, context):
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(0)
     device = reservation.device_id
     monkeypatch.setitem(manager.active, device, active_network(interface=device))
@@ -49,8 +46,8 @@ def test_watchdog_survives_any_exception_and_logs_it_once(monkeypatch, caplog):
     assert sum("Could not check or restore" in r.getMessage() for r in caplog.records) == 1
 
 
-def test_expiry_loop_logs_unexpected_errors_once(monkeypatch, caplog):
-    manager = dependencies.get_manager(dependencies.get_config())
+def test_expiry_loop_logs_unexpected_errors_once(monkeypatch, caplog, context):
+    manager = context.manager
     monkeypatch.setattr(heartbeat, "beat", lambda _name: None)
     monkeypatch.setattr(manager, "expire_reservations", Mock(side_effect=AttributeError("gone")))
     monkeypatch.setattr(manager.watchdog.stopping, "wait", Mock(side_effect=[False] * 3 + [True]))

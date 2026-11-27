@@ -1,5 +1,6 @@
 import logging
 import time
+from unittest.mock import Mock
 
 import pytest
 from conftest import REQUIRED_YAML, make_config
@@ -262,7 +263,7 @@ class _StopAfter:
 
 
 def test_discovery_loop_scans_every_5s_until_an_antenna_then_every_30s(monkeypatch, caplog):
-    from wilab.api import dependencies
+    from wilab.api.discovery import DeviceDiscovery
 
     config = make_config(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8")
     quiet_flags = []
@@ -275,10 +276,11 @@ def test_discovery_loop_scans_every_5s_until_an_antenna_then_every_30s(monkeypat
             cfg.antennas = [NetworkEntry(interface="wlx-a", display_name="A")]
         return []
 
-    monkeypatch.setattr(dependencies, "scan_devices", scan)
+    service = DeviceDiscovery(config, Mock(), Mock(), Mock())
+    monkeypatch.setattr(service, "scan", lambda *, quiet: scan(config, quiet=quiet))
     stop = _StopAfter(4)
 
-    dependencies.discovery_loop(config, stop)
+    service.loop(stop)
 
     assert stop.waits == [0.0, 5.0, 5.0, 30.0, 30.0]
     assert quiet_flags == [False, True, True, True]
@@ -287,7 +289,7 @@ def test_discovery_loop_scans_every_5s_until_an_antenna_then_every_30s(monkeypat
 
 
 def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
-    from wilab.api import dependencies
+    from wilab.api import discovery as discovery_service
 
     path = tmp_path / "config.yaml"
     base = (
@@ -305,8 +307,8 @@ def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
     path.write_text(base)
     monkeypatch.setenv("CONFIG_PATH", str(path))
     monkeypatch.setattr(config_module, "_initial_networks", _REAL_INITIAL)
-    monkeypatch.setattr(dependencies, "DISCOVERY_FAST_INTERVAL", 0.01)
-    monkeypatch.setattr(dependencies, "DISCOVERY_SLOW_INTERVAL", 0.01)
+    monkeypatch.setattr(discovery_service, "DISCOVERY_FAST_INTERVAL", 0.01)
+    monkeypatch.setattr(discovery_service, "DISCOVERY_SLOW_INTERVAL", 0.01)
     radios: list[DiscoveredRadio] = []
     monkeypatch.setattr(discovery, "discover_radios", lambda **kwargs: list(radios))
     headers = {"Authorization": "Bearer test-token"}
@@ -332,19 +334,17 @@ def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
     assert {first.json()["interface"], second.json()["interface"]} == {"wlx-a", "wlx-new"}
 
 
-def test_added_antenna_gets_a_watchdog(monkeypatch):
-    from wilab.api import dependencies
-
+def test_added_antenna_gets_a_watchdog(monkeypatch, context):
     monkeypatch.setattr(discovery, "discover_radios", lambda **kwargs: [
         DiscoveredRadio("wlx-late", "phy9", "2-1"),
     ])
-    config = dependencies.get_config()
-    watchdog = dependencies.get_manager(config).watchdog
+    config = context.config
+    watchdog = context.manager.watchdog
     try:
-        dependencies.get_reservation_manager(config)
+        watchdog.start(context.reservations)
         started = set(watchdog._watched)
-        dependencies.scan_devices(config)
-        dependencies.scan_devices(config)
+        context.discovery.scan()
+        context.discovery.scan()
 
         assert started == {n.device_id for n in config.antennas} - {"wlx-late"}
         assert watchdog._watched == started | {"wlx-late"}

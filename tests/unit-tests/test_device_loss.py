@@ -14,7 +14,6 @@ import pytest
 from conftest import create_network, network_body
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
 from wilab.api.routes import network as network_routes
 from wilab.models import NetworkCreateRequest
 from wilab.network.commands import CommandError
@@ -32,10 +31,6 @@ PAYLOAD = {
     "encryption": "open", "tx_power_level": 4,
 }
 REQUEST = NetworkCreateRequest.model_validate(PAYLOAD)
-
-
-def _manager():
-    return dependencies.get_manager(dependencies.get_config())
 
 
 # --- WD-5: stopping hostapd on an interface that no longer exists ----------------------
@@ -81,9 +76,9 @@ def test_hostapd_stop_still_resets_a_present_interface(monkeypatch, tmp_path):
     assert [c.args[0][:2] for c in run.call_args_list] == [["ip", "link"], ["iw", "dev"], ["ip", "addr"]]
 
 
-def test_release_device_succeeds_after_the_adapter_vanished(monkeypatch, tmp_path):
+def test_release_device_succeeds_after_the_adapter_vanished(monkeypatch, tmp_path, context):
     """Before WD-5 this raised RuntimeError forever and the adapter could not be reused."""
-    mgr = _manager()
+    mgr = context.manager
     device = mgr.config.antennas[0].device_id
     control_dir = tmp_path / "ap" / "ctrl"
     control_dir.mkdir(parents=True)
@@ -105,9 +100,9 @@ def test_release_device_succeeds_after_the_adapter_vanished(monkeypatch, tmp_pat
 # --- Classification: a vanished interface is a radio failure -----------------------------
 
 
-def test_interface_vanishing_during_start_is_a_radio_failure(monkeypatch):
+def test_interface_vanishing_during_start_is_a_radio_failure(monkeypatch, context):
     """The 12:23 case: hostapd exits with code 1 because the USB adapter dropped."""
-    mgr = _manager()
+    mgr = context.manager
     device = mgr.config.antennas[0].device_id
     present = {"value": True}
     for module in (manager_module, startup_module):
@@ -129,8 +124,8 @@ def test_interface_vanishing_during_start_is_a_radio_failure(monkeypatch):
     assert device not in mgr.active
 
 
-def test_interface_vanishing_with_failed_cleanup_is_still_a_radio_failure(monkeypatch):
-    mgr = _manager()
+def test_interface_vanishing_with_failed_cleanup_is_still_a_radio_failure(monkeypatch, context):
+    mgr = context.manager
     device = mgr.config.antennas[0].device_id
     present = {"value": True}
     for module in (manager_module, startup_module):
@@ -156,8 +151,8 @@ def test_interface_vanishing_with_failed_cleanup_is_still_a_radio_failure(monkey
 
 
 @pytest.mark.parametrize("present, expected", [(False, StartupFailure), (True, ValueError)])
-def test_missing_interface_at_validation(monkeypatch, present, expected):
-    mgr = _manager()
+def test_missing_interface_at_validation(monkeypatch, present, expected, context):
+    mgr = context.manager
     device = mgr.config.antennas[0].device_id
     monkeypatch.setattr(manager_module, "interface_present", lambda iface: present)
 
@@ -171,10 +166,10 @@ def test_missing_interface_at_validation(monkeypatch, present, expected):
         assert error.value.kind is FailureKind.TRANSIENT_RADIO
 
 
-def test_api_vanished_interface_is_waited_for_not_quarantined(monkeypatch):
+def test_api_vanished_interface_is_waited_for_not_quarantined(monkeypatch, context, app):
     """A vanished netdev (re-enumerating) is a radio failure: the server pauses and starts again."""
-    config = dependencies.get_config()
-    mgr = dependencies.get_manager(config)
+    config = context.config
+    mgr = context.manager
     present = {"value": True}
     for module in (manager_module, startup_module):
         monkeypatch.setattr(module, "interface_present", lambda iface: present["value"])
@@ -195,23 +190,23 @@ def test_api_vanished_interface_is_waited_for_not_quarantined(monkeypatch):
     monkeypatch.setattr(mgr.hostapd_manager, "start", start)
     monkeypatch.setattr(network_routes, "_pause", lambda _cancel, seconds: pause(seconds) or False)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
         _, result = create_network(client, headers, f"/api/v2/reservations/{rid}/network", network_body(**PAYLOAD))
         assert pauses == [5]
         assert result.json()["runtime_state"] == "start_failed"
         assert result.json()["error"]["code"] == 1013
         assert client.get(f"{RESERVE}/{rid}", headers=headers).status_code == 200
-        assert dependencies.get_reservation_manager(config).recovery_snapshot() == {}
+        assert context.reservations.recovery_snapshot() == {}
 
 
 # --- WD-4: unavailable adapters are re-probed with backoff ------------------------------
 
 
 @pytest.fixture
-def unavailable(monkeypatch):
+def unavailable(monkeypatch, context):
     """One quarantined adapter with no recovery running, and mocked probe steps."""
-    mgr = _manager()
+    mgr = context.manager
     device = mgr.config.antennas[0].device_id
     reservations = ReservationManager([device])
     reservations.quarantine(reservations.create(60), recovering=False)
@@ -272,8 +267,8 @@ def test_absent_adapter_is_not_probed(unavailable):
     assert reservations.recovery_snapshot() == {device: False}
 
 
-def test_recovering_adapter_is_left_to_usb_recovery(monkeypatch):
-    mgr = _manager()
+def test_recovering_adapter_is_left_to_usb_recovery(monkeypatch, context):
+    mgr = context.manager
     device = mgr.config.antennas[0].device_id
     reservations = ReservationManager([device])
     reservations.quarantine(reservations.create(60), recovering=True)
@@ -293,8 +288,8 @@ def test_reprobe_uses_the_band_and_channel_of_the_last_network(unavailable):
     steps.probe.assert_called_once_with(device, "5ghz", 36)
 
 
-def test_quarantine_remembers_radio(monkeypatch):
-    mgr = _manager()
+def test_quarantine_remembers_radio(monkeypatch, context):
+    mgr = context.manager
     device = mgr.config.antennas[0].device_id
     reservations = ReservationManager([device])
     mgr.quarantine_radio(
@@ -303,10 +298,10 @@ def test_quarantine_remembers_radio(monkeypatch):
     assert mgr.recovery._last_radio[device] == ("5ghz", 36)
 
 
-def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch):
+def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch, context, app):
     """Fable WD-4 reproduction: cleanup_failed -> unavailable -> probe OK -> allocatable."""
-    config = dependencies.get_config()
-    mgr = dependencies.get_manager(config)
+    config = context.config
+    mgr = context.manager
     monkeypatch.setattr(
         mgr, "start_network",
         Mock(side_effect=StartupFailure("rollback failed", kind=FailureKind.CLEANUP_FAILED)),
@@ -317,8 +312,8 @@ def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch):
     monkeypatch.setattr(recovery, "_quiesce", Mock())
     monkeypatch.setattr(recovery, "_require_idle", Mock())
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
-        reservations = dependencies.get_reservation_manager(config)
+    with TestClient(app) as client:
+        reservations = context.reservations
         device = config.antennas[0].device_id
         # Keep the other adapters busy so the quarantined one is the only candidate.
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).json()["reservation_id"]

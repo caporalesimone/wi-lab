@@ -105,8 +105,8 @@ def test_wpa_supplicant_warning_is_logged_once_per_radio(tmp_path, monkeypatch, 
 
 def test_main_exits_78_on_a_fatal_finding(monkeypatch):
     monkeypatch.setattr(main, "run_prechecks", lambda: [precheck.Finding("root", "fatal", "x")])
-    monkeypatch.setattr(main, "create_app", lambda: pytest.fail("create_app must not run"))
-    monkeypatch.setattr(main, "get_config", lambda: pytest.fail("config must not load"))
+    monkeypatch.setattr(main, "create_app", lambda *args: pytest.fail("create_app must not run"))
+    monkeypatch.setattr(main, "load_config", lambda: pytest.fail("config must not load"))
     with pytest.raises(SystemExit) as exc:
         main.main()
     assert exc.value.code == 78
@@ -115,7 +115,7 @@ def test_main_exits_78_on_a_fatal_finding(monkeypatch):
 def test_main_starts_with_only_warnings(monkeypatch, config):
     started = []
     monkeypatch.setattr(main, "run_prechecks", lambda: [precheck.Finding("network_manager", "warning", "x")])
-    monkeypatch.setattr(main, "get_config", lambda: config)
+    monkeypatch.setattr(main, "load_config", lambda: config)
     monkeypatch.setattr(main, "log_host_impact_warning", lambda: None)
     monkeypatch.setattr(main.uvicorn, "run", lambda *a, **k: started.append(1))
     main.main()

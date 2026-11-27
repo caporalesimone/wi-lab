@@ -8,7 +8,6 @@ from conftest import active_network
 from fastapi.testclient import TestClient
 
 from wilab import health as status_module
-from wilab.api import create_app, dependencies
 from wilab.config import load_config
 
 
@@ -18,11 +17,11 @@ def _link(operstate: str, flags: list[str], inet: bool = True) -> str:
 
 
 @pytest.fixture
-def running(monkeypatch):
+def running(monkeypatch, context, app):
     """One settled network; hostapd and dnsmasq alive; upstream up."""
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         headers = {"Authorization": f"Bearer {load_config().auth_token}"}
-        manager = dependencies.get_manager(dependencies.get_config())
+        manager = context.manager
         device = manager.config.antennas[0].device_id
         state = {"internet": False, "nat": "-P POSTROUTING ACCEPT", "link": _link("UP", ["UP", "LOWER_UP"])}
 
@@ -93,28 +92,28 @@ def test_dead_hostapd_is_reported_and_degrades(running):
     assert data["status"] == "degraded"
 
 
-def test_status_reads_the_background_checks_without_running_commands(monkeypatch):
+def test_status_reads_the_background_checks_without_running_commands(monkeypatch, context, app):
     """The host commands run in the health loop; /status only reads the latest result."""
     from wilab import health
 
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
+    config = context.config
+    manager = context.manager
     monkeypatch.setattr(health, "MAX_AGE", 60.0)
     manager.health.refresh()
     calls = []
     monkeypatch.setattr(health, "execute_command", lambda cmd, **kw: calls.append(cmd) or "[]")
     monkeypatch.setattr(manager, "firewall_status", lambda: calls.append("fw") or {"nat": ""})
-    client = TestClient(create_app())
+    client = TestClient(app)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     for _ in range(5):
         assert client.get("/api/v2/status", headers=headers).status_code == 200
     assert calls == []
 
 
-def test_a_late_loop_does_not_leave_status_stale(monkeypatch):
+def test_a_late_loop_does_not_leave_status_stale(monkeypatch, context):
     from wilab import health
 
-    manager = dependencies.get_manager(dependencies.get_config())
+    manager = context.manager
     monkeypatch.setattr(health, "MAX_AGE", 60.0)
     first = manager.health.refresh()
     assert manager.health.current() is first
@@ -122,17 +121,17 @@ def test_a_late_loop_does_not_leave_status_stale(monkeypatch):
     assert manager.health.current() is not first
 
 
-def test_degraded_reasons_name_the_problem_and_the_antenna(monkeypatch):
+def test_degraded_reasons_name_the_problem_and_the_antenna(monkeypatch, context, app):
     """/status gives coded reasons; /monitoring the detail of the same checks."""
     from wilab.api.routes import status as status_route
 
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
+    config = context.config
+    manager = context.manager
     device = manager.config.antennas[0].device_id
     monkeypatch.setitem(manager.active, device, active_network(interface=device))
     monkeypatch.setattr(manager.hostapd_manager, "is_running", lambda _d: False)
     monkeypatch.setattr(status_route, "stuck_commands", lambda: 1)
-    client = TestClient(create_app())
+    client = TestClient(app)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     status = client.get("/api/v2/status", headers=headers).json()
     assert status["status"] == "degraded" and "checks" not in status

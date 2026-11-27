@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
+from wilab.api.context import AppContext
 from wilab.api.dependencies import hold_reservation
 from wilab.config import load_config
 from wilab.reservation import (
@@ -378,49 +379,23 @@ class TestReservationLifecycleConcurrency:
             assert release.result(timeout=5)
         assert cleanup_started.is_set()
 
-    def test_first_concurrent_requests_share_one_manager(self, monkeypatch):
-        entered = threading.Event()
-        resume = threading.Event()
-        second_started = threading.Event()
-        original = ReservationManager
-        created = []
-        config = SimpleNamespace(antennas=[
-            SimpleNamespace(device_id="dev0"), SimpleNamespace(device_id="dev1")
-        ])
-        network = SimpleNamespace(
-            device_lock=lambda _: threading.RLock(), release_device=lambda _: None,
-            cleanup_due=lambda _: True, cleanup_wait=lambda _: 0.0, cancel_start=lambda _: False,
-            forget_finished_start=lambda _: None,
-            watchdog=SimpleNamespace(start=lambda _: None),
-            recovery=SimpleNamespace(start_reprobe=lambda _: None),
-        )
-        monkeypatch.setattr(dependencies, "get_manager", lambda _: network)
+    def test_first_concurrent_requests_share_one_manager(self):
+        """ARCH-5: the reservations are built with the context, never by a first request."""
+        from wilab.config import NetworkEntry
 
-        def construct(*args, **kwargs):
-            created.append(1)
-            entered.set()
-            assert resume.wait(timeout=5)
-            return original(*args, **kwargs)
-
-        monkeypatch.setattr(dependencies, "ReservationManager", construct)
-
-        def second_request():
-            second_started.set()
-            return dependencies.get_reservation_manager(config)
-
+        context = AppContext.build(make_config(
+            auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8",
+            antennas=[NetworkEntry(interface="dev0", display_name="A"), NetworkEntry(interface="dev1", display_name="B")],
+        ))
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(context=context)))
         with ThreadPoolExecutor(max_workers=2) as pool:
-            first = pool.submit(dependencies.get_reservation_manager, config)
-            assert entered.wait(timeout=5)
-            second = pool.submit(second_request)
-            assert second_started.wait(timeout=5)
-            resume.set()
-            first_manager = first.result(timeout=5)
-            second_manager = second.result(timeout=5)
-        assert first_manager is second_manager
-        assert len(created) == 1
+            first_manager, second_manager = pool.map(
+                lambda _: dependencies.get_reservation_manager(request), range(2),
+            )
+        assert first_manager is second_manager is context.reservations
         with ThreadPoolExecutor(max_workers=2) as pool:
             reservations = list(pool.map(lambda manager: manager.create(60), [first_manager, second_manager]))
-        assert {reservation.device_id for reservation in reservations} == {"dev0", "dev1"}
+        assert len({reservation.device_id for reservation in reservations}) == 2
 
     def test_stale_reservation_cannot_operate_on_reassigned_device(self):
         mgr = ReservationManager(["dev0"])
@@ -458,14 +433,8 @@ class TestReservationLifecycleConcurrency:
 # ======================================================================
 
 @pytest.fixture
-def client():
+def client(app):
     """Create a FastAPI test client with clean reservation state."""
-    # Reset singletons
-    dependencies._config = None
-    dependencies._manager = None
-    dependencies._reservation_manager = None
-    load_config()
-    app = create_app()
     return TestClient(app)
 
 
@@ -476,18 +445,18 @@ def valid_token():
 
 
 @pytest.mark.parametrize("operation", ["start_network", "expired_cleanup"])
-def test_slow_lifecycle_operation_does_not_block_event_loop(operation, valid_token, monkeypatch):
+def test_slow_lifecycle_operation_does_not_block_event_loop(operation, valid_token, monkeypatch, context, app):
     started = threading.Event()
     finish = threading.Event()
 
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         headers = {"Authorization": valid_token}
         body = {"duration_seconds": 3600}
         response = client.post("/api/v2/reservations", headers=headers, json=body)
         assert response.status_code == 200
         reservation_id = response.json()["reservation_id"]
-        manager = dependencies._manager
-        reservation_manager = dependencies._reservation_manager
+        manager = context.manager
+        reservation_manager = context.reservations
         assert manager is not None
         assert reservation_manager is not None
         assert client.get("/openapi.json").status_code == 200
@@ -534,10 +503,12 @@ def test_slow_lifecycle_operation_does_not_block_event_loop(operation, valid_tok
 def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeypatch):
     from wilab.config import NetworkEntry
 
-    cfg = dependencies.get_config()
+    cfg = load_config()
     monkeypatch.setattr(cfg, "antennas", [
         *cfg.antennas, NetworkEntry(interface="wlan1", display_name="Second radio"),
     ])
+    app = create_app(cfg)
+    context = app.state.context
     headers = {"Authorization": valid_token}
     reserve = "/api/v2/reservations"
     payload = {
@@ -545,8 +516,8 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
         "tx_power_level": 4, "internet_enabled": False,
     }
     entered, finish = threading.Event(), threading.Event()
-    with TestClient(create_app()) as client, ThreadPoolExecutor(max_workers=4) as pool:
-        mgr = dependencies.get_manager(cfg)
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=4) as pool:
+        mgr = context.manager
         first_device = cfg.antennas[0].device_id
 
         def start_ap(*, net_id: str, **kwargs) -> None:
@@ -676,8 +647,8 @@ class TestReservationAPIGivenInterface:
             json={"duration_seconds": 3600, **body},
         )
 
-    def test_given_interface_is_reserved(self, client, valid_token):
-        interfaces = [n.interface for n in dependencies.get_config().antennas]
+    def test_given_interface_is_reserved(self, client, valid_token, context):
+        interfaces = [n.interface for n in context.config.antennas]
         last = interfaces[-1]
         resp = self._reserve(client, valid_token, interface=last)
         assert resp.status_code == 200, resp.text
@@ -813,8 +784,8 @@ class TestReservationAPIDeleteAll:
     URL = "/api/v2/reservations/all"
 
     @pytest.fixture(autouse=True)
-    def _password(self, client):
-        dependencies.get_config().protected_commands_password = "qwerty-test"
+    def _password(self, client, context):
+        context.config.protected_commands_password = "qwerty-test"
 
     def _reserve(self, client, valid_token):
         resp = client.post(
@@ -844,10 +815,10 @@ class TestReservationAPIDeleteAll:
         assert "X-Confirm-Password" in resp.json()["detail"]["message"]
         assert client.get(f"/api/v2/reservations/{rid}", headers={"Authorization": valid_token}).status_code == 200
 
-    def test_disabled_without_a_configured_password(self, client, valid_token):
+    def test_disabled_without_a_configured_password(self, client, valid_token, context):
         blank = make_config(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8", protected_commands_password="  ")
         assert blank.protected_commands_password is None
-        dependencies.get_config().protected_commands_password = None
+        context.config.protected_commands_password = None
         self._reserve(client, valid_token)
         resp = client.delete(self.URL, headers={"Authorization": valid_token, "X-Confirm-Password": "anything"})
         assert resp.status_code == 403 and "not configured" in resp.json()["detail"]["message"]
@@ -918,8 +889,8 @@ class TestUnlimitedReservation:
             soonest = mgr._soonest_expiry()
         assert soonest is None
 
-    def test_api_unlimited_contention_has_null_eta(self, client, valid_token, monkeypatch):
-        config = dependencies.get_config()
+    def test_api_unlimited_contention_has_null_eta(self, client, valid_token, monkeypatch, context):
+        config = context.config
         monkeypatch.setattr(config, "allow_unlimited_reservation", True)
         headers = {"Authorization": valid_token}
         assert client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 0}).status_code == 200
@@ -939,9 +910,9 @@ class TestReservationDeleteStopsNetwork:
     """Releasing a reservation must stop any active WiFi network on the device."""
 
     def _ensure_manager(self, client, valid_token):
-        """Ensure NetworkManager singleton is initialized by making a status request."""
+        """The app's NetworkManager, after a status request like the client would make."""
         client.get("/api/v2/status", headers={"Authorization": valid_token})
-        return dependencies._manager
+        return client.app.state.context.manager
 
     def test_delete_reservation_stops_active_network(self, client, valid_token, monkeypatch):
         """DELETE reservation stops the active network on the released device."""
@@ -1001,7 +972,7 @@ class TestReservationDeleteStopsNetwork:
             headers={"Authorization": valid_token},
             json={"duration_seconds": 3600},
         )
-        reservation = dependencies._reservation_manager.get(resp.json()["reservation_id"])
+        reservation = client.app.state.context.reservations.get(resp.json()["reservation_id"])
         mgr = self._ensure_manager(client, valid_token)
         device_id = reservation.device_id
         mgr.active[device_id] = active_network(interface=device_id)
@@ -1027,7 +998,7 @@ class TestReservationDeleteStopsNetwork:
         headers = {"Authorization": valid_token}
         body = {"duration_seconds": 3600}
         response = client.post("/api/v2/reservations", headers=headers, json=body)
-        reservation = dependencies._reservation_manager.get(response.json()["reservation_id"])
+        reservation = client.app.state.context.reservations.get(response.json()["reservation_id"])
         manager = self._ensure_manager(client, valid_token)
         device_id = reservation.device_id
         manager.active[device_id] = active_network(interface=device_id)
@@ -1094,7 +1065,7 @@ class TestReservationDeleteStopsNetwork:
 
         monkeypatch.setattr(mgr, "stop_network", successful_stop)
         mgr._cleanup_retry_at.clear()  # the backoff is over
-        dependencies._reservation_manager.expire()  # the background sweep
+        client.app.state.context.reservations.expire()  # the background sweep
         resp = client.post(
             "/api/v2/reservations",
             headers={"Authorization": valid_token},
@@ -1103,7 +1074,7 @@ class TestReservationDeleteStopsNetwork:
         assert resp.status_code == 200
         assert resp.json()["interface"] == device_id
 
-    def test_delete_all_stops_all_active_networks(self, client, valid_token, monkeypatch):
+    def test_delete_all_stops_all_active_networks(self, client, valid_token, monkeypatch, context):
         """DELETE all reservations stops active networks on released devices."""
         # Create reservation (test config has 1 device)
         r1 = client.post(
@@ -1123,7 +1094,7 @@ class TestReservationDeleteStopsNetwork:
 
         monkeypatch.setattr(mgr, "stop_network", mock_stop)
 
-        dependencies.get_config().protected_commands_password = "qwerty-test"
+        context.config.protected_commands_password = "qwerty-test"
         resp = client.delete(
             "/api/v2/reservations/all",
             headers={"Authorization": valid_token, "X-Confirm-Password": "qwerty-test"},
@@ -1132,7 +1103,7 @@ class TestReservationDeleteStopsNetwork:
         assert resp.json()["released"] == 1
         assert stopped == [r1["interface"]]
 
-    def test_delete_all_no_networks_active(self, client, valid_token, monkeypatch):
+    def test_delete_all_no_networks_active(self, client, valid_token, monkeypatch, context):
         """DELETE all reservations succeeds when no networks are active."""
         client.post(
             "/api/v2/reservations",
@@ -1144,7 +1115,7 @@ class TestReservationDeleteStopsNetwork:
         stopped = []
         monkeypatch.setattr(mgr, "stop_network", lambda did: stopped.append(did))
 
-        dependencies.get_config().protected_commands_password = "qwerty-test"
+        context.config.protected_commands_password = "qwerty-test"
         resp = client.delete(
             "/api/v2/reservations/all",
             headers={"Authorization": valid_token, "X-Confirm-Password": "qwerty-test"},
@@ -1250,11 +1221,13 @@ def two_antennas(tmp_path, monkeypatch):
         '  - interface: "wls17"\n    display_name: "bench-antenna-2"\n    show_dfs_channels: false\n'
     ))
     monkeypatch.setenv("CONFIG_PATH", str(path))
-    config = dependencies.get_config()
+    app = create_app()
+    context = app.state.context
+    config = context.config
     assert [n.interface for n in config.antennas] == ["wls16", "wls17"]
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
-        yield client, headers, dependencies.get_manager(config), dependencies.get_reservation_manager(config)
+    with TestClient(app) as client:
+        yield client, headers, context.manager, context.reservations
 
 
 def _reserve_on(client, headers, interface=None, **extra):

@@ -4,7 +4,7 @@ import pytest
 from conftest import active_network, create_network, network_body
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
+from wilab.api import create_app
 from wilab.config import load_config
 from wilab.models import ClientInfo
 from wilab.reservation import ReservationManager
@@ -14,10 +14,8 @@ from wilab.wifi.txpower import TxPowerMismatchError
 
 
 @pytest.fixture
-def client():
+def client(app):
     """Create a FastAPI test client."""
-    load_config()
-    app = create_app()
     return TestClient(app)
 
 
@@ -43,7 +41,7 @@ def reservation_id(client, valid_token, monkeypatch):
     """
     cfg = load_config()
     rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-    monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+    monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
     resp = client.post(
         '/api/v2/reservations',
@@ -134,11 +132,8 @@ class TestStatusEndpoint:
     
     def test_status_degraded_on_dhcp_down(self, client, valid_token, monkeypatch):
         """Test status returns degraded when DHCP is down but network is active."""
-        from wilab.api.dependencies import get_config
-        from wilab.api.dependencies import get_manager as original_get_manager
-        
         # Get the real manager once, then mock it
-        real_mgr = original_get_manager(get_config())
+        real_mgr = client.app.state.context.manager
         
         # Add an active network
         real_mgr.active['test-net'] = active_network(
@@ -159,12 +154,10 @@ class TestStatusEndpoint:
     
     def test_status_upstream_error_handling(self, client, valid_token, monkeypatch):
         """Test status gracefully handles upstream interface errors."""
-        from wilab.api.dependencies import get_config
-        from wilab.api.dependencies import get_manager as original_get_manager
         from wilab.network.commands import CommandError
         
         # Get the real manager once
-        real_mgr = original_get_manager(get_config())
+        real_mgr = client.app.state.context.manager
         
         # Mock get_upstream_interface to raise error
         monkeypatch.setattr(
@@ -184,7 +177,7 @@ class TestStatusEndpoint:
 class TestDebugRemoved:
     def test_debug_is_gone(self, client, valid_token):
         """API-1: /debug duplicated /monitoring and exposed every reservation ID (SEC-2)."""
-        dependencies.get_config().protected_commands_password = "qwerty-test"
+        client.app.state.context.config.protected_commands_password = "qwerty-test"
         resp = client.get('/api/v2/debug', headers={'Authorization': valid_token, 'X-Confirm-Password': 'qwerty-test'})
         assert resp.status_code == 404
         assert "/api/v2/debug" not in client.get("/openapi.json").json()["paths"]
@@ -193,7 +186,7 @@ class TestDebugRemoved:
 class TestMaintenanceRule:
     def test_every_maintenance_endpoint_requires_token_and_confirm_password(self, client, valid_token):
         """Rule: anything listed under Maintenance needs X-Confirm-Password, like release-all."""
-        dependencies.get_config().protected_commands_password = "qwerty-test"
+        client.app.state.context.config.protected_commands_password = "qwerty-test"
         spec = client.get("/openapi.json").json()
         operations = [
             (method, path) for path, item in spec["paths"].items()
@@ -231,7 +224,7 @@ class TestAuthentication:
         assert resp.json()['detail']['code'] == 401
 
     def test_dual_band_create_is_rejected_before_radio_work(self, client, valid_token, reservation_id, monkeypatch):
-        manager = dependencies.get_manager(dependencies.get_config())
+        manager = client.app.state.context.manager
         from unittest.mock import Mock
         start = Mock()
         monkeypatch.setattr(manager, 'start_network', start)
@@ -270,7 +263,7 @@ class TestAuthentication:
     
     def test_start_network_with_valid_token(self, client, valid_token, reservation_id, monkeypatch):
         """Test that request with valid token succeeds (with mocked DHCP)."""
-        manager = dependencies.get_manager(dependencies.get_config())
+        manager = client.app.state.context.manager
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **kw: {'gateway': '192.168.10.1'})
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **kw: {})
 
@@ -326,7 +319,7 @@ class TestNetworkCreateEndpoint:
 
     def test_start_network_runtime_failure_is_start_failed(self, client, valid_token, reservation_id, monkeypatch):
         """Operational failures during startup end as start_failed with 1013, not 404 (REV-16)."""
-        manager = dependencies.get_manager(dependencies.get_config())
+        manager = client.app.state.context.manager
         monkeypatch.setattr(
             manager, 'start_network',
             Mock(side_effect=ValueError('Failed to start AP: hostapd failed to start')),
@@ -347,8 +340,8 @@ class TestNetworkCreateEndpoint:
         from unittest.mock import Mock
 
         from wilab.models import NetworkStatus
-        manager = dependencies.get_manager(dependencies.get_config())
-        channels = dependencies.get_channel_manager()
+        manager = client.app.state.context.manager
+        channels = client.app.state.context.channels
         monkeypatch.setattr(channels, 'validate_network', Mock())
         monkeypatch.setattr(manager, 'start_network', Mock())
         status = NetworkStatus(
@@ -427,7 +420,7 @@ class TestNetworkGetEndpoint:
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **kw: {})
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *_args, **_kwargs: None)
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         # Start network via reservation token
         start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
@@ -487,7 +480,7 @@ class TestNetworkGetEndpoint:
                 ClientInfo(mac='aa:bb:cc:dd:ee:02', ip='192.168.10.11'),
             ]
         )
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
@@ -526,7 +519,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'remove_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
@@ -539,7 +532,7 @@ class TestNetworkDeleteEndpoint:
         assert stop_resp.json() == {'detail': 'Network wls16 stopped successfully'}
     
     def test_same_create_again_answers_the_network_a_different_one_1008(
-        self, client, valid_token, reservation_id, monkeypatch,
+        self, client, valid_token, reservation_id, monkeypatch, context,
     ):
         """A create repeated after a lost answer is safe: same body -> 200, different -> 409 / 1008."""
         cfg = load_config()
@@ -550,7 +543,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
         headers = {'Authorization': valid_token}
         url = f'/api/v2/reservations/{reservation_id}/network'
         body = network_body(
@@ -575,7 +568,7 @@ class TestNetworkDeleteEndpoint:
         assert (resp.json()['detail']['code'], resp.json()['detail']['reason']) == (1008, 'network_already_active')
 
     def test_stop_stuck_in_the_kernel_is_503_and_a_repeat_finishes_it(
-        self, client, valid_token, reservation_id, monkeypatch,
+        self, client, valid_token, reservation_id, monkeypatch, context,
     ):
         """hostapd stuck after SIGKILL: repeated for STOP_RETRY_BUDGET, then a coded 503."""
         from wilab.api.routes import network as network_routes
@@ -590,7 +583,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'remove_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
         headers = {'Authorization': valid_token}
         url = f'/api/v2/reservations/{reservation_id}/network'
         assert create_network(client, headers, url, network_body(
@@ -646,7 +639,7 @@ class TestNetworkDeleteEndpoint:
         def dhcp_fails(*a, **k):
             raise DhcpServerError("dnsmasq refused the configuration")
         monkeypatch.setattr(manager.dhcp_server, 'start', dhcp_fails)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
         _, resp = create_network(
             client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network',
             network_body(ssid='TestAP', channel=6, encryption='open', band='2.4ghz', tx_power_level=4),
@@ -660,7 +653,7 @@ class TestNetworkDeleteEndpoint:
         """Test stopping an inactive network returns 409."""
         cfg = load_config()
         manager = NetworkManager(cfg)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.delete(
             f'/api/v2/reservations/{reservation_id}/network',
@@ -692,7 +685,7 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 10.0)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=2))[1]
         assert start_resp.status_code == 200
@@ -718,7 +711,7 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
@@ -754,7 +747,7 @@ class TestTxPowerPostEndpoint:
                 },
             },
         )
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.post(
             f'/api/v2/reservations/{reservation_id}/txpower',
@@ -778,7 +771,7 @@ class TestTxPowerPostEndpoint:
             raise TxPowerMismatchError('Interface does not support dynamic power change.')
 
         monkeypatch.setattr(manager, 'set_tx_power_level', fake_set_tx_power_level)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.post(
             f'/api/v2/reservations/{reservation_id}/txpower',
@@ -843,7 +836,7 @@ class TestInternetControlEndpoints:
 
     def test_disable_internet_failure_returns_500(self, client, valid_token, reservation_id, monkeypatch):
         manager = NetworkManager(load_config())
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         def fail(_device):
             raise RuntimeError("firewall failed")
@@ -868,7 +861,7 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         # Start network first
         start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
@@ -894,7 +887,7 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(manager.nat_manager, 'disable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         # Start network first
         start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
@@ -920,7 +913,7 @@ class TestInternetControlEndpoints:
         """Test enabling internet on inactive network fails."""
         cfg = load_config()
         manager = NetworkManager(cfg)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.post(
             f'/api/v2/reservations/{reservation_id}/internet/enable',
@@ -934,7 +927,7 @@ class TestInternetControlEndpoints:
         """Test disabling internet on inactive network fails."""
         cfg = load_config()
         manager = NetworkManager(cfg)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.post(
             f'/api/v2/reservations/{reservation_id}/internet/disable',
@@ -979,9 +972,7 @@ class TestReservationRequiredForOperations:
         """Expired reservation token is rejected with 404."""
         import time
 
-        from wilab.api.dependencies import get_config, get_reservation_manager
-
-        rmgr = get_reservation_manager(get_config())
+        rmgr = client.app.state.context.reservations
         r = rmgr.create(3600)
         # Force expiry
         r.expires_at = time.time() - 1
@@ -1026,7 +1017,7 @@ class TestStatusReservationInfo:
         """Each antenna has `reservation` (null when free) and `network_active` (API-1)."""
         cfg = load_config()
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         # Before a reservation: `reservation` is null
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
@@ -1058,7 +1049,7 @@ class TestGetNetworkExpiryAlwaysPresent:
         """When network is off, expires_at and expires_in from reservation are present."""
         cfg = load_config()
         manager = NetworkManager(cfg)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.get(
             f'/api/v2/reservations/{reservation_id}/network',
@@ -1089,7 +1080,7 @@ class TestGetNetworkExpiryAlwaysPresent:
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
 
@@ -1139,8 +1130,8 @@ class TestUnlimitedReservationAPI:
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-        monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
-        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'config', cfg)
+        monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         resp = client.post(
             '/api/v2/reservations',
@@ -1157,7 +1148,7 @@ class TestUnlimitedReservationAPI:
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', False)
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         resp = client.post(
             '/api/v2/reservations',
@@ -1171,8 +1162,8 @@ class TestUnlimitedReservationAPI:
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-        monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
-        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'config', cfg)
+        monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         create_resp = client.post(
             '/api/v2/reservations',
@@ -1197,9 +1188,9 @@ class TestUnlimitedReservationAPI:
         manager = NetworkManager(cfg)
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-        monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
-        monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
-        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'config', cfg)
+        monkeypatch.setattr(client.app.state.context, 'manager', manager)
+        monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         create_resp = client.post(
             '/api/v2/reservations',
@@ -1223,7 +1214,7 @@ class TestUnlimitedReservationAPI:
         """POST with duration_seconds < min_timeout (and != 0) → 422."""
         cfg = load_config()
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         resp = client.post(
             '/api/v2/reservations',
@@ -1236,7 +1227,7 @@ class TestUnlimitedReservationAPI:
         """POST with duration_seconds > max_timeout → 422."""
         cfg = load_config()
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         resp = client.post(
             '/api/v2/reservations',
@@ -1249,7 +1240,7 @@ class TestUnlimitedReservationAPI:
         """/status includes reservation_policy with min, max, and allow_unlimited."""
         cfg = load_config()
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200
@@ -1265,8 +1256,8 @@ class TestUnlimitedReservationAPI:
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
         rmgr = ReservationManager([n.device_id for n in cfg.antennas])
-        monkeypatch.setattr(dependencies, '_config', cfg, raising=False)
-        monkeypatch.setattr(dependencies, '_reservation_manager', rmgr, raising=False)
+        monkeypatch.setattr(client.app.state.context, 'config', cfg)
+        monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         # Create unlimited reservation
         resp = client.post(
@@ -1328,12 +1319,12 @@ def test_every_route_is_under_api_v2():
 
 
 @pytest.fixture
-def stop_clock(monkeypatch):
+def stop_clock(monkeypatch, app, context):
     """A running network through the API; the stop route's monotonic and sleep are a fake clock."""
     from wilab.api.routes import network as network_routes
 
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
+    config = context.config
+    manager = context.manager
     instances = manager.hostapd_manager._instances
     monkeypatch.setattr(manager.hostapd_manager, "start", lambda *, net_id, **kw: instances.__setitem__(net_id, Mock()))
     monkeypatch.setattr(manager.hostapd_manager, "stop", lambda net_id: instances.pop(net_id, None))
@@ -1348,7 +1339,7 @@ def stop_clock(monkeypatch):
     monkeypatch.setattr(network_routes, "monotonic", lambda: clock["now"])
     monkeypatch.setattr(network_routes, "sleep", sleep)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300}).json()[
             "reservation_id"]
         url = f"/api/v2/reservations/{rid}/network"

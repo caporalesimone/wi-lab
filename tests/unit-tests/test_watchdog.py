@@ -9,7 +9,6 @@ from conftest import active_network, create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab import heartbeat
-from wilab.api import create_app, dependencies
 from wilab.models import NetworkStatus
 from wilab.wifi import watchdog as watchdog_module
 from wilab.wifi.failures import FailureKind
@@ -22,11 +21,10 @@ def _no_heartbeat(monkeypatch):
     monkeypatch.setattr(heartbeat, "beat", lambda _name: None)
 
 
-def _setup(monkeypatch, times, recreate_at=None):
+def _setup(context, monkeypatch, times, recreate_at=None):
     """Run the watch loop once per value in `times` with hostapd always dead."""
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(0)
     device = reservation.device_id
     monkeypatch.setitem(manager.active, device, active_network(interface=device))
@@ -49,32 +47,31 @@ def _setup(monkeypatch, times, recreate_at=None):
     return flags
 
 
-def test_second_ap_failure_is_restored_not_quarantined(monkeypatch):
+def test_second_ap_failure_is_restored_not_quarantined(monkeypatch, context):
     # Before WD-1 the second failure in the life of a network quarantined the adapter.
-    assert _setup(monkeypatch, [0.0, 86400.0]) == [False, False]
+    assert _setup(context, monkeypatch, [0.0, 86400.0]) == [False, False]
 
 
-def test_budget_is_three_restores_per_hour(monkeypatch):
-    assert _setup(monkeypatch, [0.0, 600.0, 1200.0, 1800.0]) == [False, False, False, True]
+def test_budget_is_three_restores_per_hour(monkeypatch, context):
+    assert _setup(context, monkeypatch, [0.0, 600.0, 1200.0, 1800.0]) == [False, False, False, True]
 
 
-def test_old_restores_leave_the_window(monkeypatch):
+def test_old_restores_leave_the_window(monkeypatch, context):
     times = [0.0, 1000.0, 2000.0, 3601.0, 3700.0]
     # At 3601 the restore at 0 is older than an hour; at 3700 three restores
     # (1000, 2000, 3601) are inside the window again.
-    assert _setup(monkeypatch, times) == [False, False, False, False, True]
+    assert _setup(context, monkeypatch, times) == [False, False, False, False, True]
 
 
-def test_recreating_the_network_does_not_reset_the_budget(monkeypatch):
-    flags = _setup(monkeypatch, [0.0, 10.0, 20.0, 30.0], recreate_at=2)
+def test_recreating_the_network_does_not_reset_the_budget(monkeypatch, context):
+    flags = _setup(context, monkeypatch, [0.0, 10.0, 20.0, 30.0], recreate_at=2)
     assert flags == [False, False, False, True]
 
 
 @pytest.mark.parametrize("exhausted", [False, True])
-def test_exhausted_budget_quarantines_instead_of_restarting(monkeypatch, exhausted):
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+def test_exhausted_budget_quarantines_instead_of_restarting(monkeypatch, exhausted, context):
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(60)
     device = reservation.device_id
     status = active_network(
@@ -100,11 +97,11 @@ def _restorable(device):
     )
 
 
-def _failed_restore(monkeypatch, now=1000.0):
+def _failed_restore(context, monkeypatch, now=1000.0):
     """A restore that fails for a non-radio reason; returns the pieces of the setup."""
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+    config = context.config
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(0)
     device = reservation.device_id
     monkeypatch.setattr(manager, "release_device", Mock())
@@ -117,8 +114,8 @@ def _failed_restore(monkeypatch, now=1000.0):
     return config, manager, reservations, reservation, start, quarantine
 
 
-def test_failed_restore_is_reported_and_scheduled(monkeypatch):
-    _, manager, _, reservation, start, quarantine = _failed_restore(monkeypatch)
+def test_failed_restore_is_reported_and_scheduled(monkeypatch, context):
+    _, manager, _, reservation, start, quarantine = _failed_restore(context, monkeypatch)
     assert start.call_args.kwargs["allow_internal_retry"] is True
     quarantine.assert_not_called()
     assert manager.watchdog.state(reservation) == "restore_failed"
@@ -142,8 +139,8 @@ def _run_ticks(monkeypatch, manager, reservations, device, times):
     manager.watchdog._watch(reservations, device)
 
 
-def test_watchdog_retries_with_backoff_until_the_ap_is_back(monkeypatch):
-    _, manager, reservations, reservation, start, _ = _failed_restore(monkeypatch)
+def test_watchdog_retries_with_backoff_until_the_ap_is_back(monkeypatch, context):
+    _, manager, reservations, reservation, start, _ = _failed_restore(context, monkeypatch)
     device = reservation.device_id
     calls = []
 
@@ -166,8 +163,8 @@ def test_watchdog_retries_with_backoff_until_the_ap_is_back(monkeypatch):
     assert reservations.get(reservation.reservation_id) is reservation
 
 
-def test_radio_failure_on_retry_quarantines(monkeypatch):
-    _, manager, reservations, reservation, start, quarantine = _failed_restore(monkeypatch)
+def test_radio_failure_on_retry_quarantines(monkeypatch, context):
+    _, manager, reservations, reservation, start, quarantine = _failed_restore(context, monkeypatch)
     start.side_effect = StartupFailure("beacon setup failed", kind=FailureKind.TRANSIENT_RADIO)
     _run_ticks(monkeypatch, manager, reservations, reservation.device_id, [1015.0])
     quarantine.assert_called_once()
@@ -175,8 +172,8 @@ def test_radio_failure_on_retry_quarantines(monkeypatch):
     assert reservation.device_id not in manager.watchdog._pending
 
 
-def test_release_stops_the_retries(monkeypatch):
-    _, manager, reservations, reservation, start, _ = _failed_restore(monkeypatch)
+def test_release_stops_the_retries(monkeypatch, context):
+    _, manager, reservations, reservation, start, _ = _failed_restore(context, monkeypatch)
     reservation.release_requests += 1
     _run_ticks(monkeypatch, manager, reservations, reservation.device_id, [1015.0])
     assert start.call_count == 1  # only the original restore
@@ -184,11 +181,11 @@ def test_release_stops_the_retries(monkeypatch):
     assert manager.watchdog.state(reservation) is None
 
 
-def test_api_reports_restore_failed_and_delete_stops_retries(monkeypatch):
-    config, manager, _, reservation, _, _ = _failed_restore(monkeypatch)
+def test_api_reports_restore_failed_and_delete_stops_retries(monkeypatch, context, app):
+    config, manager, _, reservation, _, _ = _failed_restore(context, monkeypatch)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     path = f"/api/v2/reservations/{reservation.reservation_id}/network"
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         network = client.get(path, headers=headers).json()
         assert (network["active"], network["runtime_state"]) == (False, "restore_failed")
         system = client.get("/api/v2/status", headers=headers).json()
@@ -200,13 +197,13 @@ def test_api_reports_restore_failed_and_delete_stops_retries(monkeypatch):
         assert client.get(f"/api/v2/reservations/{reservation.reservation_id}", headers=headers).status_code == 200
 
 
-def test_new_create_replaces_the_pending_restore(monkeypatch):
-    config, manager, _, reservation, start, _ = _failed_restore(monkeypatch)
+def test_new_create_replaces_the_pending_restore(monkeypatch, context, app):
+    config, manager, _, reservation, start, _ = _failed_restore(context, monkeypatch)
     start.side_effect = None
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     path = f"/api/v2/reservations/{reservation.reservation_id}/network"
     body = network_body(ssid="new", channel=1, band="2.4ghz", encryption="open", tx_power_level=4)
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         assert create_network(client, headers, path, body)[1].status_code == 200
     assert reservation.device_id not in manager.watchdog._pending
     assert manager.watchdog.state(reservation) is None
@@ -214,14 +211,13 @@ def test_new_create_replaces_the_pending_restore(monkeypatch):
 
 # --------------------------------------------------------------------------- WD-3
 
-def _dhcp_setup(monkeypatch, ticks, dhcp_restart_works=True):
+def _dhcp_setup(context, monkeypatch, ticks, dhcp_restart_works=True):
     """Run the watch loop once per (time, dnsmasq running) tick with hostapd healthy.
 
     Returns the events: "dhcp" for a DHCP-only restart, "ap" for a network restore.
     """
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(0)
     device = reservation.device_id
     monkeypatch.setitem(
@@ -262,38 +258,37 @@ def _dhcp_setup(monkeypatch, ticks, dhcp_restart_works=True):
     return events
 
 
-def test_dnsmasq_death_is_repaired_more_than_once(monkeypatch):
+def test_dnsmasq_death_is_repaired_more_than_once(monkeypatch, context):
     # Before WD-3 the second death left the network in dhcp_failed for good.
     ticks = [(0.0, False), (5.0, True), (600.0, False), (605.0, True), (1200.0, False)]
-    assert _dhcp_setup(monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp"]
+    assert _dhcp_setup(context, monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp"]
 
 
-def test_fourth_dhcp_failure_in_an_hour_restarts_the_network(monkeypatch):
+def test_fourth_dhcp_failure_in_an_hour_restarts_the_network(monkeypatch, context):
     ticks = [
         (0.0, False), (5.0, True), (10.0, False), (15.0, True), (20.0, False), (25.0, True),
         (30.0, False), (35.0, False),
     ]
-    assert _dhcp_setup(monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp", "ap"]
+    assert _dhcp_setup(context, monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp", "ap"]
 
 
-def test_failed_dhcp_restart_restarts_the_network_on_the_next_tick(monkeypatch):
+def test_failed_dhcp_restart_restarts_the_network_on_the_next_tick(monkeypatch, context):
     ticks = [(0.0, False), (5.0, False)]
-    assert _dhcp_setup(monkeypatch, ticks, dhcp_restart_works=False) == ["dhcp", "ap"]
+    assert _dhcp_setup(context, monkeypatch, ticks, dhcp_restart_works=False) == ["dhcp", "ap"]
 
 
-def test_dhcp_budget_renews_after_the_window(monkeypatch):
+def test_dhcp_budget_renews_after_the_window(monkeypatch, context):
     ticks = [
         (0.0, False), (5.0, True), (10.0, False), (15.0, True), (20.0, False), (25.0, True),
         (3700.0, False),
     ]
-    assert _dhcp_setup(monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp", "dhcp"]
+    assert _dhcp_setup(context, monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp", "dhcp"]
 
 
-def test_a_half_stopped_network_is_not_repaired(monkeypatch):
+def test_a_half_stopped_network_is_not_repaired(monkeypatch, context):
     """After a stop that did not complete (hostapd stuck), the watchdog must not undo the stop."""
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+    manager = context.manager
+    reservations = context.reservations
     device = reservations.create(0).device_id
     monkeypatch.setitem(manager.active, device, active_network(interface=device))
     monkeypatch.setattr(manager, "_stop_failed", {device})
@@ -305,38 +300,38 @@ def test_a_half_stopped_network_is_not_repaired(monkeypatch):
     restore.assert_not_called()
 
 
-def _only_reservation():
-    reservations = dependencies.get_reservation_manager(dependencies.get_config())
+def _only_reservation(context):
+    reservations = context.reservations
     return next(iter(reservations.snapshot().values()))
 
 
-def test_ap_restarts_are_counted_for_the_whole_reservation(monkeypatch):
+def test_ap_restarts_are_counted_for_the_whole_reservation(monkeypatch, context):
     """restarts.ap grows with every AP restore, also across a recreated network."""
-    _setup(monkeypatch, [0.0, 10.0, 20.0], recreate_at=1)
-    reservation = _only_reservation()
+    _setup(context, monkeypatch, [0.0, 10.0, 20.0], recreate_at=1)
+    reservation = _only_reservation(context)
     assert (reservation.ap_restarts, reservation.dhcp_restarts) == (3, 0)
     assert reservation.last_restart_reason == "hostapd_not_running"
     assert reservation.last_restart_at is not None
 
 
-def test_dhcp_restarts_and_the_network_restart_after_them_are_counted(monkeypatch):
+def test_dhcp_restarts_and_the_network_restart_after_them_are_counted(monkeypatch, context):
     ticks = [
         (0.0, False), (5.0, True), (10.0, False), (15.0, True), (20.0, False), (25.0, True),
         (30.0, False), (35.0, False),
     ]
-    assert _dhcp_setup(monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp", "ap"]
-    reservation = _only_reservation()
+    assert _dhcp_setup(context, monkeypatch, ticks) == ["dhcp", "dhcp", "dhcp", "ap"]
+    reservation = _only_reservation(context)
     assert (reservation.ap_restarts, reservation.dhcp_restarts) == (1, 3)
     assert reservation.last_restart_reason == "dhcp_failed"
 
 
-def test_get_network_has_the_restarts_section(monkeypatch):
-    config = dependencies.get_config()
+def test_get_network_has_the_restarts_section(monkeypatch, context, app):
+    config = context.config
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300}).json()[
             "reservation_id"]
-        reservation = dependencies.get_reservation_manager(config).get(rid)
+        reservation = context.reservations.get(rid)
         reservation.record_restart("ap", "hostapd_not_running")
         body = client.get(f"/api/v2/reservations/{rid}/network", headers=headers).json()
     assert body["restarts"]["ap"] == 1 and body["restarts"]["dhcp"] == 0
@@ -344,11 +339,10 @@ def test_get_network_has_the_restarts_section(monkeypatch):
     assert body["restarts"]["last_at"].endswith("Z")
 
 
-def test_unexpected_error_in_a_restore_is_a_failed_restore(monkeypatch):
+def test_unexpected_error_in_a_restore_is_a_failed_restore(monkeypatch, context):
     """REV-1: an error other than StartupFailure or ValueError is reported and retried, not lost."""
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(0)
     monkeypatch.setattr(manager, "release_device", Mock())
     monkeypatch.setattr(manager, "start_network", Mock(side_effect=KeyError("boom")))
@@ -366,14 +360,13 @@ def test_unexpected_error_in_a_restore_is_a_failed_restore(monkeypatch):
 # --------------------------------------------------------------------------- unit-test-14 (b)
 
 
-def _watch_until_a_restart(monkeypatch, ticks, *, dhcp_restart_works=True, verify=None):
+def _watch_until_a_restart(context, monkeypatch, ticks, *, dhcp_restart_works=True, verify=None):
     """One watch-loop tick per (time, hostapd alive, hostapd enabled, dnsmasq running).
 
     The restores themselves are fakes; returns the reservation that counted the restarts.
     """
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    reservations = dependencies.get_reservation_manager(config)
+    manager = context.manager
+    reservations = context.reservations
     reservation = reservations.create(0)
     device = reservation.device_id
     monkeypatch.setitem(
@@ -422,12 +415,12 @@ _HEALTHY = (True, True, True)
      {"verify": Mock(return_value=(["gateway address"], True))}, (1, 0, "network_check_failed")),
 ], ids=["hostapd_not_running", "hostapd_not_enabled", "dnsmasq_not_running", "dhcp_failed",
         "network_check_failed"])
-def test_every_restart_reason_reaches_get_network(monkeypatch, ticks, options, expected):
+def test_every_restart_reason_reaches_get_network(monkeypatch, ticks, options, expected, context, app):
     """unit-test-14 (b): each value of restarts.last_reason, from the watch loop to GET .../network."""
-    reservation = _watch_until_a_restart(monkeypatch, ticks, **options)
-    config = dependencies.get_config()
+    reservation = _watch_until_a_restart(context, monkeypatch, ticks, **options)
+    config = context.config
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         restarts = client.get(
             f"/api/v2/reservations/{reservation.reservation_id}/network", headers=headers,
         ).json()["restarts"]
@@ -436,14 +429,14 @@ def test_every_restart_reason_reaches_get_network(monkeypatch, ticks, options, e
 
 
 @pytest.fixture
-def scripted_creates(monkeypatch):
+def scripted_creates(monkeypatch, context, app):
     """The API with a scripted start_network: `go` lets a start finish, `fail` makes it start_failed."""
     from wilab.api.routes import network as network_routes
 
     monkeypatch.setattr(network_routes, "CREATE_RETRY_DELAYS", (0, 0))
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
-    monkeypatch.setattr(dependencies.get_channel_manager(), "validate_network", Mock())
+    config = context.config
+    manager = context.manager
+    monkeypatch.setattr(context.channels, "validate_network", Mock())
     monkeypatch.setattr(manager.recovery, "schedule", Mock())
     script = {"go": threading.Event(), "fail": False}
     script["go"].set()
@@ -464,7 +457,7 @@ def scripted_creates(monkeypatch):
         else NetworkStatus(interface=device, active=False),
     )
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         yield client, headers, manager, script
         script["go"].set()
         with manager.start_jobs_lock:
@@ -483,10 +476,10 @@ def _until(predicate, timeout: float = 5.0):
     raise AssertionError("condition not reached")
 
 
-def test_restart_counters_live_as_long_as_the_reservation(scripted_creates):
+def test_restart_counters_live_as_long_as_the_reservation(scripted_creates, context):
     """unit-test-14 (b): restarts in the 202 body and every runtime_state; kept across creates, zero when new."""
     client, headers, manager, script = scripted_creates
-    reservations = dependencies.get_reservation_manager(dependencies.get_config())
+    reservations = context.reservations
     rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300}).json()[
         "reservation_id"]
     url = f"/api/v2/reservations/{rid}/network"
@@ -536,8 +529,8 @@ def test_restart_counters_live_as_long_as_the_reservation(scripted_creates):
     ([None] * 4 + [True] + [None] * 4, False),  # a real ENABLED answer resets the count
     ([False] * 3, True),            # hostapd's own "not ENABLED" keeps the old limit
 ])
-def test_slow_probes_count_half(monkeypatch, answers, restarted):
+def test_slow_probes_count_half(monkeypatch, answers, restarted, context):
     ticks = [(5.0 * i, True, answer, True) for i, answer in enumerate(answers)]
-    _watch_until_a_restart(monkeypatch, ticks)
-    manager = dependencies.get_manager(dependencies.get_config())
+    _watch_until_a_restart(context, monkeypatch, ticks)
+    manager = context.manager
     assert manager.watchdog._restore_ap.called is restarted

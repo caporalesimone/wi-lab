@@ -141,10 +141,17 @@ class NetworkManager:
         self.expire_reservations: Callable[[], None] | None = None
         self.recovery = RadioRecovery(self)
         self.watchdog = NetworkWatchdog(self)
-        # Background expiry checker to auto-stop networks at timeout
-        self._expiry_thread = threading.Thread(target=self._expiry_loop, daemon=True)
-        self._expiry_thread.start()
+        # Background expiry checker to auto-stop networks at timeout; started by
+        # start(), never by the constructor (ARCH-5).
+        self._expiry_thread: threading.Thread | None = None
         logger.info("NetworkManager initialized")
+
+    def start(self) -> None:
+        """Start the expiry loop; it ends with the watchdog (`watchdog.stopping`)."""
+        if self._expiry_thread is not None:
+            return
+        self._expiry_thread = threading.Thread(target=self._expiry_loop, name="network-expiry", daemon=True)
+        self._expiry_thread.start()
 
     @property
     def channel_manager(self) -> ChannelManager:

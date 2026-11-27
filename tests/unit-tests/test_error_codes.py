@@ -5,7 +5,6 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
 from wilab.api.errors import ApiErrorCode
 from wilab.api.routes.status import REASON_MESSAGES
 
@@ -40,18 +39,18 @@ def _operations_with_a_reservation_id(client):
     ]
 
 
-def test_every_operation_with_a_reservation_id_answers_404_with_the_exact_reason():
+def test_every_operation_with_a_reservation_id_answers_404_with_the_exact_reason(context, app):
     """unit-test-8: released, expired (before and after the cleanup), invalidated and unknown IDs."""
-    config = dependencies.get_config()
+    config = context.config
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         operations = _operations_with_a_reservation_id(client)
         # The paths the review found uncovered must be in the list, or it is derived wrongly
         # (there is no plain `/qos` operation on a reservation any more, only `/qos/profile`).
         paths = {path.removeprefix("/api/v2/reservations/{reservation_id}") for _, path in operations}
         assert {"/internet/disable", "/txpower", "/qos/profile"} <= paths
         assert ("POST", "/api/v2/reservations/{reservation_id}/txpower") in operations
-        reservations = dependencies.get_reservation_manager(config)
+        reservations = context.reservations
 
         def reserve():
             resp = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300})
@@ -62,7 +61,7 @@ def test_every_operation_with_a_reservation_id_answers_404_with_the_exact_reason
         assert client.delete(f"/api/v2/reservations/{released}", headers=headers).status_code == 200
         invalidated = reserve()
         reservations.quarantine(reservations.get(invalidated), recovering=False)
-        reservations.finish_recovery(dependencies.get_manager(config).config.antennas[0].device_id,
+        reservations.finish_recovery(context.manager.config.antennas[0].device_id,
                                      recovered=True)   # the antenna is needed again below
 
         def answer(method, path, rid):

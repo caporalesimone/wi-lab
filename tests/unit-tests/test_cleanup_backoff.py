@@ -11,7 +11,6 @@ import pytest
 from conftest import active_network
 from fastapi.testclient import TestClient
 
-from wilab.api import create_app, dependencies
 from wilab.config import load_config
 from wilab.network.commands import CommandError
 from wilab.reservation import NoDeviceAvailableError, ReservationManager
@@ -118,7 +117,7 @@ def test_requests_never_repeat_a_cleanup_that_is_backing_off():
 
 
 @pytest.fixture
-def stuck_release(monkeypatch):
+def stuck_release(monkeypatch, context, app):
     """The API with a network whose hostapd does not stop, and a fake clock in the manager.
 
     Returns `(client, headers, manager, device, clock, attempts, run_expiry_loop)`.
@@ -128,8 +127,8 @@ def stuck_release(monkeypatch):
     monkeypatch.setattr(manager_module, "time", SimpleNamespace(
         monotonic=lambda: clock["now"], time=time.time, sleep=time.sleep,
     ))
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
+    config = context.config
+    manager = context.manager
     device = config.antennas[0].device_id
     attempts: list[float] = []
 
@@ -159,7 +158,7 @@ def stuck_release(monkeypatch):
         assert clock["now"] == until
 
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         yield client, headers, manager, device, clock, attempts, run_expiry_loop
         manager.active.clear()
 

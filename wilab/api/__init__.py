@@ -1,5 +1,4 @@
 import logging
-import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,20 +10,11 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .. import heartbeat
-from ..network.captive import remove_stale_captive_rules
-from ..network.host_guard import remove_stale_guards
+from ..config import AppConfig, load_config
 from ..reservation import DeviceBusyError, ReservationCleanupError
-from ..runtime_cleanup import cleanup_runtime
 from ..version import __version__
-from ..wifi.channels import set_regulatory_domain
 from ..wifi.manager import NetworkNotActive
-from .dependencies import (
-    discovery_loop,
-    get_config,
-    get_manager,
-    get_reservation_manager,
-)
+from .context import AppContext
 from .errors import (
     DEVICE_BUSY_RETRY_AFTER,
     ApiErrorCode,
@@ -150,63 +140,26 @@ def _candidate_frontend_paths() -> list[Path]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: instantiate manager so background expiry runs
-    cfg = get_config()
-    manager = get_manager(cfg)
-    manager.nat_manager.remove_stale_rules()
-    remove_stale_captive_rules()
-    remove_stale_guards()
-    # Processes, runtime files and QoS devices of a previous unclean run (STAB-4).
-    cleanup_runtime()
-
-    # Set regulatory domain before any channel query
-    set_regulatory_domain(cfg.country_code)
-
-    # Antennas are added by discovery; their channel cache is warmed when added.
-    stop_discovery = threading.Event()
-    discovery_thread = threading.Thread(
-        target=discovery_loop, args=(cfg, stop_discovery),
-        name="device-discovery", daemon=True,
-    )
-    discovery_thread.start()
-
-    # Host-command health checks in the background: /status only reads them.
-    stop_health = threading.Event()
-    threading.Thread(
-        target=manager.health.loop, args=(stop_health,), name="health-checks", daemon=True,
-    ).start()
-
-    # systemd watchdog (STAB-1): restart only when a loop stalled and Wi-Lab is idle.
-    reservations = get_reservation_manager(cfg)
-    stop_notify = threading.Event()
-    if heartbeat.watchdog_enabled():
-        threading.Thread(
-            target=heartbeat.notify_loop, args=(stop_notify, reservations.is_idle),
-            name="systemd-watchdog", daemon=True,
-        ).start()
-    heartbeat.sd_notify("READY=1")
-
+    # The context was built with the app (no thread yet): start it in its fixed
+    # order, and stop it at shutdown (ARCH-5).
+    context: AppContext = app.state.context
+    context.start()
     yield
-
-    stop_notify.set()
-    stop_health.set()
-    heartbeat.sd_notify("STOPPING=1")
-    stop_discovery.set()
-    discovery_thread.join(timeout=10)
-    # Shutdown: gracefully stop any active networks
-    try:
-        mgr = get_manager(cfg)
-        mgr.shutdown_all()
-    except Exception:
-        # Never block the teardown, but never hide why the cleanup failed (STAB-8).
-        logger.exception("Shutdown cleanup failed")
+    context.stop()
 
 
-def create_app() -> FastAPI:
+def create_app(config: AppConfig | None = None) -> FastAPI:
+    """The application and its AppContext, built from *config* (default: load_config()).
+
+    Nothing runs until the lifespan starts the context.
+    """
+    if config is None:
+        config = load_config()
     app = FastAPI(
         title="Wi-Lab", version=__version__, lifespan=lifespan,
         description=API_DESCRIPTION, openapi_tags=OPENAPI_TAGS,
     )
+    app.state.context = AppContext.build(config)
 
     @app.exception_handler(StarletteHTTPException)
     async def api_http_exception(request: Request, exc: StarletteHTTPException):
@@ -260,7 +213,6 @@ def create_app() -> FastAPI:
         )
 
     # Configure CORS if origins are specified in config
-    config = get_config()
     if config.cors_origins:
         app.add_middleware(
             CORSMiddleware,

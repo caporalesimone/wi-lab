@@ -44,19 +44,19 @@ def valid_token() -> str:
 
 
 @pytest.fixture
-def busy_adapter(valid_token, monkeypatch):
+def busy_adapter(valid_token, monkeypatch, context, app):
     """A reserved adapter whose device lock another thread holds until released."""
     monkeypatch.setattr(dependencies, "DEVICE_BUSY_TIMEOUT", 0.3)
-    with TestClient(create_app()) as client:
+    with TestClient(app) as client:
         headers = {"Authorization": valid_token}
         reservation = client.post(
             "/api/v2/reservations", headers=headers, json={"duration_seconds": 3600},
         ).json()
-        manager = dependencies.get_manager(dependencies.get_config())
+        manager = context.manager
         held, release = threading.Event(), threading.Event()
 
         def holder():
-            device = dependencies.get_reservation_manager().device_for(reservation["reservation_id"])
+            device = context.reservations.device_for(reservation["reservation_id"])
             with manager.device_lock(device):
                 held.set()
                 release.wait(10)
@@ -111,7 +111,7 @@ def test_openapi_documents_device_busy():
     assert "device_busy" in response["content"]["application/json"]["examples"]
 
 
-def test_the_same_create_on_a_running_network_can_answer_1006(busy_adapter, monkeypatch):
+def test_the_same_create_on_a_running_network_can_answer_1006(busy_adapter, monkeypatch, context):
     """REV-11 point 1: the 200 reads the network like GET .../network, so it waits like it.
 
     Documented, not avoided: one rule for every request on a reservation (1006: repeat).
@@ -119,8 +119,8 @@ def test_the_same_create_on_a_running_network_can_answer_1006(busy_adapter, monk
     from conftest import network_body
 
     client, headers, rid = busy_adapter
-    manager = dependencies.get_manager(dependencies.get_config())
-    device = dependencies.get_reservation_manager().device_for(rid)
+    manager = context.manager
+    device = context.reservations.device_for(rid)
     monkeypatch.setitem(manager.active, device, active_network(interface=device))
     monkeypatch.setattr(manager, "runs", lambda _device, _req: True)
     body = network_body(ssid="busy", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)

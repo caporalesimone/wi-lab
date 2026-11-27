@@ -104,7 +104,7 @@ def test_reset_interface_skips_a_missing_adapter_and_survives_failures(monkeypat
 
 
 @pytest.mark.parametrize("reset_works", [True, False])
-def test_a_stale_gateway_address_does_not_shift_the_subnet(monkeypatch, reset_works):
+def test_a_stale_gateway_address_does_not_shift_the_subnet(monkeypatch, reset_works, context):
     """NET-9: after an unclean restart a radio keeps the gateway address of its subnet.
 
     Discovery resets the radio (STAB-4) before any allocation, so the radio gets its
@@ -112,12 +112,12 @@ def test_a_stale_gateway_address_does_not_shift_the_subnet(monkeypatch, reset_wo
     """
     from ipaddress import IPv4Network
 
-    from wilab.api import dependencies
+    from wilab.api import discovery as discovery_service
     from wilab.config import NetworkEntry
     from wilab.network import subnet_allocator
 
-    config = dependencies.get_config()
-    manager = dependencies.get_manager(config)
+    config = context.config
+    manager = context.manager
     radio = NetworkEntry(interface="wlxstale", display_name="stale")
     base = IPv4Network(config.dhcp_base_network)
     natural = IPv4Network((int(base.network_address) + 256 * len(config.antennas), 24))
@@ -127,12 +127,12 @@ def test_a_stale_gateway_address_does_not_shift_the_subnet(monkeypatch, reset_wo
         if reset_works and interface == radio.interface:
             routes.clear()
 
-    monkeypatch.setattr(dependencies, "scan_new_networks", lambda cfg, quiet=False: [radio])
-    monkeypatch.setattr(dependencies, "exclude_from_host_managers", lambda names: None)
-    monkeypatch.setattr(dependencies, "reset_interface", reset)
+    monkeypatch.setattr(discovery_service, "scan_new_networks", lambda cfg, quiet=False: [radio])
+    monkeypatch.setattr(discovery_service, "exclude_from_host_managers", lambda names: None)
+    monkeypatch.setattr(discovery_service, "reset_interface", reset)
     monkeypatch.setattr(manager.watchdog, "watch", lambda devices: None)
     monkeypatch.setattr(subnet_allocator, "host_ipv4_networks", lambda: set(routes))
-    dependencies.scan_devices(config)
+    context.discovery.scan()
     subnet = IPv4Network(manager._get_subnet(radio.device_id))
     assert (subnet == natural) is reset_works
 

@@ -10,7 +10,6 @@ import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -25,8 +24,7 @@ def build_schema() -> dict[str, Any]:
     from wilab.config import load_config
 
     config = load_config(str(ROOT / "config.example.yaml"))
-    with patch("wilab.api.get_config", return_value=config):
-        return create_app().openapi()
+    return create_app(config).openapi()
 
 
 def fetch(url: str) -> str:

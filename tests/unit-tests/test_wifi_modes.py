@@ -9,7 +9,6 @@ from conftest import MOCK_PHY_INFO, active_network, create_network, network_body
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from wilab.api import create_app, dependencies
 from wilab.config import load_config
 from wilab.models import NetworkCreateRequest
 from wilab.reservation import ReservationManager
@@ -223,9 +222,8 @@ class TestRequestModel:
 # --------------------------------------------------------------------------- API
 
 @pytest.fixture
-def client():
-    load_config()
-    return TestClient(create_app())
+def client(app):
+    return TestClient(app)
 
 
 @pytest.fixture
@@ -237,10 +235,8 @@ def token():
 def reservation_id(client, token, monkeypatch):
     cfg = load_config()
     monkeypatch.setattr(
-        dependencies, "_reservation_manager", ReservationManager([n.device_id for n in cfg.antennas]),
-        raising=False,
+        client.app.state.context, "reservations", ReservationManager([n.device_id for n in cfg.antennas]),
     )
-    monkeypatch.setattr(dependencies, "_channel_manager", None, raising=False)
     resp = client.post("/api/v2/reservations", headers={"Authorization": token}, json={"duration_seconds": 3600})
     assert resp.status_code == 200
     return resp.json()["reservation_id"]
@@ -248,7 +244,7 @@ def reservation_id(client, token, monkeypatch):
 
 class TestApi:
     def _create(self, client, token, reservation_id, monkeypatch, **body):
-        manager = dependencies.get_manager(dependencies.get_config())
+        manager = client.app.state.context.manager
         start = Mock()
         monkeypatch.setattr(manager, "start_network", start)
         resp = create_network(client, {"Authorization": token}, f"/api/v2/reservations/{reservation_id}/network", network_body(**{"encryption": "wpa2", **BASE, **body}))[1]
@@ -299,12 +295,11 @@ class TestManagerAndWatchdog:
         assert kwargs["layout"].center == 42
         assert (status.channel_width, status.wifi_generation) == (80, 6)
 
-    def test_watchdog_restores_with_the_same_mode(self, monkeypatch):
+    def test_watchdog_restores_with_the_same_mode(self, monkeypatch, context):
         from wilab.wifi import watchdog as watchdog_module
 
-        config = dependencies.get_config()
-        manager = dependencies.get_manager(config)
-        reservations = dependencies.get_reservation_manager(config)
+        manager = context.manager
+        reservations = context.reservations
         reservation = reservations.create(0)
         device = reservation.device_id
         monkeypatch.setattr(manager, "release_device", Mock())
