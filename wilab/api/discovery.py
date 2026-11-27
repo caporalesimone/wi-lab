@@ -4,14 +4,13 @@ import logging
 import threading
 
 from .. import heartbeat
-from ..config import AppConfig, NetworkEntry, scan_new_networks
+from ..config import AppConfig, scan_new_networks
+from ..devices import Device, DeviceRegistry
 from ..network.commands import CommandError
 from ..network.unmanaged import exclude_from_host_managers
 from ..precheck import warn_wpa_supplicant
-from ..reservation import ReservationManager
 from ..wifi.channels import ChannelManager
 from ..wifi.interface import reset_interface
-from ..wifi.manager import NetworkManager
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +21,15 @@ DISCOVERY_JOIN_TIMEOUT = 10.0
 
 
 class DeviceDiscovery:
-    """Adds newly found Wi-Fi interfaces to the allocatable pool."""
+    """Adds newly found Wi-Fi interfaces to the device registry.
 
-    def __init__(
-        self, config: AppConfig, manager: NetworkManager, reservations: ReservationManager,
-        channels: ChannelManager,
-    ) -> None:
+    The registry is the allocatable pool: reservations, networks and the
+    watchdog read it, so nothing else is told about a new device.
+    """
+
+    def __init__(self, config: AppConfig, devices: DeviceRegistry, channels: ChannelManager) -> None:
         self.config = config
-        self.manager = manager
-        self.reservations = reservations
+        self.devices = devices
         self.channels = channels
         self._scan_lock = threading.Lock()
         self._stop = threading.Event()
@@ -50,31 +49,30 @@ class DeviceDiscovery:
         if self._thread is not None:
             self._thread.join(timeout=timeout)
 
-    def scan(self, *, quiet: bool = False) -> list[NetworkEntry]:
+    def scan(self, *, quiet: bool = False) -> list[Device]:
         """Add newly found Wi-Fi interfaces to the allocatable pool."""
-        config = self.config
         with self._scan_lock:
-            added = scan_new_networks(config, quiet=quiet)
+            managed = self.devices.all()
+            added = scan_new_networks(self.config, managed, quiet=quiet)
             if not added:
                 return []
-            # Appending preserves the order used for subnet allocation.
-            config.antennas = [*config.antennas, *added]
-            exclude_from_host_managers(n.interface for n in config.antennas)
-            warn_wpa_supplicant(n.interface for n in added)
-            self.reservations.add_devices([n.device_id for n in added])
-            manager = self.manager
-            for net in added:
+            exclude_from_host_managers(d.interface for d in [*managed, *added])
+            warn_wpa_supplicant(d.interface for d in added)
+            # Adding preserves the order used for reservations and subnet allocation;
+            # the watchdog starts watching each device as it is added.
+            for device in added:
+                self.devices.add(device)
+            for device in added:
                 # Clean what a previous run left on the radio (STAB-4); nobody uses it yet.
-                with manager.device_lock(net.device_id):
-                    reset_interface(net.interface)
-            manager.watchdog.watch([n.device_id for n in added])
-            for net in added:
+                with device.lock:
+                    reset_interface(device.interface)
+            for device in added:
                 logger.info(
-                    "Added %s as %r (%s)", net.interface, net.display_name,
-                    f"USB port {net.usb_recovery_port}" if net.usb_recovery_port else "non-USB",
+                    "Added %s as %r (%s)", device.interface, device.display_name,
+                    f"USB port {device.usb_port}" if device.usb_port else "non-USB",
                 )
             threading.Thread(
-                target=_warm_channels, args=(self.channels, [n.interface for n in added]),
+                target=_warm_channels, args=(self.channels, [d.interface for d in added]),
                 name="channel-cache-scan", daemon=True,
             ).start()
             return added
@@ -85,7 +83,6 @@ class DeviceDiscovery:
         The first scan runs immediately. Scans repeat every 5 s while no antenna is
         managed, then every 30 s. Only the first scan logs configuration warnings.
         """
-        config = self.config
         interval = 0.0
         first = True
         searching: bool | None = None
@@ -101,8 +98,8 @@ class DeviceDiscovery:
             else:
                 last_error = None
             first = False
-            if searching != (not config.antennas):
-                searching = not config.antennas
+            if searching != (not self.devices):
+                searching = not self.devices
                 if searching:
                     logger.warning(
                         "No Wi-Fi adapter available; discovery runs every %.0f s", DISCOVERY_FAST_INTERVAL,
@@ -110,7 +107,7 @@ class DeviceDiscovery:
                 else:
                     logger.info(
                         "%d Wi-Fi adapter(s) managed; discovery runs every %.0f s",
-                        len(config.antennas), DISCOVERY_SLOW_INTERVAL,
+                        len(self.devices), DISCOVERY_SLOW_INTERVAL,
                     )
             interval = DISCOVERY_FAST_INTERVAL if searching else DISCOVERY_SLOW_INTERVAL
 

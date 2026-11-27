@@ -30,7 +30,7 @@ def _hold(manager, device):
     held, release = threading.Event(), threading.Event()
 
     def holder():
-        with manager.device_lock(device):
+        with manager.devices.lock(device):
             held.set()
             release.wait(5)
 

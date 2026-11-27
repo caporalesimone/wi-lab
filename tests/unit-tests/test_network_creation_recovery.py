@@ -2,7 +2,7 @@ import json
 from unittest.mock import Mock
 
 import pytest
-from conftest import active_network, create_network, network_body
+from conftest import active_network, create_network, network_body, registry_of
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app
@@ -26,8 +26,8 @@ PAYLOAD = {
 def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog, authorized_port, context, app):
     """A: the server pauses 5 s and 10 s and starts again itself; the client sends one create."""
     config = context.config
-    radio = config.antennas[0]
-    monkeypatch.setattr(radio, "usb_recovery_port", authorized_port)
+    radio = context.devices.all()[0]
+    monkeypatch.setattr(radio, "usb_port", authorized_port)
     manager = context.manager
     start = Mock(side_effect=StartupFailure("radio timeout", kind=FailureKind.TRANSIENT_RADIO))
     schedule = Mock()
@@ -126,7 +126,7 @@ def test_reservation_too_short_for_another_start_is_released_without_quarantine(
 def test_usb_recovery_is_bounded_and_only_verified_radio_is_released(monkeypatch, verified_after, context):
     manager = context.manager
     radio = manager.config.antennas[0].device_id
-    reservations = ReservationManager([radio])
+    reservations = ReservationManager(registry_of(radio))
     reservations.quarantine(reservations.create(60), recovering=True)
     monkeypatch.setattr(recovery, "_require_idle", Mock())
     monkeypatch.setattr(recovery, "_quiesce", Mock())
@@ -159,7 +159,7 @@ def test_usb_recovery_is_bounded_and_only_verified_radio_is_released(monkeypatch
 def test_usb_recovery_refuses_unsafe_target(monkeypatch, context):
     manager = context.manager
     radio = manager.config.antennas[0].device_id
-    reservations = ReservationManager([radio])
+    reservations = ReservationManager(registry_of(radio))
     reservations.quarantine(reservations.create(60), recovering=True)
     monkeypatch.setattr(recovery, "_require_idle", Mock())
     monkeypatch.setattr(recovery, "_quiesce", Mock())
@@ -198,7 +198,7 @@ class _HostLink:
 def test_usb_recovery_takes_back_a_radio_raised_by_host_managers(monkeypatch, upstream, context):
     manager = context.manager
     radio = manager.config.antennas[0].device_id
-    reservations = ReservationManager([radio])
+    reservations = ReservationManager(registry_of(radio))
     reservations.quarantine(reservations.create(60), recovering=True)
     host = _HostLink(radio, upstream=upstream)
     monkeypatch.setattr(recovery, "execute_command", host.run)

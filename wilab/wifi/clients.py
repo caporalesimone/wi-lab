@@ -4,7 +4,7 @@ import logging
 import os
 import time
 
-from ..config import AppConfig
+from ..devices import DeviceRegistry
 from ..models import ClientInfo
 from ..network.captive import CaptivePortal
 from ..network.commands import CommandError, execute_ip, execute_iw
@@ -23,9 +23,9 @@ class ClientLister:
     """
 
     def __init__(
-        self, config: AppConfig, dhcp_server: DhcpServer, captive_portals: dict[str, CaptivePortal],
+        self, devices: DeviceRegistry, dhcp_server: DhcpServer, captive_portals: dict[str, CaptivePortal],
     ) -> None:
-        self._config = config
+        self._devices = devices
         self._dhcp_server = dhcp_server
         self._captive_portals = captive_portals
         # Client list per device, reused for CLIENTS_CACHE_SECONDS (PERF-2): clients
@@ -58,7 +58,7 @@ class ClientLister:
         clients: list[ClientInfo] = []
 
         # Get interface for this network
-        cfg_net = next((n for n in self._config.antennas if n.device_id == device_id), None)
+        cfg_net = self._devices.get(device_id)
         if not cfg_net:
             return clients
 

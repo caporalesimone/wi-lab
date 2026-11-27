@@ -7,19 +7,21 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from .devices import Device
+
 logger = logging.getLogger(__name__)
 
 
 class NetworkEntry(BaseModel):
+    """The label of an antenna in config.yaml; the managed devices are in DeviceRegistry."""
+
     interface: str
     display_name: str
-    # Configuration only: exclude this radio from discovery and allocation.
+    # Exclude this radio from discovery and allocation.
     disable: bool = False
     # DFS channels (5 GHz 52-144, radar detection) are listed and accepted only
     # when true. Required in config.yaml; radios not listed there get true.
     show_dfs_channels: bool = True
-    # Detected at startup from sysfs; set only for USB adapters.
-    usb_recovery_port: str | None = Field(default=None, pattern=r"^\d+-\d+(\.\d+)*$")
 
     @property
     def device_id(self) -> str:
@@ -52,17 +54,14 @@ class AppConfig(BaseModel):
     # address chosen here would be wrong on some network.
     dns_server: str
     internet_enabled_by_default: bool
-    # Optional display names and settings of the discovered radios (`antennas:`).
+    # Optional display names and settings of the discovered radios (`antennas:`),
+    # as read from config.yaml; never changed at runtime (ARCH-4).
     antennas: list[NetworkEntry] = Field(default_factory=list)
     cors_origins: list[str] | None = Field(
         ...,
         description="CORS allowed origins. If None or empty, CORS is disabled (secure for production). "
                     "For development, add frontend URLs like ['http://localhost:4200', 'http://192.168.1.100:4200']"
     )
-
-    def show_dfs_channels_for(self, interface: str) -> bool:
-        """`show_dfs_channels` of an antenna; true for a discovered radio not in `antennas`."""
-        return next((n.show_dfs_channels for n in self.antennas if n.interface == interface), True)
 
     @field_validator('country_code')
     @classmethod
@@ -165,16 +164,13 @@ class AppConfig(BaseModel):
         interfaces = [n.interface for n in v]
         if len(interfaces) != len(set(interfaces)):
             raise ValueError("Duplicate interface names in antennas configuration")
-        ports = [n.usb_recovery_port for n in v if n.usb_recovery_port is not None]
-        if len(ports) != len(set(ports)):
-            raise ValueError("Duplicate USB recovery ports in antennas configuration")
         
         return v
 
 
 def resolve_networks(
     labels: list[NetworkEntry], radios: list[Any], excluded: set[str], *, quiet: bool = False,
-) -> list[NetworkEntry]:
+) -> list[Device]:
     """Build managed devices from discovered radios, naming them from configured labels.
 
     Configured interfaces keep their configured order (stable DHCP subnets); other
@@ -205,34 +201,26 @@ def resolve_networks(
     ordered = [by_interface[label.interface] for label in labels if label.interface in by_interface]
     ordered += sorted((r for r in by_interface.values() if r.interface not in names),
                       key=lambda r: r.interface)
-    networks: list[NetworkEntry] = []
+    networks: list[Device] = []
     used_phys: set[str] = set()
     for r in ordered:
         if r.phy in used_phys:
             info("Skipping %s: %s already managed via another interface", r.interface, r.phy)
             continue
         used_phys.add(r.phy)
-        networks.append(NetworkEntry(
+        networks.append(Device(
             interface=r.interface,
             display_name=names.get(r.interface, r.interface),
+            usb_port=r.usb_port,
             show_dfs_channels=show_dfs_channels.get(r.interface, True),
-            usb_recovery_port=r.usb_port,
         ))
     return networks
 
 
-def _initial_networks(labels: list[NetworkEntry]) -> list[NetworkEntry]:
-    """Antennas managed right after loading: none, the discovery service adds them.
-
-    Kept as a seam so tests can start with the configured interfaces.
-    """
-    return []
-
-
 def select_new_networks(
-    current: list[NetworkEntry], labels: list[NetworkEntry], radios: list[Any], excluded: set[str],
+    current: list[Device], labels: list[NetworkEntry], radios: list[Any], excluded: set[str],
     *, quiet: bool = False,
-) -> list[NetworkEntry]:
+) -> list[Device]:
     """Return discovered radios not yet managed, honouring disabled entries and display names."""
     managed = {n.interface for n in current}
     managed_phys = {r.phy for r in radios if r.interface in managed}
@@ -271,11 +259,12 @@ def _read_raw_config(cfg_path: str, *, quiet: bool = False) -> dict:
 
 
 def scan_new_networks(
-    config: AppConfig, path: str | None = None, *, quiet: bool = False,
-) -> list[NetworkEntry]:
-    """Re-read `antennas` from the config file and discover radios not yet managed.
+    config: AppConfig, current: list[Device], path: str | None = None, *, quiet: bool = False,
+) -> list[Device]:
+    """Re-read `antennas` from the config file and discover radios not in *current*.
 
     Only additions are returned; managed devices are never removed or renamed.
+    *config* itself is not changed: the labels are read from the file each time.
 
     Raises:
         ValueError: If the configuration file cannot be read or is invalid.
@@ -291,10 +280,10 @@ def scan_new_networks(
     if config.upstream_interface != "auto":
         excluded.add(config.upstream_interface)
     added = select_new_networks(
-        config.antennas, labels, discover_radios(quiet=quiet), excluded, quiet=quiet,
+        current, labels, discover_radios(quiet=quiet), excluded, quiet=quiet,
     )
     base_third = int(str(IPv4Network(config.dhcp_base_network).network_address).split('.')[2])
-    room = 256 - base_third - len(config.antennas)
+    room = 256 - base_third - len(current)
     if len(added) > room:
         logger.warning("Only %d new interface(s) fit in dhcp_base_network; ignoring the rest", max(room, 0))
         added = added[:max(room, 0)]
@@ -304,15 +293,13 @@ def scan_new_networks(
 def load_config(path: str | None = None) -> AppConfig:
     """Load and validate the configuration.
 
-    No antenna is managed yet: the discovery service started with the API adds
-    them, and the first discovery scan reports configuration warnings.
+    `antennas` holds the labels only: the discovery service started with the API
+    adds the managed devices, and its first scan reports configuration warnings.
     """
     cfg_path = config_path(path)
     try:
-        raw = _read_raw_config(cfg_path, quiet=True)
-        labels = AppConfig(**raw).antennas
-        return AppConfig(**{**raw, 'antennas': [n.model_dump() for n in _initial_networks(labels)]})
-        
+        return AppConfig(**_read_raw_config(cfg_path, quiet=True))
+
     except FileNotFoundError as e:
         raise SystemExit(f"Configuration file not found: {cfg_path}") from e
     except ValidationError as e:

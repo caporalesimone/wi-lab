@@ -157,9 +157,7 @@ def _reason(code: str, interface: str | None = None, **values: Any) -> dict[str,
     return {"code": code, "interface": interface, "message": REASON_MESSAGES[code].format(**values)}
 
 
-def _assess(
-    manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager,
-) -> dict[str, Any]:
+def _assess(manager: NetworkManager, reservation_mgr: ReservationManager) -> dict[str, Any]:
     """Status, the reasons for `degraded`, the antennas and the detailed checks.
 
     Shared by /status (verdict and reasons) and /monitoring (detail), so
@@ -183,7 +181,7 @@ def _assess(
     reservations = reservation_mgr.snapshot()
     recovery = reservation_mgr.recovery_snapshot()
     cleanup_failures = manager.cleanup_failures()
-    for n in config.antennas:
+    for n in manager.devices.all():
         entry: dict[str, Any] = {"display_name": n.display_name, "interface": n.interface}
         reservation = reservations.get(n.device_id)
         # API-1: the same reservation object as the reservation and network answers.
@@ -237,7 +235,7 @@ def _assess(
 def _system_status(
     manager: NetworkManager, config: AppConfig, reservation_mgr: ReservationManager
 ) -> dict[str, Any]:
-    view = _assess(manager, config, reservation_mgr)
+    view = _assess(manager, reservation_mgr)
     return {
         "version": __version__,
         "status": view["status"],
@@ -271,7 +269,6 @@ def _system_status(
 )
 def monitoring(
     manager: NetworkManager = Depends(get_manager),
-    config=Depends(get_config),
     reservation_mgr: ReservationManager = Depends(get_reservation_manager),
     _: bool = Depends(require_token),
 ):
@@ -292,7 +289,7 @@ def monitoring(
 
     A network with a start, stop or restore in progress is not judged.
     """
-    view = _assess(manager, config, reservation_mgr)
+    view = _assess(manager, reservation_mgr)
     return {
         "status": view["status"],
         "degraded_reasons": view["degraded_reasons"],

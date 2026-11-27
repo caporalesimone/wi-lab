@@ -9,7 +9,13 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from conftest import active_network, create_network, make_config, network_body
+from conftest import (
+    active_network,
+    create_network,
+    make_config,
+    network_body,
+    registry_of,
+)
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -28,7 +34,7 @@ from wilab.reservation import (
 
 def test_ten_antenna_concurrent_reservations_are_unique_and_reusable():
     devices = [f"radio-{i}" for i in range(10)]
-    manager = ReservationManager(devices)
+    manager = ReservationManager(registry_of(*devices))
     barrier = threading.Barrier(12, timeout=5)
 
     def reserve():
@@ -58,7 +64,7 @@ class TestReservationManagerCreate:
     """Tests for reservation creation."""
 
     def test_create_reservation_returns_reservation(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         r = mgr.create(3600)
         assert isinstance(r, Reservation)
         assert r.device_id == "dev0"
@@ -66,26 +72,26 @@ class TestReservationManagerCreate:
         assert len(r.reservation_id) == 8  # 4 bytes hex
 
     def test_create_reservation_assigns_first_available(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         r1 = mgr.create(3600)
         r2 = mgr.create(3600)
         assert r1.device_id == "dev0"
         assert r2.device_id == "dev1"
 
     def test_create_reservation_unique_tokens(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         r1 = mgr.create(3600)
         r2 = mgr.create(3600)
         assert r1.reservation_id != r2.reservation_id
 
     def test_create_reservation_no_device_available(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         mgr.create(3600)
         with pytest.raises(NoDeviceAvailableError, match="No device available"):
             mgr.create(3600)
 
     def test_no_device_available_has_eta(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         mgr.create(120)
         try:
             mgr.create(3600)
@@ -95,7 +101,7 @@ class TestReservationManagerCreate:
             assert exc.next_available_at > time.time()
 
     def test_eta_uses_soonest_expiry(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         mgr.create(600)   # expires in 600s
         mgr.create(60)    # expires in 60s — soonest
         try:
@@ -106,7 +112,7 @@ class TestReservationManagerCreate:
             assert exc.next_available_in <= 65
 
     def test_eta_of_an_owner_about_to_expire_is_never_negative(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(60)
         r.expires_at = time.time() + 0.5  # about to expire, still the owner
         with pytest.raises(NoDeviceAvailableError) as exc:
@@ -116,14 +122,14 @@ class TestReservationManagerCreate:
         assert NoDeviceAvailableError(time.time() - 5).next_available_in == 0
 
     def test_create_reservation_sets_expiry(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         before = time.time()
         r = mgr.create(120)
         after = time.time()
         assert before + 120 <= r.expires_at <= after + 120
 
     def test_create_reservation_expires_in_positive(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(3600)
         assert 3590 <= r.expires_in <= 3600
 
@@ -132,7 +138,7 @@ class TestReservationManagerGet:
     """Tests for fetching a reservation."""
 
     def test_get_valid_token(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(3600)
         fetched = mgr.get(r.reservation_id)
         assert fetched is not None
@@ -140,11 +146,11 @@ class TestReservationManagerGet:
         assert fetched.device_id == "dev0"
 
     def test_get_invalid_token(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         assert mgr.get("nonexistent") is None
 
     def test_get_expired_token_returns_none(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(1)
         # Force expiry
         r.expires_at = time.time() - 1
@@ -155,16 +161,16 @@ class TestReservationManagerDelete:
     """Tests for releasing a reservation."""
 
     def test_delete_valid_token(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(3600)
         assert mgr.delete(r.reservation_id) is True
 
     def test_delete_invalid_token(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         assert mgr.delete("nonexistent") is False
 
     def test_delete_frees_device(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(3600)
         mgr.delete(r.reservation_id)
         # Device should be available again
@@ -172,7 +178,7 @@ class TestReservationManagerDelete:
         assert r2.device_id == "dev0"
 
     def test_post_release_get_returns_none(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(3600)
         rid = r.reservation_id
         mgr.delete(rid)
@@ -183,17 +189,17 @@ class TestReservationManagerGivenDevice:
     """create(duration, device_id): reserve one given antenna, never another."""
 
     def test_reserves_the_given_device_even_if_not_first(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         assert mgr.create(3600, "dev1").device_id == "dev1"
         assert mgr.create(3600).device_id == "dev0"
 
     def test_unknown_device_is_refused(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         with pytest.raises(UnknownDeviceError):
             mgr.create(3600, "wlan9")
 
     def test_taken_device_reports_its_expiry_and_never_falls_back(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         owner = mgr.create(3600, "dev0")
         with pytest.raises(NoDeviceAvailableError) as exc:
             mgr.create(3600, "dev0")
@@ -201,7 +207,7 @@ class TestReservationManagerGivenDevice:
         assert not mgr.is_device_reserved("dev1")
 
     def test_unlimited_owner_has_no_expiry(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         mgr.create(0, "dev0")
         with pytest.raises(NoDeviceAvailableError) as exc:
             mgr.create(3600, "dev0")
@@ -209,7 +215,7 @@ class TestReservationManagerGivenDevice:
 
     def test_expired_owner_is_cleaned_up_first(self):
         cleanup = Mock()
-        mgr = ReservationManager(["dev0"], cleanup=cleanup)
+        mgr = ReservationManager(registry_of("dev0"), cleanup=cleanup)
         owner = mgr.create(3600, "dev0")
         owner.expires_at = time.time() - 1
         again = mgr.create(3600, "dev0")
@@ -220,7 +226,7 @@ class TestReservationManagerGivenDevice:
     def test_failed_cleanup_of_the_expired_owner_answers_when_to_retry(self):
         """C: a device held by a failing cleanup is 'reserved' until the next background attempt."""
         mgr = ReservationManager(
-            ["dev0"], cleanup=Mock(side_effect=RuntimeError("stuck")), cleanup_wait=lambda _: 15.0,
+            registry_of("dev0"), cleanup=Mock(side_effect=RuntimeError("stuck")), cleanup_wait=lambda _: 15.0,
         )
         mgr.create(3600, "dev0").expires_at = time.time() - 1
         with pytest.raises(NoDeviceAvailableError) as exc:
@@ -229,7 +235,7 @@ class TestReservationManagerGivenDevice:
 
     @pytest.mark.parametrize("recovering", [True, False])
     def test_quarantined_device_is_refused(self, recovering):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         mgr.quarantine(mgr.create(3600, "dev0"), recovering=recovering)
         with pytest.raises(DeviceRecoveryUnavailable) as exc:
             mgr.create(3600, "dev0")
@@ -240,29 +246,29 @@ class TestReservationManagerHelpers:
     """Tests for helper methods."""
 
     def test_device_for_valid(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(3600)
         assert mgr.device_for(r.reservation_id) == "dev0"
 
     def test_device_for_invalid(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         assert mgr.device_for("bad-token") is None
 
     def test_all_active(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         mgr.create(3600)
         mgr.create(3600)
         active = mgr.all_active()
         assert len(active) == 2
 
     def test_is_device_reserved(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         mgr.create(3600)
         assert mgr.is_device_reserved("dev0") is True
         assert mgr.is_device_reserved("dev1") is False
 
     def test_expired_reservation_auto_purged(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(1)
         r.expires_at = time.time() - 1  # Force expiry
         assert mgr.is_device_reserved("dev0") is False
@@ -278,7 +284,7 @@ class TestReservationLifecycleConcurrency:
             started.set()
             assert finish.wait(timeout=5)
 
-        mgr = ReservationManager(["dev0"], cleanup=cleanup)
+        mgr = ReservationManager(registry_of("dev0"), cleanup=cleanup)
         old = mgr.create(60)
         old.expires_at = time.time() - 1
         with ThreadPoolExecutor(max_workers=1) as pool:
@@ -297,7 +303,7 @@ class TestReservationLifecycleConcurrency:
             if failed:
                 raise RuntimeError("cleanup failed")
 
-        mgr = ReservationManager(["dev0"], cleanup=cleanup, cleanup_wait=lambda _: 5.0)
+        mgr = ReservationManager(registry_of("dev0"), cleanup=cleanup, cleanup_wait=lambda _: 5.0)
         old = mgr.create(60)
         old.expires_at = time.time() - 1
         with pytest.raises(NoDeviceAvailableError) as exc:  # C: 409 / 1005, not 503 / 1004
@@ -310,7 +316,7 @@ class TestReservationLifecycleConcurrency:
         def cleanup(device_id):
             raise RuntimeError("cleanup failed")
 
-        mgr = ReservationManager(["dev0", "dev1"], cleanup=cleanup)
+        mgr = ReservationManager(registry_of("dev0", "dev1"), cleanup=cleanup)
         old = mgr.create(60)
         old.expires_at = time.time() - 1
         assert mgr.create(60).device_id == "dev1"
@@ -325,7 +331,7 @@ class TestReservationLifecycleConcurrency:
                 started.set()
                 assert finish.wait(timeout=5)
 
-        mgr = ReservationManager(["dev0", "dev1"], cleanup=cleanup)
+        mgr = ReservationManager(registry_of("dev0", "dev1"), cleanup=cleanup)
         old = mgr.create(60)
         with ThreadPoolExecutor(max_workers=2) as pool:
             release = pool.submit(mgr.delete, old.reservation_id)
@@ -346,7 +352,7 @@ class TestReservationLifecycleConcurrency:
             if device_id == "dev1":
                 raise RuntimeError("cleanup failed")
 
-        mgr = ReservationManager(["dev0", "dev1"], cleanup=cleanup)
+        mgr = ReservationManager(registry_of("dev0", "dev1"), cleanup=cleanup)
         first = mgr.create(60)
         second = mgr.create(60)
         assert mgr.delete_all() == 2  # C: both released for the clients
@@ -360,7 +366,7 @@ class TestReservationLifecycleConcurrency:
         operation_started = threading.Event()
         finish = threading.Event()
         cleanup_started = threading.Event()
-        mgr = ReservationManager(["dev0"], cleanup=lambda _: cleanup_started.set())
+        mgr = ReservationManager(registry_of("dev0"), cleanup=lambda _: cleanup_started.set())
         reservation = mgr.create(60)
 
         def operate():
@@ -398,7 +404,7 @@ class TestReservationLifecycleConcurrency:
         assert len({reservation.device_id for reservation in reservations}) == 2
 
     def test_stale_reservation_cannot_operate_on_reassigned_device(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         old = mgr.create(60)
         assert mgr.delete(old.reservation_id)
         assert mgr.create(60).device_id == old.device_id
@@ -760,13 +766,13 @@ class TestReservationManagerDeleteAll:
     """Tests for ReservationManager.delete_all()."""
 
     def test_delete_all_returns_count(self):
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         mgr.create(3600)
         mgr.create(3600)
         assert mgr.delete_all() == 2
 
     def test_delete_all_frees_devices(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         mgr.create(3600)
         assert mgr.delete_all() == 1
         # Device should be available again
@@ -774,7 +780,7 @@ class TestReservationManagerDeleteAll:
         assert r.device_id == "dev0"
 
     def test_delete_all_empty_returns_zero(self):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         assert mgr.delete_all() == 0
 
 
@@ -844,26 +850,26 @@ class TestUnlimitedReservation:
 
     def test_create_unlimited_reservation(self):
         """Creating with duration_seconds=0 sets expires_at=None."""
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(0)
         assert r.expires_at is None
         assert r.duration_seconds == 0
 
     def test_unlimited_expires_in_is_none(self):
         """Unlimited reservation expires_in returns None."""
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(0)
         assert r.expires_in is None
 
     def test_unlimited_is_not_expired(self):
         """Unlimited reservation is never expired."""
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(0)
         assert r.is_expired is False
 
     def test_unlimited_not_purged(self):
         """Unlimited reservation is not purged by _purge_expired."""
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         r_unlimited = mgr.create(0)
         r_timed = mgr.create(1)
         # Force the timed one to expire
@@ -874,7 +880,7 @@ class TestUnlimitedReservation:
 
     def test_soonest_expiry_ignores_unlimited(self):
         """_soonest_expiry excludes unlimited reservations."""
-        mgr = ReservationManager(["dev0", "dev1"])
+        mgr = ReservationManager(registry_of("dev0", "dev1"))
         mgr.create(0)  # unlimited
         r_timed = mgr.create(600)
         with mgr._lock:
@@ -883,7 +889,7 @@ class TestUnlimitedReservation:
 
     def test_soonest_expiry_all_unlimited(self):
         """Unlimited holds have no scheduled release."""
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         mgr.create(0)
         with mgr._lock:
             soonest = mgr._soonest_expiry()
@@ -1129,7 +1135,7 @@ class TestGoneReasons:
 
     def test_manager_remembers_why_an_id_ended(self):
         from wilab.reservation import EXPIRED, INVALIDATED, NOT_FOUND, RELEASED
-        mgr = ReservationManager(["dev0", "dev1", "dev2"])
+        mgr = ReservationManager(registry_of("dev0", "dev1", "dev2"))
         released, expired, invalidated = mgr.create(60), mgr.create(60), mgr.create(60)
         mgr.delete(released.reservation_id)
         expired.expires_at = time.time() - 1
@@ -1142,14 +1148,14 @@ class TestGoneReasons:
 
     def test_reasons_are_forgotten_after_an_hour(self, monkeypatch):
         from wilab import reservation as module
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         rid = mgr.create(60).reservation_id
         mgr.delete(rid)
         monkeypatch.setattr(module, "ENDED_TTL", -1.0)
         assert mgr.ended_reason(rid) == module.NOT_FOUND
 
     def test_release_with_failed_cleanup_is_released_not_expired(self):
-        mgr = ReservationManager(["dev0"], cleanup=Mock(side_effect=RuntimeError("stuck")))
+        mgr = ReservationManager(registry_of("dev0"), cleanup=Mock(side_effect=RuntimeError("stuck")))
         rid = mgr.create(60).reservation_id
         assert mgr.delete(rid)
         assert mgr.ended_reason(rid) == "reservation_released"
@@ -1188,7 +1194,7 @@ class TestGoneReasons:
         clock = {"now": 1000.0}
         monkeypatch.setattr(module, "time", SimpleNamespace(time=time.time, monotonic=lambda: clock["now"]))
         cleanup = Mock(side_effect=RuntimeError("hostapd stuck"))
-        mgr = ReservationManager(["dev0", "dev1", "dev2"], cleanup=cleanup)
+        mgr = ReservationManager(registry_of("dev0", "dev1", "dev2"), cleanup=cleanup)
         stuck = mgr.create(60)
         assert mgr.delete(stuck.reservation_id)            # cleanup failed: the ID is gone all the same
         assert "dev0" in mgr.snapshot()                    # the antenna stays held
@@ -1312,7 +1318,7 @@ class TestWallClockJumps:
     """STAB-5: expiries follow the monotonic clock; a wall-clock jump changes neither."""
 
     def test_a_forward_jump_does_not_expire_a_reservation(self, monkeypatch):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(3600)
         real = time.time
         monkeypatch.setattr(time, "time", lambda: real() + 7200)   # NTP moves the clock 2 h ahead
@@ -1320,7 +1326,7 @@ class TestWallClockJumps:
         assert 3590 <= r.expires_in <= 3600
 
     def test_a_backward_jump_does_not_stretch_a_reservation(self, monkeypatch):
-        mgr = ReservationManager(["dev0"])
+        mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(60)
         real_time, real_mono = time.time, time.monotonic
         monkeypatch.setattr(time, "time", lambda: real_time() - 7200)

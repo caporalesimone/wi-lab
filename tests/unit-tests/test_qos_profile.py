@@ -6,7 +6,7 @@ import threading
 import time
 
 import pytest
-from conftest import create_network, network_body
+from conftest import configured_devices, create_network, network_body
 
 from wilab.models import (
     QosProfile,
@@ -556,7 +556,7 @@ class TestQosProfileAPI:
         from wilab.reservation import ReservationManager
 
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+        rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(context, 'reservations', rmgr)
 
         # Reserve a device

@@ -3,6 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
+from conftest import configured_devices
 
 from wilab.config import load_config
 from wilab.models import NetworkCreateRequest
@@ -19,7 +20,7 @@ def _request() -> NetworkCreateRequest:
 
 @pytest.fixture
 def manager(monkeypatch) -> NetworkManager:
-    mgr = NetworkManager(load_config())
+    mgr = NetworkManager(load_config(), configured_devices())
     monkeypatch.setattr(startup_module, "STARTUP_RETRY_DELAY", 0.0)
     monkeypatch.setattr(mgr.dhcp_server, "start", Mock(return_value={}))
     monkeypatch.setattr(mgr.dhcp_server, "stop", Mock())

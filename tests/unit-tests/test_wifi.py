@@ -3,7 +3,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
-from conftest import active_network
+from conftest import active_network, configured_devices
 
 from wilab.config import NetworkEntry, load_config
 from wilab.models import NetworkCreateRequest
@@ -20,14 +20,14 @@ class TestNetworkManagerInit:
     def test_network_manager_init(self):
         """Test NetworkManager initialization."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         assert mgr.config == cfg
         assert mgr.active == {}
     
     def test_network_manager_has_dhcp_server(self):
         """Test that NetworkManager has DHCP server instance."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         assert hasattr(mgr, 'dhcp_server')
         assert mgr.dhcp_server is not None
 
@@ -38,14 +38,14 @@ class TestSubnetResolution:
     def test_get_subnet_explicit(self):
         """First subnet matches dhcp_base_network /24."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         subnet = mgr._get_subnet('wls16')
         assert subnet == '192.168.120.0/24'
     
     def test_get_subnet_unknown_device_id(self):
         """Test that unknown device_id raises ValueError."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         with pytest.raises(ValueError, match="antenna of this reservation is not managed"):
             mgr._get_subnet('unknown-network')
     
@@ -53,7 +53,7 @@ class TestSubnetResolution:
         """Test sequential allocation increments third octet."""
         cfg = load_config()
         cfg.antennas.append(NetworkEntry(interface='wlan1', display_name='extra'))
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         first = mgr._get_subnet('wls16')
         second = mgr._get_subnet('wlan1')
         assert first == '192.168.120.0/24'
@@ -67,7 +67,7 @@ class TestSubnetResolution:
         cfg.antennas.append(NetworkEntry(interface="wlan1", display_name="extra"))
         host_routes = {IPv4Network("192.168.10.0/24")}
         monkeypatch.setattr("wilab.network.subnet_allocator.host_ipv4_networks", lambda: host_routes)
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         # A later antenna can start first without taking the first antenna's slot.
         assert mgr._get_subnet("wlan1") == "192.168.11.0/24"
         assert mgr._get_subnet("wls16") == "192.168.9.0/24"
@@ -80,7 +80,7 @@ class TestSubnetResolution:
         from ipaddress import IPv4Network
         from unittest.mock import Mock
 
-        mgr = NetworkManager(load_config())
+        mgr = NetworkManager(load_config(), configured_devices())
         monkeypatch.setattr(
             "wilab.network.subnet_allocator.host_ipv4_networks", lambda: {IPv4Network("192.168.0.0/16")},
         )
@@ -98,7 +98,7 @@ class TestNetworkLifecycle:
     def test_get_status_inactive_network(self):
         """Test getting status of inactive network."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         status = mgr.get_status('wls16')
         assert status is not None
         assert status.active is False
@@ -107,7 +107,7 @@ class TestNetworkLifecycle:
     def test_get_status_unknown_network(self):
         """Test getting status of unknown network returns None."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         status = mgr.get_status('unknown-network')
         assert status is None
     
@@ -115,7 +115,7 @@ class TestNetworkLifecycle:
         """Test starting a network (with mocked DHCP)."""
         # Mock the DHCP server start method to avoid system calls
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         startup = []
         
         def mock_dhcp_start(*args, **kwargs):
@@ -156,7 +156,7 @@ class TestNetworkLifecycle:
 
     @pytest.mark.parametrize("failure", ["ap", "readiness_timeout", "gateway", "dhcp"])
     def test_partial_start_is_rolled_back(self, monkeypatch, tmp_path, failure):
-        mgr = NetworkManager(load_config())
+        mgr = NetworkManager(load_config(), configured_devices())
         device = "wls16"
         events = []
         monkeypatch.setattr(hostapd, "HOSTAPD_CONFIG_DIR", str(tmp_path))
@@ -242,7 +242,7 @@ class TestNetworkLifecycle:
         from wilab.network import commands
         from wilab.wifi import manager, startup
 
-        mgr = NetworkManager(load_config())
+        mgr = NetworkManager(load_config(), configured_devices())
         device = "wls16"
         events = []
         now = 0.0
@@ -335,7 +335,7 @@ class TestNetworkLifecycle:
     def test_start_network_with_internet_disabled(self, monkeypatch):
         """Test starting network with internet disabled."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         events = []
         
         def mock_dhcp_start(*args, **kwargs):
@@ -366,7 +366,7 @@ class TestNetworkLifecycle:
         assert status.subnet == "192.168.121.0/24"
 
     def test_failed_hostapd_stop_keeps_internet_block(self, monkeypatch):
-        mgr = NetworkManager(load_config())
+        mgr = NetworkManager(load_config(), configured_devices())
         released = []
 
         def fail(_device):
@@ -380,7 +380,7 @@ class TestNetworkLifecycle:
         assert not released
 
     def test_partial_offline_block_is_cleaned_before_ap_start(self, monkeypatch):
-        mgr = NetworkManager(load_config())
+        mgr = NetworkManager(load_config(), configured_devices())
         ap_started = []
         fw = _BlockFirewall()
         calls = fw.calls
@@ -401,7 +401,7 @@ class TestNetworkLifecycle:
     def test_start_network_with_reservation_expiry(self, monkeypatch):
         """Test starting network with explicit expires_at_timestamp from reservation."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
@@ -430,7 +430,7 @@ class TestNetworkLifecycle:
     def test_stop_network(self, monkeypatch):
         """Test stopping a network."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
@@ -461,13 +461,13 @@ class TestNetworkLifecycle:
     def test_stop_network_nonexistent(self, monkeypatch):
         """Test stopping a network that doesn't exist (should not raise)."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         mgr.stop_network('nonexistent')  # Should not raise
     
     def test_auto_expire_network(self, monkeypatch):
         """Test that network auto-expires after timeout."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
@@ -504,7 +504,7 @@ class TestInternetControl:
     """Tests for internet enable/disable."""
 
     def test_failed_disable_keeps_enabled_state(self, monkeypatch):
-        mgr = NetworkManager(load_config())
+        mgr = NetworkManager(load_config(), configured_devices())
         device = 'wls16'
         mgr.active[device] = active_network(interface=device, internet_enabled=True)
 
@@ -519,7 +519,7 @@ class TestInternetControl:
     def test_enable_internet(self, monkeypatch):
         """Test enabling internet for a network."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
@@ -548,7 +548,7 @@ class TestInternetControl:
     def test_disable_internet(self, monkeypatch):
         """Test disabling internet for a network."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
@@ -581,7 +581,7 @@ class TestInternetControl:
     def test_internet_control_inactive_network(self):
         """Test that internet control on inactive network raises error."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         
         with pytest.raises(NetworkNotActive, match="is not active"):
             mgr.enable_internet('wls16')
@@ -593,7 +593,7 @@ class TestClientList:
     def test_list_clients_empty(self, monkeypatch):
         """Test listing clients returns empty list for now."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
@@ -619,7 +619,7 @@ class TestClientList:
         """Test listing clients from dnsmasq lease file."""
         
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         
         # Create a fake lease file
         lease_file = tmp_path / "leases-ap-01.db"
@@ -668,7 +668,7 @@ class TestShutdownAll:
     def test_shutdown_all_networks(self, monkeypatch):
         """Test shutting down all active networks."""
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
         
         def mock_dhcp_start(*args, **kwargs):
             return {'gateway': '192.168.10.1'}
@@ -701,7 +701,7 @@ class TestTxPower:
 
     def test_tx_power_levels_default_on_start(self, monkeypatch):
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
 
         # Mock subsystems
         monkeypatch.setattr(mgr.dhcp_server, 'start', lambda **kwargs: {'gateway': '192.168.120.1'})
@@ -741,7 +741,7 @@ class TestTxPower:
 
     def test_set_tx_power_level(self, monkeypatch):
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
 
         monkeypatch.setattr(mgr.dhcp_server, 'start', lambda **kwargs: {'gateway': '192.168.120.1'})
         monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda **kwargs: {})
@@ -781,7 +781,7 @@ class TestTxPower:
 
     def test_set_tx_power_level_mismatch_raises_and_preserves_state(self, monkeypatch):
         cfg = load_config()
-        mgr = NetworkManager(cfg)
+        mgr = NetworkManager(cfg, configured_devices(cfg))
 
         monkeypatch.setattr(mgr.dhcp_server, 'start', lambda **kwargs: {'gateway': '192.168.120.1'})
         monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda **kwargs: {})

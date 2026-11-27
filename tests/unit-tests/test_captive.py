@@ -5,7 +5,7 @@ import threading
 from unittest.mock import Mock
 
 import pytest
-from conftest import active_network
+from conftest import active_network, configured_devices
 
 from wilab.config import load_config
 from wilab.models import NetworkCreateRequest
@@ -214,7 +214,7 @@ def _captive_request(**kwargs) -> NetworkCreateRequest:
 
 
 def test_network_lifecycle_starts_and_removes_the_portal(monkeypatch, iptables):
-    mgr = NetworkManager(load_config())
+    mgr = NetworkManager(load_config(), configured_devices())
     dhcp_start = Mock(return_value={})
     monkeypatch.setattr(mgr.dhcp_server, "start", dhcp_start)
     monkeypatch.setattr(mgr.dhcp_server, "stop", Mock())
@@ -234,7 +234,7 @@ def test_network_lifecycle_starts_and_removes_the_portal(monkeypatch, iptables):
 
 
 def test_portal_failure_rolls_back_the_network(monkeypatch, iptables):
-    mgr = NetworkManager(load_config())
+    mgr = NetworkManager(load_config(), configured_devices())
     monkeypatch.setattr(mgr.dhcp_server, "start", Mock(return_value={}))
     monkeypatch.setattr(mgr.hostapd_manager, "start", Mock())
     stop_ap = Mock()

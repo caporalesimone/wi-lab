@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from conftest import active_network
+from conftest import active_network, configured_devices, registry_of
 from fastapi.testclient import TestClient
 
 from wilab.config import load_config
@@ -27,7 +27,7 @@ def clock(monkeypatch):
 
 @pytest.fixture
 def stuck_network(monkeypatch, clock):
-    mgr = NetworkManager(load_config())
+    mgr = NetworkManager(load_config(), configured_devices())
     device = mgr.config.antennas[0].device_id
     status = active_network(interface=device, deadline=time.monotonic() - 3600)  # long expired
     mgr.active[device] = status
@@ -76,7 +76,7 @@ def test_backoff_steps_and_cap(stuck_network, clock):
 def test_reservation_sweep_skips_a_device_backing_off_but_delete_does_not(caplog):
     due = {"dev0": False}
     cleanup = Mock(side_effect=RuntimeError("stop failed"))
-    store = ReservationManager(["dev0"], cleanup=cleanup, cleanup_due=lambda d: due[d])
+    store = ReservationManager(registry_of("dev0"), cleanup=cleanup, cleanup_due=lambda d: due[d])
     reservation = store.create(60)
     reservation.expires_at = 1.0
     store.expire()  # backing off: not attempted
@@ -100,7 +100,7 @@ def test_requests_never_repeat_a_cleanup_that_is_backing_off():
     """Only the background sweep and an explicit release retry a failed cleanup."""
     cleanup = Mock(side_effect=RuntimeError("stop failed"))
     store = ReservationManager(
-        ["dev0"], cleanup=cleanup, cleanup_due=lambda _d: False, cleanup_wait=lambda _d: 42.0,
+        registry_of("dev0"), cleanup=cleanup, cleanup_due=lambda _d: False, cleanup_wait=lambda _d: 42.0,
     )
     reservation = store.create(60)
     reservation.expires_at = 1.0

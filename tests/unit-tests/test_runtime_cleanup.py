@@ -113,24 +113,23 @@ def test_a_stale_gateway_address_does_not_shift_the_subnet(monkeypatch, reset_wo
     from ipaddress import IPv4Network
 
     from wilab.api import discovery as discovery_service
-    from wilab.config import NetworkEntry
+    from wilab.devices import Device
     from wilab.network import subnet_allocator
 
     config = context.config
     manager = context.manager
-    radio = NetworkEntry(interface="wlxstale", display_name="stale")
+    radio = Device(interface="wlxstale", display_name="stale")
     base = IPv4Network(config.dhcp_base_network)
-    natural = IPv4Network((int(base.network_address) + 256 * len(config.antennas), 24))
+    natural = IPv4Network((int(base.network_address) + 256 * len(context.devices), 24))
     routes = {natural}   # the address the radio kept from the previous run
 
     def reset(interface):
         if reset_works and interface == radio.interface:
             routes.clear()
 
-    monkeypatch.setattr(discovery_service, "scan_new_networks", lambda cfg, quiet=False: [radio])
+    monkeypatch.setattr(discovery_service, "scan_new_networks", lambda cfg, current, quiet=False: [radio])
     monkeypatch.setattr(discovery_service, "exclude_from_host_managers", lambda names: None)
     monkeypatch.setattr(discovery_service, "reset_interface", reset)
-    monkeypatch.setattr(manager.watchdog, "watch", lambda devices: None)
     monkeypatch.setattr(subnet_allocator, "host_ipv4_networks", lambda: set(routes))
     context.discovery.scan()
     subnet = IPv4Network(manager._get_subnet(radio.device_id))

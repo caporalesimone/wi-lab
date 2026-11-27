@@ -10,10 +10,11 @@ import math
 import secrets
 import threading
 import time
-from _thread import RLock
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+
+from .devices import DeviceRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -126,28 +127,26 @@ class DeviceBusyError(Exception):
 
 
 class ReservationManager:
-    """In-memory reservation store with thread-safe operations."""
+    """In-memory reservation store with thread-safe operations.
+
+    Allocates the devices of *devices* in the order they were added, and
+    serializes their cleanup with each device's lock.
+    """
 
     def __init__(
         self,
-        device_ids: list[str],
+        devices: DeviceRegistry,
         cleanup: Callable[[str], None] | None = None,
-        device_lock: Callable[[str], RLock] | None = None,
         cleanup_due: Callable[[str], bool] | None = None,
         cleanup_wait: Callable[[str], float] | None = None,
         before_release: Callable[[str], object] | None = None,
         on_expiry: Callable[[str], object] | None = None,
     ) -> None:
-        self._device_ids = list(device_ids)
+        self._devices = devices
         self._reservations: dict[str, Reservation] = {}   # reservation_id -> Reservation
         self._device_to_rid: dict[str, str] = {}           # device_id -> reservation_id
         self._lock = threading.RLock()
         self._blocked: dict[str, bool] = {}
-        self._own_locks: dict[str, RLock] | None = None
-        if device_lock is None:
-            self._own_locks = {device_id: threading.RLock() for device_id in device_ids}
-            device_lock = self._own_locks.__getitem__
-        self._device_lock = device_lock
         self._cleanup = cleanup
         # WD-6: background sweeps skip a device whose failed cleanup is backing off.
         self._cleanup_due = cleanup_due or (lambda _device: True)
@@ -186,14 +185,14 @@ class ReservationManager:
             device_id = self._first_available()
             if device_id is not None:
                 return self._reserve(device_id, duration_seconds)
-            if any(self._blocked.values()) or len(self._blocked) == len(self._device_ids):
+            if any(self._blocked.values()) or len(self._blocked) == len(self._devices):
                 raise DeviceRecoveryUnavailable(any(self._blocked.values()))
             raise NoDeviceAvailableError(self._soonest_expiry())
 
     def _create_on(self, device_id: str, duration_seconds: int) -> Reservation:
         """Reserve one given device; an expired owner is cleaned up first."""
         with self._lock:
-            if device_id not in self._device_ids:
+            if device_id not in self._devices:
                 raise UnknownDeviceError(device_id)
         for _ in range(2):
             with self._lock:
@@ -217,7 +216,7 @@ class ReservationManager:
 
     def quarantine(self, reservation: Reservation, *, recovering: bool) -> None:
         """Invalidate an owner and exclude its antenna in one store operation."""
-        with self._device_lock(reservation.device_id), self._lock:
+        with self._devices.lock(reservation.device_id), self._lock:
             if self._reservations.get(reservation.reservation_id) is not reservation:
                 raise RuntimeError("Cannot quarantine a stale reservation")
             self._blocked[reservation.device_id] = recovering
@@ -249,16 +248,6 @@ class ReservationManager:
                 continue
             return not recovering and all(r.is_expired for r in reservations)
         return False
-
-    def add_devices(self, device_ids: list[str]) -> None:
-        """Make newly discovered devices allocatable; known devices are ignored."""
-        with self._lock:
-            for device_id in device_ids:
-                if device_id in self._device_ids:
-                    continue
-                if self._own_locks is not None:
-                    self._own_locks.setdefault(device_id, threading.RLock())
-                self._device_ids.append(device_id)
 
     def _reserve(self, device_id: str, duration_seconds: int) -> Reservation:
         reservation_id = secrets.token_hex(RESERVATION_TOKEN_BYTES)
@@ -322,7 +311,7 @@ class ReservationManager:
             reservation.release_requests += 1
         try:
             self._before_release(reservation.device_id)
-            with self._device_lock(reservation.device_id):
+            with self._devices.lock(reservation.device_id):
                 with self._lock:
                     current = self._reservations.get(reservation_id)
                 if current is not reservation:
@@ -398,7 +387,7 @@ class ReservationManager:
         if reservation is None:
             yield None
             return
-        lock = self._device_lock(reservation.device_id)
+        lock = self._devices.lock(reservation.device_id)
         if not lock.acquire(timeout=-1 if timeout is None else timeout):
             raise DeviceBusyError(reservation.device_id)
         try:
@@ -414,7 +403,7 @@ class ReservationManager:
     # ------------------------------------------------------------------
 
     def _first_available(self) -> str | None:
-        for did in self._device_ids:
+        for did in self._devices.ids():
             if did not in self._device_to_rid and did not in self._blocked:
                 return did
         return None
@@ -450,7 +439,7 @@ class ReservationManager:
         # next reservation on this device makes a call. A running start is not
         # cancelled here: it holds the device lock and ends on its own.
         self._on_expiry(reservation.device_id)
-        lock = self._device_lock(reservation.device_id)
+        lock = self._devices.lock(reservation.device_id)
         if not lock.acquire(blocking=False):
             return
         try:

@@ -7,9 +7,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ...api.auth import maintenance_router as protected_router
 from ...api.auth import require_token
-from ...api.dependencies import get_config, get_reservation_manager, reservation_gone
+from ...api.dependencies import (
+    DevicesDep,
+    get_config,
+    get_reservation_manager,
+    reservation_gone,
+)
 from ...api.errors import ApiErrorCode, domain_error
 from ...config import AppConfig
+from ...devices import DeviceRegistry
 from ...reservation import (
     DeviceRecoveryUnavailable,
     NoDeviceAvailableError,
@@ -72,12 +78,10 @@ class ReservationResponse(BaseModel):
     expires_in: int | None = Field(None, description="Seconds remaining until expiry, null if unlimited")
 
 
-def _display_name_for(device_id: str, config: AppConfig) -> str:
-    """Look up user-facing display name from config."""
-    for n in config.antennas:
-        if n.device_id == device_id:
-            return n.display_name
-    return device_id
+def _display_name_for(device_id: str, devices: DeviceRegistry) -> str:
+    """Look up the user-facing display name of a managed device."""
+    device = devices.get(device_id)
+    return device.display_name if device is not None else device_id
 
 
 # ---- Endpoints ----
@@ -112,6 +116,7 @@ def _display_name_for(device_id: str, config: AppConfig) -> str:
     },
 )
 def create_reservation(
+    devices: DevicesDep,
     req: ReservationCreateRequest = Body(..., openapi_examples={
         "timed": {"summary": "Reserve for two minutes", "value": {"duration_seconds": 120}},
         "unlimited": {"summary": "Reserve until release (if allowed)", "value": {"duration_seconds": 0}},
@@ -178,14 +183,14 @@ def create_reservation(
             ),
         )
 
-    return _build_response(r, config)
+    return _build_response(r, devices)
 
 
-def _build_response(r, config: AppConfig) -> ReservationResponse:
+def _build_response(r, devices: DeviceRegistry) -> ReservationResponse:
     """Build ReservationResponse handling unlimited (expires_at=None)."""
     return ReservationResponse(
         reservation_id=r.reservation_id,
-        display_name=_display_name_for(r.device_id, config),
+        display_name=_display_name_for(r.device_id, devices),
         interface=r.device_id,
         expires_at=format_utc_timestamp(r.expires_at),
         expires_in=r.expires_in,
@@ -227,8 +232,8 @@ def delete_all_reservations(
     },
 )
 def get_reservation(
+    devices: DevicesDep,
     reservation_id: str = Path(...),
-    config: AppConfig = Depends(get_config),
     mgr: ReservationManager = Depends(get_reservation_manager),
     _auth: bool = Depends(require_token),
 ):
@@ -237,7 +242,7 @@ def get_reservation(
     if r is None:
         raise reservation_gone(mgr, reservation_id)
 
-    return _build_response(r, config)
+    return _build_response(r, devices)
 
 
 @router.delete(

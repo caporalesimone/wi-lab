@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
-from conftest import create_network, network_body
+from conftest import configured_devices, create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app
@@ -36,7 +36,7 @@ def valid_token():
 def reservation_id(client, valid_token, monkeypatch, context):
     """Create a reservation and return the reservation_id token."""
     cfg = load_config()
-    rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+    rmgr = ReservationManager(configured_devices(cfg))
     monkeypatch.setattr(context, 'reservations', rmgr)
 
     resp = client.post(
@@ -247,8 +247,8 @@ class TestChannelManagerResolve:
 # ---------------------------------------------------------------------------
 
 def _set_show_dfs_channels(context, value: bool) -> None:
-    config = context.config
-    config.antennas = [n.model_copy(update={"show_dfs_channels": value}) for n in config.antennas]
+    for device in context.devices.all():
+        device.show_dfs_channels = value
     context.channels.invalidate()
 
 
@@ -323,11 +323,11 @@ class TestLifespanChannelCacheWarmup:
     def test_cache_populated_when_discovery_adds_an_antenna(self, monkeypatch):
         import time
 
-        from wilab import config as config_module
+        from wilab.api import context as context_module
         from wilab.wifi import discovery
         from wilab.wifi.discovery import DiscoveredRadio
 
-        monkeypatch.setattr(config_module, "_initial_networks", lambda labels: [])
+        monkeypatch.setattr(context_module, "_initial_devices", lambda config: [])
         monkeypatch.setattr(discovery, "discover_radios", lambda **kwargs: [
             DiscoveredRadio("wls16", "phy0", None),
         ])

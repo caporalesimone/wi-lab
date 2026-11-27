@@ -292,6 +292,13 @@ def clean_manager(config, monkeypatch):
     """A fresh NetworkManager with no active networks and a mocked DHCP server."""
 ```
 
+Managers take the `DeviceRegistry` of the managed devices (Fable ARCH-4).
+`configured_devices(config)` returns a registry with the enabled antennas of the
+test configuration, the devices an app built by the tests starts with;
+`registry_of("dev0", "dev1")` returns one with the given interfaces:
+`NetworkManager(config, configured_devices(config))`,
+`ReservationManager(registry_of("dev0"))`.
+
 `network_body(**flat)` builds the sectioned create body (`radio`, `wifi`,
 `internet`, `captive_portal`) from flat fields. Every create runs as in
 production: the `POST` answers `202` and the start runs in a background job.
@@ -455,7 +462,7 @@ def test_start_network(self, manager):
 # Good: Fixture provides clean state each time
 @pytest.fixture
 def manager(config):
-    return NetworkManager(config)
+    return NetworkManager(config, configured_devices(config))
 
 def test_something(self, manager):
     # Fresh manager instance

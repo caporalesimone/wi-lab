@@ -13,7 +13,7 @@ import time
 from unittest.mock import Mock
 
 import pytest
-from conftest import active_network, network_body
+from conftest import active_network, configured_devices, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api.routes import network
@@ -521,7 +521,7 @@ def test_start_whose_channels_cannot_be_read_is_a_radio_fault_when_the_antenna_i
     from wilab.wifi import manager as manager_module
     from wilab.wifi.manager import NetworkManager
 
-    mgr = NetworkManager(load_config())
+    mgr = NetworkManager(load_config(), configured_devices())
     monkeypatch.setattr(
         mgr._channel_manager, "validate_network", Mock(side_effect=CommandError("iw failed", returncode=1)),
     )

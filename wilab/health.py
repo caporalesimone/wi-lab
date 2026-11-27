@@ -58,7 +58,7 @@ class HealthResult:
 
 def _not_busy(manager: NetworkManager, device: str) -> bool:
     """True if no start, stop or restore holds the device; never waits (RACE-2)."""
-    lock = manager.device_lock(device)
+    lock = manager.devices.lock(device)
     if not lock.acquire(blocking=False):
         return False
     lock.release()

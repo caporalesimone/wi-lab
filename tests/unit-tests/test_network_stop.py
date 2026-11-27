@@ -9,6 +9,7 @@ otherwise reach the host and the other networks.
 from unittest.mock import Mock
 
 import pytest
+from conftest import configured_devices
 
 from wilab.config import load_config
 from wilab.models import NetworkCreateRequest
@@ -20,7 +21,7 @@ from wilab.wifi.manager import NetworkManager, NetworkStopError
 @pytest.fixture
 def running(monkeypatch):
     """A network started with hostapd and DHCP as fakes; the firewall uses the mocked commands."""
-    mgr = NetworkManager(load_config())
+    mgr = NetworkManager(load_config(), configured_devices())
     mgr.qos_manager = Mock()
     mgr.qos_profile_manager = Mock()
     instances = mgr.hostapd_manager._instances

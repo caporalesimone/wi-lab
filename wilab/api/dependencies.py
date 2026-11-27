@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Path, Request
 
 from ..config import AppConfig
+from ..devices import DeviceRegistry
 from ..network.qos import QosManager
 from ..network.qos_profile import QosProfileManager
 from ..reservation import Reservation, ReservationManager
@@ -23,6 +24,10 @@ def get_context(request: Request) -> AppContext:
 
 def get_config(request: Request) -> AppConfig:
     return get_context(request).config
+
+
+def get_devices(request: Request) -> DeviceRegistry:
+    return get_context(request).devices
 
 
 def get_manager(request: Request) -> NetworkManager:
@@ -46,6 +51,7 @@ def get_qos_profile_manager(request: Request) -> QosProfileManager:
 
 
 ReservationManagerDep = Annotated[ReservationManager, Depends(get_reservation_manager)]
+DevicesDep = Annotated[DeviceRegistry, Depends(get_devices)]
 
 
 def reservation_gone(mgr: ReservationManager, reservation_id: str) -> HTTPException:

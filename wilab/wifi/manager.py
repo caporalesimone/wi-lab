@@ -3,7 +3,6 @@ import re
 import secrets
 import threading
 import time
-from _thread import RLock
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from ipaddress import IPv4Network
@@ -11,6 +10,7 @@ from typing import Any
 
 from .. import heartbeat
 from ..config import AppConfig
+from ..devices import DeviceRegistry
 from ..health import HealthChecks
 from ..models import ClientInfo, NetworkCreateRequest, NetworkStatus
 from ..network.captive import CaptivePortal, CaptivePortalError
@@ -110,8 +110,12 @@ UNKNOWN_ANTENNA = "The antenna of this reservation is not managed"
 class NetworkManager:
     """Manages WiFi AP network lifecycle including DHCP, NAT, and isolation."""
     
-    def __init__(self, config: AppConfig, channel_manager: ChannelManager | None = None):
+    def __init__(
+        self, config: AppConfig, devices: DeviceRegistry, channel_manager: ChannelManager | None = None,
+    ):
         self.config = config
+        # The managed devices and their locks, shared with the reservations (ARCH-4).
+        self.devices = devices
         self.active: dict[str, ActiveNetwork] = {}
         self.dhcp_server = DhcpServer()
         self.nat_manager = NatManager(upstream_interface=config.upstream_interface)
@@ -120,18 +124,16 @@ class NetworkManager:
         self.host_guard = HostGuard()  # SEC-3: AP clients cannot reach the host
         self.captive_portals: dict[str, CaptivePortal] = {}
         # One channel cache for the whole service (BUG-4): the API passes its own.
-        self._channel_manager = channel_manager or ChannelManager(show_dfs_channels=config.show_dfs_channels_for)
+        self._channel_manager = channel_manager or ChannelManager(show_dfs_channels=devices.show_dfs_channels)
         self.tx_power = TxPowerControl(self._channel_manager)
         self.qos_manager: QosManager | None = None
         self.qos_profile_manager: QosProfileManager | None = None
-        self._device_locks = {n.device_id: threading.RLock() for n in config.antennas}
-        self._device_locks_guard = threading.Lock()
         self._firewall_lock = threading.Lock()
-        self.subnets = SubnetAllocator(config)
+        self.subnets = SubnetAllocator(config, devices)
         # WD-6: consecutive cleanup failures and next background attempt per device
         self._cleanup_failures: dict[str, int] = {}
         self._stop_failed: set[str] = set()  # stops to repeat (NetworkStopError)
-        self.clients = ClientLister(config, self.dhcp_server, self.captive_portals)
+        self.clients = ClientLister(devices, self.dhcp_server, self.captive_portals)
         # Asynchronous creates: one job per device, guarded by start_jobs_lock.
         self.start_jobs: dict[str, StartJob] = {}
         self.start_jobs_lock = threading.Lock()
@@ -160,17 +162,9 @@ class NetworkManager:
 
     def _get_subnet(self, device_id: str) -> str:
         """Allocate or reuse a non-overlapping /24 before a new AP start."""
-        if device_id not in [n.device_id for n in self.config.antennas]:
+        if device_id not in self.devices:
             raise ValueError(UNKNOWN_ANTENNA)
         return self.subnets.allocate(device_id)
-
-    def device_lock(self, device_id: str) -> RLock:
-        """Serialize lifecycle operations only for this device."""
-        with self._device_locks_guard:
-            lock = self._device_locks.get(device_id)
-            if lock is None:
-                lock = self._device_locks[device_id] = threading.RLock()
-            return lock
 
     def has_leftovers(self, device_id: str) -> bool:
         """True if a device that is not active still has tracked resources.
@@ -191,7 +185,7 @@ class NetworkManager:
 
     def release_device(self, device_id: str) -> None:
         """Stop all tracked resources before a device can be reassigned."""
-        with self.device_lock(device_id):
+        with self.devices.lock(device_id):
             if device_id in self.active or self.has_leftovers(device_id):
                 self._tracked_stop(device_id)
             if device_id in self.active:
@@ -303,7 +297,7 @@ class NetworkManager:
         expires_at_timestamp: float | None = None, *, allow_internal_retry: bool = True,
         cancelled: Callable[[], bool] | None = None,
     ) -> NetworkStatus:
-        with self.device_lock(device_id):
+        with self.devices.lock(device_id):
             return self._start_network(
                 device_id, req, expires_at_timestamp, allow_internal_retry, cancelled,
             )
@@ -314,7 +308,8 @@ class NetworkManager:
     ) -> None:
         device = reservation.device_id
         self.recovery.remember_radio(device, band, channel)
-        port = next(n.usb_recovery_port for n in self.config.antennas if n.device_id == device)
+        managed = self.devices.get(device)
+        port = managed.usb_port if managed is not None else None
         if not radio_fault or self.config.upstream_interface == device:
             port = None
         reservations.quarantine(reservation, recovering=port is not None)
@@ -364,8 +359,8 @@ class NetworkManager:
         Returns:
             NetworkStatus with active network details
         """
-        # Validate device_id exists in config
-        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
+        # Validate device_id is a managed device
+        cfg_net = self.devices.get(device_id)
         if not cfg_net:
             raise ValueError(UNKNOWN_ANTENNA)
 
@@ -473,7 +468,7 @@ class NetworkManager:
         owner to repeat (REV-9). A rollback, an expiry or a background cleanup
         that fails is retried by the server, not by the client.
         """
-        with self.device_lock(device_id):
+        with self.devices.lock(device_id):
             self._stop_network(device_id, client=client)
 
     def _stop_network(self, device_id: str, *, client: bool = False) -> None:
@@ -487,7 +482,7 @@ class NetworkManager:
         errors: list[str] = []
         
         # Get interface and subnet before removing from active dict
-        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
+        cfg_net = self.devices.get(device_id)
         # A startup rollback runs before the network is active: use the assigned
         # subnet so its isolation rules are removed too (NET-2).
         assigned = self.subnets.assigned(device_id)
@@ -575,7 +570,7 @@ class NetworkManager:
         logger.info(f"Network {device_id} stopped")
 
     def get_status(self, device_id: str) -> NetworkStatus | None:
-        with self.device_lock(device_id):
+        with self.devices.lock(device_id):
             return self._get_status(device_id)
 
     def active_status(self, device_id: str) -> ActiveNetwork | None:
@@ -585,7 +580,7 @@ class NetworkManager:
         settings: no `iw` and no lease file. None if no network runs (an
         expired one is stopped here, like in get_status).
         """
-        with self.device_lock(device_id):
+        with self.devices.lock(device_id):
             st = self.active.get(device_id)
             if st is None:
                 return None
@@ -609,7 +604,7 @@ class NetworkManager:
         network = self.active.get(device_id)
         if not network:
             # Return inactive status if known device_id
-            cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
+            cfg_net = self.devices.get(device_id)
             if not cfg_net:
                 return None
             return NetworkStatus(interface=cfg_net.interface, active=False)
@@ -618,7 +613,7 @@ class NetworkManager:
         if network.expired(time.monotonic()):
             logger.info(f"Network {device_id} expired, stopping")
             self.stop_network(device_id)
-            cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
+            cfg_net = self.devices.get(device_id)
             if not cfg_net:
                 return None
             return NetworkStatus(interface=cfg_net.interface, active=False)
@@ -656,7 +651,7 @@ class NetworkManager:
             raise NetworkNotActive(device_id)
         
         # Get interface for NAT rules
-        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
+        cfg_net = self.devices.get(device_id)
         if not cfg_net:
             raise ValueError(UNKNOWN_ANTENNA)
         
@@ -692,7 +687,7 @@ class NetworkManager:
             raise NetworkNotActive(device_id)
         
         # Get interface for NAT rules
-        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
+        cfg_net = self.devices.get(device_id)
         if not cfg_net:
             raise ValueError(UNKNOWN_ANTENNA)
         
@@ -794,7 +789,7 @@ class NetworkManager:
             self.cancel_start(device_id, timeout=max(0.0, deadline - time.monotonic()))
         # Antennas are released in parallel: one after the other, a pool of ten
         # could pass systemd's stop timeout and be killed half-way (STAB-8).
-        device_ids = sorted({n.device_id for n in self.config.antennas} | self.active.keys())
+        device_ids = sorted(set(self.devices.ids()) | self.active.keys())
         threads = [
             threading.Thread(
                 target=self._release_quietly, args=(device_id,), name=f"shutdown-{device_id}", daemon=True,
@@ -843,7 +838,7 @@ class NetworkManager:
             raise ValueError("TX power level must be 1-4")
         if st.channel is None:
             raise ValueError("Channel unknown for this network")
-        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
+        cfg_net = self.devices.get(device_id)
         if not cfg_net:
             raise ValueError(UNKNOWN_ANTENNA)
         
@@ -862,7 +857,7 @@ class NetworkManager:
             raise NetworkNotActive(device_id)
         if st.channel is None:
             raise ValueError("Channel unknown for this network")
-        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
+        cfg_net = self.devices.get(device_id)
         if not cfg_net:
             raise ValueError(UNKNOWN_ANTENNA)
         
@@ -895,7 +890,7 @@ class NetworkManager:
     def _expire_network(self, device_id: str, status: ActiveNetwork, now: float) -> None:
         if not status.expired(now):
             return
-        lock = self.device_lock(device_id)
+        lock = self.devices.lock(device_id)
         if not lock.acquire(blocking=False):
             return
         try:

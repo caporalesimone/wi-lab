@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
-from conftest import active_network
+from conftest import active_network, configured_devices
 
 from wilab.wifi import clients as clients_module
 from wilab.wifi import manager as manager_module
@@ -12,7 +12,7 @@ from wilab.wifi import txpower as txpower_module
 
 @pytest.fixture
 def running(monkeypatch, config):
-    mgr = manager_module.NetworkManager(config)
+    mgr = manager_module.NetworkManager(config, configured_devices(config))
     device = config.antennas[0].device_id
     mgr.active[device] = active_network(interface=device, channel=6, tx_power_level=4, subnet="192.168.120.0/24")
     iw = Mock(return_value="")

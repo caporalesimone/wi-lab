@@ -5,7 +5,13 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
-from conftest import MOCK_PHY_INFO, active_network, create_network, network_body
+from conftest import (
+    MOCK_PHY_INFO,
+    active_network,
+    configured_devices,
+    create_network,
+    network_body,
+)
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -235,7 +241,7 @@ def token():
 def reservation_id(client, token, monkeypatch):
     cfg = load_config()
     monkeypatch.setattr(
-        client.app.state.context, "reservations", ReservationManager([n.device_id for n in cfg.antennas]),
+        client.app.state.context, "reservations", ReservationManager(configured_devices(cfg)),
     )
     resp = client.post("/api/v2/reservations", headers={"Authorization": token}, json={"duration_seconds": 3600})
     assert resp.status_code == 200

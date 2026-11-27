@@ -5,7 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from conftest import active_network
+from conftest import active_network, registry_of
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app, dependencies
@@ -14,7 +14,7 @@ from wilab.reservation import DeviceBusyError, ReservationManager
 
 
 def test_hold_with_timeout_raises_when_the_device_is_busy():
-    mgr = ReservationManager(["wlan0"])
+    mgr = ReservationManager(registry_of("wlan0"))
     reservation = mgr.create(60)
     holder_ready, release = threading.Event(), threading.Event()
 
@@ -57,7 +57,7 @@ def busy_adapter(valid_token, monkeypatch, context, app):
 
         def holder():
             device = context.reservations.device_for(reservation["reservation_id"])
-            with manager.device_lock(device):
+            with manager.devices.lock(device):
                 held.set()
                 release.wait(10)
 

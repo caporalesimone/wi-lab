@@ -8,8 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...api.auth import require_token
-from ...api.dependencies import get_channel_manager, get_config
-from ...config import AppConfig
+from ...api.dependencies import get_channel_manager, get_devices
+from ...devices import DeviceRegistry
 from ...network.commands import CommandError
 from ...wifi.channels import ChannelManager, band_options
 from ...wifi.discovery import detect_device
@@ -115,7 +115,7 @@ _DETAILS_EXAMPLE = {
     },
 )
 def list_antennas(
-    config: AppConfig = Depends(get_config),
+    devices: DeviceRegistry = Depends(get_devices),
     _auth: bool = Depends(require_token),
 ) -> AntennaList:
     """Every antenna Wi-Lab manages, reserved or not, in allocation order.
@@ -123,7 +123,7 @@ def list_antennas(
     Reservation, quarantine and repair states are in `GET /status`.
     """
     return AntennaList(antennas=[
-        AntennaSummary(display_name=n.display_name, interface=n.interface) for n in config.antennas
+        AntennaSummary(display_name=n.display_name, interface=n.interface) for n in devices.all()
     ])
 
 
@@ -140,7 +140,7 @@ def list_antennas(
 )
 def get_antenna(
     interface: str = Path(..., description="Interface name from `GET /antennas`"),
-    config: AppConfig = Depends(get_config),
+    devices: DeviceRegistry = Depends(get_devices),
     channel_mgr: ChannelManager = Depends(get_channel_manager),
     _auth: bool = Depends(require_token),
 ) -> AntennaDetails:
@@ -156,7 +156,7 @@ def get_antenna(
     antenna has `show_dfs_channels: true` in the configuration. The data comes from the
     radio and is cached; no reservation is needed.
     """
-    entry = next((n for n in config.antennas if n.interface == interface), None)
+    entry = devices.get(interface)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"Unknown antenna: {interface}")
     try:

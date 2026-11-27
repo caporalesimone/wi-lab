@@ -5,6 +5,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING, Literal
 
 from .. import heartbeat
@@ -15,6 +16,7 @@ from ..reservation import Reservation, ReservationManager
 from .failures import FailureKind
 
 if TYPE_CHECKING:
+    from ..devices import Device
     from .active import ActiveNetwork
     from .manager import NetworkManager
 
@@ -71,28 +73,22 @@ class NetworkWatchdog:
         self.stopping = threading.Event()
         self.states: dict[str, tuple[Reservation, str]] = {}
         self._reservations: ReservationManager | None = None
-        self._watched: set[str] = set()
-        self._watch_lock = threading.Lock()
         # device -> network owed after a failed restore; guarded by the device lock
         self._pending: dict[str, _Pending] = {}
 
     def start(self, reservations: ReservationManager) -> None:
+        """Watch every managed device, and each one discovery adds later; once only."""
+        if self._reservations is not None:
+            return
         self._reservations = reservations
-        self.watch([device.device_id for device in self.manager.config.antennas])
+        self.manager.devices.subscribe(partial(self._start_watcher, reservations))
 
-    def watch(self, device_ids: list[str]) -> None:
-        """Start one watcher thread per device; devices already watched are ignored."""
-        with self._watch_lock:
-            if self._reservations is None:
-                return
-            for device_id in device_ids:
-                if device_id in self._watched:
-                    continue
-                self._watched.add(device_id)
-                threading.Thread(
-                    target=self._watch, args=(self._reservations, device_id),
-                    name=f"ap-watchdog-{device_id}", daemon=True,
-                ).start()
+    def _start_watcher(self, reservations: ReservationManager, device: "Device") -> None:
+        """One watcher thread per device (the registry calls this once per device)."""
+        threading.Thread(
+            target=self._watch, args=(reservations, device.device_id),
+            name=f"ap-watchdog-{device.device_id}", daemon=True,
+        ).start()
 
     def _watch(self, reservations: ReservationManager, device: str) -> None:
         current = None
@@ -107,7 +103,7 @@ class NetworkWatchdog:
         last_error = ""  # log a repeated failure's traceback once (WD-9)
         while not self.stopping.wait(5):
             heartbeat.beat(f"watchdog:{device}")
-            lock = self.manager.device_lock(device)
+            lock = self.manager.devices.lock(device)
             if not lock.acquire(blocking=False):
                 continue
             try:
@@ -241,7 +237,7 @@ class NetworkWatchdog:
         Called when the client creates a network or deletes the failed one,
         so the watchdog never races the client for the antenna.
         """
-        with self.manager.device_lock(device):
+        with self.manager.devices.lock(device):
             return self._drop_pending(device)
 
     def _drop_pending(self, device: str) -> bool:

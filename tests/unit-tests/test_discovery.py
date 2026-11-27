@@ -7,8 +7,10 @@ from conftest import REQUIRED_YAML, make_config
 from fastapi.testclient import TestClient
 
 from wilab import config as config_module
+from wilab.api import context as context_module
 from wilab.api import create_app
 from wilab.config import NetworkEntry, load_config, resolve_networks
+from wilab.devices import Device, DeviceRegistry
 from wilab.wifi import discovery
 from wilab.wifi.discovery import DiscoveredRadio
 
@@ -129,7 +131,7 @@ def test_resolve_networks_names_orders_and_filters():
 
     result = resolve_networks(labels, radios, excluded={"wlan-up", "ens18"})
 
-    assert [(n.interface, n.display_name, n.usb_recovery_port) for n in result] == [
+    assert [(n.interface, n.display_name, n.usb_port) for n in result] == [
         ("wlx-b", "Antenna B", "2-2"),
         ("wlan0-virt", "Preferred", None),
         ("wlx-c", "wlx-c", "2-3"),
@@ -168,7 +170,7 @@ def _write_config(tmp_path, networks_yaml):
 
 
 # Captured at import, before conftest replaces the seam for each test.
-_REAL_INITIAL = config_module._initial_networks
+_REAL_INITIAL = context_module._initial_devices
 
 
 def _wait_for(predicate, timeout=5.0):
@@ -179,7 +181,6 @@ def _wait_for(predicate, timeout=5.0):
 
 
 def test_load_config_starts_empty_and_scan_applies_labels(monkeypatch, tmp_path, caplog):
-    monkeypatch.setattr(config_module, "_initial_networks", _REAL_INITIAL)
     monkeypatch.setattr(discovery, "default_route_interfaces", lambda: {"ens18"})
     monkeypatch.setattr(discovery, "discover_radios", lambda **kwargs: [
         DiscoveredRadio("wlan-up", "phy0", None),
@@ -199,12 +200,13 @@ def test_load_config_starts_empty_and_scan_applies_labels(monkeypatch, tmp_path,
     )
 
     cfg = load_config(path)
-    assert cfg.antennas == []
+    # Only the labels: no device is managed until discovery adds it (ARCH-4).
+    assert [n.interface for n in cfg.antennas] == ["wlx-b", "wlx-missing"]
     assert "usb_recovery_port" not in caplog.text
 
-    added = config_module.scan_new_networks(cfg, path)
+    added = config_module.scan_new_networks(cfg, [], path)
 
-    assert [(n.interface, n.display_name, n.usb_recovery_port, n.show_dfs_channels) for n in added] == [
+    assert [(n.interface, n.display_name, n.usb_port, n.show_dfs_channels) for n in added] == [
         ("wlx-b", "Bench B", "2-2", False),
         ("wlx-a", "wlx-a", "2-1", True),   # not listed: DFS channels are offered
     ]
@@ -213,14 +215,13 @@ def test_load_config_starts_empty_and_scan_applies_labels(monkeypatch, tmp_path,
 
 
 def test_scan_skips_disabled_entry_without_display_name(monkeypatch, tmp_path):
-    monkeypatch.setattr(config_module, "_initial_networks", _REAL_INITIAL)
     monkeypatch.setattr(discovery, "discover_radios", lambda **kwargs: [
         DiscoveredRadio("wlx-a", "phy1", "2-1"),
         DiscoveredRadio("wlx-b", "phy2", "2-2"),
     ])
     path = _write_config(tmp_path, "antennas:\n  - interface: wlx-a\n    disable: true\n    show_dfs_channels: false\n")
 
-    added = config_module.scan_new_networks(load_config(path), path)
+    added = config_module.scan_new_networks(load_config(path), [], path)
 
     assert [n.interface for n in added] == ["wlx-b"]
 
@@ -231,7 +232,7 @@ def test_load_config_without_networks(tmp_path):
 
 
 def test_select_new_networks_skips_managed_and_disabled_radios():
-    current = [NetworkEntry(interface="wlx-a", display_name="A", usb_recovery_port="2-1")]
+    current = [Device(interface="wlx-a", display_name="A", usb_port="2-1")]
     labels = [
         NetworkEntry(interface="wlx-a", display_name="A"),
         NetworkEntry(interface="wlx-off", display_name="Off", disable=True),
@@ -247,7 +248,7 @@ def test_select_new_networks_skips_managed_and_disabled_radios():
 
     added = config_module.select_new_networks(current, labels, radios, excluded={"wlan9"})
 
-    assert [(n.interface, n.display_name, n.usb_recovery_port) for n in added] == [
+    assert [(n.interface, n.display_name, n.usb_port) for n in added] == [
         ("wlx-new", "New", "2-3"),
     ]
 
@@ -266,18 +267,19 @@ def test_discovery_loop_scans_every_5s_until_an_antenna_then_every_30s(monkeypat
     from wilab.api.discovery import DeviceDiscovery
 
     config = make_config(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="8.8.8.8")
+    devices = DeviceRegistry()
     quiet_flags = []
 
-    def scan(cfg, *, quiet):
+    def scan(*, quiet):
         quiet_flags.append(quiet)
         if len(quiet_flags) <= 2:
             raise ValueError("Cannot read configuration")
         if len(quiet_flags) == 3:
-            cfg.antennas = [NetworkEntry(interface="wlx-a", display_name="A")]
+            devices.add(Device(interface="wlx-a", display_name="A"))
         return []
 
-    service = DeviceDiscovery(config, Mock(), Mock(), Mock())
-    monkeypatch.setattr(service, "scan", lambda *, quiet: scan(config, quiet=quiet))
+    service = DeviceDiscovery(config, devices, Mock())
+    monkeypatch.setattr(service, "scan", scan)
     stop = _StopAfter(4)
 
     service.loop(stop)
@@ -306,7 +308,7 @@ def test_discovery_adds_antennas_found_after_startup(monkeypatch, tmp_path):
     )
     path.write_text(base)
     monkeypatch.setenv("CONFIG_PATH", str(path))
-    monkeypatch.setattr(config_module, "_initial_networks", _REAL_INITIAL)
+    monkeypatch.setattr(context_module, "_initial_devices", _REAL_INITIAL)
     monkeypatch.setattr(discovery_service, "DISCOVERY_FAST_INTERVAL", 0.01)
     monkeypatch.setattr(discovery_service, "DISCOVERY_SLOW_INTERVAL", 0.01)
     radios: list[DiscoveredRadio] = []
@@ -338,16 +340,21 @@ def test_added_antenna_gets_a_watchdog(monkeypatch, context):
     monkeypatch.setattr(discovery, "discover_radios", lambda **kwargs: [
         DiscoveredRadio("wlx-late", "phy9", "2-1"),
     ])
-    config = context.config
     watchdog = context.manager.watchdog
+    watched: list[str] = []
+    # Record each watcher thread instead of running it.
+    monkeypatch.setattr(watchdog, "_watch", lambda reservations, device: watched.append(device))
     try:
         watchdog.start(context.reservations)
-        started = set(watchdog._watched)
+        _wait_for(lambda: len(watched) == len(context.devices))
+        started = set(watched)
         context.discovery.scan()
         context.discovery.scan()
+        _wait_for(lambda: len(watched) > len(started))
+        time.sleep(0.05)  # a second watcher for the same device would show up now
 
-        assert started == {n.device_id for n in config.antennas} - {"wlx-late"}
-        assert watchdog._watched == started | {"wlx-late"}
+        assert started == set(context.devices.ids()) - {"wlx-late"}
+        assert sorted(watched) == sorted(started | {"wlx-late"})
     finally:
         watchdog.stopping.set()
 

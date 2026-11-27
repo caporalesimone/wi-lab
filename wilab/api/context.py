@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .. import heartbeat
 from ..config import AppConfig
+from ..devices import Device, DeviceRegistry
 from ..network.captive import remove_stale_captive_rules
 from ..network.host_guard import remove_stale_guards
 from ..network.qos import QosManager
@@ -22,6 +23,14 @@ logger = logging.getLogger(__name__)
 QOS_CATALOGUE_DIR = Path(__file__).resolve().parent.parent / "data" / "qos-profiles"
 
 
+def _initial_devices(config: AppConfig) -> list[Device]:
+    """Devices managed right after the build: none, the discovery service adds them.
+
+    Kept as a seam so tests can start with the configured interfaces.
+    """
+    return []
+
+
 @dataclass
 class AppContext:
     """Every singleton of the service, wired explicitly.
@@ -31,6 +40,7 @@ class AppContext:
     """
 
     config: AppConfig
+    devices: DeviceRegistry
     channels: ChannelManager
     qos: QosManager
     qos_profiles: QosProfileManager
@@ -42,24 +52,26 @@ class AppContext:
 
     @classmethod
     def build(cls, config: AppConfig) -> "AppContext":
-        # One channel cache for the whole service (BUG-4). The config object is the
-        # one discovery extends, so new antennas are read through it.
-        channels = ChannelManager(show_dfs_channels=config.show_dfs_channels_for)
+        # The one list of managed devices (ARCH-4): discovery adds to it, every
+        # manager reads it, and each device carries its own lock.
+        devices = DeviceRegistry(_initial_devices(config))
+        # One channel cache for the whole service (BUG-4).
+        channels = ChannelManager(show_dfs_channels=devices.show_dfs_channels)
         qos = QosManager()
         qos_profiles = QosProfileManager(str(QOS_CATALOGUE_DIR))
-        manager = NetworkManager(config, channel_manager=channels)
+        manager = NetworkManager(config, devices, channel_manager=channels)
         manager.qos_manager = qos
         manager.qos_profile_manager = qos_profiles
         reservations = ReservationManager(
-            [n.device_id for n in config.antennas], cleanup=manager.release_device,
-            device_lock=manager.device_lock, cleanup_due=manager.cleanup_due,
+            devices, cleanup=manager.release_device,
+            cleanup_due=manager.cleanup_due,
             cleanup_wait=manager.cleanup_wait, before_release=manager.cancel_start,
             on_expiry=manager.forget_finished_start,
         )
         manager.expire_reservations = reservations.expire
-        discovery = DeviceDiscovery(config, manager, reservations, channels)
+        discovery = DeviceDiscovery(config, devices, channels)
         return cls(
-            config=config, channels=channels, qos=qos, qos_profiles=qos_profiles,
+            config=config, devices=devices, channels=channels, qos=qos, qos_profiles=qos_profiles,
             manager=manager, reservations=reservations, discovery=discovery,
         )
 

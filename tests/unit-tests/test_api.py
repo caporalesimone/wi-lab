@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 
 import pytest
-from conftest import active_network, create_network, network_body
+from conftest import active_network, configured_devices, create_network, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api import create_app
@@ -40,7 +40,7 @@ def reservation_id(client, valid_token, monkeypatch):
     The resulting token maps to the first available device (wls16).
     """
     cfg = load_config()
-    rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+    rmgr = ReservationManager(configured_devices(cfg))
     monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
     resp = client.post(
@@ -404,7 +404,7 @@ class TestNetworkGetEndpoint:
     def test_get_network_active_with_dhcp_and_clients(self, client, valid_token, reservation_id, monkeypatch):
         """Test getting complete status of active network including DHCP and clients."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
 
         def mock_dhcp_start(net_id, interface, subnet, dns_server='192.168.10.21'):
             info = {
@@ -457,7 +457,7 @@ class TestNetworkGetEndpoint:
     def test_get_network_status_returns_client_entries_with_ip_and_mac(self, client, valid_token, reservation_id, monkeypatch):
         """Test active network status returns stable clients[] entries with ip and mac."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
 
         def mock_dhcp_start(net_id, interface, subnet, dns_server='192.168.10.21'):
             info = {
@@ -509,7 +509,7 @@ class TestNetworkDeleteEndpoint:
     def test_stop_network_active(self, client, valid_token, reservation_id, monkeypatch):
         """Test stopping an active network succeeds."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
 
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
@@ -536,7 +536,7 @@ class TestNetworkDeleteEndpoint:
     ):
         """A create repeated after a lost answer is safe: same body -> 200, different -> 409 / 1008."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
         start = Mock(return_value={})
         monkeypatch.setattr(manager.hostapd_manager, 'start', start)
@@ -575,7 +575,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(network_routes, 'STOP_RETRY_BUDGET', 0.05)
         monkeypatch.setattr(network_routes, 'STOP_RETRY_PAUSE', 0.01)
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
@@ -633,7 +633,7 @@ class TestNetworkDeleteEndpoint:
         from wilab.network.dhcp import DhcpServerError
 
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
 
         def dhcp_fails(*a, **k):
@@ -652,7 +652,7 @@ class TestNetworkDeleteEndpoint:
     def test_stop_network_inactive(self, client, valid_token, reservation_id, monkeypatch):
         """Test stopping an inactive network returns 409."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.delete(
@@ -678,7 +678,7 @@ class TestTxPowerGetEndpoint:
 
     def test_get_txpower_nested_shape(self, client, valid_token, reservation_id, monkeypatch):
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
 
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
@@ -704,7 +704,7 @@ class TestTxPowerGetEndpoint:
 
     def test_get_txpower_omits_legacy_warning_fields(self, client, valid_token, reservation_id, monkeypatch):
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
 
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
@@ -731,7 +731,7 @@ class TestTxPowerPostEndpoint:
 
     def test_post_txpower_success_shape_without_warning(self, client, valid_token, reservation_id, monkeypatch):
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
 
         monkeypatch.setattr(
             manager,
@@ -765,7 +765,7 @@ class TestTxPowerPostEndpoint:
 
     def test_post_txpower_mismatch_returns_422(self, client, valid_token, reservation_id, monkeypatch):
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
 
         def fake_set_tx_power_level(_device_id, _level):
             raise TxPowerMismatchError('Interface does not support dynamic power change.')
@@ -835,7 +835,7 @@ class TestInternetControlEndpoints:
     """Tests for internet enable/disable endpoints."""
 
     def test_disable_internet_failure_returns_500(self, client, valid_token, reservation_id, monkeypatch):
-        manager = NetworkManager(load_config())
+        manager = NetworkManager(load_config(), configured_devices())
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         def fail(_device):
@@ -854,7 +854,7 @@ class TestInternetControlEndpoints:
     def test_enable_internet_success(self, client, valid_token, reservation_id, monkeypatch):
         """Test enabling internet on active network succeeds and returns detail message."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
         
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
@@ -879,7 +879,7 @@ class TestInternetControlEndpoints:
     def test_disable_internet_success(self, client, valid_token, reservation_id, monkeypatch):
         """Test disabling internet on active network succeeds and returns detail message."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
         
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
@@ -912,7 +912,7 @@ class TestInternetControlEndpoints:
     def test_enable_internet_inactive(self, client, valid_token, reservation_id, monkeypatch):
         """Test enabling internet on inactive network fails."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.post(
@@ -926,7 +926,7 @@ class TestInternetControlEndpoints:
     def test_disable_internet_inactive(self, client, valid_token, reservation_id, monkeypatch):
         """Test disabling internet on inactive network fails."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.post(
@@ -1016,7 +1016,7 @@ class TestStatusReservationInfo:
     def test_status_antennas_have_reservation_and_network_active(self, client, valid_token, monkeypatch):
         """Each antenna has `reservation` (null when free) and `network_active` (API-1)."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+        rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         # Before a reservation: `reservation` is null
@@ -1048,7 +1048,7 @@ class TestGetNetworkExpiryAlwaysPresent:
     def test_get_network_off_still_has_expiry(self, client, valid_token, reservation_id, monkeypatch):
         """When network is off, expires_at and expires_in from reservation are present."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.get(
@@ -1073,7 +1073,7 @@ class TestGetNetworkExpiryAlwaysPresent:
     def test_get_network_active_has_expiry(self, client, valid_token, reservation_id, monkeypatch):
         """When network is active, expires_at and expires_in are present."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
 
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
@@ -1129,7 +1129,7 @@ class TestUnlimitedReservationAPI:
         """POST with duration_seconds=0 and allow_unlimited_reservation=true → 200."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+        rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'config', cfg)
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
@@ -1147,7 +1147,7 @@ class TestUnlimitedReservationAPI:
         """POST with duration_seconds=0 and allow_unlimited_reservation=false → 422."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', False)
-        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+        rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         resp = client.post(
@@ -1161,7 +1161,7 @@ class TestUnlimitedReservationAPI:
         """GET reservation returns expires_at/expires_in as null for unlimited."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+        rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'config', cfg)
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
@@ -1185,9 +1185,9 @@ class TestUnlimitedReservationAPI:
     def test_get_network_for_unlimited_reservation_has_null_expiry(self, client, valid_token, monkeypatch):
         """GET network returns expires_at/expires_in as null for unlimited reservations."""
         cfg = load_config()
-        manager = NetworkManager(cfg)
+        manager = NetworkManager(cfg, configured_devices(cfg))
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+        rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'config', cfg)
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
@@ -1213,7 +1213,7 @@ class TestUnlimitedReservationAPI:
     def test_create_duration_below_min_timeout(self, client, valid_token, monkeypatch):
         """POST with duration_seconds < min_timeout (and != 0) → 422."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+        rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         resp = client.post(
@@ -1226,7 +1226,7 @@ class TestUnlimitedReservationAPI:
     def test_create_duration_above_max_timeout(self, client, valid_token, monkeypatch):
         """POST with duration_seconds > max_timeout → 422."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+        rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         resp = client.post(
@@ -1239,7 +1239,7 @@ class TestUnlimitedReservationAPI:
     def test_status_exposes_reservation_policy(self, client, valid_token, monkeypatch):
         """/status includes reservation_policy with min, max, and allow_unlimited."""
         cfg = load_config()
-        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+        rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
@@ -1255,7 +1255,7 @@ class TestUnlimitedReservationAPI:
         """/status: an unlimited reservation is an object with null expiry, not a free antenna."""
         cfg = load_config()
         monkeypatch.setattr(cfg, 'allow_unlimited_reservation', True)
-        rmgr = ReservationManager([n.device_id for n in cfg.antennas])
+        rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'config', cfg)
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
 
@@ -1367,7 +1367,7 @@ def test_stop_retry_budget_with_a_fake_clock(stop_clock, monkeypatch):
     assert resp.headers["Retry-After"] == "5"
     assert stuck.call_count == attempts
     assert clock["pauses"] == [2.0] * (attempts - 1)
-    lock = manager.device_lock(device)
+    lock = manager.devices.lock(device)
     assert lock.acquire(blocking=False)   # the failed stop did not keep the device
     lock.release()
     state = client.get(url, headers=headers)

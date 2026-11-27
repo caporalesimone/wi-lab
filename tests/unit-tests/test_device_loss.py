@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from conftest import create_network, network_body
+from conftest import create_network, network_body, registry_of
 from fastapi.testclient import TestClient
 
 from wilab.api.routes import network as network_routes
@@ -208,7 +208,7 @@ def unavailable(monkeypatch, context):
     """One quarantined adapter with no recovery running, and mocked probe steps."""
     mgr = context.manager
     device = mgr.config.antennas[0].device_id
-    reservations = ReservationManager([device])
+    reservations = ReservationManager(registry_of(device))
     reservations.quarantine(reservations.create(60), recovering=False)
     steps = SimpleNamespace(
         release=Mock(), quiesce=Mock(), idle=Mock(), probe=Mock(), present=True,
@@ -270,7 +270,7 @@ def test_absent_adapter_is_not_probed(unavailable):
 def test_recovering_adapter_is_left_to_usb_recovery(monkeypatch, context):
     mgr = context.manager
     device = mgr.config.antennas[0].device_id
-    reservations = ReservationManager([device])
+    reservations = ReservationManager(registry_of(device))
     reservations.quarantine(reservations.create(60), recovering=True)
     probe = Mock()
     monkeypatch.setattr(mgr, "probe_recovered_radio", probe)
@@ -291,7 +291,7 @@ def test_reprobe_uses_the_band_and_channel_of_the_last_network(unavailable):
 def test_quarantine_remembers_radio(monkeypatch, context):
     mgr = context.manager
     device = mgr.config.antennas[0].device_id
-    reservations = ReservationManager([device])
+    reservations = ReservationManager(registry_of(device))
     mgr.quarantine_radio(
         reservations, reservations.create(60), radio_fault=False, band="5ghz", channel=36,
     )

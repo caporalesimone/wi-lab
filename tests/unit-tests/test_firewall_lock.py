@@ -2,6 +2,8 @@
 
 from unittest.mock import Mock
 
+from conftest import configured_devices
+
 from wilab.config import load_config
 from wilab.models import NetworkCreateRequest
 from wilab.network import commands, safety
@@ -30,7 +32,7 @@ def test_execute_iptables_waits_for_the_lock(monkeypatch):
 
 def test_full_network_cycle_never_calls_iptables_without_wait(monkeypatch):
     calls = _record_commands(monkeypatch)
-    manager = NetworkManager(load_config())
+    manager = NetworkManager(load_config(), configured_devices())
     monkeypatch.setattr(manager.dhcp_server, "start", Mock(return_value={}))
     monkeypatch.setattr(manager.dhcp_server, "stop", Mock())
     monkeypatch.setattr(manager.hostapd_manager, "start", Mock())
@@ -55,7 +57,7 @@ def test_full_network_cycle_never_calls_iptables_without_wait(monkeypatch):
 
 
 def test_firewall_status_holds_the_firewall_lock(monkeypatch):
-    manager = NetworkManager(load_config())
+    manager = NetworkManager(load_config(), configured_devices())
     held = []
     monkeypatch.setattr(
         manager.nat_manager, "status", lambda: held.append(manager._firewall_lock.locked()) or {},

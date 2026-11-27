@@ -5,18 +5,21 @@ from ipaddress import IPv4Network
 from itertools import islice
 
 from ..config import AppConfig
+from ..devices import DeviceRegistry
 from .subnet import host_ipv4_networks
 
 
 class SubnetAllocator:
     """Gives each antenna a /24 that overlaps neither another antenna's nor the host's.
 
-    Reads the antennas and `dhcp_base_network` from *config* on each call:
-    discovery adds antennas while the service runs.
+    Reads the devices from *devices* and `dhcp_base_network` from *config* on
+    each call: discovery adds devices while the service runs. Subnets follow the
+    order in which the devices were added.
     """
 
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, devices: DeviceRegistry) -> None:
         self._config = config
+        self._devices = devices
         self._lock = threading.Lock()
         self._assigned: dict[str, IPv4Network] = {}
 
@@ -27,9 +30,9 @@ class SubnetAllocator:
     def allocate(self, device_id: str) -> str:
         """Allocate or reuse a non-overlapping /24 before a new AP start.
 
-        *device_id* must be a configured antenna (the caller checks it).
+        *device_id* must be a managed device (the caller checks it).
         """
-        devices = [n.device_id for n in self._config.antennas]
+        devices = self._devices.ids()
         base_net = IPv4Network(self._config.dhcp_base_network, strict=False)
         if base_net.prefixlen != 24:
             raise ValueError("dhcp_base_network must be a /24 network")

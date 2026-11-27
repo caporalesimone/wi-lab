@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 
 import pytest
+from conftest import registry_of
 
 from wilab import heartbeat
 from wilab.reservation import ReservationManager
@@ -101,7 +102,7 @@ def test_notify_loop_stops_pinging_only_while_idle(monkeypatch, clock):
 
 
 def test_reservation_manager_idle_state():
-    mgr = ReservationManager(["wlan0", "wlan1"])
+    mgr = ReservationManager(registry_of("wlan0", "wlan1"))
     assert mgr.is_idle()
     reservation = mgr.create(60)
     assert not mgr.is_idle()
@@ -110,7 +111,7 @@ def test_reservation_manager_idle_state():
 
 
 def test_quarantine_with_usb_recovery_is_not_idle():
-    mgr = ReservationManager(["wlan0"])
+    mgr = ReservationManager(registry_of("wlan0"))
     reservation = mgr.create(60)
     mgr.quarantine(reservation, recovering=True)
     assert not mgr.is_idle()

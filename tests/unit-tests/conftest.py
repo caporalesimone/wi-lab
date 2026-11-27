@@ -3,7 +3,6 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -11,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 import pytest
 
 from wilab.config import AppConfig, load_config
+from wilab.devices import Device, DeviceRegistry
 from wilab.models import NetworkCreateRequest
 from wilab.wifi.active import ActiveNetwork
 
@@ -65,26 +65,41 @@ def active_network(interface: str, **fields: Any) -> ActiveNetwork:
     return ActiveNetwork(interface=interface, request=request, **own)
 
 
-def _configured_networks_only(labels):
+def _configured_devices_only(config: AppConfig) -> list[Device]:
     """Start with every enabled configured interface managed (tests must not probe real hardware)."""
-    return [label for label in labels if not label.disable]
+    return [
+        Device(interface=label.interface, display_name=label.display_name,
+               show_dfs_channels=label.show_dfs_channels)
+        for label in config.antennas if not label.disable
+    ]
+
+
+def configured_devices(config: AppConfig | None = None) -> DeviceRegistry:
+    """A registry with every enabled antenna of *config* (default: the test config).
+
+    The devices an app built from that config starts with (ARCH-4).
+    """
+    return DeviceRegistry(_configured_devices_only(config or load_config()))
+
+
+def registry_of(*interfaces: str) -> DeviceRegistry:
+    """A registry with one device per interface, in this order (display name = interface)."""
+    return DeviceRegistry(Device(interface=interface, display_name=interface) for interface in interfaces)
 
 
 @pytest.fixture(scope="session")
 def config():
     """Load test config once per test session."""
-    with patch("wilab.config._initial_networks", _configured_networks_only):
-        return load_config(TEST_CONFIG_PATH)
+    return load_config(TEST_CONFIG_PATH)
 
 
 @pytest.fixture(autouse=True)
 def _test_config_env(monkeypatch):
     """Point load_config() to the test config; never touch the host from tests."""
-    from wilab import config as config_module
     from wilab.api import context as context_module
     from wilab.api import discovery as discovery_service
     from wilab.wifi import discovery
-    monkeypatch.setattr(config_module, '_initial_networks', _configured_networks_only)
+    monkeypatch.setattr(context_module, '_initial_devices', _configured_devices_only)
     # The discovery service runs with every app; it must not probe real hardware.
     monkeypatch.setattr(discovery, 'discover_radios', lambda **kwargs: [])
     monkeypatch.setattr(discovery, 'default_route_interfaces', set)
@@ -365,7 +380,7 @@ Band 2:
 def clean_manager(config, monkeypatch):
     """Create a fresh NetworkManager with no active networks."""
     from wilab.wifi.manager import NetworkManager
-    mgr = NetworkManager(config)
+    mgr = NetworkManager(config, configured_devices(config))
     
     # Mock DHCP to avoid system calls
     def mock_dhcp_start(*args, **kwargs):

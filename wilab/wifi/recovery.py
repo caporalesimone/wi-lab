@@ -143,7 +143,7 @@ class RadioRecovery:
             logger.info("Adapter %s is not present; re-probe skipped", device)
             return False
         band, channel = self._last_radio.get(device, DEFAULT_PROBE_RADIO)
-        with self._manager.device_lock(device):
+        with self._manager.devices.lock(device):
             if self._stopping.is_set():
                 return False
             try:
@@ -175,7 +175,7 @@ class RadioRecovery:
             for attempt in range(1, RESET_ATTEMPTS + 1):
                 if self._stopping.is_set() or (attempt > 1 and self._stopping.wait(RESET_INTERVAL)):
                     return
-                with self._manager.device_lock(interface):
+                with self._manager.devices.lock(interface):
                     if self._stopping.is_set():
                         return
                     try:
