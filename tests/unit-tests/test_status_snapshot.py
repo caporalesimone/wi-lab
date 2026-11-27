@@ -49,7 +49,7 @@ def test_network_mid_operation_does_not_make_status_degraded(stopping_network):
     finally:
         release.set()
         thread.join()
-    assert data["active_networks"] == 1
+    assert sum(a["network_active"] for a in data["antennas"]) == 1
     assert data["status"]["health"] == "good"
 
 
@@ -57,4 +57,4 @@ def test_settled_network_with_dhcp_down_is_still_degraded(stopping_network):
     client, headers, _manager, _device = stopping_network
     data = client.get("/api/v2/status", headers=headers).json()
     assert data["status"]["health"] == "degraded"
-    assert [reason["code"] for reason in data["degraded_reasons"]] == ["dnsmasq_not_running"]
+    assert [reason["code"] for reason in data["status"]["degraded_reasons"]] == ["dnsmasq_not_running"]

@@ -64,7 +64,7 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
         ]
         overall = client.get("/api/v2/status", headers=headers).json()
         # A quarantined adapter makes the service degraded even with no active network.
-        assert (overall["status"]["health"], overall["active_networks"]) == ("degraded", 0)
+        assert (overall["status"]["health"], sum(a["network_active"] for a in overall["antennas"])) == ("degraded", 0)
         state = overall["antennas"][0]
         assert state["recovery_state"] == ("recovering" if authorized_port else "unavailable")
 
@@ -247,11 +247,13 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     }
     assert reserve["503"]["content"]["application/json"]["examples"]["device_recovering"]["value"]["detail"]["code"] == 1002
     status_examples = paths["/api/v2/status"]["get"]["responses"]["200"]["content"]["application/json"]["examples"]
-    assert {name: e["value"]["status"] for name, e in status_examples.items()} == {
-        "all_free": {"health": "good", "free_antennas": 2},
-        "one_reserved": {"health": "good", "free_antennas": 1},
-        "degraded_quarantine": {"health": "degraded", "free_antennas": 0},
+    assert {name: (e["value"]["status"]["health"], e["value"]["status"]["free_antennas"])
+            for name, e in status_examples.items()} == {
+        "all_free": ("good", 2), "one_reserved": ("good", 1), "degraded_quarantine": ("degraded", 0),
     }
+    assert [r["code"] for r in status_examples["degraded_quarantine"]["value"]["status"]["degraded_reasons"]] == [
+        "antenna_quarantined", "network_being_repaired",
+    ]
     status = status_examples["degraded_quarantine"]["value"]
     assert status["antennas"][0]["recovery_state"] == "unavailable"
     assert status["antennas"][0].get("reservation") is None  # OpenAPI drops null example values

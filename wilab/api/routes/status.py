@@ -49,7 +49,7 @@ router = APIRouter(
             "description": (
                 "Health and allocation snapshot. `status.health` is `good` or `degraded`, "
                 "`status.free_antennas` how many antennas a reservation would get now; "
-                "`degraded` lists why in `degraded_reasons` (quarantined antenna, network "
+                "`degraded` lists why in `status.degraded_reasons` (quarantined antenna, network "
                 "being repaired, dead hostapd or dnsmasq, missing NAT rule, upstream down, "
                 "stuck host command, stalled loop). The detail is in `GET /monitoring`. A "
                 "reserved or quarantined adapter is not allocatable."
@@ -58,7 +58,7 @@ router = APIRouter(
                 "all_free": {
                     "summary": "good - both antennas free",
                     "value": {
-                        "version": "4.1.0", "status": {"health": "good", "free_antennas": 2}, "degraded_reasons": [], "active_networks": 0,
+                        "version": "4.1.0", "status": {"health": "good", "free_antennas": 2, "degraded_reasons": []},
                         "antennas": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reservation": None,
                              "network_active": False},
@@ -72,7 +72,7 @@ router = APIRouter(
                 "one_reserved": {
                     "summary": "good - one antenna reserved with a network, one free",
                     "value": {
-                        "version": "4.1.0", "status": {"health": "good", "free_antennas": 1}, "degraded_reasons": [], "active_networks": 1,
+                        "version": "4.1.0", "status": {"health": "good", "free_antennas": 1, "degraded_reasons": []},
                         "antennas": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540},
                              "network_active": True},
@@ -86,14 +86,13 @@ router = APIRouter(
                 "degraded_quarantine": {
                     "summary": "degraded - one adapter quarantined, another being repaired",
                     "value": {
-                        "version": "4.1.0", "status": {"health": "degraded", "free_antennas": 0},
-                        "active_networks": 1,
-                        "degraded_reasons": [
+                        "version": "4.1.0",
+                        "status": {"health": "degraded", "free_antennas": 0, "degraded_reasons": [
                             {"code": "antenna_quarantined", "interface": "wlan0",
                              "message": "Antenna quarantined (unavailable)"},
                             {"code": "network_being_repaired", "interface": "wlan1",
                              "message": "Network being repaired by the watchdog (restoring_ap)"},
-                        ],
+                        ]},
                         "antennas": [
                             {"display_name": "Antenna A", "interface": "wlan0", "reservation": None,
                              "network_active": False, "recovery_state": "unavailable"},
@@ -127,11 +126,12 @@ def system_status(
     |---|---|
     | `health` | `good`: nothing is wrong. `degraded`: at least one entry in `degraded_reasons`. |
     | `free_antennas` | Antennas a reservation would get now: not reserved, not quarantined, not held by a failed cleanup. `0` means a reserve answers `409 / 1005` or `503`. |
+    | `degraded_reasons` | Why `health` is `degraded`; empty when `good`. |
 
-    How many networks run is `active_networks`. A reserve is the only sure way to
-    get an antenna: another client may take the last free one in between.
+    A reserve is the only sure way to get an antenna: another client may take the
+    last free one in between. Which antennas run a network is `antennas[].network_active`.
 
-    Each `degraded_reasons` entry has a stable `code`, the `interface` it
+    Each `status.degraded_reasons` entry has a stable `code`, the `interface` it
     concerns (or `null`) and a `message` for display:
 
     | `code` | Meaning |
@@ -256,10 +256,10 @@ def _assess(manager: NetworkManager, reservation_mgr: ReservationManager) -> dic
 
     # Free: what a reserve would get now (ReservationManager._first_available).
     free = sum(1 for d in manager.devices.ids() if d not in reservations and d not in recovery)
-    status = {"health": "degraded" if reasons else "good", "free_antennas": free}
+    status = {"health": "degraded" if reasons else "good", "free_antennas": free, "degraded_reasons": reasons}
     return {
         "restart_required": _restart_required(checks.get("updates") or {}),
-        "status": status, "degraded_reasons": reasons, "active_networks": len(snapshot),
+        "status": status,
         "antennas": antennas, "checks": checks, "checked_at": health.checked_at,
     }
 
@@ -283,8 +283,6 @@ def _system_status(
     return {
         "version": __version__,
         "status": view["status"],
-        "degraded_reasons": view["degraded_reasons"],
-        "active_networks": view["active_networks"],
         "antennas": view["antennas"],
         "restart_required": view["restart_required"],
         "reservation_policy": {
@@ -300,9 +298,9 @@ def _system_status(
     summary="Read the detailed health checks",
     responses={
         200: {
-            "description": "The detail behind `status.health` and `degraded_reasons` of `GET /status`.",
+            "description": "The detail behind `status` of `GET /status`.",
             "content": {"application/json": {"example": {
-                "status": {"health": "good", "free_antennas": 1}, "degraded_reasons": [],
+                "status": {"health": "good", "free_antennas": 1, "degraded_reasons": []},
                 "checked_at": "2026-11-25T18:30:00Z", "check_interval_seconds": 10,
                 "checks": {**_CHECKS_OK_EXAMPLE,
                            "hostapd": {"running": True, "instances": 1, "missing": []},
@@ -338,7 +336,6 @@ def monitoring(
     view = _assess(manager, reservation_mgr)
     return {
         "status": view["status"],
-        "degraded_reasons": view["degraded_reasons"],
         "checked_at": view["checked_at"],
         "check_interval_seconds": int(health_module.CHECK_INTERVAL),
         "checks": view["checks"],

@@ -216,7 +216,7 @@ def delete_all_reservations(
 
     Every reservation is released. An adapter whose cleanup fails stays held
     and the server repeats its cleanup in the background (`GET /status` lists it
-    in `degraded_reasons` as `cleanup_failed`).
+    in `status.degraded_reasons` as `cleanup_failed`).
     """
     count = mgr.delete_all()
     return {"detail": f"{count} reservation(s) released", "released": count}
@@ -264,7 +264,7 @@ def delete_reservation(
     `200` means the ID is gone. If the cleanup fails (for example hostapd stuck
     in the kernel), the device stays held, so nobody can reserve it, and the
     server repeats the cleanup in the background (5 s, 15 s, 60 s, then every
-    5 min); `GET /status` lists it in `degraded_reasons` as `cleanup_failed`.
+    5 min); `GET /status` lists it in `status.degraded_reasons` as `cleanup_failed`.
     For `404`, stop using the ID.
     """
     removed = mgr.delete(reservation_id)

@@ -136,7 +136,7 @@ def test_degraded_reasons_name_the_problem_and_the_antenna(monkeypatch, context,
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     status = client.get("/api/v2/status", headers=headers).json()
     assert status["status"]["health"] == "degraded" and "checks" not in status
-    codes = [(r["code"], r["interface"]) for r in status["degraded_reasons"]]
+    codes = [(r["code"], r["interface"]) for r in status["status"]["degraded_reasons"]]
     assert ("hostapd_not_running", device) in codes and ("command_stuck", None) in codes
     monitoring = client.get("/api/v2/monitoring", headers=headers).json()
     assert monitoring["status"]["health"] == "degraded"
@@ -156,4 +156,4 @@ def test_half_stopped_network_is_reported_as_stop_incomplete_only(running, monke
         manager._stop_failed.discard(device)
     entry = next(a for a in data["antennas"] if a["interface"] == device)
     assert entry["runtime_state"] == "stop_failed"
-    assert [r["code"] for r in data["degraded_reasons"]] == ["network_stop_incomplete"]
+    assert [r["code"] for r in data["status"]["degraded_reasons"]] == ["network_stop_incomplete"]

@@ -57,7 +57,7 @@ carries one of the four reasons above: a missing QoS
 profile in the catalogue is `422`, a missing running profile is `409 / 1011`,
 and an unsupported TX power is `422`.
 
-## `degraded_reasons` codes (`GET /status`)
+## `status.degraded_reasons` codes (`GET /status`)
 
 Not errors: `GET /status` lists why the service is `degraded`, one
 `{code, interface, message}` per cause (`interface` is `null` for the whole

@@ -97,7 +97,7 @@ Its `status` has `health` (`good` or `degraded`) and `free_antennas` (how many
 antennas a reservation would get now). `degraded` means an adapter is
 quarantined (`antennas[].recovery_state`), a reserved network is being
 repaired or lost DHCP (`antennas[].runtime_state`), or a health check failed
-while networks are active: `degraded_reasons` lists each cause with a stable
+while networks are active: `status.degraded_reasons` lists each cause with a stable
 `code`, and `GET /api/v2/monitoring` gives the detail of every check. Show it
 to the user with the affected adapter: fewer adapters may be allocatable than
 are listed.

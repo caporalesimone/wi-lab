@@ -80,10 +80,10 @@ class TestStatusEndpoint:
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
-        assert data['status'] == {'health': 'good', 'free_antennas': len(data['antennas'])}
+        assert data['status'] == {'health': 'good', 'free_antennas': len(data['antennas']), 'degraded_reasons': []}
         assert 'version' in data
         assert 'antennas' in data and 'networks' not in data
-        assert 'checks' not in data and data['degraded_reasons'] == []
+        assert 'checks' not in data and data["status"]["degraded_reasons"] == []
     
     def test_free_antennas_counts_what_a_reserve_would_get(self, client, valid_token, context):
         """A reserved antenna, even without a network, and a quarantined one are not free."""
@@ -94,28 +94,29 @@ class TestStatusEndpoint:
         assert total >= 2
         rid = client.post('/api/v2/reservations', headers=headers, json={'duration_seconds': 600}).json()['reservation_id']
         data = client.get('/api/v2/status', headers=headers).json()
-        assert data['status'] == {'health': 'good', 'free_antennas': total - 1}
-        assert data['active_networks'] == 0
+        assert data['status'] == {'health': 'good', 'free_antennas': total - 1, 'degraded_reasons': []}
+        assert not any(a['network_active'] for a in data['antennas'])
         other = next(a['interface'] for a in data['antennas'] if a['reservation'] is None)
         context.reservations._blocked[other] = False          # quarantined: degraded and not free
         data = client.get('/api/v2/status', headers=headers).json()
-        assert data['status'] == {'health': 'degraded', 'free_antennas': total - 2}
+        assert data['status']['health'] == 'degraded' and data['status']['free_antennas'] == total - 2
+        assert [r['code'] for r in data['status']['degraded_reasons']] == ['antenna_quarantined']
         context.reservations._blocked.pop(other)
         assert client.delete(f'/api/v2/reservations/{rid}', headers=headers).status_code == 200
-        assert client.get('/api/v2/status', headers=headers).json()['status'] == {'health': 'good', 'free_antennas': total}
+        assert client.get('/api/v2/status', headers=headers).json()['status'] == {'health': 'good', 'free_antennas': total, 'degraded_reasons': []}
 
     def test_status_with_every_antenna_free(self, client, valid_token):
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         data = resp.json()
-        assert data['status'] == {'health': 'good', 'free_antennas': len(data['antennas'])}
-        assert data['active_networks'] == 0
+        assert data['status'] == {'health': 'good', 'free_antennas': len(data['antennas']), 'degraded_reasons': []}
+        assert not any(a['network_active'] for a in data['antennas'])
         assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['commands'] == {'stuck': 0}
 
     def test_status_degraded_when_a_command_is_stuck_in_the_kernel(self, client, valid_token, monkeypatch):
         """STAB-1: a child that survived SIGKILL makes the service degraded, even in standby."""
         monkeypatch.setattr('wilab.api.routes.status.stuck_commands', lambda: 2)
         data = client.get('/api/v2/status', headers={'Authorization': valid_token}).json()
-        assert data['active_networks'] == 0
+        assert not any(a['network_active'] for a in data['antennas'])
         assert data["status"]["health"] == "degraded"
         assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['commands'] == {'stuck': 2}
     
@@ -128,8 +129,8 @@ class TestStatusEndpoint:
         assert 'status' in data
         assert 'version' in data
         assert 'antennas' in data
-        assert 'active_networks' in data
-        assert 'degraded_reasons' in data and 'checks' not in data
+        assert 'active_networks' not in data and 'degraded_reasons' not in data   # in status
+        assert 'degraded_reasons' in data['status'] and 'checks' not in data
         
         # Check version and networks
         assert data['version'] is not None
@@ -181,8 +182,7 @@ class TestStatusEndpoint:
         resp = client.get('/api/v2/status', headers={'Authorization': valid_token})
         data = resp.json()
         assert data["status"]["health"] == "degraded"
-        assert data['active_networks'] == 1
-        assert [reason['code'] for reason in data['degraded_reasons']] == ['dnsmasq_not_running']
+        assert [reason['code'] for reason in data["status"]["degraded_reasons"]] == ['dnsmasq_not_running']
         assert client.get('/api/v2/monitoring', headers={'Authorization': valid_token}).json()['checks']['dnsmasq']['running'] is False
     
     def test_status_upstream_error_handling(self, client, valid_token, monkeypatch):

@@ -70,7 +70,7 @@ network is being repaired, lost DHCP or could not be restarted
 (`antennas[].runtime_state`: `restoring_ap`, `restoring_dhcp`, `dhcp_failed`,
 `restore_failed`), a host command is stuck in the kernel, a background loop
 stalled, or a health check failed while networks are active: each cause is an
-entry of `degraded_reasons` with a stable `code`. **System → Read the detailed
+entry of `status.degraded_reasons` with a stable `code`. **System → Read the detailed
 health checks** (`GET /api/v2/monitoring`) gives the detail of every check.
 Clients must poll
 this endpoint to learn about quarantined adapters: a quarantined adapter can

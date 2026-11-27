@@ -539,7 +539,7 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
             first_state = pool.submit(client.get, network(first_id), headers=headers).result(timeout=2)
             assert first_state.json()["runtime_state"] == "starting"   # answered while the start holds the device
             status = pool.submit(client.get, "/api/v2/status", headers=headers).result(timeout=2)
-            assert status.status_code == 200 and status.json()["active_networks"] == 1
+            assert status.status_code == 200 and sum(a["network_active"] for a in status.json()["antennas"]) == 1
             assert all(n["reservation"] for n in status.json()["antennas"])
             assert [n["network_active"] for n in status.json()["antennas"]].count(True) == 1
         finally:
@@ -1049,7 +1049,7 @@ class TestReservationDeleteStopsNetwork:
         status = client.get("/api/v2/status", headers={"Authorization": valid_token}).json()
         assert status["status"]["health"] == "degraded"
         assert {"code": "cleanup_failed", "interface": device_id} in [
-            {k: r[k] for k in ("code", "interface")} for r in status["degraded_reasons"]
+            {k: r[k] for k in ("code", "interface")} for r in status["status"]["degraded_reasons"]
         ]
 
         def successful_stop(did):

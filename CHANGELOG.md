@@ -36,7 +36,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - NetworkManager is no longer supported: the host network must be on systemd-networkd. The installer offers to disable and mask NetworkManager and `wpa_supplicant`, never when the host needs them; `uninstall.sh` offers to re-enable them. When upgrading, run the installer again (Fable NM-1).
 - The reservation, create and `POST .../txpower` bodies accept only the JSON types they document: `"6"`, `true` or `6.0` for an integer, or `"false"` and `0` for a boolean, are `422` (Fable REV-11).
 - `POST .../txpower` takes `tx_power_level` instead of `level`, as `radio.tx_power_level` in the create (Fable API-6).
-- `GET /status` and `GET /monitoring`: `status` is an object, `{"health": "good" | "degraded", "free_antennas": N}`, instead of the string `standby`, `ok` or `degraded`. `free_antennas` counts the antennas a reservation would get now (not reserved, not quarantined, not held by a failed cleanup).
+- `GET /status` and `GET /monitoring`: `status` is an object, `{"health": "good" | "degraded", "free_antennas": N, "degraded_reasons": [...]}`, instead of the string `standby`, `ok` or `degraded` with `degraded_reasons` next to it. `free_antennas` counts the antennas a reservation would get now (not reserved, not quarantined, not held by a failed cleanup). `active_networks` is gone: it repeated `antennas[].network_active`.
 
 ### ✨ Features
 
@@ -118,7 +118,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ### 🔌 API changes from 4.0.0 (client migration)
 
-- `GET /status` and `GET /monitoring`: `status` is now an object. Read `status.health` (`good` or `degraded`) where you compared `status` with `"degraded"`; `standby` and `ok` are gone. `status.free_antennas` says how many antennas are free right now; to get one, reserve it, since another client may take it in between.
+- `GET /status` and `GET /monitoring`: `status` is now an object. Read `status.health` (`good` or `degraded`) where you compared `status` with `"degraded"` (`standby` and `ok` are gone), and `status.degraded_reasons` instead of `degraded_reasons`. `active_networks` is removed: count `antennas[]` with `network_active: true`. `status.free_antennas` says how many antennas are free right now; to get one, reserve it, since another client may take it in between.
 - Strict types: send integers and booleans as JSON numbers and booleans. A string such as `"6"`, `true` for a number or `6.0` is now `422` in `POST /reservations`, `POST .../network` and `POST .../txpower` (REV-11).
 - `POST .../txpower`: the body is `{"tx_power_level": 2}`; `{"level": 2}` is now `422` (API-6).
 - **Not stable in 4.1:** TX power is under debugging (the drivers in use do not apply it reliably) and QoS profiles are experimental. Both may change in any release; the rest of the API is frozen for 4.1.

@@ -504,6 +504,7 @@ usable. Poll it (for example every 10–30 s) and show the result to the user.
 |---|---|---|
 | `health` | `good` | Every health check passes. |
 | `health` | `degraded` | At least one entry in `degraded_reasons`. |
+| `degraded_reasons` | list | Why `health` is `degraded`; empty when `good`. |
 | `free_antennas` | `N` | Antennas a reservation would get now: not reserved, not quarantined, not held by a failed cleanup. `0`: a reserve answers `409 / 1005` or `503 / 1002`, `1003`. |
 
 `free_antennas` is a hint for a dashboard or a queue: to get an antenna, reserve
@@ -516,11 +517,14 @@ antenna:
 
 ```json
 {
-  "status": "degraded",
-  "degraded_reasons": [
-    {"code": "antenna_quarantined", "interface": "wlx7419f8176286",
-     "message": "Antenna quarantined (unavailable)"}
-  ],
+  "status": {
+    "health": "degraded",
+    "free_antennas": 0,
+    "degraded_reasons": [
+      {"code": "antenna_quarantined", "interface": "wlx7419f8176286",
+       "message": "Antenna quarantined (unavailable)"}
+    ]
+  },
   "antennas": [
     {"display_name": "antenna-1", "interface": "wlx7419f8176286", "reservation": null,
      "network_active": false, "recovery_state": "unavailable"},
@@ -531,7 +535,7 @@ antenna:
 }
 ```
 
-| `degraded_reasons[].code` | Meaning | Client action |
+| `status.degraded_reasons[].code` | Meaning | Client action |
 |---|---|---|
 | `antenna_quarantined` | The antenna has `recovery_state`: `recovering` (Wi-Lab is resetting and probing it) or `unavailable` (no USB reset running; re-probed after 30 s, backing off to every 15 min). | Do not count it as available. It may return by itself; report it if `unavailable` persists. |
 | `network_being_repaired` | A reserved AP has `runtime_state`: `restoring_ap`, `restoring_dhcp`, `dhcp_failed` (whole network restarted within 5 s) or `restore_failed` (AP down, retried with backoff). See [2.6](#26-after-the-ap-is-running). | Owner: wait (or `DELETE .../network` on `restore_failed`). Others: nothing to do. |
@@ -698,7 +702,7 @@ sequenceDiagram
         end
     and Anyone polls the service (every 10 to 30 s)
         C->>W: GET /status
-        W-->>C: status {health, free_antennas}, degraded_reasons, recovery_state, runtime_state
+        W-->>C: status {health, free_antennas, degraded_reasons}, recovery_state, runtime_state
         Note over C: Show degraded with the affected antenna
     end
     opt Change the running network

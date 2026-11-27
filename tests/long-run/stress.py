@@ -234,9 +234,10 @@ def assert_clean(client: WiLab, server: Server, rec: Recorder, interfaces: list[
     if recovering:
         problems.append(f"antennas still in recovery: {recovering}")
     if status["status"]["health"] == "degraded":
-        problems.append(f"status degraded: {status.get('degraded_reasons')}")
-    if status["active_networks"]:
-        problems.append(f"active networks: {status['active_networks']}")
+        problems.append(f"status degraded: {status["status"]["degraded_reasons"]}")
+    running = [a["interface"] for a in status["antennas"] if a["network_active"]]
+    if running:
+        problems.append(f"active networks: {running}")
     if server.pids("hostapd"):
         problems.append(f"hostapd left: {server.pids('hostapd')}")
     for interface in interfaces:

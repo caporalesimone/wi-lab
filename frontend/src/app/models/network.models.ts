@@ -74,15 +74,15 @@ export interface ServiceStatus {
   health: 'good' | 'degraded';
   /** Antennas a reservation would get now. */
   free_antennas: number;
+  /** Why the service is degraded; empty when health is good. */
+  degraded_reasons: { code: string; interface: string | null; message: string }[];
 }
 
 export interface StatusResponse {
   version: string;
   status: ServiceStatus;
   antennas: InterfaceInfo[];
-  active_networks: number;
   reservation_policy: ReservationPolicy;
-  degraded_reasons: { code: string; interface: string | null; message: string }[];
   /** Security updates installed on the host that need a restart; never done automatically. */
   restart_required?: RestartRequired | null;
 }
