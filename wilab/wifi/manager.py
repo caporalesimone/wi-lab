@@ -13,7 +13,7 @@ from typing import Any
 from .. import heartbeat
 from ..config import AppConfig
 from ..health import HealthChecks
-from ..models import ClientInfo, NetworkCreateRequest, NetworkStatus, NetworkTxPower
+from ..models import ClientInfo, NetworkCreateRequest, NetworkStatus
 from ..network.captive import CaptivePortal, CaptivePortalError
 from ..network.commands import (
     CommandError,
@@ -42,6 +42,7 @@ from .interface import (
     validate_interface_exists,
 )
 from .recovery import RadioRecovery
+from .txpower import TxPowerControl
 from .watchdog import NetworkWatchdog
 
 logger = logging.getLogger(__name__)
@@ -98,10 +99,6 @@ class NetworkNotActive(ValueError):
     def __init__(self, device_id: str) -> None:
         super().__init__(f"Network {device_id} is not active")
         self.device_id = device_id
-
-
-class TxPowerMismatchError(Exception):
-    """Raised when reported TX power does not match the requested level."""
 
 
 class NetworkStopError(RuntimeError):
@@ -169,6 +166,7 @@ class NetworkManager:
         self.captive_portals: dict[str, CaptivePortal] = {}
         # One channel cache for the whole service (BUG-4): the API passes its own.
         self._channel_manager = channel_manager or ChannelManager(show_dfs_channels=config.show_dfs_channels_for)
+        self.tx_power = TxPowerControl(self._channel_manager)
         self.qos_manager: QosManager | None = None
         self.qos_profile_manager: QosProfileManager | None = None
         self._device_locks = {n.device_id: threading.RLock() for n in config.antennas}
@@ -630,8 +628,8 @@ class NetworkManager:
         # Apply TX power level from request
         tx_power_level = req.tx_power_level
         try:
-            self._set_tx_power(cfg_net.interface, tx_power_level, req.channel)
-            runtime_dbm = self._read_current_txpower(cfg_net.interface)
+            self.tx_power.set_level(cfg_net.interface, tx_power_level, req.channel)
+            runtime_dbm = self.tx_power.read_dbm(cfg_net.interface)
             logger.info(f"TX power set for {device_id}: requested level {tx_power_level}, runtime reported {runtime_dbm} dBm")
         except Exception as e:
             logger.warning(f"Failed to set TX power for {device_id}: {e}")
@@ -821,26 +819,7 @@ class NetworkManager:
             st.reported_channel_width = self._read_channel_width(st.interface)
 
             if st.tx_power_level is not None:
-                reported_level: int | None = None
-                reported_dbm: float | None = None
-                if st.channel is not None:
-                    try:
-                        caps = self._get_channel_capabilities(st.interface, st.channel)
-                        levels_dbm = self._compute_level_dbm(caps["max_dbm"])
-                        reported_dbm = self._read_current_txpower(st.interface)
-                        if reported_dbm is not None:
-                            reported_level = min(
-                                levels_dbm,
-                                key=lambda lvl: abs(levels_dbm[lvl] - reported_dbm),  # type: ignore[operator]
-                            )
-                    except Exception as exc:
-                        logger.warning(f"Failed to build tx_power status for {device_id}: {exc}")
-
-                st.tx_power = NetworkTxPower(
-                    requested_level=st.tx_power_level,
-                    reported_level=reported_level,
-                    reported_dbm=reported_dbm,
-                )
+                st.tx_power = self.tx_power.status(device_id, st.interface, st.channel, st.tx_power_level)
         
         return st
 
@@ -1111,22 +1090,6 @@ class NetworkManager:
         except Exception:
             logger.exception("Error stopping %s during shutdown", device_id)
 
-    # ---- TX power management ----
-
-    def _read_current_txpower(self, interface: str) -> float | None:
-        """Read current TX power from interface in dBm. Returns None if unavailable."""
-        try:
-            output = execute_iw(["dev", interface, "info"])
-            # Look for: txpower 20.00 dBm or txpower 5.00 dBm
-            pattern = re.compile(r"txpower\s+([\d.]+)\s+dBm")
-            for line in output.splitlines():
-                m = pattern.search(line)
-                if m:
-                    return float(m.group(1))
-        except Exception as e:
-            logger.warning(f"Failed to read current txpower for {interface}: {e}")
-        return None
-
     @staticmethod
     def _read_channel_width(interface: str) -> int | None:
         """Channel width in MHz from `iw dev <if> info` (HAP-11); None if unavailable."""
@@ -1137,83 +1100,7 @@ class NetworkManager:
             return None
         return int(match[1]) if match else None
 
-    def _get_channel_capabilities(self, interface: str, channel: int) -> dict:
-        info = self._channel_manager.get_channels(interface)
-        for ch in info.channels_24ghz + info.channels_5ghz:
-            if ch.channel == channel:
-                return {"frequency_mhz": ch.frequency_mhz, "max_dbm": ch.max_power_dbm}
-        raise ValueError(f"Channel {channel} not supported on interface {interface}")
-
-    def _compute_level_dbm(self, max_dbm: float) -> dict[int, float]:
-        # Linearly split max power into four steps
-        levels = {
-            1: round(max_dbm * 0.25, 1),
-            2: round(max_dbm * 0.50, 1),
-            3: round(max_dbm * 0.75, 1),
-            4: round(max_dbm, 1),
-        }
-        # Ensure monotonic and at least 1 dBm for lower steps
-        levels[1] = max(1.0, levels[1])
-        levels[2] = max(levels[1], levels[2])
-        levels[3] = max(levels[2], levels[3])
-        levels[4] = max(levels[3], levels[4])
-        return levels
-
-    def _reported_level_from_dbm(self, levels_dbm: dict[int, float], reported_dbm: float | None) -> int | None:
-        if reported_dbm is None:
-            return None
-        return min(levels_dbm, key=lambda lvl: abs(levels_dbm[lvl] - reported_dbm))
-
-    def _set_tx_power(self, interface: str, level: int, channel: int, verify_change: bool = False) -> dict:
-        """
-        Set TX power for interface.
-        
-        Args:
-            interface: WiFi interface
-            level: Power level 1-4
-            channel: WiFi channel
-            verify_change: If True, wait 3s and verify power actually changed
-            
-        Returns:
-            Dict with tx power info
-        """
-        if level not in [1, 2, 3, 4]:
-            raise ValueError("TX power level must be 1-4")
-        caps = self._get_channel_capabilities(interface, channel)
-        levels_dbm = self._compute_level_dbm(caps["max_dbm"])
-        desired_dbm = levels_dbm[level]
-        desired_mbm = int(round(desired_dbm * 100))
-        
-        try:
-            # Some drivers (mt7921u) do not support it: the caller logs one warning.
-            execute_iw(["dev", interface, "set", "txpower", "fixed", str(desired_mbm)], quiet=True)
-        except CommandError as e:
-            raise ValueError(f"Failed to set txpower: {e}") from e
-
-        power_after = None
-        if verify_change:
-            # Wait for driver to apply change
-            time.sleep(3)
-            power_after = self._read_current_txpower(interface)
-
-            # Compare requested vs reported directly.
-            if power_after is not None and abs(power_after - desired_dbm) > 0.5:
-                logger.warning(
-                    f"{interface}: TX power mismatch (requested={desired_dbm}, reported={power_after})"
-                )
-                raise TxPowerMismatchError("Interface does not support dynamic power change.")
-        
-        result = {
-            "interface": interface,
-            "max_dbm": caps["max_dbm"],
-            "levels_dbm": levels_dbm,
-            "tx_power": {
-                "requested_level": level,
-                "reported_level": self._reported_level_from_dbm(levels_dbm, power_after),
-                "reported_dbm": power_after,
-            },
-        }
-        return result
+    # ---- TX power (wilab.wifi.txpower) ----
 
     def set_tx_power_level(self, device_id: str, level: int) -> dict:
         """
@@ -1232,7 +1119,7 @@ class NetworkManager:
             raise ValueError(UNKNOWN_ANTENNA)
         
         # Set power with verification (waits 3s and checks if change applied)
-        info = self._set_tx_power(cfg_net.interface, level, st.channel, verify_change=True)
+        info = self.tx_power.set_level(cfg_net.interface, level, st.channel, verify_change=True)
         st.tx_power_level = level
         return info
 
@@ -1255,29 +1142,7 @@ class NetworkManager:
         if level is None:
             raise ValueError("TX power level not set for this network")
         
-        # Get channel capabilities and compute levels
-        caps = self._get_channel_capabilities(cfg_net.interface, st.channel)
-        levels_dbm = self._compute_level_dbm(caps["max_dbm"])
-        expected_dbm = levels_dbm[level]
-        
-        # Read actual current power from interface
-        reported_dbm = self._read_current_txpower(cfg_net.interface)
-        
-        # Keep mismatch as server-side observability; GET payload no longer exposes warning.
-        if reported_dbm is not None and abs(reported_dbm - expected_dbm) > 0.5:
-            logger.info(f"{device_id}: Power mismatch - expected {expected_dbm} dBm, reported {reported_dbm} dBm")
-        
-        result = {
-            "interface": cfg_net.interface,
-            "max_dbm": caps["max_dbm"],
-            "levels_dbm": levels_dbm,
-            "tx_power": {
-                "requested_level": level,
-                "reported_level": self._reported_level_from_dbm(levels_dbm, reported_dbm),
-                "reported_dbm": reported_dbm,
-            },
-        }
-        return result
+        return self.tx_power.info(device_id, cfg_net.interface, st.channel, level)
 
     def _expiry_loop(self) -> None:
         """Background loop to auto-expire networks without requiring API calls."""

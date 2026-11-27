@@ -11,7 +11,8 @@ from ...api.dependencies import (
 )
 from ...models import TxPowerInfo, TxPowerRequest
 from ...reservation import Reservation
-from ...wifi.manager import NetworkManager, NetworkNotActive, TxPowerMismatchError
+from ...wifi.manager import NetworkManager, NetworkNotActive
+from ...wifi.txpower import TxPowerMismatchError
 from .recovery_responses import (
     DEVICE_BUSY_RESPONSE,
     NETWORK_NOT_ACTIVE_RESPONSE,

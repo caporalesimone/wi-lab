@@ -9,7 +9,8 @@ from wilab.config import load_config
 from wilab.models import ClientInfo
 from wilab.reservation import ReservationManager
 from wilab.version import __version__
-from wilab.wifi.manager import NetworkManager, TxPowerMismatchError
+from wilab.wifi.manager import NetworkManager
+from wilab.wifi.txpower import TxPowerMismatchError
 
 
 @pytest.fixture
@@ -425,7 +426,7 @@ class TestNetworkGetEndpoint:
         monkeypatch.setattr(manager.dhcp_server, 'start', mock_dhcp_start)
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **kw: {})
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *_args, **_kwargs: None)
-        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         # Start network via reservation token
@@ -524,7 +525,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(manager.nat_manager, 'disable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'remove_network', lambda *a, **k: None)
-        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
@@ -548,7 +549,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(manager.hostapd_manager, 'start', start)
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
-        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
         headers = {'Authorization': valid_token}
         url = f'/api/v2/reservations/{reservation_id}/network'
@@ -588,7 +589,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(manager.nat_manager, 'disable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'remove_network', lambda *a, **k: None)
-        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
         headers = {'Authorization': valid_token}
         url = f'/api/v2/reservations/{reservation_id}/network'
@@ -690,7 +691,7 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
-        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 10.0)
+        monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 10.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=2))[1]
@@ -716,7 +717,7 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
-        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
@@ -866,7 +867,7 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
-        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         # Start network first
@@ -892,7 +893,7 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.nat_manager, 'disable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
-        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         # Start network first
@@ -1087,7 +1088,7 @@ class TestGetNetworkExpiryAlwaysPresent:
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
         monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
         monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
-        monkeypatch.setattr(manager, '_read_current_txpower', lambda _iface: 20.0)
+        monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(dependencies, '_manager', manager, raising=False)
 
         create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]

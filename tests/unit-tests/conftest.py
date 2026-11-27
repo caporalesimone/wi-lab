@@ -133,7 +133,7 @@ def _stop_background_threads(monkeypatch):
 def mock_network_operations(monkeypatch, tmp_path):
     """Auto-mock network operations that require root privileges."""
     from wilab.network import captive, commands, dhcp, nat, subnet
-    from wilab.wifi import channels, hostapd, manager
+    from wilab.wifi import channels, hostapd, manager, txpower
     
     # Mock execute_ip to avoid RTNETLINK errors (requires root)
     def mock_execute_ip(args):
@@ -301,6 +301,7 @@ Band 2:
         monkeypatch.setattr(module, "interface_present", lambda iface: True)
     monkeypatch.setattr(manager, "execute_iw", mock_execute_iw)
     monkeypatch.setattr(manager, "execute_ip", mock_execute_ip)
+    monkeypatch.setattr(txpower, "execute_iw", mock_execute_iw)
     monkeypatch.setattr(hostapd, "execute_command", mock_execute_command)
     monkeypatch.setattr(hostapd, "execute_iw", mock_execute_iw)
     def reject_real_hostapd(*args, **kwargs) -> None:

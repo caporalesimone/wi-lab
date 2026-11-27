@@ -10,7 +10,8 @@ from wilab.models import NetworkCreateRequest
 from wilab.network.commands import CommandError, CommandTimeout
 from wilab.network.dhcp import DhcpServerError
 from wilab.wifi import hostapd
-from wilab.wifi.manager import NetworkManager, NetworkNotActive, TxPowerMismatchError
+from wilab.wifi.manager import NetworkManager, NetworkNotActive
+from wilab.wifi.txpower import TxPowerMismatchError
 
 
 class TestNetworkManagerInit:
@@ -722,7 +723,7 @@ class TestTxPower:
                 },
             }
 
-        monkeypatch.setattr(mgr, '_set_tx_power', fake_set_tx_power)
+        monkeypatch.setattr(mgr.tx_power, 'set_level', fake_set_tx_power)
 
         req = NetworkCreateRequest(
             ssid='TestAP',
@@ -759,7 +760,7 @@ class TestTxPower:
                 },
             }
 
-        monkeypatch.setattr(mgr, '_set_tx_power', fake_set_tx_power)
+        monkeypatch.setattr(mgr.tx_power, 'set_level', fake_set_tx_power)
 
         req = NetworkCreateRequest(
             ssid='TestAP',
@@ -788,8 +789,8 @@ class TestTxPower:
         monkeypatch.setattr(mgr.isolation_manager, 'add_network', lambda *a, **k: None)
 
         monkeypatch.setattr(
-            mgr,
-            '_set_tx_power',
+            mgr.tx_power,
+            'set_level',
             lambda interface, level, channel, verify_change=False: {
                 'interface': interface,
                 'max_dbm': 20.0,
@@ -814,7 +815,7 @@ class TestTxPower:
         def fake_mismatch(*args, **kwargs):
             raise TxPowerMismatchError('Interface does not support dynamic power change.')
 
-        monkeypatch.setattr(mgr, '_set_tx_power', fake_mismatch)
+        monkeypatch.setattr(mgr.tx_power, 'set_level', fake_mismatch)
 
         with pytest.raises(TxPowerMismatchError):
             mgr.set_tx_power_level('wls16', 2)
