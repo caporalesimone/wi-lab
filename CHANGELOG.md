@@ -94,6 +94,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - A 14-hour simulation (`test_soak.py`, T-20, about 1 s): four antennas, random hostapd and dnsmasq crashes, slow probes, xtables lock failures and start failures of every class inside the watchdog budgets; afterwards every reservation keeps its network, nothing is quarantined, the firewall bookkeeping matches the networks and no `ERROR` was logged. It found a recovered DHCP restart failure logged as `ERROR`.
 - QoS catalogue and inline request tests: a wrong profile next to a valid one, an unreadable schema, qualities that cannot be applied (T-19, BUG-9, NET-11).
 - The frontend route is tested against `..`, absolute and `//` paths by calling the route directly, since an HTTP client normalises them (T-01, SEC-1); the three e2e SEC-1 checks are no longer expected to fail.
+- Frontend specs for the create (`make frontend-test`, Node's test runner in the build image, no browser): `202` then the network, `200` at once, `start_failed`, the four `404` reasons as sentences, polls without an answer or with a `5xx`, a `401`, a cancelled start, unsubscribe, the 10-minute limit and a busy create repeated after `Retry-After` (unit-test-15).
 - Unit tests create networks through the real asynchronous path (`202`, then polling) with the `create_network` helper (REV-16).
 
 ### 🔌 API changes from 4.0.0 (client migration)

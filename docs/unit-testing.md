@@ -66,7 +66,7 @@ open htmlcov/index.html
 
 ### Test Files
 
-The unit test suite in `tests/unit-tests/` has 45 test files, plus:
+The unit test suite in `tests/unit-tests/` has 60 test files, plus:
 - **conftest.py** - Shared fixtures and configuration (mocks every host command)
 - **test.config.yaml** - Configuration loaded by the tests
 - **data/** - Recorded command output (for example `iw phy info`)
@@ -76,10 +76,12 @@ The test files, by area:
 - **API endpoints and contract:** `test_api.py`, `test_reservation.py`, `test_async_create.py` (202, polling, cancel), `test_strict_types.py`, `test_network_sections.py`, `test_network_not_active.py`, `test_device_busy.py`, `test_error_codes.py` (every code is in `docs/error-codes.md`), `test_openapi_examples.py`, `test_export_api_docs.py`
 - **Status and health:** `test_status_checks.py`, `test_status_snapshot.py`, `test_heartbeat.py`, `test_loop_supervision.py`
 - **Wi-Fi, hostapd and startup:** `test_wifi.py`, `test_wifi_modes.py`, `test_models.py`, `test_channels.py`, `test_discovery.py`, `test_startup.py`, `test_precheck.py`, `test_startup_classification.py`, `test_startup_firewall.py`, `test_network_creation_recovery.py`
-- **Watchdog, recovery and cleanup:** `test_watchdog.py`, `test_network_verify.py`, `test_device_loss.py`, `test_cleanup_backoff.py`, `test_runtime_cleanup.py`
+- **Watchdog, recovery and cleanup:** `test_watchdog.py`, `test_network_verify.py`, `test_device_loss.py`, `test_cleanup_backoff.py`, `test_runtime_cleanup.py`, `test_hostapd_ctrl.py` (control connection against a fake hostapd socket), `test_soak.py` (T-20: 14 simulated hours of random faults; `WILAB_SOAK_STEPS` for longer)
 - **Network:** `test_dhcp.py`, `test_nat.py`, `test_isolation.py`, `test_host_guard.py`, `test_firewall_lock.py`, `test_captive.py`, `test_subnet.py`, `test_unmanaged.py`, `test_qos.py`, `test_qos_profile.py`
-- **Commands:** `test_commands.py`
-- **Frontend sources and CI:** `test_frontend_api_codes.py`, `test_frontend_captive_portal.py`, `test_frontend_tx_warning.py`, `test_frontend_wifi_modes.py`, `test_ci_workflow.py`
+- **Commands and logging:** `test_commands.py`, `test_logging_rules.py` (ARCH-10 levels, context, no f-strings), `test_lifecycle_hygiene.py`
+- **Frontend sources and CI:** `test_frontend_api_codes.py`, `test_frontend_captive_portal.py`, `test_frontend_tx_warning.py`, `test_frontend_wifi_modes.py`, `test_frontend_static.py` (T-01: the frontend route stays in its directory), `test_ci_workflow.py`
+
+The frontend's own specs (`frontend/src/**/*.spec.ts`, today the create of `WilabApiService`) run with `make frontend-test`: compiled with the project's `tsc` and run by Node's test runner in the frontend build image, with the RxJS `TestScheduler` for the polling times; no browser, no extra dependency.
 
 ### Test Categories
 

@@ -4,7 +4,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help venv lock frontend-check test-local test-local-quick test-local-cov test-e2e test-e2e-usb clean-venv lint lint-fix type-check stop start restart build-frontend
+.PHONY: help venv lock frontend-check frontend-testtest-local test-local-quick test-local-cov test-e2e test-e2e-usb clean-venv lint lint-fix type-check stop start restart build-frontend
 
 # Default target: show help
 help:
@@ -15,6 +15,7 @@ help:
 	@echo "  make clean-venv        Remove virtual environment"
 	@echo "  make lock              Regenerate requirements.lock (on purpose, then run the tests)"
 	@echo "  make frontend-check    Compile the frontend (production build in Docker) without publishing it"
+	@echo "  make frontend-test     Run the frontend specs (Node test runner in Docker, no browser)"
 	@echo ""
 	@echo "Testing (Local - uses venv):"
 	@echo "  make test-local        Run unit tests with verbose output"
@@ -64,6 +65,14 @@ frontend-check:
 	docker build -q -t wi-lab-frontend:check frontend >/dev/null
 	docker rmi -f wi-lab-frontend:check >/dev/null
 	@echo "✓ Frontend compiles (production build); nothing was published"
+
+# Frontend specs (unit-test-15): compiled with the project's tsc and run with Node's
+# test runner inside the build image (it has node_modules); no browser needed.
+frontend-test:
+	docker build -q -t wi-lab-frontend:check frontend >/dev/null
+	docker run --rm wi-lab-frontend:check sh -c "npx tsc -p tsconfig.spec.json && node --test out-tsc/spec/app/services/*.spec.js"
+	docker rmi -f wi-lab-frontend:check >/dev/null
+	@echo "✓ Frontend specs passed"
 
 # Local test targets (use venv)
 test-local: venv
