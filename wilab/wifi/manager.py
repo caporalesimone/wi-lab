@@ -29,7 +29,7 @@ from ..network.subnet_allocator import SubnetAllocator
 from ..reservation import Reservation, ReservationManager
 from ..timestamps import format_utc_timestamp
 from .active import ActiveNetwork
-from .channels import ChannelManager
+from .channels import ChannelManager, is_dfs_channel
 from .clients import ClientLister
 from .failures import FailureKind
 from .hostapd import (
@@ -356,7 +356,7 @@ class NetworkManager:
         """Verify AP and DHCP startup without publishing a user network or enabling NAT."""
         # A reset adapter announces its channels again: never trust the old list (BUG-4).
         self._channel_manager.invalidate(device)
-        if band == "5ghz" and 52 <= channel <= 144:
+        if is_dfs_channel(band, channel):
             channel = PROBE_5GHZ_CHANNEL
         subnet = self._get_subnet(device)
         net = IPv4Network(subnet)
@@ -396,7 +396,7 @@ class NetworkManager:
         if not cfg_net:
             raise ValueError(UNKNOWN_ANTENNA)
 
-        # Check if network is already active (check both self.active and hostapd)
+        # A running network must be stopped first (the route answers 409 / 1008 before this).
         if device_id in self.active:
             raise StartupFailure(
                 f"Network {device_id} is already active. Stop it first before creating a new one.",
@@ -729,7 +729,7 @@ class NetworkManager:
         if st.internet_enabled:
             try:
                 with self._firewall_lock:
-                    self.nat_manager.disable_nat(cfg_net.interface, device_id, st.subnet or self._get_subnet(device_id))
+                    self.nat_manager.disable_nat(cfg_net.interface, device_id)
                 logger.info("NAT rules removed for %s", device_id)
             except Exception as e:
                 logger.warning("Failed to disable NAT: %s", e)
@@ -799,14 +799,6 @@ class NetworkManager:
         with self._firewall_lock:
             return self.nat_manager.status()
 
-    def services_status(self) -> dict:
-        """Return minimal service status (dnsmasq, hostapd, iptables)."""
-        return {
-            "dnsmasq": self.dhcp_server.status(),
-            "hostapd": self.hostapd_manager.status(),
-            "iptables": self.firewall_status(),
-        }
-    
     def shutdown_all(self) -> None:
         """Shutdown all active networks."""
         self.recovery.stop()

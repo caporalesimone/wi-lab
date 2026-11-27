@@ -233,8 +233,8 @@ export class AppComponent implements OnInit, OnDestroy {
     this.restartRequired = response.restart_required ?? null;
   }
 
-  private buildSlots(networks: InterfaceInfo[]): void {
-    this.slots = networks.map(n => {
+  private buildSlots(antennas: InterfaceInfo[]): void {
+    this.slots = antennas.map(n => {
       const myRes = this.myReservations.get(n.interface) ?? null;
       return {
         display_name: n.display_name,

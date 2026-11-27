@@ -56,7 +56,7 @@ def busy_adapter(valid_token, monkeypatch, context, app):
         held, release = threading.Event(), threading.Event()
 
         def holder():
-            device = context.reservations.device_for(reservation["reservation_id"])
+            device = context.reservations.get(reservation["reservation_id"]).device_id
             with manager.devices.lock(device):
                 held.set()
                 release.wait(10)
@@ -120,7 +120,7 @@ def test_the_same_create_on_a_running_network_can_answer_1006(busy_adapter, monk
 
     client, headers, rid = busy_adapter
     manager = context.manager
-    device = context.reservations.device_for(rid)
+    device = context.reservations.get(rid).device_id
     monkeypatch.setitem(manager.active, device, active_network(interface=device))
     monkeypatch.setattr(manager, "runs", lambda _device, _req: True)
     body = network_body(ssid="busy", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)

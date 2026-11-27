@@ -322,7 +322,8 @@ def scan_new_networks(
 ) -> list[Device]:
     """Re-read `antennas` from the config file and discover radios not in *current*.
 
-    Only additions are returned; managed devices are never removed or renamed.
+    Only additions are returned; managed devices are never renamed here (discovery
+    retires a gone one, WD-5).
     *config* itself is not changed: the labels are read from the file each time.
 
     Raises:
@@ -333,7 +334,8 @@ def scan_new_networks(
     cfg_path = config_path(path)
     try:
         labels = AppConfig(**_read_raw_config(cfg_path, quiet=quiet)).antennas
-    except (OSError, yaml.YAMLError, ValidationError) as e:
+    except (OSError, yaml.YAMLError, ValidationError, TypeError) as e:
+        # TypeError: the file is not a mapping (an empty file or a YAML list).
         raise ValueError(f"Cannot read configuration {cfg_path}: {e}") from e
     excluded = default_route_interfaces()
     if config.upstream_interface != "auto":

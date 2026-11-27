@@ -37,22 +37,6 @@ class TestCommandExecution:
             execute_command(['echo', 'hello'], timeout=1.0)
             assert mock_run.call_args.args[1] == 1.0
 
-    def test_deadline_clamps_timeout_and_does_not_leak(self, monkeypatch):
-        from wilab.network import commands
-
-        now = 10.0
-        monkeypatch.setattr(commands, "time", SimpleNamespace(monotonic=lambda: now))
-        with patch.object(commands, "_run", return_value=(0, "", "")) as run:
-            with commands.command_deadline(10.5):
-                execute_command(["ip", "addr", "show"])
-                assert run.call_args.args[1] == 0.5
-                now = 10.5
-                with pytest.raises(CommandError, match="Deadline expired"):
-                    execute_command(["dnsmasq", "--test"])
-                assert run.call_count == 1
-            execute_command(["ip", "addr", "show"])
-            assert run.call_args.args[1] == 8.0
-    
     def test_execute_command_success(self):
         """Test successful command execution."""
         result = execute_command(['echo', 'hello'])

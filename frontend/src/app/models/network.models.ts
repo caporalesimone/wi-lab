@@ -169,7 +169,6 @@ export interface ApiErrorDetail {
   code: number;
   reason: string;
   message?: string;
-  reservation_invalidated?: boolean;
 }
 
 export interface NoDeviceAvailableError extends ApiErrorDetail {

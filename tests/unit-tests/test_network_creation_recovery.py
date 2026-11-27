@@ -120,7 +120,7 @@ def test_reservation_too_short_for_another_start_is_released_without_quarantine(
         assert (start.call_count, pauses) == (1, [])
         reservations = context.reservations
         assert reservations.recovery_snapshot() == {}
-        assert not reservations.is_device_reserved(reserved["interface"])
+        assert reserved["interface"] not in reservations.snapshot()
 
 
 @pytest.mark.parametrize("verified_after", [2, None])

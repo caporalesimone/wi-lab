@@ -49,7 +49,6 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   private openingForm = false;
   pollingSubscription?: Subscription;
   countdownSubscription?: Subscription;
-  clientsCount = 0;
 
   /** Remaining seconds from reservation (always visible when mine) */
   remainingSeconds = 0;
@@ -207,7 +206,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
 
   private startOwned(): void {
     if (!this.slot.myReservation) return;
-    this.checkStatus(false);
+    this.checkStatus();
     this.startPolling();
     if (this.slot.myReservation.expires_in !== null) {
       this.totalDuration = this.slot.myReservation.expires_in;
@@ -230,7 +229,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   private startPolling(): void {
     this.stopPolling();
     this.pollingSubscription = interval(environment.pollingInterval).subscribe(() => {
-      this.checkStatus(false);
+      this.checkStatus();
     });
   }
 
@@ -256,36 +255,24 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     this.countdownSubscription?.unsubscribe();
   }
 
-  public checkStatus(showNotification: boolean = true): void {
+  public checkStatus(): void {
     if (!this.isMine || this.createMessage !== null) return;
     const reservationId = this.reservationId;
-    if (showNotification) this.loading = true;
 
     this.wilabApiService.getNetworkStatus(reservationId).subscribe({
       next: (networkStatus) => {
         if (this.reservationId !== reservationId || this.createMessage !== null) return;
         this.status = networkStatus;
-        this.clientsCount = networkStatus.clients?.length ?? 0;
         if (networkStatus.reservation?.expires_in !== undefined && networkStatus.reservation?.expires_in !== null) {
           this.remainingSeconds = networkStatus.reservation.expires_in;
-        }
-        if (showNotification) {
-          this.loading = false;
-          this.snackBar.open('Status updated', 'Close', { duration: 2000 });
         }
       },
       error: (err: ApiError) => {
         if (this.reservationId !== reservationId || this.createMessage !== null) return;
-        if (showNotification) this.loading = false;
         if (err.originalError?.status === 404) {
           const why = reservationGoneText(err);
           if (why) this.snackBar.open(why, 'Close', { duration: 8000 });
           this.released.emit(reservationId);
-        } else if (showNotification) {
-          this.snackBar.open(apiErrorToast('Failed to read network status', err), 'Close', {
-            duration: 10000,
-            panelClass: ['error-snackbar']
-          });
         }
       }
     });
@@ -338,7 +325,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
               // Not active and no start running: cancelled (a stop or release from another tab).
               this.snackBar.open('The start was cancelled; the network is not running.', 'Close', { duration: 5000 });
             }
-            this.checkStatus(false);
+            this.checkStatus();
           },
           error: (err: ApiError) => {
             this.createMessage = null;
@@ -352,7 +339,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
               return;
             }
             // No final answer (timeout, connection lost): the normal polling shows the real state.
-            this.checkStatus(false);
+            this.checkStatus();
             const stillRunning = (err.originalError as unknown as Error | undefined)?.name === 'TimeoutError';
             this.snackBar.open(stillRunning
               ? 'The start is taking longer than expected; the card updates when it ends.'
@@ -372,7 +359,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     this.wilabApiService.stopNetwork(this.reservationId).subscribe({
       next: () => {
         this.snackBar.open('WiFi network stopped successfully', 'Close', { duration: 3000 });
-        this.checkStatus(false);
+        this.checkStatus();
         this.loading = false;
       },
       error: (err) => {
@@ -389,7 +376,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     this.wilabApiService.enableInternet(this.reservationId).subscribe({
       next: () => {
         this.snackBar.open('Internet access enabled', 'Close', { duration: 3000 });
-        this.checkStatus(false);
+        this.checkStatus();
         this.loading = false;
       },
       error: (err) => {
@@ -406,7 +393,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     this.wilabApiService.disableInternet(this.reservationId).subscribe({
       next: () => {
         this.snackBar.open('Internet access disabled', 'Close', { duration: 3000 });
-        this.checkStatus(false);
+        this.checkStatus();
         this.loading = false;
       },
       error: (err) => {

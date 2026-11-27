@@ -213,7 +213,7 @@ class NetworkStatus(BaseModel):
         None, description="Expiration timestamp in UTC (RFC 3339 with a Z suffix), null if unlimited",
         json_schema_extra={"format": "date-time", "examples": ["2026-11-19T23:00:00Z"]},
     )
-    expires_in: int | None = Field(None, description="Seconds remaining until network auto-shutdown")
+    expires_in: int | None = Field(None, description="Seconds until the reservation expires and the network stops; null without expiry")
     dhcp: dict | None = Field(None, description="DHCP server configuration details")
     clients_connected: int | None = Field(None, description="Number of clients currently connected")
     clients: list[ClientInfo] | None = Field(None, description="List of connected clients")

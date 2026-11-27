@@ -108,7 +108,7 @@
         <div class="clients-section">
           <div class="clients-header">
             <span class="label">Connected Clients:</span>
-            <span class="value">{{ clientsCount }}</span>
+            <span class="value">{{ status?.clients?.length ?? 0 }}</span>
           </div>
           <div class="clients-table-wrapper" *ngIf="clients.length > 0; else noClientsConnected">
             <table class="clients-table">

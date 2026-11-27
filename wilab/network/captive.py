@@ -10,13 +10,12 @@ import errno
 import html
 import logging
 import re
-import shlex
 import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import IPv4Address
-from itertools import pairwise
 
+from . import rules
 from .commands import CommandError, execute_iptables, rule_exists
 
 logger = logging.getLogger(__name__)
@@ -41,27 +40,14 @@ def _chain(net_id: str) -> str:
     return f"{CHAIN_PREFIX}{net_id}"
 
 
-def _iptables_listing(table: str | None, chain: str | None = None) -> list[list[str]]:
-    prefix = ["-t", table] if table else []
-    output = execute_iptables([*prefix, "-S", *([chain] if chain else [])])
-    return [shlex.split(line) for line in output.splitlines() if line.strip()]
-
-
 def _remove_rules(net_id: str | None) -> None:
     """Delete jump rules and chains of one portal, or of every portal when *net_id* is None."""
     def owned(name: str, prefix: str) -> bool:
         return name == f"{prefix}{net_id}" if net_id is not None else name.startswith(prefix)
 
     for table, parent in (("nat", "PREROUTING"), (None, "FORWARD")):
-        prefix = ["-t", table] if table else []
-        for tokens in _iptables_listing(table, parent):
-            comments = [value for option, value in pairwise(tokens) if option == "--comment"]
-            if tokens[:2] == ["-A", parent] and any(owned(c, JUMP_COMMENT_PREFIX) for c in comments):
-                execute_iptables([*prefix, "-D", *tokens[1:]])
-        for tokens in _iptables_listing(table):
-            if tokens[:1] == ["-N"] and len(tokens) >= 2 and owned(tokens[1], CHAIN_PREFIX):
-                execute_iptables([*prefix, "-F", tokens[1]])
-                execute_iptables([*prefix, "-X", tokens[1]])
+        rules.delete_commented(parent, lambda c: owned(c, JUMP_COMMENT_PREFIX), table=table, run=execute_iptables)
+        rules.delete_chains(lambda name: owned(name, CHAIN_PREFIX), table=table, run=execute_iptables)
 
 
 def remove_stale_captive_rules() -> None:

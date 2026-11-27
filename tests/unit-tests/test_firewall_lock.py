@@ -63,5 +63,4 @@ def test_firewall_status_holds_the_firewall_lock(monkeypatch):
         manager.nat_manager, "status", lambda: held.append(manager._firewall_lock.locked()) or {},
     )
     manager.firewall_status()
-    manager.services_status()
-    assert held == [True, True]
+    assert held == [True]

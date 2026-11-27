@@ -177,15 +177,11 @@ export class WilabApiService {
     let errorMessage = 'Unknown error occurred';
     const detail = error.error?.detail;
     
-    // Error status 0 typically indicates CORS, network, or connection issues
+    // Status 0: no answer (the UI and the API share one origin, so not CORS).
     if (error.status === 0) {
-      if (error.error instanceof ErrorEvent) {
-        // Client-side error (network, CORS, etc.)
-        errorMessage = `Connection Error: ${error.error.message}\n\nPossible causes:\n- CORS not configured on backend\n- Network connectivity issue\n- Backend server not running\n\nCheck browser console for details.`;
-      } else {
-        // No response from server
-        errorMessage = `Connection Error: Unable to reach server at ${this.apiUrl}\n\nPossible causes:\n- CORS not configured (add your frontend URL to backend config.yaml cors_origins)\n- Backend server not running\n- Network connectivity issue\n- Firewall blocking the request`;
-      }
+      const cause = error.error instanceof ErrorEvent ? `${error.error.message}\n\n` : '';
+      errorMessage = `Connection Error: Unable to reach the Wi-Lab server at ${this.apiUrl}\n\n${cause}` +
+        `Possible causes:\n- The Wi-Lab service is not running or restarting\n- Network connectivity issue\n- Firewall blocking the request`;
     } else if (error.error instanceof ErrorEvent) {
       // Client-side error
       errorMessage = `Error: ${error.error.message}`;

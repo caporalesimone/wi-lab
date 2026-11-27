@@ -4,7 +4,7 @@ PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help venv lock frontend-check frontend-testtest-local test-local-quick test-local-cov test-e2e test-e2e-usb clean-venv lint lint-fix type-check stop start restart build-frontend
+.PHONY: help venv lock frontend-check frontend-test test-local test-local-quick test-local-cov test-e2e test-e2e-usb clean-venv lint lint-fix type-check stop start restart build-frontend
 
 # Default target: show help
 help:

@@ -204,7 +204,7 @@ class TestReservationManagerGivenDevice:
         with pytest.raises(NoDeviceAvailableError) as exc:
             mgr.create(3600, "dev0")
         assert exc.value.next_available_at == owner.expires_at
-        assert not mgr.is_device_reserved("dev1")
+        assert "dev1" not in mgr.snapshot()
 
     def test_unlimited_owner_has_no_expiry(self):
         mgr = ReservationManager(registry_of("dev0"))
@@ -245,34 +245,18 @@ class TestReservationManagerGivenDevice:
 class TestReservationManagerHelpers:
     """Tests for helper methods."""
 
-    def test_device_for_valid(self):
-        mgr = ReservationManager(registry_of("dev0"))
-        r = mgr.create(3600)
-        assert mgr.device_for(r.reservation_id) == "dev0"
-
-    def test_device_for_invalid(self):
-        mgr = ReservationManager(registry_of("dev0"))
-        assert mgr.device_for("bad-token") is None
-
-    def test_all_active(self):
+    def test_snapshot_lists_reserved_devices(self):
         mgr = ReservationManager(registry_of("dev0", "dev1"))
         mgr.create(3600)
-        mgr.create(3600)
-        active = mgr.all_active()
-        assert len(active) == 2
-
-    def test_is_device_reserved(self):
-        mgr = ReservationManager(registry_of("dev0", "dev1"))
-        mgr.create(3600)
-        assert mgr.is_device_reserved("dev0") is True
-        assert mgr.is_device_reserved("dev1") is False
+        assert set(mgr.snapshot()) == {"dev0"}
 
     def test_expired_reservation_auto_purged(self):
         mgr = ReservationManager(registry_of("dev0"))
         r = mgr.create(1)
         r.expires_at = time.time() - 1  # Force expiry
-        assert mgr.is_device_reserved("dev0") is False
-        assert len(mgr.all_active()) == 0
+        r.deadline = time.monotonic() - 1
+        mgr.expire()
+        assert mgr.snapshot() == {}
 
 
 class TestReservationLifecycleConcurrency:
@@ -874,7 +858,9 @@ class TestUnlimitedReservation:
         r_timed = mgr.create(1)
         # Force the timed one to expire
         r_timed.expires_at = time.time() - 1
-        active = mgr.all_active()
+        r_timed.deadline = time.monotonic() - 1
+        mgr.expire()
+        active = list(mgr.snapshot().values())
         assert len(active) == 1
         assert active[0].reservation_id == r_unlimited.reservation_id
 

@@ -62,8 +62,7 @@ def test_stale_cleanup_logs_failures_and_continues(monkeypatch, caplog):
 
     monkeypatch.setattr("wilab.network.nat.execute_iptables", iptables)
     NatManager().remove_stale_rules()
-    assert "Cannot list stale" in caplog.text
-    assert "Cannot remove stale" in caplog.text
+    assert caplog.text.count("Cannot remove stale Wi-Lab rules in") == 2   # each chain logged, both tried
 
 
 def test_nat_rules_use_only_the_selected_network_subnet(monkeypatch):
@@ -89,7 +88,7 @@ def test_nat_rules_use_only_the_selected_network_subnet(monkeypatch):
     nat = NatManager("eth0")
     nat.enable_nat("wlan0", "a", "192.168.120.0/24")
     nat.enable_nat("wlan1", "b", "192.168.121.0/24")
-    nat.disable_nat("wlan0", "a", "192.168.120.0/24")
+    nat.disable_nat("wlan0", "a")
     added = [c for c in calls if c[:4] == ["-t", "nat", "-A", "POSTROUTING"]]
     removed = [c for c in calls if c[:4] == ["-t", "nat", "-D", "POSTROUTING"]]
     assert len(added) == 2
@@ -103,7 +102,7 @@ def test_internet_block_precedes_protection_and_is_removed_on_reenable(monkeypat
     calls = fw.calls
     monkeypatch.setattr("wilab.network.nat.execute_iptables", fw)
     nat = NatManager("eth0")
-    nat.disable_nat("wlan0", "a", "192.168.120.0/24")
+    nat.disable_nat("wlan0", "a")
     assert calls[0][:3] == ["-I", "FORWARD", "1"]
     assert calls[1][:3] == ["-I", "FORWARD", "1"]
     assert calls[2][:3] == ["-I", "FORWARD", "1"]
@@ -151,7 +150,7 @@ def test_failed_rule_check_is_not_read_as_a_missing_rule(monkeypatch):
     fw = _Firewall()
     monkeypatch.setattr("wilab.network.nat.execute_iptables", fw)
     nat = NatManager("eth0")
-    nat.disable_nat("wlan0", "a", "192.168.120.0/24")
+    nat.disable_nat("wlan0", "a")
     blocked = list(fw.rules)
 
     def lock_held(args, **kwargs):
@@ -172,7 +171,7 @@ def test_release_removes_duplicate_block_rules(monkeypatch):
     fw = _Firewall()
     monkeypatch.setattr("wilab.network.nat.execute_iptables", fw)
     nat = NatManager("eth0")
-    nat.disable_nat("wlan0", "a", "192.168.120.0/24")
+    nat.disable_nat("wlan0", "a")
     fw.rules += list(fw.rules)   # an earlier repair inserted the block twice
     nat.release_network("wlan0", "a")
     assert not fw.rules
@@ -402,7 +401,7 @@ class TestDisableNat:
             ])
         monkeypatch.setattr("wilab.network.nat.execute_iptables", _recording_iptables(iptables_calls, listing))
 
-        nat.disable_nat("wlan0", "test-net", "192.168.120.0/24")
+        nat.disable_nat("wlan0", "test-net")
 
         # The implementation may issue multiple deletes to remove duplicates;
         # assert that required rule deletions were attempted at least once.
@@ -442,7 +441,7 @@ class TestDisableNat:
         monkeypatch.setattr("wilab.network.nat.execute_iptables", mock_iptables)
 
         # Should not raise
-        nat.disable_nat("wlan0", "test-net", "192.168.120.0/24")
+        nat.disable_nat("wlan0", "test-net")
 
     def test_cleanup_failure_retains_block_and_pending_state(self, monkeypatch):
         nat = NatManager("eth0")
@@ -553,7 +552,7 @@ def test_verify_leaves_a_network_with_internet_disabled_alone(moving_route):
     _route, fw = moving_route
     nat = NatManager("auto")
     nat.enable_nat("wlan0", "wlan0", "192.168.120.0/24")
-    nat.disable_nat("wlan0", "wlan0", "192.168.120.0/24")
+    nat.disable_nat("wlan0", "wlan0")
     blocked = list(fw.rules)
     assert blocked and not _masquerade_upstreams(fw)
     assert nat.verify("wlan0", "wlan0", "192.168.120.0/24") == []

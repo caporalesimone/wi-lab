@@ -180,7 +180,7 @@ class ReservationManager:
                 return self._reserve(device_id, duration_seconds)
 
         # A failed cleanup keeps its device held; the background sweep repeats it.
-        self._purge_expired(continue_on_error=True, background=True)
+        self._purge_expired(background=True)
         with self._lock:
             device_id = self._first_available()
             if device_id is not None:
@@ -360,21 +360,6 @@ class ReservationManager:
             count += self._delete(reservation)
         return count
 
-    def device_for(self, reservation_id: str) -> str | None:
-        """Resolve reservation_id to device_id, or None if invalid/expired."""
-        r = self.get(reservation_id)
-        return r.device_id if r else None
-
-    def all_active(self) -> list[Reservation]:
-        """Return list of currently active (non-expired) reservations."""
-        self._purge_expired()
-        return [r for r in self.snapshot().values() if not r.is_expired]
-
-    def is_device_reserved(self, device_id: str) -> bool:
-        """Check if a device is currently reserved."""
-        self._purge_expired()
-        return device_id in self.snapshot()
-
     def snapshot(self) -> dict[str, Reservation]:
         """Report occupied devices, including those still awaiting cleanup."""
         with self._lock:
@@ -385,7 +370,7 @@ class ReservationManager:
 
         Devices whose cleanup failed are skipped until their backoff ends (WD-6).
         """
-        self._purge_expired(continue_on_error=True, background=True)
+        self._purge_expired(background=True)
 
     @contextmanager
     def hold(self, reservation_id: str, timeout: float | None = None) -> Iterator[Reservation | None]:
@@ -465,20 +450,13 @@ class ReservationManager:
         finally:
             lock.release()
 
-    def _purge_expired(
-        self, *, continue_on_error: bool = False, background: bool = False,
-    ) -> ReservationCleanupError | None:
-        expired = [r for r in self.snapshot().values() if r.is_expired]
-        first_error = None
-        for reservation in expired:
+    def _purge_expired(self, *, background: bool = False) -> None:
+        """Clean up every expired reservation; a failed cleanup is repeated later (WD-6)."""
+        for reservation in [r for r in self.snapshot().values() if r.is_expired]:
             try:
                 self._cleanup_expired(reservation, background=background)
-            except ReservationCleanupError as exc:
-                if not continue_on_error:
-                    raise
-                if first_error is None:
-                    first_error = exc
-        return first_error
+            except ReservationCleanupError:
+                pass   # logged by _release; the device stays held until a cleanup succeeds
 
     def _soonest_expiry(self) -> float | None:
         """When a device should be free: the earliest expiry, or next cleanup of an expired one."""

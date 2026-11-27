@@ -15,13 +15,12 @@ from ..network.commands import (
     CommandError,
     CommandTimeout,
     ForegroundProcess,
-    bounded_timeout,
     execute_command,
     execute_iw,
     start_foreground,
 )
 from ..paths import HOSTAPD_RUNTIME_DIR, make_private_dir
-from .channels import ChannelLayout, channel_layouts
+from .channels import ChannelLayout, channel_layouts, is_dfs_channel
 from .failures import FailureKind
 from .hostapd_ctrl import ControlError, HostapdMonitor, parse_fields
 from .interface import interface_present
@@ -409,7 +408,7 @@ class HostapdManager:
             )
             instance["process"] = process
             sub_channels = layout.channels if layout is not None else (channel,)
-            dfs = band == "5ghz" and any(52 <= c <= 144 for c in sub_channels)
+            dfs = any(is_dfs_channel(band, c) for c in sub_channels)
             timeout = DFS_READY_TIMEOUT if dfs else AP_READY_TIMEOUT
             try:
                 self._wait_until_ready(process, interface, control_dir, timeout, cancelled)
@@ -456,7 +455,7 @@ class HostapdManager:
         interface identify the AP.
         """
         started = time.monotonic()
-        deadline = started + bounded_timeout(timeout)
+        deadline = started + timeout
         state = "unavailable"
         last_state = state
         socket_seen = False
@@ -692,19 +691,4 @@ class HostapdManager:
     def _changed(self, net_id: str) -> None:
         if self.on_change is not None:
             self.on_change(net_id)
-
-    def status(self) -> dict:
-        """Return status of all hostapd instances."""
-        instances = []
-        for net_id, data in self._instances.copy().items():
-            instances.append({
-                "net_id": net_id,
-                "interface": data.get("interface"),
-                "ssid": data.get("ssid"),
-                "running": (process := data["process"]) is not None and process.poll() is None,
-            })
-        return {
-            "running": any(inst["running"] for inst in instances),
-            "instances": instances,
-        }
     

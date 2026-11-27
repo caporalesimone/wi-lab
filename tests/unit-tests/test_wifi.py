@@ -556,7 +556,7 @@ class TestInternetControl:
         def mock_nat_enable(interface, device_id, subnet):
             pass  # Mock NAT enable
         
-        def mock_nat_disable(interface, device_id, subnet):
+        def mock_nat_disable(interface, device_id):
             pass  # Mock NAT disable
         
         monkeypatch.setattr(mgr.dhcp_server, 'start', mock_dhcp_start)

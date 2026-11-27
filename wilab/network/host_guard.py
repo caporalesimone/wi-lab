@@ -14,11 +14,10 @@ Forwarded traffic (Internet, isolation) is not affected: it uses `FORWARD`.
 """
 
 import logging
-import shlex
 from collections.abc import Callable
-from itertools import pairwise
 
-from .commands import CommandError, execute_command, execute_iptables, rule_exists
+from . import rules
+from .commands import IPTABLES_LOCK_WAIT, CommandError, execute_command, execute_iptables, rule_exists
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ DHCP_PORT = 67
 
 
 def _ip6tables(args: list[str], *, quiet: bool = False) -> str:
-    return execute_command(["ip6tables", "-w", "5", *args], quiet=quiet)
+    return execute_command(["ip6tables", "-w", IPTABLES_LOCK_WAIT, *args], quiet=quiet)
 
 
 def chain(net_id: str) -> str:
@@ -144,16 +143,8 @@ class HostGuard:
         """Delete every Wi-Lab guard jump and chain left by a previous run. Never raises."""
         for run in (execute_iptables, _ip6tables):
             try:
-                for line in run(["-S", "INPUT"]).splitlines():
-                    tokens = shlex.split(line)
-                    comments = [v for option, v in pairwise(tokens) if option == "--comment"]
-                    if tokens[:2] == ["-A", "INPUT"] and any(c.startswith(JUMP_COMMENT_PREFIX) for c in comments):
-                        run(["-D", *tokens[1:]])
-                for line in run(["-S"]).splitlines():
-                    tokens = shlex.split(line)
-                    if tokens[:1] == ["-N"] and len(tokens) > 1 and tokens[1].startswith(CHAIN_PREFIX):
-                        run(["-F", tokens[1]])
-                        run(["-X", tokens[1]])
+                rules.delete_commented("INPUT", lambda c: c.startswith(JUMP_COMMENT_PREFIX), run=run)
+                rules.delete_chains(lambda name: name.startswith(CHAIN_PREFIX), run=run)
             except (CommandError, ValueError) as exc:
                 logger.error("Could not remove stale host guard rules: %s", exc)
 

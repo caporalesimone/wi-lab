@@ -94,19 +94,12 @@ def clock(monkeypatch):
     return now
 
 
-def _deadline(clock) -> float | None:
-    from wilab.network import commands
-
-    deadline = commands._command_deadline.get()
-    return None if deadline is None else round(deadline - clock["t"], 2)
-
-
-def _timed_start(clock, outcomes, budgets):
-    """hostapd start that records its command deadline, takes `seconds`, then fails or succeeds."""
+def _timed_start(clock, outcomes, attempts):
+    """hostapd start that counts its attempts, takes `seconds`, then fails or succeeds."""
     calls = iter(outcomes)
 
     def start(*args, **kwargs):
-        budgets.append(_deadline(clock))
+        attempts.append(clock["t"])
         seconds, ok = next(calls)
         clock["t"] += seconds
         if not ok:
@@ -116,7 +109,7 @@ def _timed_start(clock, outcomes, budgets):
 
 
 def test_internal_retries_have_no_time_budget(monkeypatch, manager, clock):
-    """REV-5: the three attempts all run, however long each one takes, without a command deadline."""
+    """REV-5: the three attempts all run, however long each one takes."""
     device = manager.config.antennas[0].device_id
     monkeypatch.setattr(startup_module, "STARTUP_RETRY_DELAY", 1.0)
     budgets: list[float | None] = []
@@ -126,12 +119,12 @@ def test_internal_retries_have_no_time_budget(monkeypatch, manager, clock):
     with pytest.raises(StartupFailure) as failure:
         manager.start_network(device, _request(), allow_internal_retry=True)
     assert failure.value.radio
-    assert budgets == [None, None, None]
+    assert len(budgets) == 3
 
 
 def test_a_retry_that_succeeds_late_stays_active(monkeypatch, manager, clock):
     """REV-5 (unit-test-4): a retry that brings the AP up after 20 s is not torn down,
-    and the later phases (DHCP) never run under an expired deadline."""
+    and the later phases (DHCP) still run."""
     device = manager.config.antennas[0].device_id
     monkeypatch.setattr(startup_module, "STARTUP_RETRY_DELAY", 1.0)
     budgets: list[float | None] = []
@@ -142,13 +135,13 @@ def test_a_retry_that_succeeds_late_stays_active(monkeypatch, manager, clock):
     )
     monkeypatch.setattr(
         manager.dhcp_server, "start",
-        Mock(side_effect=lambda *a, **k: dhcp_budgets.append(_deadline(clock)) or {}),
+        Mock(side_effect=lambda *a, **k: dhcp_budgets.append(clock["t"]) or {}),
     )
     status = manager.start_network(device, _request(), allow_internal_retry=True)
     assert status.active
     assert device in manager.active
-    assert budgets == [None, None]
-    assert dhcp_budgets == [None]
+    assert len(budgets) == 2
+    assert len(dhcp_budgets) == 1
 
 
 def test_no_retry_after_the_reservation_expires(monkeypatch, manager, clock):

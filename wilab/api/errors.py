@@ -22,7 +22,6 @@ class ApiErrorCode(IntEnum):
     RETRY_LATER = 1001                 # no longer answered: the server retries radio failures itself
     DEVICE_RECOVERING = 1002
     DEVICE_UNAVAILABLE = 1003
-    CLEANUP_FAILED = 1004              # no longer answered: the release always succeeds
     NO_DEVICE_AVAILABLE = 1005
     DEVICE_BUSY = 1006
     NETWORK_NOT_ACTIVE = 1007

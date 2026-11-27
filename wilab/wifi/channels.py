@@ -2,8 +2,8 @@
 
 Queries ``iw phy<N> channels`` to build a per-interface list of supported
 channels, separated by band (2.4 GHz / 5 GHz).  Results are cached in
-memory so that the underlying ``iw`` command is executed at most once per
-physical interface.
+memory; a refusal is checked again on a fresh reading (BUG-4), and a reading
+older than the last ``invalidate()`` is never cached (REV-12).
 
 Design decision – disabled channels:
     ``iw`` reports some channels as ``(disabled)`` without a power value.
@@ -50,6 +50,11 @@ class FieldError(ValueError):
     def __init__(self, field: str, message: str) -> None:
         super().__init__(message)
         self.field = field
+
+
+def is_dfs_channel(band: str, channel: int) -> bool:
+    """True for a 5 GHz channel that needs a radar check before use (UNII-2 and 2e: 52-144)."""
+    return band == "5ghz" and 52 <= channel <= 144
 
 
 def is_valid_channel_for_band(channel: int, band: str) -> bool:

@@ -35,7 +35,7 @@ from ...models import (
 from ...network.commands import CommandError
 from ...reservation import EXPIRED, Reservation, ReservationManager
 from ...timestamps import format_utc_timestamp
-from ...wifi.channels import ChannelManager, FieldError
+from ...wifi.channels import ChannelManager, FieldError, is_dfs_channel
 from ...wifi.failures import FailureKind
 from ...wifi.hostapd import AP_READY_TIMEOUT, DFS_READY_TIMEOUT
 from ...wifi.manager import (
@@ -626,7 +626,7 @@ def _time_left(reservation: Reservation) -> float:
 
 def _start_time(req) -> float:
     """Longest wait for one AP start on this channel, plus a margin for the rest."""
-    dfs = req.band == "5ghz" and 52 <= req.channel <= 144
+    dfs = is_dfs_channel(req.band, req.channel)
     return (DFS_READY_TIMEOUT if dfs else AP_READY_TIMEOUT) + START_MARGIN
 
 

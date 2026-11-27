@@ -8,7 +8,6 @@ export class AuthService {
   private static readonly STORAGE_KEY = 'wilab_auth_token';
 
   private tokenSubject = new BehaviorSubject<string | null>(this.loadToken());
-  public token$ = this.tokenSubject.asObservable();
 
   getToken(): string | null {
     return this.tokenSubject.value;

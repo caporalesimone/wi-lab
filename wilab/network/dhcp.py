@@ -1,14 +1,15 @@
+"""dnsmasq of each AP network: DHCP (and DNS for the captive portal), a foreground child (ARCH-6)."""
+
 import logging
 import os
 import time
 from ipaddress import IPv4Network
 from typing import Any
 
+from ..paths import DNSMASQ_RUNTIME_DIR, make_private_dir
 from .commands import CommandError, ForegroundProcess, execute_command, start_foreground
 
 logger = logging.getLogger(__name__)
-
-from ..paths import DNSMASQ_RUNTIME_DIR, make_private_dir
 
 # dnsmasq configuration and leases (STAB-2: private, not /tmp).
 DNSMASQ_CONFIG_DIR = DNSMASQ_RUNTIME_DIR
@@ -302,18 +303,4 @@ class DhcpServer:
     def list_active(self) -> list[str]:
         """Get list of active DHCP server net_ids."""
         return list(self._instances.keys())
-    
-    def status(self) -> dict:
-        """Return minimal status for dnsmasq instances."""
-        instances = []
-        for net_id, data in self._instances.copy().items():
-            instances.append({
-                "net_id": net_id,
-                "interface": data.get("interface"),
-                "running": self.is_running(net_id),
-            })
-        return {
-            "running": any(item["running"] for item in instances),
-            "instances": instances,
-        }
     

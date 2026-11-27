@@ -4,6 +4,7 @@ import logging
 import shlex
 from itertools import pairwise
 
+from . import rules
 from .commands import (
     CommandError,
     execute_command,
@@ -36,33 +37,17 @@ class NatManager:
 
     def remove_stale_rules(self) -> None:
         """Remove only rules owned by Wi-Lab from the chains it manages."""
+        def owned(comment: str) -> bool:
+            return comment in ("wilab-isolation", "wilab-protect-existing") or comment.startswith(
+                ("wilab-nat-", "wilab-forward-", "wilab-block-"),
+            )
+
         for table, chain in ((None, "FORWARD"), ("nat", "POSTROUTING")):
-            prefix = ["-t", table] if table else []
             try:
-                listing = execute_iptables([*prefix, "-S", chain])
-            except CommandError as exc:
-                logger.warning("Cannot list stale Wi-Lab rules in %s: %s", chain, exc)
-                continue
-            for line in listing.splitlines():
-                try:
-                    tokens = shlex.split(line)
-                except ValueError:
-                    logger.warning("Cannot parse firewall rule in %s", chain)
-                    continue
-                if tokens[:2] != ["-A", chain]:
-                    continue
-                comments = [b for a, b in pairwise(tokens) if a == "--comment"]
-                if not any(
-                    comment in ("wilab-isolation", "wilab-protect-existing")
-                    or comment.startswith(("wilab-nat-", "wilab-forward-", "wilab-block-"))
-                    for comment in comments
-                ):
-                    continue
-                try:
-                    execute_iptables([*prefix, "-D", *tokens[1:]])
-                except CommandError as exc:
-                    logger.warning("Cannot remove stale Wi-Lab rule in %s: %s", chain, exc)
-    
+                rules.delete_commented(chain, owned, table=table, run=execute_iptables)
+            except (CommandError, ValueError) as exc:
+                logger.warning("Cannot remove stale Wi-Lab rules in %s: %s", chain, exc)
+
     def _discover_upstream_interface(self) -> str:
         """
         Discover upstream interface from default route.
@@ -311,7 +296,7 @@ class NatManager:
             logger.warning("Failed to enable NAT for %s (%s): %s", net_id, wifi_interface, e)
             raise RuntimeError(f"Cannot enable NAT: {e}") from e
     
-    def disable_nat(self, wifi_interface: str, net_id: str, subnet: str) -> None:
+    def disable_nat(self, wifi_interface: str, net_id: str) -> None:
         """
         Disable NAT for a WiFi interface.
         
@@ -337,15 +322,8 @@ class NatManager:
             ("nat", "POSTROUTING", f"wilab-nat-{net_id}"),
             (None, "FORWARD", f"wilab-forward-{net_id}"),
         ):
-            prefix = ["-t", table] if table else []
             try:
-                listing = execute_iptables([*prefix, "-S", chain])
-                for line in listing.splitlines():
-                    tokens = shlex.split(line)
-                    if tokens[:2] == ["-A", chain] and comment in [
-                        value for option, value in pairwise(tokens) if option == "--comment"
-                    ]:
-                        execute_iptables([*prefix, "-D", *tokens[1:]])
+                rules.delete_commented(chain, comment.__eq__, table=table, run=execute_iptables)
             except (CommandError, ValueError) as exc:
                 raise RuntimeError(f"Cannot remove NAT rules for {net_id}: {exc}") from exc
         logger.info("NAT disabled for %s (%s)", net_id, wifi_interface)

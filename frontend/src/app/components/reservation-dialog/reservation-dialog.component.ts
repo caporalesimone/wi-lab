@@ -51,10 +51,6 @@ export class ReservationDialogComponent {
     });
   }
 
-  public get durationMinutes(): number {
-    return Math.floor((this.form.get('duration_seconds')?.value || 0) / 60);
-  }
-
   public formatDuration(totalSeconds: number): string {
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);

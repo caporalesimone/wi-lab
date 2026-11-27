@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import log
 from ..config import AppConfig, load_config
-from ..reservation import DeviceBusyError, ReservationCleanupError
+from ..reservation import DeviceBusyError
 from ..version import __version__
 from ..wifi.manager import NetworkNotActive
 from .context import AppContext
@@ -191,7 +191,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     async def answer_unexpected_errors(request: Request, call_next):
         """Answer an unexpected exception here, keeping the connection open.
 
-        The `Exception` handler below runs in Starlette's outermost middleware,
+        An `Exception` handler would run in Starlette's outermost middleware,
         which re-raises after answering: uvicorn then closes the connection, and
         the client's next keep-alive request on it fails with a transport error
         (seen as ReadError / RemoteProtocolError right after a 500).
@@ -203,18 +203,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             if is_api_path(request.url.path):
                 return api_error_response(request, 500, None)
             return PlainTextResponse("Internal Server Error", status_code=500)
-
-    @app.exception_handler(Exception)
-    async def unhandled_api_exception(request: Request, exc: Exception):
-        if is_api_path(request.url.path):
-            return api_error_response(request, 500, None)
-        return PlainTextResponse("Internal Server Error", status_code=500)
-
-    @app.exception_handler(ReservationCleanupError)
-    async def reservation_cleanup_exception_handler(
-        request: Request, exc: ReservationCleanupError
-    ) -> JSONResponse:
-        return api_error_response(request, 503, domain_error(ApiErrorCode.CLEANUP_FAILED, str(exc)))
 
     @app.exception_handler(NetworkNotActive)
     async def network_not_active_handler(request: Request, exc: NetworkNotActive) -> JSONResponse:

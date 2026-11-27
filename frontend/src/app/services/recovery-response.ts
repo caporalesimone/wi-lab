@@ -4,8 +4,6 @@ import { retry } from 'rxjs/operators';
 import { ApiErrorDetail } from '../models/network.models';
 
 export enum RecoveryCode {
-  /** No longer answered: radio failures are retried by the server inside the create. */
-  RetryLater = 1001,
   DeviceRecovering = 1002,
   DeviceUnavailable = 1003,
   NoDeviceAvailable = 1005,

@@ -3,9 +3,7 @@ import os
 import subprocess
 import time
 from collections import deque
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
+from collections.abc import Callable
 from threading import Lock, Thread
 from typing import Any, BinaryIO
 
@@ -80,32 +78,6 @@ def _run(cmd: list[str], timeout: float) -> tuple[int, str, str]:
             raise CommandStuck(f"Command stuck in the kernel: {' '.join(cmd)}") from None
         raise CommandTimeout(f"Command timed out: {' '.join(cmd)}") from None
     return process.returncode, stdout, stderr
-
-
-_command_deadline: ContextVar[float | None] = ContextVar(
-    "command_deadline", default=None,
-)
-
-
-@contextmanager
-def command_deadline(deadline: float | None) -> Iterator[None]:
-    """Bound commands in this operation without affecting other requests."""
-    token = _command_deadline.set(deadline)
-    try:
-        yield
-    finally:
-        _command_deadline.reset(token)
-
-
-def bounded_timeout(timeout: float) -> float:
-    """Limit a timeout to the remaining command budget."""
-    deadline = _command_deadline.get()
-    if deadline is None:
-        return timeout
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
-        raise CommandError("Deadline expired before running command")
-    return min(timeout, remaining)
 
 
 class ForegroundProcess:
@@ -186,7 +158,6 @@ def start_foreground(
     keep_lines: int = 0,
 ) -> ForegroundProcess:
     """Start a child, continuously draining output when a classifier is supplied."""
-    bounded_timeout(1.0)
     try:
         process = subprocess.Popen(
             cmd, stdin=subprocess.DEVNULL,
@@ -263,9 +234,7 @@ def execute_command(
     if not cmd:
         raise CommandError("Empty command")
     try:
-        effective_timeout = bounded_timeout(timeout)
-
-        returncode, stdout, stderr = _run(cmd, effective_timeout)
+        returncode, stdout, stderr = _run(cmd, timeout)
 
         if check and returncode != 0:
             (logger.debug if quiet else logger.error)(
