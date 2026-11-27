@@ -106,6 +106,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - Frontend specs for the create (`make frontend-test`, Node's test runner in the build image, no browser): `202` then the network, `200` at once, `start_failed`, the four `404` reasons as sentences, polls without an answer or with a `5xx`, a `401`, a cancelled start, unsubscribe, the 10-minute limit and a busy create repeated after `Retry-After` (unit-test-15).
 - New e2e tests: `kill -SEGV` of hostapd restored within 15 s with the control connection following (PERF-4), and the stop of a hostapd frozen with `SIGSTOP` (e2e-test-8).
 - Long run: a burst test on every antenna in parallel (reserve, 10-40 random networks back to back with cancels, conflicts and networks left up, release, again) with a chaos monkey that kills hostapd (`SIGSEGV`) and dnsmasq of dwelling networks within the watchdog budgets and checks each comes back by itself within 45 s.
+- Unit tests for the radar check and the moved channel in the watchdog, the channel cache refresh, a startup cleanup that cannot read `/proc` and an expired network read while its stop fails (REV-12); the retirement of a gone antenna and what keeps it (WD-5); the constant-time token check (BUG-8); the client list, from 49 % to full coverage (REV-18). Unit coverage is 94 %.
 - Unit tests create networks through the real asynchronous path (`202`, then polling) with the `create_network` helper (REV-16).
 
 ### 🔌 API changes from 4.0.0 (client migration)
