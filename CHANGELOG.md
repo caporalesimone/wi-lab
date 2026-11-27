@@ -18,7 +18,7 @@ updates its date.
 |---|---:|
 | ⚠️ Breaking changes | 10 |
 | ✨ New features | 5 |
-| 🐛 Bug fixes | 32 |
+| 🐛 Bug fixes | 33 |
 | 🔧 Maintenance changes | 16 |
 | 🔄 CI/CD changes | 2 |
 | ✅ Test changes | 8 |
@@ -50,6 +50,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 ### 🐛 Bug Fixes
 
 - **Security:** the web UI route no longer serves files outside its directory: `//etc/shadow` or `/../config.yaml` exposed any file of the host, the auth token included, without authentication. If the API port was reachable from outside the lab, change `auth_token` and `protected_commands_password` (Fable SEC-1).
+- **Security:** Swagger UI (`/docs`) no longer prints the token in clear in the cURL command shown after "Execute": `Authorization` and `X-Confirm-Password` appear as `********`; the request is still sent with them.
 - **Security:** the Bearer token is compared in constant time, so it cannot be guessed from response times (Fable BUG-8).
 - A start that fails with an unexpected error is rolled back like any other: the AP no longer keeps transmitting after `start_failed` (Fable REV-1).
 - A create on an antenna that disappeared just before it answers `202` and ends like any lost antenna, instead of a generic `500`.

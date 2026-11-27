@@ -8,7 +8,7 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import log
@@ -24,6 +24,7 @@ from .errors import (
     document_errors,
     domain_error,
 )
+from .docs_page import swagger_ui_page
 from .routes import is_api_path
 from .routes import router as api_router
 from .routes.recovery_responses import device_busy_detail
@@ -196,7 +197,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app = FastAPI(
         title="Wi-Lab", version=__version__, lifespan=lifespan,
         description=API_DESCRIPTION, openapi_tags=OPENAPI_TAGS,
+        docs_url=None,   # served below, with the token masked in the cURL box
     )
+
+    @app.get("/docs", include_in_schema=False)
+    def swagger_ui() -> HTMLResponse:
+        return swagger_ui_page(app.openapi_url or "/openapi.json", app.title)
     app.state.context = AppContext.build(config)
 
     @app.exception_handler(StarletteHTTPException)
