@@ -21,6 +21,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ### ⚠️ Breaking Changes
 
+- Ubuntu Server 25.04 or newer is a requirement, not only the tested system: the installer already refused other systems, the README now says so (tested on Ubuntu Server 26.04.1 LTS, kernel 7.0.0-44).
 - NetworkManager is no longer supported: Wi-Lab requires Ubuntu Server with the host network on systemd-networkd and no longer releases radios from NetworkManager (`nmcli` is never run; the runtime file under `/run/NetworkManager/conf.d` is gone). The installer now detects NetworkManager and `wpa_supplicant` and offers to disable and mask them, never when NetworkManager manages the host's network or the host uses `wpa_supplicant` as a Wi-Fi client; `uninstall.sh` offers to re-enable them. When upgrading, run the installer again, or check that NetworkManager manages no interface (`nmcli device status`) and run `sudo systemctl disable --now NetworkManager && sudo systemctl mask NetworkManager` (Fable NM-1).
 - Request bodies of the reservation, the create and `POST .../txpower` take only the JSON types they document: `"6"`, `true` or `6.0` for an integer, and `"false"` or `0` for a boolean, are now a `422` instead of being converted (Fable REV-11).
 - `POST .../txpower` takes `tx_power_level` instead of `level`, the name of `radio.tx_power_level` in the create (Fable API-6).
@@ -30,7 +31,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ### ✨ Features
 
-- `GET /status` has `restart_required`: `null`, or which security updates installed on the host need a restart of Wi-Lab (a loaded library was replaced) or a reboot (`/run/reboot-required`), since when, and a sentence; the web UI shows it as a red bar. Wi-Lab never restarts by itself: the installer excludes it from needrestart, which after an unattended upgrade restarted the service and dropped every network (seen on 2026-11-27 with `libexpat1`). Run the installer again, or create `/etc/needrestart/conf.d/wilab.conf` as in `install/02-install-stages/06-needrestart.sh`.
+- `GET /status` has `restart_required`: `null`, or which security updates installed on the host need a restart of Wi-Lab (a loaded library was replaced) or a reboot (`/run/reboot-required`, or a kernel newer than the running one installed), since when, and a sentence; the web UI shows it as a red bar. Wi-Lab never restarts by itself: the installer excludes it from needrestart, which after an unattended upgrade restarted the service and dropped every network (seen on 2026-11-27 with `libexpat1`). Run the installer again, or create `/etc/needrestart/conf.d/wilab.conf` as in `install/02-install-stages/06-needrestart.sh`.
 - Startup prechecks: the service exits with code `78` when it does not run as root or a command it needs is missing, and systemd does not restart it (reinstall the systemd unit to get `RestartPreventExitStatus=78`); an active NetworkManager, a Wi-Lab radio held by `wpa_supplicant` and leftover Wi-Lab rules are a `WARNING` in the journal (Fable NM-1).
 
 ### 🐛 Bug Fixes

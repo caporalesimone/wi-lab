@@ -146,7 +146,8 @@ def system_status(
     the host and need a restart, which Wi-Lab never does by itself (it is excluded
     from needrestart, so an unattended upgrade cannot drop the networks): `service`
     when a library Wi-Lab loaded was replaced (`systemctl restart wi-lab`), `system`
-    when an update asks for a reboot; `since` is when it was first seen, `message` a
+    when an update asks for a reboot (`/run/reboot-required`, or a kernel newer than
+    the running one is installed); `since` is when it was first seen, `message` a
     sentence for display (the web UI shows it as a red bar). It does not make the
     status `degraded`; the replaced libraries and packages are in `GET /monitoring`.
 
@@ -323,7 +324,7 @@ def monitoring(
     | `loops.stale` | Background loops that have not run for 3 minutes. |
     | `hostapd`, `dnsmasq` | Every settled network has its process alive; `missing` lists the others. |
     | `iptables_nat` | Every settled network with Internet has its `wilab-nat-<interface>` rule; `missing` lists the others, `errors` the failures reading the rules. |
-    | `updates` | Security updates that need a restart: libraries this process loaded that an update replaced (`service_restart_required`, `replaced_libraries`), and `/run/reboot-required` (`system_reboot_required`, `reboot_packages`); `since` is when first seen. |
+    | `updates` | Security updates that need a restart: libraries this process loaded that an update replaced (`service_restart_required`, `replaced_libraries`), and a reboot asked by an update or a newer installed kernel (`system_reboot_required`, `reboot_packages`); `since` is when first seen. |
     | `upstream_interface` | Host uplink state UP (or UNKNOWN with LOWER_UP) and an IPv4 address; it counts only while a network has Internet. |
 
     A network with a start, stop or restore in progress is not judged.

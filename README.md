@@ -20,7 +20,7 @@ Typical use-cases: automated wireless testing, RF/antenna benchmarking, classroo
 
 | Category | Requirement |
 |----------|-------------|
-| **OS** | Ubuntu Server 25+ (tested on 26.04), network managed by systemd-networkd (netplan) |
+| **OS** | **Ubuntu Server 25.04 or newer is required**; the installer stops on any other system. Tested on Ubuntu Server 26.04.1 LTS (kernel 7.0.0-44-generic). The host network must be managed by systemd-networkd (netplan). |
 | **NetworkManager** | Must not be installed, or must be disabled and masked. The installer detects it and offers to disable it; it never does so if NetworkManager manages the host's network. |
 | **wpa_supplicant** | Not used by Wi-Lab. The installer offers to disable and mask it when the host does not use it as a Wi-Fi client. |
 | **Hardware** | One or more USB WiFi adapters with AP-mode support (`iw list \| grep AP`) |
@@ -28,6 +28,12 @@ Typical use-cases: automated wireless testing, RF/antenna benchmarking, classroo
 | **RAM** | 2 GB+ |
 
 All system packages (hostapd, dnsmasq, iptables, iw, python3 …) are installed automatically by the installer.
+
+**Why Ubuntu only.** Wi-Lab relies on what Ubuntu Server provides: `apt` packages, systemd-networkd
+with netplan, and its unattended security upgrades with needrestart, from which the installer
+excludes Wi-Lab so that an upgrade never restarts it and drops every network (`GET /status`
+reports `restart_required` instead). Other distributions may work but are neither tested nor
+supported.
 
 ---
 

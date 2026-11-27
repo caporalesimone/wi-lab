@@ -435,6 +435,8 @@ def _no_host_updates(monkeypatch):
     from wilab import updates
     monkeypatch.setattr(updates, "REBOOT_REQUIRED", Path("/nonexistent/reboot-required"))
     monkeypatch.setattr(updates, "MAPS", Path("/nonexistent/maps"))
+    monkeypatch.setattr(updates, "REBOOT_NEEDED", Path("/nonexistent/reboot-needed"))
+    monkeypatch.setattr(updates, "MODULES", Path("/nonexistent/modules"))
 
 
 @pytest.fixture(autouse=True)

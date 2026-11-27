@@ -2,6 +2,7 @@
 
 import logging
 
+import pytest
 from fastapi.testclient import TestClient
 
 from wilab import updates
@@ -58,3 +59,38 @@ def test_status_shows_the_restart_without_degrading(monkeypatch, tmp_path, conte
         monkeypatch.setattr(updates, "REBOOT_REQUIRED", flag)
         required = client.get("/api/v2/status", headers=headers).json()["restart_required"]
         assert required["system"] is True and "reboot" in required["message"]
+
+
+# --------------------------------------------------------------------------- beyond Ubuntu
+
+
+def _modules(tmp_path, *releases):
+    root = tmp_path / "modules"
+    for release in releases:
+        (root / release).mkdir(parents=True)
+        (root / release / "modules.dep").write_text("")
+    return root
+
+
+@pytest.mark.parametrize(("running", "installed", "expected"), [
+    ("7.0.0-44-generic", ["7.0.0-43-generic", "7.0.0-44-generic"], None),                # Ubuntu, up to date
+    ("7.0.0-44-generic", ["7.0.0-44-generic", "7.0.0-45-generic"], "7.0.0-45-generic"),  # Ubuntu, new kernel
+    ("7.0.0-44-generic", ["7.0.0-44-generic", "7.0.0-45-lowlatency"], None),             # another flavour
+    ("6.11.4-301.fc41.x86_64", ["6.11.4-301.fc41.x86_64", "6.12.1-200.fc41.x86_64"], "6.12.1-200.fc41.x86_64"),
+    ("6.12.1-arch1-1", ["6.13.0-arch1-1"], "6.13.0-arch1-1"),                            # Arch: replaced in place
+    ("6.4.0-150600.23-default", ["6.4.0-150600.23-default"], None),                      # openSUSE
+])
+def test_a_newer_kernel_is_found_on_any_distribution(tmp_path, running, installed, expected):
+    assert updates.newer_kernel(running, _modules(tmp_path, *installed)) == expected
+
+
+def test_reboot_from_a_new_kernel_or_zypper(tmp_path, monkeypatch):
+    monkeypatch.setattr(updates.os, "uname", lambda: type("U", (), {"release": "7.0.0-44-generic"})())
+    monkeypatch.setattr(updates, "MODULES", _modules(tmp_path, "7.0.0-44-generic", "7.0.0-45-generic"))
+    assert updates.reboot_packages(tmp_path / "none", tmp_path / "none") == ["kernel 7.0.0-45-generic"]
+    monkeypatch.setattr(updates, "MODULES", _modules(tmp_path / "b", "7.0.0-44-generic"))
+    assert updates.reboot_packages(tmp_path / "none", tmp_path / "none") is None
+    needed = tmp_path / "reboot-needed"
+    needed.write_text("")
+    monkeypatch.setattr(updates, "REBOOT_NEEDED", needed)
+    assert updates.reboot_packages(tmp_path / "none", tmp_path / "none") == []

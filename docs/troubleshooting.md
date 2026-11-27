@@ -178,7 +178,7 @@ To see why the initialization fails:
 
 Unattended upgrades installed security updates, and the running service still uses the
 old code: a library it had loaded was replaced (`service`), or an update asks for a reboot
-(`system`, `/run/reboot-required`, usually a new kernel). Wi-Lab never restarts by itself:
+(`system`: `/run/reboot-required`, or a kernel newer than the running one is installed). Wi-Lab never restarts by itself:
 the installer excludes it from needrestart (`/etc/needrestart/conf.d/wilab.conf`), since a
 restart stops every active network.
 
