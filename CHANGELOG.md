@@ -17,7 +17,7 @@ updates its date.
 | Item | Count |
 |---|---:|
 | ⚠️ Breaking changes | 14 |
-| ✨ New features | 5 |
+| ✨ New features | 6 |
 | 🐛 Bug fixes | 33 |
 | 🔧 Maintenance changes | 16 |
 | 🔄 CI/CD changes | 2 |
@@ -44,6 +44,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ### ✨ Features
 
+- Wi-Fi generation without fallback: `radio.enable_generation_fallback: false` in the create accepts only clients of `wifi_generation` or newer (hostapd `require_ht`, `require_vht`, `require_he`); the default `true` keeps today's behavior. `GET /access-point/{reservation_id}` reports it in `radio`, and the web UI has an "Accept older Wi-Fi generations" checkbox.
 - `GET /status` has `restart_required`: which installed security updates need a restart of Wi-Lab or a reboot, since when, and a sentence; the web UI shows it as a red bar. Wi-Lab never restarts by itself: the installer excludes it from needrestart, which had restarted it after an unattended upgrade and dropped every network.
 - `GET /antennas/{interface}` has `health`: AP restores and DHCP restarts used against the limit of the antenna's driver, when the next one frees, quarantines and the last USB reset.
 - The watchdog's repair budgets are set in the `watchdog:` section of `config.yaml`, with optional values per kernel driver (`watchdog.drivers.mt7921u.ap_restores.limit: 5`). The journal shows each antenna's driver and budget when it is added.
@@ -123,6 +124,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ### 🔌 API changes from 4.0.0 (client migration)
 
+- `POST /access-point/{reservation_id}`: new optional `radio.enable_generation_fallback` (default `true`, today's behavior); `false` refuses clients older than `wifi_generation`, and with `wpa1` it is `422`. `radio` of `GET /access-point/{reservation_id}` has it. Additive.
 - Access point: call `/access-point/{reservation_id}` instead of `/reservations/{reservation_id}/network` (same methods, bodies and answers), `/access-point/{reservation_id}/internet/enable|disable` and `/access-point/{reservation_id}/tx-power`. Read `access_point_active` instead of `network_active`, and compare `detail.reason` and `degraded_reasons[].code` with the `access_point_*` names (codes 1007 and 1008 are unchanged). Success messages in `detail` changed wording (`Access point on wls16 stopped`): do not parse them.
 - `GET /status`: read `service.health` (`good` or `degraded`) where you compared `status` with `"degraded"` (`standby` and `ok` are gone), `service.degraded_reasons` instead of `degraded_reasons`, and `service.restart_required` (always present, `null` when nothing is needed) instead of `restart_required`. `active_networks` is removed: count `antennas[]` with `access_point_active: true`. `service.free_antennas` says how many antennas are free right now; to get one, reserve it, since another client may take it in between.
 - `GET /status` no longer has `antennas` and `reservation_policy`: read them from `GET /api/v2/antennas` (`{free_antennas, reservation_policy, antennas}`; each antenna starts with `interface`). `GET /monitoring` is removed: its `checked_at`, `check_interval_seconds` and `checks` are in `GET /status`.

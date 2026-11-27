@@ -98,7 +98,8 @@ export class NetworkFormDialogComponent {
       captive_portal: [this.data.captivePortal ?? false],
       tx_power_level: [4, [Validators.required, Validators.min(1), Validators.max(4)]],
       channel_width: [20 as ChannelWidth, Validators.required],
-      wifi_generation: [4 as WifiGeneration, Validators.required]
+      wifi_generation: [4 as WifiGeneration, Validators.required],
+      enable_generation_fallback: [true]
     });
 
     // Keep generation, width and channel within what the antenna offers.
@@ -174,6 +175,8 @@ export class NetworkFormDialogComponent {
           channel: value.channel,
           channel_width: value.channel_width,
           wifi_generation: value.wifi_generation,
+          // wpa1 runs without 802.11n: the server refuses it without fallback.
+          enable_generation_fallback: value.encryption === 'wpa1' ? true : value.enable_generation_fallback,
           tx_power_level: value.tx_power_level
         },
         wifi: {

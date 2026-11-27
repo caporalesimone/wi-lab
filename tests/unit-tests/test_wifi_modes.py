@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from wilab.config import load_config
-from wilab.models import NetworkCreateRequest
+from wilab.models import NetworkCreateRequest, NetworkResponse
 from wilab.reservation import ReservationManager
 from wilab.wifi.channels import (
     ChannelManager,
@@ -194,6 +194,17 @@ class TestHostapdMode:
         assert "ieee80211ax=1\nhe_oper_chwidth=0\n" in config
         assert "ieee80211ac" not in config
 
+    @pytest.mark.parametrize(("band", "channel", "generation", "line"), [
+        ("2.4ghz", 6, 4, "require_ht=1"), ("5ghz", 36, 5, "require_vht=1"),
+        ("5ghz", 36, 6, "require_he=1"), ("2.4ghz", 6, 6, "require_he=1"),
+    ])
+    def test_without_fallback_only_the_generation_or_newer(self, band, channel, generation, line):
+        """enable_generation_fallback false: hostapd refuses older clients at association."""
+        strict = _config(band=band, channel=channel, wifi_generation=generation, generation_fallback=False)
+        assert line + "\n" in strict
+        assert sum("require_" in row for row in strict.splitlines()) == 1
+        assert "require_" not in _config(band=band, channel=channel, wifi_generation=generation)
+
 
 # --------------------------------------------------------------------------- request model
 
@@ -214,6 +225,11 @@ class TestRequestModel:
     def test_wifi5_only_on_5ghz(self):
         with pytest.raises(ValidationError, match="only available on 5ghz"):
             _request(wifi_generation=5)
+
+    def test_fallback_is_on_by_default_and_not_with_wpa1(self):
+        assert _request().enable_generation_fallback is True
+        with pytest.raises(ValidationError, match="enable_generation_fallback false would refuse every client"):
+            _request(encryption="wpa1", enable_generation_fallback=False)
 
     def test_80mhz_needs_wifi5_or_6(self):
         with pytest.raises(ValidationError, match="channel_width 80 needs wifi_generation 5 or 6"):
@@ -267,6 +283,17 @@ class TestApi:
         assert resp.status_code == 200, resp.text
         assert start.call_args.args[1].encryption == "wpa1"
 
+    def test_generation_fallback_in_the_body(self, client, token, reservation_id, monkeypatch):
+        resp, start = self._create(client, token, reservation_id, monkeypatch, enable_generation_fallback=False)
+        assert resp.status_code == 200, resp.text
+        assert start.call_args.args[1].enable_generation_fallback is False
+        resp, start = self._create(
+            client, token, reservation_id, monkeypatch, encryption="wpa1", enable_generation_fallback=False,
+        )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["message"].startswith("radio.enable_generation_fallback: ")
+        start.assert_not_called()
+
     def test_capability_refusal_is_422(self, client, token, reservation_id, monkeypatch):
         no_he = parse_phy_capabilities(MOCK_PHY_INFO.replace("HE Iftypes: AP", "HE Iftypes: mesh point"))
         monkeypatch.setattr("wilab.wifi.channels.parse_phy_capabilities", lambda _output: no_he)
@@ -300,6 +327,21 @@ class TestManagerAndWatchdog:
         assert (kwargs["channel_width"], kwargs["wifi_generation"]) == (80, 6)
         assert kwargs["layout"].center == 42
         assert (status.channel_width, status.wifi_generation) == (80, 6)
+        assert kwargs["generation_fallback"] is True
+
+    def test_no_fallback_reaches_hostapd_the_answer_and_the_same_body_check(self, clean_manager, monkeypatch):
+        start = Mock()
+        monkeypatch.setattr(clean_manager.hostapd_manager, "start", start)
+        monkeypatch.setattr(clean_manager.hostapd_manager, "is_running", Mock(return_value=True))
+        device = clean_manager.config.antennas[0].device_id
+        req = _request(band="5ghz", channel=44, wifi_generation=6, enable_generation_fallback=False)
+        status = clean_manager.start_network(device, req)
+        assert start.call_args.kwargs["generation_fallback"] is False
+        assert status.enable_generation_fallback is False
+        radio = NetworkResponse.from_status(status).radio
+        assert radio is not None and radio.enable_generation_fallback is False
+        assert clean_manager.runs(device, req)
+        assert not clean_manager.runs(device, req.model_copy(update={"enable_generation_fallback": True}))
 
     def test_watchdog_restores_with_the_same_mode(self, monkeypatch, context):
         from wilab.wifi import watchdog as watchdog_module

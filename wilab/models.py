@@ -73,6 +73,15 @@ class NetworkCreateRequest(BaseModel):
             "`GET /antennas/{interface}/capabilities` are accepted."
         ),
     )
+    enable_generation_fallback: bool = Field(
+        True,
+        description=(
+            "Optional, default true: clients of an older generation can still connect (a Wi-Fi 6 AP also "
+            "accepts Wi-Fi 5 and Wi-Fi 4 clients). false: only clients of `wifi_generation` or newer are "
+            "accepted (hostapd `require_ht`, `require_vht` or `require_he`); the others are refused at "
+            "association. Not with `wpa1`, which runs without 802.11n."
+        ),
+    )
 
     # Swagger/OpenAPI example
     model_config = ConfigDict(
@@ -146,6 +155,11 @@ class NetworkCreateRequest(BaseModel):
             raise FieldError(
                 "encryption", "wpa1 (TKIP) cannot use 802.11n or newer: use channel_width 20 and wifi_generation 4"
             )
+        if self.encryption == "wpa1" and not self.enable_generation_fallback:
+            raise FieldError(
+                "enable_generation_fallback",
+                "wpa1 (TKIP) runs without 802.11n: enable_generation_fallback false would refuse every client",
+            )
         if self.band == "2.4ghz" and self.wifi_generation == 5:
             raise FieldError("wifi_generation", "wifi_generation 5 (802.11ac) is only available on 5ghz")
         if self.channel_width == 80 and self.wifi_generation == 4:
@@ -201,6 +215,9 @@ class NetworkStatus(BaseModel):
     wifi_generation: Literal[4, 5, 6] | None = Field(
         None, description="Requested Wi-Fi generation: 4 (802.11n), 5 (802.11ac), 6 (802.11ax)",
     )
+    enable_generation_fallback: bool | None = Field(
+        None, description="False: only clients of `wifi_generation` or newer are accepted",
+    )
     subnet: str | None = None
     internet_enabled: bool = False
     captive_portal: bool = Field(False, description="True if clients are held behind the captive portal until they sign in")
@@ -236,6 +253,7 @@ _ENCRYPTIONS: list[JsonValue] = ["open", "wpa1", "wpa2", "wpa3", "wpa2-wpa3"]
 _BODY_PATHS = {
     "band": "radio.band", "channel": "radio.channel", "channel_width": "radio.channel_width",
     "wifi_generation": "radio.wifi_generation", "tx_power_level": "radio.tx_power_level",
+    "enable_generation_fallback": "radio.enable_generation_fallback",
     "ssid": "wifi.ssid", "hidden": "wifi.hidden", "encryption": "wifi.security.encryption",
     "password": "wifi.security.password", "internet_enabled": "internet.enabled",
     "captive_portal": "captive_portal.enabled",
@@ -256,6 +274,7 @@ class RadioSettings(BaseModel):
     channel: int = Field(description="Primary channel; must be valid for `band` and enabled on the antenna")
     channel_width: Literal[20, 40, 80] = Field(20, description=_doc("channel_width"))
     wifi_generation: Literal[4, 5, 6] = Field(4, description=_doc("wifi_generation"))
+    enable_generation_fallback: bool = Field(True, description=_doc("enable_generation_fallback"))
     tx_power_level: int = Field(..., ge=1, le=4, description="TX power level (1=low, 4=max)")
 
 
@@ -343,6 +362,9 @@ class RadioInfo(BaseModel):
     channel: int
     channel_width: ChannelWidthInfo
     wifi_generation: int = Field(description="4 (802.11n), 5 (802.11ac), 6 (802.11ax)")
+    enable_generation_fallback: bool = Field(
+        True, description="False: clients older than `wifi_generation` are refused",
+    )
     tx_power: NetworkTxPower | None = Field(None, description="Requested and reported TX power")
 
 
@@ -460,6 +482,7 @@ class NetworkResponse(BaseModel):
                     requested=st.channel_width or 20, reported=st.reported_channel_width,
                 ),
                 wifi_generation=st.wifi_generation or 4,
+                enable_generation_fallback=st.enable_generation_fallback is not False,
                 tx_power=st.tx_power,
             ),
             wifi=WifiInfo(

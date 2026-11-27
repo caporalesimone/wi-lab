@@ -77,6 +77,10 @@
 
     <mat-checkbox formControlName="hidden">Hidden SSID</mat-checkbox>
     <mat-checkbox formControlName="internet_enabled">Internet Enabled</mat-checkbox>
+    <mat-checkbox formControlName="enable_generation_fallback"
+      matTooltip="Off: only clients of the chosen Wi-Fi generation or newer can connect">
+      Accept older Wi-Fi generations
+    </mat-checkbox>
     <div class="option-tile" [class.on]="form.get('captive_portal')?.value">
       <mat-icon class="option-icon">{{ form.get('captive_portal')?.value ? 'login' : 'public' }}</mat-icon>
       <div class="option-text">

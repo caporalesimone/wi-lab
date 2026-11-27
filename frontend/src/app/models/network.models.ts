@@ -133,6 +133,7 @@ export interface NetworkStatus {
     channel: number;
     channel_width: { requested: ChannelWidth; reported: number | null };
     wifi_generation: WifiGeneration;
+    enable_generation_fallback?: boolean;
     tx_power?: {
       requested_level: number;
       reported_level?: number | null;
@@ -162,6 +163,8 @@ export interface NetworkCreateRequest {
     channel: number;
     channel_width?: ChannelWidth;
     wifi_generation?: WifiGeneration;
+    /** Default true; false: only clients of wifi_generation or newer. */
+    enable_generation_fallback?: boolean;
     tx_power_level: number;
   };
   wifi: {

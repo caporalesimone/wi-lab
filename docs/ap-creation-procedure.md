@@ -200,6 +200,7 @@ are required; `internet` and `captive_portal` can be omitted.
 | `radio.channel` | yes | Must be valid for `band` and supported and enabled on the antenna. |
 | `radio.channel_width` | no | `20`, `40` or `80` MHz. Default `20`, the previous behavior. See [2.2.1](#221-encryption-channel-width-and-wi-fi-generation). |
 | `radio.wifi_generation` | no | `4` (802.11n), `5` (802.11ac, 5 GHz only) or `6` (802.11ax). Default `4`, the previous behavior. |
+| `radio.enable_generation_fallback` | no | Default `true`: clients of an older generation can still connect (a Wi-Fi 6 AP also accepts Wi-Fi 5 and 4 clients, which connect in their own generation). `false`: only clients of `wifi_generation` or newer are accepted, the others are refused at association. Not with `wpa1` (`422`). |
 | `radio.tx_power_level` | yes | `1` (low) to `4` (maximum). |
 | `wifi.ssid` | yes | Network name: 1–32 bytes in UTF-8 (non-ASCII characters count as more than one byte), no control characters such as line breaks or tabs. |
 | `wifi.hidden` | no | Default `false`. |
@@ -243,6 +244,7 @@ points to `wpa2` (same network as before) or `wpa1` (real legacy WPA).
   `radio.channel_width: 80` exists only on 5 GHz and needs `wifi_generation` 5
   or 6. With `wpa1` only
   20 MHz and generation 4 are accepted.
+- A client connects with the highest generation it shares with the AP: a Wi-Fi 5 phone on a Wi-Fi 6 AP is a Wi-Fi 5 link. To test that a client really uses the generation, set `radio.enable_generation_fallback: false`: a client that cannot is refused.
 - On 5 GHz a wide channel is a fixed block of 20 MHz channels: at 40 MHz
   36+40, 44+48, 52+56, ..., at 80 MHz 36–48, 52–64, 100–112, 116–128,
   132–144, 149–161, 165–177. `channel` is the primary channel inside the block.

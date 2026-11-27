@@ -277,12 +277,13 @@ class NetworkManager:
         )
         running = (
             st.ssid, st.password or None, st.encryption, st.band, st.channel, bool(st.hidden),
-            st.channel_width or 20, st.wifi_generation or 4, st.internet_enabled,
-            st.captive_portal, st.tx_power_level,
+            st.channel_width or 20, st.wifi_generation or 4, st.enable_generation_fallback,
+            st.internet_enabled, st.captive_portal, st.tx_power_level,
         )
         asked = (
             req.ssid, req.password or None, req.encryption, req.band, req.channel, req.hidden,
-            req.channel_width, req.wifi_generation, internet, req.captive_portal, req.tx_power_level,
+            req.channel_width, req.wifi_generation, req.enable_generation_fallback, internet,
+            req.captive_portal, req.tx_power_level,
         )
         return running == asked
 

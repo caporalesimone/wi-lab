@@ -158,6 +158,7 @@ class StartAttempt:
             country_code=mgr.config.country_code,
             channel_width=req.channel_width,
             wifi_generation=req.wifi_generation,
+            generation_fallback=req.enable_generation_fallback,
             layout=plan.layout,
             **({"cancelled": plan.cancelled} if plan.cancelled is not None else {}),
         )

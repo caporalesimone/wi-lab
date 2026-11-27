@@ -113,7 +113,7 @@ _ACTIVE_EXAMPLE = {
     "radio": {
         "band": "5ghz", "channel": 36,
         "channel_width": {"requested": 80, "reported": 80},
-        "wifi_generation": 5,
+        "wifi_generation": 5, "enable_generation_fallback": True,
         "tx_power": {"requested_level": 4, "reported_level": 4, "reported_dbm": 20.0},
     },
     "wifi": {
@@ -292,6 +292,24 @@ _CREATE_BODY_EXAMPLES: dict = {
         "wifi": {
             "ssid": "Wifi5Test", "hidden": False,
             "security": {"encryption": "wpa2-wpa3", "password": "testpass123"},
+        },
+        "internet": {"enabled": True},
+        "captive_portal": {"enabled": False},
+    },
+    },
+    "wifi6_only": {
+        "summary": "5 GHz Wi-Fi 6 network that refuses older clients",
+        "description": "802.11ax only: `enable_generation_fallback: false` refuses Wi-Fi 5 and Wi-Fi 4 "
+        "clients at association. Needs an antenna whose GET /antennas/{interface}/capabilities "
+        "lists wifi_generation 6 on 5ghz.",
+        "value": {
+        "radio": {
+            "band": "5ghz", "channel": 36, "channel_width": 20,
+            "wifi_generation": 6, "enable_generation_fallback": False, "tx_power_level": 4,
+        },
+        "wifi": {
+            "ssid": "Wifi6Only", "hidden": False,
+            "security": {"encryption": "wpa3", "password": "testpass123"},
         },
         "internet": {"enabled": True},
         "captive_portal": {"enabled": False},

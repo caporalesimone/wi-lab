@@ -75,12 +75,19 @@ SECURITY_LINES: dict[str, list[str]] = {
 }
 
 
-def mode_lines(band: str, width: int, generation: int, layout: ChannelLayout, encryption: str) -> list[str]:
+# Without fallback, clients older than the generation are refused at association.
+REQUIRE_LINES = {4: "require_ht=1", 5: "require_vht=1", 6: "require_he=1"}
+
+
+def mode_lines(
+    band: str, width: int, generation: int, layout: ChannelLayout, encryption: str, fallback: bool = True,
+) -> list[str]:
     """hostapd lines for the Wi-Fi generation and channel width (HAP-11).
 
     generation 4 = 802.11n, 5 = 802.11ac (5 GHz only), 6 = 802.11ax. On 5 GHz
     802.11ax is announced together with 802.11ac, as clients expect. wpa1 turns
-    HT off: the network is 802.11a/g at 20 MHz.
+    HT off: the network is 802.11a/g at 20 MHz. Without *fallback* only clients
+    of the generation or newer can associate (`require_ht`/`require_vht`/`require_he`).
     """
     if encryption == "wpa1":
         return ["ieee80211n=0"]
@@ -96,6 +103,8 @@ def mode_lines(band: str, width: int, generation: int, layout: ChannelLayout, en
         lines += ["ieee80211ax=1", f"he_oper_chwidth={vht_width}"]
         if width == 80:
             lines.append(f"he_oper_centr_freq_seg0_idx={layout.center}")
+    if not fallback:
+        lines.append(REQUIRE_LINES[generation])
     return lines
 
 
@@ -263,6 +272,7 @@ class HostapdManager:
         country_code: str = "IT",
         channel_width: int = 20,
         wifi_generation: int = 4,
+        generation_fallback: bool = True,
         layout: ChannelLayout | None = None,
     ) -> str:
         """
@@ -279,6 +289,7 @@ class HostapdManager:
             country_code: ISO 3166-1 alpha-2 country code for regulatory domain
             channel_width: 20, 40 or 80 MHz
             wifi_generation: 4 (802.11n), 5 (802.11ac) or 6 (802.11ax)
+            generation_fallback: False accepts only clients of the generation or newer
             layout: channel block chosen by the channel manager; the first
                 possible one when omitted
 
@@ -325,7 +336,7 @@ class HostapdManager:
         config_lines.extend([
             f"country_code={country_code}",
             "ieee80211d=1",  # Advertise country code and apply regulatory domain
-            *mode_lines(band, channel_width, wifi_generation, layout, encryption),
+            *mode_lines(band, channel_width, wifi_generation, layout, encryption, generation_fallback),
             "wmm_enabled=1",  # WMM/QoS
         ])
 
@@ -348,6 +359,7 @@ class HostapdManager:
         country_code: str = "IT",
         channel_width: int = 20,
         wifi_generation: int = 4,
+        generation_fallback: bool = True,
         layout: ChannelLayout | None = None,
         cancelled: Callable[[], bool] | None = None,
     ) -> HostapdInstance:
@@ -364,7 +376,7 @@ class HostapdManager:
             hidden: Hide SSID broadcast
             band: WiFi band (2.4ghz/5ghz)
             country_code: ISO 3166-1 alpha-2 country code
-            channel_width, wifi_generation, layout: see :meth:`_generate_config`
+            channel_width, wifi_generation, generation_fallback, layout: see :meth:`_generate_config`
 
         Returns:
             Dictionary with hostapd instance info
@@ -378,7 +390,7 @@ class HostapdManager:
         try:
             config_content = self._generate_config(
                 interface, ssid, channel, encryption, password, hidden, band, country_code,
-                channel_width, wifi_generation, layout,
+                channel_width, wifi_generation, generation_fallback, layout,
             )
             instance_dir = tempfile.mkdtemp(prefix="ap-", dir=HOSTAPD_CONFIG_DIR)
             control_dir = os.path.join(instance_dir, "ctrl")
