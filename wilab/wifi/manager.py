@@ -1,5 +1,4 @@
 import logging
-import os
 import re
 import secrets
 import threading
@@ -31,6 +30,7 @@ from ..reservation import Reservation, ReservationManager
 from ..timestamps import format_utc_timestamp
 from .active import ActiveNetwork
 from .channels import ChannelManager
+from .clients import ClientLister
 from .failures import FailureKind
 from .hostapd import (
     HostapdError,
@@ -85,9 +85,6 @@ class StartJob:
     error: dict[str, Any] | None = None
     thread: threading.Thread | None = None
 
-
-
-CLIENTS_CACHE_SECONDS = 1.5   # reuse of the client list between two reads (PERF-2)
 
 def _monotonic_deadline(expires_at: float | None) -> float | None:
     """Monotonic time of a wall-clock expiry (STAB-5); None for no expiry."""
@@ -176,9 +173,7 @@ class NetworkManager:
         # WD-6: consecutive cleanup failures and next background attempt per device
         self._cleanup_failures: dict[str, int] = {}
         self._stop_failed: set[str] = set()  # stops to repeat (NetworkStopError)
-        # Client list per device, reused for CLIENTS_CACHE_SECONDS (PERF-2): clients
-        # polling GET .../network every second cost one `iw station dump` at most.
-        self._clients_cache: dict[str, tuple[float, list[ClientInfo]]] = {}
+        self.clients = ClientLister(config, self.dhcp_server, self.captive_portals)
         # Asynchronous creates: one job per device, guarded by start_jobs_lock.
         self.start_jobs: dict[str, StartJob] = {}
         self.start_jobs_lock = threading.Lock()
@@ -522,7 +517,7 @@ class NetworkManager:
                     portal = CaptivePortal(
                         interface=cfg_net.interface, net_id=device_id, gateway=str(net[1]),
                         context=lambda: self._portal_context(device_id),
-                        lookup_mac=lambda ip: self._client_mac(device_id, ip),
+                        lookup_mac=lambda ip: self.clients.mac_of(device_id, ip),
                         firewall_lock=self._firewall_lock,
                         port=self.config.captive_portal_port,
                     )
@@ -753,7 +748,7 @@ class NetworkManager:
 
         # Remove from active dict
         self.active.pop(device_id, None)
-        self._clients_cache.pop(device_id, None)
+        self.clients.forget(device_id)
         self._stop_failed.discard(device_id)
         
         logger.info(f"Network {device_id} stopped")
@@ -896,95 +891,8 @@ class NetworkManager:
         return st.status()
 
     def list_clients(self, device_id: str) -> list[ClientInfo]:
-        """
-        List currently connected WiFi clients using real-time data from iw station dump.
-        Optionally enriches with IP from DHCP lease file if available.
-        
-        Args:
-            device_id: Device identifier (interface name)
-            
-        Returns:
-            List of ClientInfo objects (MAC and IP address if known)
-        """
-        cached = self._clients_cache.get(device_id)
-        if cached is not None and time.monotonic() - cached[0] < CLIENTS_CACHE_SECONDS:
-            return list(cached[1])
-        clients = self._read_clients(device_id)
-        self._clients_cache[device_id] = (time.monotonic(), clients)
-        return list(clients)
-
-    def _read_clients(self, device_id: str) -> list[ClientInfo]:
-        clients: list[ClientInfo] = []
-        
-        # Get interface for this network
-        cfg_net = next((n for n in self.config.antennas if n.device_id == device_id), None)
-        if not cfg_net:
-            return clients
-        
-        interface = cfg_net.interface
-        
-        # Get currently associated stations using iw (real-time)
-        try:
-            station_output = execute_iw(["dev", interface, "station", "dump"])
-        except Exception as e:
-            logger.warning(f"Could not get station dump for {interface}: {e}")
-            return clients
-
-        # Parse iw station dump output to extract MAC addresses
-        # Format: "Station xx:xx:xx:xx:xx:xx (on wlanX)" followed by stats
-        connected_macs = []
-        for line in station_output.splitlines():
-            line = line.strip()
-            if line.startswith("Station "):
-                parts = line.split()
-                if len(parts) >= 2:
-                    mac = parts[1].lower()
-                    connected_macs.append(mac)
-
-        if not connected_macs:
-            return clients
-
-        mac_to_ip = self._leases(device_id)
-        portal = self.captive_portals.get(device_id)
-
-        # Build client list: only include clients with BOTH WiFi association AND valid DHCP lease
-        for mac in connected_macs:
-            client_ip = mac_to_ip.get(mac)
-            if client_ip:  # Only count as connected if they have a valid IP lease
-                clients.append(ClientInfo(
-                    mac=mac, ip=client_ip,
-                    captive_authorized=portal.is_authorized(client_ip, mac) if portal else None,
-                ))
-        
-        return clients
-
-    def _leases(self, device_id: str) -> dict[str, str]:
-        """Return MAC -> IP for unexpired DHCP leases of a network."""
-        mac_to_ip: dict[str, str] = {}
-        now = int(time.time())
-        dhcp_info = self.dhcp_server.get_subnet_info(device_id)
-        lease_file = dhcp_info.get("lease_file") if dhcp_info else None
-        if lease_file and os.path.exists(lease_file):
-            try:
-                with open(lease_file) as f:
-                    for line in f:
-                        parts = line.split()
-                        if len(parts) >= 3 and parts[0].isdigit() and int(parts[0]) > now:
-                            mac_to_ip[parts[1].lower()] = parts[2]
-            except OSError as e:
-                logger.warning(f"Could not read lease file: {e}")
-        return mac_to_ip
-
-    def _client_mac(self, device_id: str, ip: str) -> str | None:
-        """Identify a client by IP from its DHCP lease, else from the neighbour table."""
-        mac = next((mac for mac, lease_ip in self._leases(device_id).items() if lease_ip == ip), None)
-        if mac is not None:
-            return mac
-        try:
-            neighbour = execute_ip(["neigh", "show", ip, "dev", device_id]).split()
-        except CommandError:
-            return None
-        return neighbour[neighbour.index("lladdr") + 1] if "lladdr" in neighbour[:-1] else None
+        """Connected clients (associated and with a DHCP lease), reused briefly (PERF-2)."""
+        return self.clients.connected(device_id)
 
     def _portal_context(self, device_id: str) -> dict[str, str]:
         """Network details shown on the captive portal page."""
