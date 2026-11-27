@@ -158,7 +158,7 @@ class HealthChecks:
                     "dnsmasq": _process_check(settled, manager.dhcp_server.is_running),
                     "iptables_nat": _nat_check(manager, internet),
                     "upstream_interface": _upstream_check(manager),
-                    "updates": pending,
+                    "os_updates": pending,
                 },
             )
             self._result = result

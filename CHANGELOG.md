@@ -133,7 +133,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - `GET /status`: `runtime_state: stop_failed` and `network_stop_incomplete` appear only after the client's own `DELETE .../network` failed (REV-9).
 - A watchdog restore whose cleanup fails once now shows `runtime_state: restore_failed` and is retried, instead of `404 reservation_invalidated` (REV-10).
 - QoS (experimental): `POST .../qos/profile` with different `download_quality` and `upload_quality`, or a quality with `advanced`, is now `422` (NET-11).
-- `GET /status` has a new field `restart_required` (`null` or `{service, system, since, message}`); `GET /monitoring` a new check `updates`. Additive: it never makes the status `degraded`.
+- `GET /status` has a new field `restart_required` (`null` or `{service, system, since, message}`); `GET /monitoring` a new check `os_updates`. Additive: it never makes the status `degraded`.
 - `GET /antennas/{interface}` has a new object `health` (repair budgets, quarantines, USB resets). Additive.
 - `GET .../network`: after a radar event on a DFS channel `channel` is the channel the AP moved to, which can differ from the one requested (REV-12).
 - An antenna whose interface has been gone for about 2 minutes, with nothing holding it, leaves `GET /status` and `GET /antennas`; `GET /antennas/{interface}` then answers `404` and a reserve by that `interface` answers as for an unknown antenna (WD-5).

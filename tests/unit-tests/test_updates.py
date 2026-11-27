@@ -50,7 +50,7 @@ def test_status_shows_the_restart_without_degrading(monkeypatch, tmp_path, conte
         assert sum("Security updates need a restart" in r.getMessage() for r in caplog.records) == 1
         since = required["since"]
         assert client.get("/api/v2/status", headers=headers).json()["service"]["restart_required"]["since"] == since
-        detail = client.get("/api/v2/monitoring", headers=headers).json()["checks"]["updates"]
+        detail = client.get("/api/v2/monitoring", headers=headers).json()["checks"]["os_updates"]
         assert detail["replaced_libraries"] == [
             "/usr/bin/python3.14", "/usr/lib/x86_64-linux-gnu/libexpat.so.1.10.2",
         ]

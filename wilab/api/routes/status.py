@@ -30,7 +30,7 @@ _CHECKS_OK_EXAMPLE = {
         "mtu": 1500, "ipv4": ["192.168.10.146/24"], "ipv6": ["fd15:fccc:74a7:0:be24:11ff:fe07:a69b/64"],
         "gateway": "192.168.10.1",
     },
-    "updates": {"service_restart_required": False, "replaced_libraries": [],
+    "os_updates": {"service_restart_required": False, "replaced_libraries": [],
                 "system_reboot_required": False, "reboot_packages": [], "since": None},
 }
 
@@ -311,7 +311,7 @@ def _assess(manager: NetworkManager, reservation_mgr: ReservationManager) -> dic
     free = sum(1 for d in manager.devices.ids() if d not in reservations and d not in recovery)
     service = {
         "health": "degraded" if reasons else "good", "free_antennas": free, "degraded_reasons": reasons,
-        "restart_required": _restart_required(checks.get("updates") or {}),
+        "restart_required": _restart_required(checks.get("os_updates") or {}),
     }
     return {
         "service": service,
@@ -382,7 +382,7 @@ def monitoring(
     | `loops.stale` | Background loops that have not run for 3 minutes. |
     | `hostapd`, `dnsmasq` | Every settled network has its process alive; `missing` lists the others. |
     | `iptables_nat` | Every settled network with Internet has its `wilab-nat-<interface>` rule; `missing` lists the others, `errors` the failures reading the rules. |
-    | `updates` | Security updates that need a restart: libraries this process loaded that an update replaced (`service_restart_required`, `replaced_libraries`), and a reboot asked by an update or a newer installed kernel (`system_reboot_required`, `reboot_packages`); `since` is when first seen. |
+    | `os_updates` | Security updates of the operating system that need a restart: libraries this process loaded that an update replaced (`service_restart_required`, `replaced_libraries`), and a reboot asked by an update or a newer installed kernel (`system_reboot_required`, `reboot_packages`); `since` is when first seen. |
     | `upstream_interface` | The host uplink, for information (it never makes `health` degraded): `name`, `operstate`, `mac`, `mtu`, global `ipv4` and `ipv6` addresses with prefix, IPv4 default `gateway`. |
 
     A network with a start, stop or restore in progress is not judged.
