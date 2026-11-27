@@ -113,6 +113,23 @@ container, on the Wi-Lab machine or anywhere else. Wi-Lab becomes API only.
   (version, `restart_required`, monitoring checks).
 - Keep what REV-13/REV-14 fixed in the current UI: create polling rules,
   reservation IDs kept across reloads, every `404` reason as a sentence.
+- API functions the current UI does not use (Fable REV-15, moved here on
+  2026-11-27; the new UI must have them):
+  - **Cancel a start.** The card that launched a start disables everything
+    while it polls, and Stop is disabled on the others. The backend accepts
+    `DELETE .../network` (and the release) during `starting`: a "Cancel start"
+    button unsubscribes the polling, calls the stop, then reads the status.
+  - **`restarts`** of `GET .../network` is not shown: a line "Watchdog
+    restarts: AP n, DHCP m, last <reason> at <time>" when `ap + dhcp > 0`.
+  - **`error` of `start_failed`** appears only in a toast of the card that
+    polled: show `error.message` and `error.stage` under the state, on every
+    card and after a reload.
+  - **Choose the antenna.** `interface` of `POST /reservations` is never
+    sent: the reserve dialog offers the free antennas of `GET /antennas`.
+  - **`health`** of `GET /antennas/{interface}` (budgets, quarantines, USB
+    resets) on the antenna detail page.
+  - Done already: compile check without publishing (`make frontend-check`) and
+    the create specs (`make frontend-test`, unit-test-15).
 
 ## Tests and CI
 
