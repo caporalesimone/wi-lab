@@ -21,6 +21,7 @@ from wilab.network.commands import CommandError
 from wilab.reservation import ReservationManager
 from wilab.wifi import hostapd, recovery
 from wilab.wifi import manager as manager_module
+from wilab.wifi import startup as startup_module
 from wilab.wifi.failures import FailureKind
 from wilab.wifi.interface import InterfaceError
 from wilab.wifi.manager import StartupFailure
@@ -109,7 +110,8 @@ def test_interface_vanishing_during_start_is_a_radio_failure(monkeypatch):
     mgr = _manager()
     device = mgr.config.antennas[0].device_id
     present = {"value": True}
-    monkeypatch.setattr(manager_module, "interface_present", lambda iface: present["value"])
+    for module in (manager_module, startup_module):
+        monkeypatch.setattr(module, "interface_present", lambda iface: present["value"])
 
     def start(**kwargs):
         present["value"] = False
@@ -131,7 +133,8 @@ def test_interface_vanishing_with_failed_cleanup_is_still_a_radio_failure(monkey
     mgr = _manager()
     device = mgr.config.antennas[0].device_id
     present = {"value": True}
-    monkeypatch.setattr(manager_module, "interface_present", lambda iface: present["value"])
+    for module in (manager_module, startup_module):
+        monkeypatch.setattr(module, "interface_present", lambda iface: present["value"])
 
     def start(**kwargs):
         present["value"] = False
@@ -173,7 +176,8 @@ def test_api_vanished_interface_is_waited_for_not_quarantined(monkeypatch):
     config = dependencies.get_config()
     mgr = dependencies.get_manager(config)
     present = {"value": True}
-    monkeypatch.setattr(manager_module, "interface_present", lambda iface: present["value"])
+    for module in (manager_module, startup_module):
+        monkeypatch.setattr(module, "interface_present", lambda iface: present["value"])
     starts = []
 
     def start(**kwargs):

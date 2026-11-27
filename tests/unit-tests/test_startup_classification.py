@@ -7,6 +7,7 @@ import pytest
 from wilab.config import load_config
 from wilab.models import NetworkCreateRequest
 from wilab.wifi import manager as manager_module
+from wilab.wifi import startup as startup_module
 from wilab.wifi.failures import FailureKind
 from wilab.wifi.hostapd import HostapdError, HostapdInitFailure, HostapdRadioFailure
 from wilab.wifi.manager import NetworkManager, StartupFailure
@@ -19,7 +20,7 @@ def _request() -> NetworkCreateRequest:
 @pytest.fixture
 def manager(monkeypatch) -> NetworkManager:
     mgr = NetworkManager(load_config())
-    monkeypatch.setattr(manager_module, "STARTUP_RETRY_DELAY", 0.0)
+    monkeypatch.setattr(startup_module, "STARTUP_RETRY_DELAY", 0.0)
     monkeypatch.setattr(mgr.dhcp_server, "start", Mock(return_value={}))
     monkeypatch.setattr(mgr.dhcp_server, "stop", Mock())
     monkeypatch.setattr(mgr.hostapd_manager, "stop", Mock())
@@ -87,8 +88,8 @@ def test_non_ap_stage_after_a_radio_retry_is_not_radio(monkeypatch, manager) -> 
 @pytest.fixture
 def clock(monkeypatch):
     now = {"t": 100.0}
-    monkeypatch.setattr(manager_module.time, "monotonic", lambda: now["t"])
-    monkeypatch.setattr(manager_module.time, "sleep", lambda s: now.__setitem__("t", now["t"] + s))
+    monkeypatch.setattr(startup_module.time, "monotonic", lambda: now["t"])
+    monkeypatch.setattr(startup_module.time, "sleep", lambda s: now.__setitem__("t", now["t"] + s))
     return now
 
 
@@ -116,7 +117,7 @@ def _timed_start(clock, outcomes, budgets):
 def test_internal_retries_have_no_time_budget(monkeypatch, manager, clock):
     """REV-5: the three attempts all run, however long each one takes, without a command deadline."""
     device = manager.config.antennas[0].device_id
-    monkeypatch.setattr(manager_module, "STARTUP_RETRY_DELAY", 1.0)
+    monkeypatch.setattr(startup_module, "STARTUP_RETRY_DELAY", 1.0)
     budgets: list[float | None] = []
     monkeypatch.setattr(
         manager.hostapd_manager, "start", _timed_start(clock, [(12.0, False)] * 3, budgets),
@@ -131,7 +132,7 @@ def test_a_retry_that_succeeds_late_stays_active(monkeypatch, manager, clock):
     """REV-5 (unit-test-4): a retry that brings the AP up after 20 s is not torn down,
     and the later phases (DHCP) never run under an expired deadline."""
     device = manager.config.antennas[0].device_id
-    monkeypatch.setattr(manager_module, "STARTUP_RETRY_DELAY", 1.0)
+    monkeypatch.setattr(startup_module, "STARTUP_RETRY_DELAY", 1.0)
     budgets: list[float | None] = []
     dhcp_budgets: list[float | None] = []
     monkeypatch.setattr(

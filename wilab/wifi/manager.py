@@ -42,17 +42,12 @@ from .interface import (
     validate_interface_exists,
 )
 from .recovery import RadioRecovery
+from .startup import RetryPolicy, StartPlan, StartupFailure, run_startup
 from .txpower import TxPowerControl
 from .watchdog import NetworkWatchdog
 
 logger = logging.getLogger(__name__)
 
-# Transient radio failures usually clear on an immediate new start, so the
-# server retries during the create instead of handing the retry to the client.
-STARTUP_ATTEMPTS = 3
-# The attempts have no time budget (REV-5): the create runs in the background,
-# so only the number of attempts and the reservation expiry limit them.
-STARTUP_RETRY_DELAY = 1.0
 # Delay before the next background cleanup of a device whose cleanup failed, by
 # number of consecutive failures; the last value repeats (WD-6). A client's
 # explicit DELETE is never delayed.
@@ -110,43 +105,6 @@ class NetworkStopError(RuntimeError):
 
 # The API names no device_id (Fable API-6): the reservation's antenna is unknown.
 UNKNOWN_ANTENNA = "The antenna of this reservation is not managed"
-
-# Stable names of the startup stages, shown as `error.stage` with start_failed (1013).
-STARTUP_STAGES = {
-    "start AP": "hostapd",
-    "block Internet": "internet_block",
-    "assign gateway IP": "gateway",
-    "configure DHCP": "dhcp",
-    "start captive portal": "captive_portal",
-    "enable Internet": "nat",
-    "isolate network": "isolation",
-    "protect host": "host_guard",
-}
-
-
-class StartupFailure(ValueError):
-    """A network start that failed; *kind* is set once, here in the manager (ARCH-2)."""
-
-    def __init__(
-        self, message: str, *, kind: FailureKind = FailureKind.CONFIGURATION,
-        stage: str | None = None,
-    ):
-        super().__init__(message)
-        self.kind = kind
-        self.stage = stage   # one of STARTUP_STAGES' values, or "interface"
-
-    # Derived from kind for existing readers; new code reads kind.
-    @property
-    def radio(self) -> bool:
-        return self.kind.radio
-
-    @property
-    def cleanup_failed(self) -> bool:
-        return self.kind.cleanup_failed
-
-
-def _cleanup_failed(radio: bool) -> FailureKind:
-    return FailureKind.RADIO_CLEANUP_FAILED if radio else FailureKind.CLEANUP_FAILED
 
 
 class NetworkManager:
@@ -427,8 +385,6 @@ class NetworkManager:
         
         # Select a safe subnet before configuring the AP or gateway.
         subnet = self._get_subnet(device_id)
-        net = IPv4Network(subnet)
-        gateway = f"{net[1]}/{net.prefixlen}"
         
         # Validate interface
         logger.info(f"Validating interface {cfg_net.interface}")
@@ -471,154 +427,12 @@ class NetworkManager:
                 stage="interface",
             ) from e
 
-        # A classified radio failure happened in this request (HAP-3): a later
-        # attempt that fails while starting the AP keeps that classification.
-        radio_seen = False
-        for attempt in range(1, STARTUP_ATTEMPTS + 1):
-            retrying = attempt > 1
-            stage = "start AP"
-            try:
-                if not internet_enabled:
-                    stage = "block Internet"
-                    try:
-                        with self._firewall_lock:
-                            self.nat_manager.block_internet(cfg_net.interface, device_id)
-                    except RuntimeError as exc:
-                        raise CommandError(str(exc)) from exc
-                stage = "start AP"
-                self.hostapd_manager.start(
-                    net_id=device_id,
-                    interface=cfg_net.interface,
-                    ssid=req.ssid,
-                    channel=req.channel,
-                    encryption=req.encryption,
-                    password=req.password,
-                    hidden=req.hidden,
-                    band=req.band,
-                    country_code=self.config.country_code,
-                    channel_width=req.channel_width,
-                    wifi_generation=req.wifi_generation,
-                    layout=layout,
-                    **({"cancelled": cancelled} if cancelled is not None else {}),
-                )
-                stage = "assign gateway IP"
-                execute_ip(["addr", "add", gateway, "dev", cfg_net.interface])
-                logger.info("Gateway IP %s assigned to %s", gateway, cfg_net.interface)
-                stage = "configure DHCP"
-                self.dhcp_server.start(
-                    net_id=device_id,
-                    interface=cfg_net.interface,
-                    subnet=subnet,
-                    dns_server=self.config.dns_server,
-                    **({"captive_dns": True} if req.captive_portal else {}),
-                )
-                if req.captive_portal:
-                    stage = "start captive portal"
-                    portal = CaptivePortal(
-                        interface=cfg_net.interface, net_id=device_id, gateway=str(net[1]),
-                        context=lambda: self._portal_context(device_id),
-                        lookup_mac=lambda ip: self.clients.mac_of(device_id, ip),
-                        firewall_lock=self._firewall_lock,
-                        port=self.config.captive_portal_port,
-                    )
-                    # Tracked before start so a rollback removes partial rules.
-                    self.captive_portals[device_id] = portal
-                    portal.start()
-                # NAT and isolation are part of the startup (NET-2): a network
-                # never reports success without the firewall it claims.
-                if internet_enabled:
-                    stage = "enable Internet"
-                    try:
-                        with self._firewall_lock:
-                            self.nat_manager.enable_nat(cfg_net.interface, device_id, subnet)
-                    except RuntimeError as exc:
-                        raise CommandError(str(exc)) from exc
-                    logger.info("NAT enabled for %s", device_id)
-                stage = "isolate network"
-                with self._firewall_lock:
-                    self.isolation_manager.add_network(subnet)
-                logger.info("Isolation rules applied for %s (%s)", device_id, subnet)
-                # The host itself is off limits to AP clients (SEC-3); part of the
-                # startup like NAT and isolation, so it is never silently missing.
-                stage = "protect host"
-                running_portal = self.captive_portals.get(device_id)
-                with self._firewall_lock:
-                    self.host_guard.add(
-                        cfg_net.interface, device_id,
-                        running_portal.port if running_portal is not None else None,
-                    )
-            except (HostapdError, CommandError, DhcpServerError, CaptivePortalError) as e:
-                logger.error("Failed to %s for %s: %s", stage, device_id, e)
-                # Only hostapd tells a radio failure apart; every other cause is a stage failure.
-                cause = e.kind if isinstance(e, HostapdError) else FailureKind.CONFIGURATION
-                radio_seen = radio_seen or cause is FailureKind.TRANSIENT_RADIO
-                radio = cause is FailureKind.TRANSIENT_RADIO or (radio_seen and stage == "start AP")
-                try:
-                    self.release_device(device_id)
-                except RuntimeError:
-                    logger.exception("Startup rollback failed for %s", device_id)
-                    raise StartupFailure(
-                        f"Failed to {stage}: {e}",
-                        kind=_cleanup_failed(radio or not interface_present(cfg_net.interface)),
-                        stage=STARTUP_STAGES.get(stage),
-                    ) from e
-                if not interface_present(cfg_net.interface):
-                    # Whatever hostapd reported, the netdev vanished under it: a
-                    # radio fault. An immediate internal retry cannot succeed
-                    # until the adapter re-enumerates, so leave it to the client.
-                    logger.warning(
-                        "Interface %s disappeared during startup; treating it as a radio failure",
-                        cfg_net.interface,
-                    )
-                    raise StartupFailure(
-                        f"Failed to {stage}: interface {cfg_net.interface} disappeared ({e})",
-                        kind=FailureKind.TRANSIENT_RADIO,
-                    ) from e
-
-                if (
-                    attempt < STARTUP_ATTEMPTS
-                    and allow_internal_retry
-                    and stage == "start AP"
-                    and cause is FailureKind.TRANSIENT_RADIO
-                    and (
-                        deadline is None
-                        or time.monotonic() + STARTUP_RETRY_DELAY < deadline
-                    )
-                ):
-                    time.sleep(STARTUP_RETRY_DELAY)
-                    if (
-                        not (cancelled is not None and cancelled())
-                        and (deadline is None or time.monotonic() < deadline)
-                    ):
-                        logger.info(
-                            "Retrying AP startup (attempt %d/%d) after %s on %s",
-                            attempt + 1, STARTUP_ATTEMPTS, type(e).__name__, device_id,
-                        )
-                        continue
-                raise StartupFailure(
-                    f"Failed to {stage}: {e}",
-                    kind=FailureKind.TRANSIENT_RADIO if radio else FailureKind.CONFIGURATION,
-                    stage=STARTUP_STAGES.get(stage),
-                ) from e
-            except Exception as e:
-                # Anything else (a bug, an OSError from a library, a KeyError) after
-                # the AP may already be up: roll back all the same, or hostapd keeps
-                # transmitting for a network nobody tracks (REV-1). Never retried.
-                logger.exception("Unexpected error during %s for %s", stage, device_id)
-                try:
-                    self.release_device(device_id)
-                except RuntimeError:
-                    logger.exception("Startup rollback failed for %s", device_id)
-                    raise StartupFailure(
-                        f"Failed to {stage}: {e!r}",
-                        kind=_cleanup_failed(not interface_present(cfg_net.interface)),
-                        stage=STARTUP_STAGES.get(stage),
-                    ) from e
-                raise StartupFailure(f"Failed to {stage}: {e!r}", stage=STARTUP_STAGES.get(stage)) from e
-            else:
-                if retrying:
-                    logger.info("AP startup retry recovered %s", device_id)
-                break
+        plan = StartPlan(
+            device_id=device_id, interface=cfg_net.interface, request=req, subnet=subnet,
+            internet_enabled=internet_enabled, layout=layout, cancelled=cancelled,
+        )
+        policy = RetryPolicy.internal() if allow_internal_retry else RetryPolicy.single()
+        run_startup(self, plan, policy, deadline)
 
         # Apply TX power level from request
         tx_power_level = req.tx_power_level

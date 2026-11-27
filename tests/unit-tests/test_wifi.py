@@ -133,7 +133,7 @@ class TestNetworkLifecycle:
             startup.append("gateway")
             assert args == ["addr", "add", "192.168.120.1/24", "dev", "wls16"]
 
-        monkeypatch.setattr("wilab.wifi.manager.execute_ip", assign_gateway)
+        monkeypatch.setattr("wilab.wifi.startup.execute_ip", assign_gateway)
         
         req = NetworkCreateRequest(
             ssid='TestAP',
@@ -194,7 +194,7 @@ class TestNetworkLifecycle:
         monkeypatch.setattr(hostapd, "execute_command", ap_command)
         monkeypatch.setattr(hostapd, "start_foreground", launch)
         monkeypatch.setattr(mgr.hostapd_manager, "_wait_until_ready", wait_until_ready)
-        monkeypatch.setattr("wilab.wifi.manager.execute_ip", assign_gateway)
+        monkeypatch.setattr("wilab.wifi.startup.execute_ip", assign_gateway)
         monkeypatch.setattr(mgr.dhcp_server, "start", start_dhcp)
         monkeypatch.setattr(mgr.dhcp_server, "stop", stop_dhcp)
 
@@ -240,7 +240,7 @@ class TestNetworkLifecycle:
         self, monkeypatch, tmp_path, scenario, band, expected_attempts,
     ):
         from wilab.network import commands
-        from wilab.wifi import manager
+        from wilab.wifi import manager, startup
 
         mgr = NetworkManager(load_config())
         device = "wls16"
@@ -254,9 +254,9 @@ class TestNetworkLifecycle:
             now += seconds
             events.append("wait")
 
-        monkeypatch.setattr(manager, "time", SimpleNamespace(
-            monotonic=lambda: now, time=lambda: 100.0 + now, sleep=wait,
-        ))
+        clock = SimpleNamespace(monotonic=lambda: now, time=lambda: 100.0 + now, sleep=wait)
+        monkeypatch.setattr(manager, "time", clock)
+        monkeypatch.setattr(startup, "time", clock)
 
         def advance_poll_clock(seconds: float) -> None:
             nonlocal now
@@ -301,7 +301,7 @@ class TestNetworkLifecycle:
         monkeypatch.setattr(hostapd, "execute_command", ap_command)
         monkeypatch.setattr(hostapd, "start_foreground", launch)
         monkeypatch.setattr(mgr.hostapd_manager, "_wait_until_ready", wait_until_ready)
-        monkeypatch.setattr(manager, "execute_ip", lambda args: events.append("gateway"))
+        monkeypatch.setattr(startup, "execute_ip", lambda args: events.append("gateway"))
         monkeypatch.setattr(mgr.dhcp_server, "start", lambda **kw: events.append("dhcp"))
         req = NetworkCreateRequest(
             ssid="TestAP", channel=6 if band == "2.4ghz" else 36,

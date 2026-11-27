@@ -1,7 +1,8 @@
 """What a failed network start is, decided once where the error is born (ARCH-2).
 
 hostapd exceptions carry a class attribute ``kind``; ``StartupFailure`` gets its
-kind once in ``NetworkManager._start_network`` from the cause and the rollback.
+kind once, in ``NetworkManager._start_network`` or in ``wifi/startup.py``
+(``run_startup``), from the cause and the rollback.
 Callers never recompute it: the create job (``api/routes/network.py``,
 ``_ON_START_FAILURE``) and the watchdog (``wifi/watchdog.py``,
 ``_ON_RESTORE_FAILURE``) each map a kind to an action with one table.

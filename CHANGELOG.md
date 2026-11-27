@@ -12,7 +12,7 @@ All notable changes to Wi-Lab are documented in this file.
 |---|---:|
 | 🐛 Bug fixes | 25 |
 | ⚠️ Breaking changes | 6 |
-| 🔧 Maintenance changes | 10 |
+| 🔧 Maintenance changes | 11 |
 | ✨ New features | 1 |
 | ✅ Test changes | 7 |
 | 📦 Commits since 4.0.0 | 62 |
@@ -76,6 +76,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - dnsmasq runs as a foreground child of the service, like hostapd, instead of a daemon tracked through PID files: a start that fails at once (bad option, address in use) reports dnsmasq's exit code and message, a stop ends exactly the process the service started, and `/run/wilab/dnsmasq/pids` is gone (Fable ARCH-6).
 - A running network is kept as an internal `ActiveNetwork` with the create request as received, no longer as the API answer: each `GET .../network` builds a new answer instead of changing the stored one, and the watchdog restarts a network from its original request with the current Internet and TX power settings (Fable ARCH-3).
 - What a failed network start is (radio fault, configuration, conflict, failed cleanup) is decided once where the error is born, as a `FailureKind`; the create job and the watchdog each map it to an action with one table instead of combining flags. The API answers are unchanged (Fable ARCH-2).
+ - The network manager is split into smaller parts (start attempts and their retries, TX power, client list, subnet allocation), each in its own module; behaviour, logs and API answers are unchanged (Fable ARCH-1).
 
 ### ✅ Tests
 

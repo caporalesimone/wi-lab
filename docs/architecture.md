@@ -87,7 +87,11 @@ flowchart LR
 | `wilab/api/errors.py` | Error codes (`ApiErrorCode`, the whole 1001-1013 range in one enum), the `detail` envelope (`domain_error`) and the `404` reasons. |
 | `wilab/api/routes/*.py` | HTTP endpoints. `network.py` contains the asynchronous create (`StartJob` thread, paused retries, `StartOutcome`) and the stop; its OpenAPI examples are module constants (`_CREATE_RESPONSES`, `_GET_RESPONSES`). `recovery_responses.py` builds the answers shared by several routes (`1002`, `1003`, `1006`). |
 | `wilab/reservation.py` | In-memory reservation store, expiry, quarantine state. |
-| `wilab/wifi/manager.py` | `NetworkManager`: start/stop pipeline, device locks, expiry loop, TX power. |
+| `wilab/wifi/manager.py` | `NetworkManager`: start/stop pipeline, device locks, expiry loop; owns the parts below and keeps their public methods (`list_clients`, `set_tx_power_level`, `get_tx_power_info`) as delegates. |
+| `wilab/wifi/startup.py` | One AP start attempt through its stages (`StartAttempt`), the internal retry (`RetryPolicy`, `run_startup`) with rollback, `StartupFailure` and the stage names. |
+| `wilab/wifi/txpower.py` | `TxPowerControl`: the four TX power levels of a channel, setting and reading them with `iw`, `TxPowerMismatchError`. |
+| `wilab/wifi/clients.py` | `ClientLister`: associated stations with a DHCP lease, the 1.5 s client cache, the client MAC lookup of the captive portal. |
+| `wilab/network/subnet_allocator.py` | `SubnetAllocator`: one `/24` per antenna from `dhcp_base_network`, never one in use on the host. |
 | `wilab/health.py` | Health checks that run host commands (hostapd and dnsmasq alive, NAT rules, upstream link), refreshed every 10 s by the `health-checks` thread; `/status` reads the latest result and runs no command (recomputed by the reader only if older than 20 s). |
 | `wilab/wifi/hostapd.py` | hostapd configuration, process ownership, readiness check. |
 | `wilab/wifi/watchdog.py` | Post-start supervision and bounded AP/DHCP restoration. |
@@ -625,7 +629,7 @@ flowchart TD
 
 | Layer | Where | Trigger | Limit |
 |---|---|---|---|
-| 1. Internal retry | Inside one request (`NetworkManager`) | Radio failure while starting the AP, on either band: hostapd segfault, beacon setup and interface initialization failure (`HostapdInitFailure`), radio preparation or readiness timeout. First round of the request only. | Up to 3 starts, 1 s apart, while the reservation is valid. There is no time budget (Fable REV-5): each start has its whole readiness timeout, and a start that reaches the end is never failed for time. If the last start fails, the round counts as **one** radio failure. |
+| 1. Internal retry | Inside one request (`NetworkManager`, `RetryPolicy` in `wifi/startup.py`) | Radio failure while starting the AP, on either band: hostapd segfault, beacon setup and interface initialization failure (`HostapdInitFailure`), radio preparation or readiness timeout. First round of the request only. | Up to 3 starts, 1 s apart, while the reservation is valid. There is no time budget (Fable REV-5): each start has its whole readiness timeout, and a start that reaches the end is never failed for time. If the last start fails, the round counts as **one** radio failure. |
 | 2. Paused retry | Same create job (route, `CREATE_RETRY_DELAYS`) | Classified radio failure of a round | 3 rounds per create, pauses 5 s and 10 s, each only if the reservation has time for the pause plus one start (`AP_READY_TIMEOUT` or `DFS_READY_TIMEOUT`, plus `START_MARGIN`). The device lock is held during the pauses: other calls on the reservation get `503 / 1006`. |
 | 3. Quarantine and USB recovery | Background worker | 3rd classified failure, unsafe rollback, or a failed watchdog restart | 10 rounds at least 60 s apart, USB antennas only. Then, and for every other quarantine, a periodic re-probe ([8.1](#81-re-probe-of-unavailable-antennas)). |
 
