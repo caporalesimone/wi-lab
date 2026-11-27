@@ -21,7 +21,7 @@ RestartSec=10s
 # does not fix it: leave the unit failed with the reason in the journal (NM-1).
 RestartPreventExitStatus=78
 # Private runtime files (STAB-2): hostapd and dnsmasq configuration, sockets,
-# leases and PID files, readable by root only and removed when the service stops.
+# leases, readable by root only and removed when the service stops.
 RuntimeDirectory=wilab
 RuntimeDirectoryMode=0700
 TimeoutStartSec=60s
