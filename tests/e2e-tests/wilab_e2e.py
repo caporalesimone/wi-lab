@@ -331,6 +331,9 @@ class WiLab:
         self.http = httpx.Client(
             base_url=base_url.rstrip("/") + "/api/v2",
             headers={"Authorization": f"Bearer {token}"}, timeout=120,
+            # uvicorn closes an idle connection after 5 s; a client that reuses one at
+            # that instant gets "Server disconnected". Drop idle connections sooner.
+            limits=httpx.Limits(keepalive_expiry=2),
         )
         self.reserved: list[str] = []
 
