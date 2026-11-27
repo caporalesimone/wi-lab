@@ -201,7 +201,7 @@ def test_only_hostapd_debug_dir_and_antennas_may_be_omitted():
 # --------------------------------------------------------------------------- watchdog budgets
 
 
-def test_watchdog_section_is_optional_with_the_historic_defaults():
+def test_watchdog_section_with_the_historic_values():
     from conftest import make_config
 
     config = make_config(auth_token="t", dhcp_base_network="192.168.120.0/24", dns_server="1.1.1.1")
@@ -215,6 +215,7 @@ def test_watchdog_driver_override_takes_what_it_sets_and_the_rest_from_the_defau
 
     watchdog = WatchdogConfig.model_validate({
         "ap_restores": {"limit": 3, "window_minutes": 30},
+        "dhcp_restarts": {"limit": 3, "window_minutes": 60},
         "drivers": {"mt7921u": {"ap_restores": {"limit": 6}}},
     })
     mt = watchdog.budget("ap_restores", "mt7921u")
@@ -223,11 +224,32 @@ def test_watchdog_driver_override_takes_what_it_sets_and_the_rest_from_the_defau
     assert watchdog.budget("dhcp_restarts", "mt7921u").limit == 3
 
 
+def test_watchdog_section_and_its_two_budgets_are_required():
+    from conftest import REQUIRED_SETTINGS, make_config
+    from pydantic import ValidationError
+
+    base = {"auth_token": "t", "dhcp_base_network": "192.168.120.0/24", "dns_server": "1.1.1.1"}
+    settings = {k: v for k, v in REQUIRED_SETTINGS.items() if k != "watchdog"}
+    from wilab.config import AppConfig
+    with pytest.raises(ValidationError):
+        AppConfig(**settings, **base)
+    with pytest.raises(ValidationError):
+        make_config(**base, watchdog={"ap_restores": {"limit": 3, "window_minutes": 60}})
+    config = make_config(**base, watchdog={
+        "ap_restores": {"limit": 3, "window_minutes": 60}, "dhcp_restarts": {"limit": 2, "window_minutes": 30},
+    })
+    assert config.watchdog.drivers == {}   # optional
+
+
+_BUDGETS = {"ap_restores": {"limit": 3, "window_minutes": 60}, "dhcp_restarts": {"limit": 3, "window_minutes": 60}}
+
+
 @pytest.mark.parametrize("section", [
-    {"ap_restores": {"limit": 0}},
-    {"ap_restore": {"limit": 3}},                                   # typo
-    {"drivers": {"mt7921u": {"ap_restores": {"limt": 3}}}},         # typo
-    {"dhcp_restarts": {"window_minutes": 0}},
+    {**_BUDGETS, "ap_restores": {"limit": 0, "window_minutes": 60}},
+    {**_BUDGETS, "ap_restores": {"limit": 3}},                         # window missing
+    {**_BUDGETS, "ap_restore": {"limit": 3}},                          # typo
+    {**_BUDGETS, "drivers": {"mt7921u": {"ap_restores": {"limt": 3}}}},  # typo
+    {**_BUDGETS, "dhcp_restarts": {"limit": 3, "window_minutes": 0}},
 ])
 def test_watchdog_section_mistakes_stop_the_service(section):
     from pydantic import ValidationError

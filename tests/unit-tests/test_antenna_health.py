@@ -5,7 +5,7 @@ from datetime import datetime
 
 from fastapi.testclient import TestClient
 
-from wilab.config import DriverWatchdog, RepairBudgetOverride, WatchdogConfig
+from wilab.config import DriverWatchdog, RepairBudget, RepairBudgetOverride, WatchdogConfig
 from wilab.wifi.watchdog import DeviceWatch
 
 
@@ -33,6 +33,7 @@ def test_used_repairs_limit_by_driver_quarantines_and_usb_reset(monkeypatch, con
     device = manager.devices.all()[0]
     monkeypatch.setattr(device, "driver", "mt7921u")
     monkeypatch.setattr(manager.config, "watchdog", WatchdogConfig(
+        ap_restores=RepairBudget(limit=3, window_minutes=60), dhcp_restarts=RepairBudget(limit=3, window_minutes=60),
         drivers={"mt7921u": DriverWatchdog(ap_restores=RepairBudgetOverride(limit=5))},
     ))
     now = time.monotonic()

@@ -13,6 +13,9 @@ upstream_interface: "auto"
 country_code: "IT"
 dns_server: "192.168.10.21"
 internet_enabled_by_default: true
+watchdog:
+  ap_restores: {limit: 3, window_minutes: 60}
+  dhcp_restarts: {limit: 3, window_minutes: 60}
 antennas:
   - interface: "wls16"
     display_name: "bench-antenna-1"

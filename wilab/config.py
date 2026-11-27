@@ -33,8 +33,8 @@ class RepairBudget(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    limit: int = Field(3, ge=1, le=100)
-    window_minutes: int = Field(60, ge=1, le=1440)
+    limit: int = Field(..., ge=1, le=100)
+    window_minutes: int = Field(..., ge=1, le=1440)
 
 
 class RepairBudgetOverride(BaseModel):
@@ -54,7 +54,7 @@ class DriverWatchdog(BaseModel):
 
 
 class WatchdogConfig(BaseModel):
-    """Repair budgets of the watchdog (`watchdog:` in config.yaml, optional).
+    """Repair budgets of the watchdog (`watchdog:` in config.yaml, required; `drivers` optional).
 
     The budget belongs to the antenna and is a sliding window: a repair older
     than the window no longer counts. The next failure after `limit` repairs in
@@ -65,8 +65,8 @@ class WatchdogConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    ap_restores: RepairBudget = Field(default_factory=RepairBudget)
-    dhcp_restarts: RepairBudget = Field(default_factory=RepairBudget)
+    ap_restores: RepairBudget
+    dhcp_restarts: RepairBudget
     drivers: dict[str, DriverWatchdog] = Field(default_factory=dict)
 
     def budget(self, kind: str, driver: str | None) -> RepairBudget:
@@ -87,7 +87,7 @@ class AppConfig(BaseModel):
     # Every rule lives here, so `--validate-config` and the service startup give
     # the same verdict (BUG-3). Messages never repeat the configured values.
     # Every setting is required, so whoever writes config.yaml chooses it: only
-    # hostapd_debug_dir, the antennas section and the watchdog section may be left out.
+    # hostapd_debug_dir and the antennas section may be left out (and watchdog.drivers).
     # protected_commands_password and cors_origins may be null (feature off).
     auth_token: str
     api_port: int = Field(..., ge=1, le=65535)
@@ -112,9 +112,9 @@ class AppConfig(BaseModel):
     # Optional display names and settings of the discovered radios (`antennas:`),
     # as read from config.yaml; never changed at runtime (ARCH-4).
     antennas: list[NetworkEntry] = Field(default_factory=list)
-    # Optional: repair budgets of the watchdog, by default and per driver. Tuning,
-    # not a deliberate choice for every installation, so it has defaults.
-    watchdog: WatchdogConfig = Field(default_factory=WatchdogConfig)
+    # Required: repair budgets of the watchdog (ap_restores, dhcp_restarts); per
+    # kernel driver in the optional `drivers`.
+    watchdog: WatchdogConfig
     cors_origins: list[str] | None = Field(
         ...,
         description="CORS allowed origins. If None or empty, CORS is disabled (secure for production). "

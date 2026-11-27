@@ -26,10 +26,16 @@ REQUIRED_SETTINGS = {
     "api_port": 8080, "captive_portal_port": 8081, "max_timeout": 86400, "min_timeout": 60,
     "allow_unlimited_reservation": False, "upstream_interface": "auto", "country_code": "IT",
     "protected_commands_password": None, "internet_enabled_by_default": True, "cors_origins": None,
+    "watchdog": {"ap_restores": {"limit": 3, "window_minutes": 60},
+                 "dhcp_restarts": {"limit": 3, "window_minutes": 60}},
 }
 REQUIRED_YAML = "".join(
     f"{key}: {'null' if value is None else str(value).lower() if isinstance(value, bool) else value}\n"
-    for key, value in REQUIRED_SETTINGS.items()
+    for key, value in REQUIRED_SETTINGS.items() if not isinstance(value, dict)
+) + (
+    "watchdog:\n"
+    "  ap_restores: {limit: 3, window_minutes: 60}\n"
+    "  dhcp_restarts: {limit: 3, window_minutes: 60}\n"
 )
 
 

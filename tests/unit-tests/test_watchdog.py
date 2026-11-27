@@ -677,9 +677,10 @@ def test_failed_rollback_of_a_restore_is_retried(monkeypatch, faulty):
 
 def test_a_driver_has_its_own_ap_restore_budget(monkeypatch, context):
     """watchdog.drivers.<driver>.ap_restores in config.yaml: mt7921u gets 5 restores an hour."""
-    from wilab.config import DriverWatchdog, RepairBudgetOverride, WatchdogConfig
+    from wilab.config import DriverWatchdog, RepairBudget, RepairBudgetOverride, WatchdogConfig
 
     monkeypatch.setattr(context.manager.config, "watchdog", WatchdogConfig(
+        ap_restores=RepairBudget(limit=3, window_minutes=60), dhcp_restarts=RepairBudget(limit=3, window_minutes=60),
         drivers={"mt7921u": DriverWatchdog(ap_restores=RepairBudgetOverride(limit=5))},
     ))
     for device in context.manager.devices.all():
@@ -689,9 +690,10 @@ def test_a_driver_has_its_own_ap_restore_budget(monkeypatch, context):
 
 
 def test_another_driver_keeps_the_default_budget(monkeypatch, context):
-    from wilab.config import DriverWatchdog, RepairBudgetOverride, WatchdogConfig
+    from wilab.config import DriverWatchdog, RepairBudget, RepairBudgetOverride, WatchdogConfig
 
     monkeypatch.setattr(context.manager.config, "watchdog", WatchdogConfig(
+        ap_restores=RepairBudget(limit=3, window_minutes=60), dhcp_restarts=RepairBudget(limit=3, window_minutes=60),
         drivers={"mt7921u": DriverWatchdog(ap_restores=RepairBudgetOverride(limit=5))},
     ))
     for device in context.manager.devices.all():
@@ -704,6 +706,7 @@ def test_a_shorter_window_forgets_restores_sooner(monkeypatch, context):
 
     monkeypatch.setattr(context.manager.config, "watchdog", WatchdogConfig(
         ap_restores=RepairBudget(limit=3, window_minutes=10),
+        dhcp_restarts=RepairBudget(limit=3, window_minutes=60),
     ))
     # Every restore is 6 minutes apart: never more than 2 inside a 10-minute window.
     assert _setup(context, monkeypatch, [0.0, 360.0, 720.0, 1080.0, 1440.0]) == [False] * 5
