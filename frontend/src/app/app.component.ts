@@ -21,7 +21,7 @@ import {
   ReservationPolicy,
   ReservationRequest,
   ReservationResponse,
-  NoDeviceAvailableError, StatusResponse } from './models/network.models';
+  NoDeviceAvailableError, RestartRequired, StatusResponse } from './models/network.models';
 import { ApiError, RecoveryCode, apiErrorToast, retryAfterSeconds } from './services/recovery-response';
 
 /** Unified view-model for each interface card. */
@@ -67,6 +67,8 @@ export class AppComponent implements OnInit, OnDestroy {
   slots: InterfaceSlot[] = [];
   /** Why the service is degraded (GET /status degraded_reasons), with antenna names. */
   degradedReasons: string[] = [];
+  /** Security updates that need a restart (GET /status restart_required): the red bar. */
+  restartRequired: RestartRequired | null = null;
 
   /** Whether the server allows unlimited reservations */
   allowUnlimitedReservation = false;
@@ -228,6 +230,7 @@ export class AppComponent implements OnInit, OnDestroy {
     const names = new Map(response.antennas.map(a => [a.interface, a.display_name]));
     this.degradedReasons = (response.degraded_reasons ?? []).map(r =>
       r.interface ? `${names.get(r.interface) ?? r.interface}: ${r.message}` : r.message);
+    this.restartRequired = response.restart_required ?? null;
   }
 
   private buildSlots(networks: InterfaceInfo[]): void {

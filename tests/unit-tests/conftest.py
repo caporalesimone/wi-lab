@@ -430,6 +430,14 @@ def network_body(**flat):
 
 
 @pytest.fixture(autouse=True)
+def _no_host_updates(monkeypatch):
+    """The test host's own pending updates (/run/reboot-required) never reach /status."""
+    from wilab import updates
+    monkeypatch.setattr(updates, "REBOOT_REQUIRED", Path("/nonexistent/reboot-required"))
+    monkeypatch.setattr(updates, "MAPS", Path("/nonexistent/maps"))
+
+
+@pytest.fixture(autouse=True)
 def _fresh_health_checks(monkeypatch):
     """Tests change state and read /status at once: recompute the checks on every read."""
     from wilab import health

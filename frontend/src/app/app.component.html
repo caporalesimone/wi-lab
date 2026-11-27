@@ -36,6 +36,16 @@
     <!-- Main content (not loading, no error) -->
     <div *ngIf="!loading && !error">
 
+      <!-- Security updates installed on the host need a restart (GET /status restart_required) -->
+      <div *ngIf="restartRequired" class="restart-banner" role="alert">
+        <mat-icon>security_update_warning</mat-icon>
+        <div>
+          <strong>Security updates installed: {{ restartRequired.system ? 'reboot the host' : 'restart Wi-Lab' }}</strong>
+          <div>{{ restartRequired.message }}<span *ngIf="restartRequired.since"> (since {{ restartRequired.since | date:'medium' }})</span>.</div>
+          <div class="restart-hint">Wi-Lab never restarts by itself: every active network would stop.</div>
+        </div>
+      </div>
+
       <!-- Service degraded: the reasons from GET /status -->
       <div *ngIf="degradedReasons.length" class="degraded-banner" role="status">
         <mat-icon color="warn">warning</mat-icon>

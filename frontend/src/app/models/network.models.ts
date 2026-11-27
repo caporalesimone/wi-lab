@@ -76,6 +76,17 @@ export interface StatusResponse {
   active_networks: number;
   reservation_policy: ReservationPolicy;
   degraded_reasons: { code: string; interface: string | null; message: string }[];
+  /** Security updates installed on the host that need a restart; never done automatically. */
+  restart_required?: RestartRequired | null;
+}
+
+export interface RestartRequired {
+  /** A library Wi-Lab loaded was replaced: `systemctl restart wi-lab`. */
+  service: boolean;
+  /** An update asks for a reboot of the host. */
+  system: boolean;
+  since: string | null;
+  message: string;
 }
 
 export interface ReservationRequest {

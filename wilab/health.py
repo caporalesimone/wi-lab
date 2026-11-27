@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from . import heartbeat
+from . import heartbeat, updates
 from .network.commands import CommandError, execute_command
 from .timestamps import format_utc_timestamp
 
@@ -111,6 +111,7 @@ class HealthChecks:
         self._manager = manager
         self._result: HealthResult | None = None
         self._lock = threading.Lock()          # one computation at a time
+        self._restart_since: str | None = None  # first check that found updates needing a restart
 
     def refresh(self) -> HealthResult:
         with self._lock:
@@ -120,6 +121,18 @@ class HealthChecks:
             snapshot = manager.active.copy()
             settled = [device for device in snapshot if _not_busy(manager, device)]
             internet = [device for device in settled if snapshot[device].internet_enabled]
+            pending = updates.check()
+            needed = pending["service_restart_required"] or pending["system_reboot_required"]
+            if needed and self._restart_since is None:
+                self._restart_since = format_utc_timestamp(time.time())
+                logger.warning(
+                    "Security updates need a restart: service=%s (%s), system reboot=%s (%s)",
+                    pending["service_restart_required"], ", ".join(pending["replaced_libraries"]) or "-",
+                    pending["system_reboot_required"], ", ".join(pending["reboot_packages"]) or "-",
+                )
+            elif not needed:
+                self._restart_since = None
+            pending["since"] = self._restart_since
             result = HealthResult(
                 checked_at=format_utc_timestamp(time.time()) or "",
                 taken=time.monotonic(),
@@ -130,6 +143,7 @@ class HealthChecks:
                     "dnsmasq": _process_check(settled, manager.dhcp_server.is_running),
                     "iptables_nat": _nat_check(manager, internet),
                     "upstream_interface": _upstream_check(manager),
+                    "updates": pending,
                 },
             )
             self._result = result

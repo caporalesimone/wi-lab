@@ -150,6 +150,7 @@ for dev in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1
     ip link del "$dev" 2>/dev/null || true
 done
 rm -rf /run/wilab /tmp/wilab-hostapd /tmp/wilab-dnsmasq   # /tmp: before 4.1.0
+rm -f /etc/needrestart/conf.d/wilab.conf   # the installer's needrestart exclusion
 if [ -f /run/systemd/network/00-wilab-unmanaged.network ]; then
     rm -f /run/systemd/network/00-wilab-unmanaged.network
     networkctl reload 2>/dev/null || true

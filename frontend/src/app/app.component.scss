@@ -55,6 +55,23 @@
   }
 }
 
+.restart-banner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  color: #fff;
+  background: #c62828;
+
+  .restart-hint {
+    margin-top: 4px;
+    opacity: 0.85;
+    font-size: 0.9em;
+  }
+}
+
 .summary-bar {
   display: flex;
   align-items: center;

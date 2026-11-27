@@ -24,7 +24,17 @@ _CHECKS_OK_EXAMPLE = {
     "dnsmasq": {"running": True, "instances": 0, "missing": []},
     "iptables_nat": {"configured": True, "missing": [], "errors": []},
     "upstream_interface": {"name": "eth0", "up": True, "has_ip": True, "reachable": True},
+    "updates": {"service_restart_required": False, "replaced_libraries": [],
+                "system_reboot_required": False, "reboot_packages": [], "since": None},
 }
+
+RESTART_MESSAGES = {
+    (True, False): "Security updates were installed on the host: restart Wi-Lab "
+                   "(systemctl restart wi-lab) when no network is in use",
+    (False, True): "Security updates were installed on the host: reboot it when no network is in use",
+    (True, True): "Security updates were installed on the host: reboot it when no network is in use",
+}
+
 
 router = APIRouter(
     tags=["System"],
@@ -54,6 +64,7 @@ router = APIRouter(
                             {"display_name": "Antenna B", "interface": "wlan1", "reservation": None,
                              "network_active": False},
                         ],
+                        "restart_required": None,
                         "reservation_policy": _POLICY_EXAMPLE,
                     },
                 },
@@ -67,6 +78,7 @@ router = APIRouter(
                             {"display_name": "Antenna B", "interface": "wlan1", "reservation": None,
                              "network_active": False},
                         ],
+                        "restart_required": None,
                         "reservation_policy": _POLICY_EXAMPLE,
                     },
                 },
@@ -86,6 +98,10 @@ router = APIRouter(
                             {"display_name": "Antenna B", "interface": "wlan1", "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 54},
                              "network_active": False, "runtime_state": "restoring_ap"},
                         ],
+                        "restart_required": {
+                            "service": True, "system": False, "since": "2026-11-27T06:39:50Z",
+                            "message": RESTART_MESSAGES[(True, False)],
+                        },
                         "reservation_policy": _POLICY_EXAMPLE,
                     },
                 },
@@ -125,6 +141,14 @@ def system_status(
     | `command_stuck` | A host command did not exit even after SIGKILL: usually a hung Wi-Fi driver; the adapter may need a reset. |
     | `loop_stalled` | A background loop has not run for 3 minutes; Wi-Lab restarts itself when idle. |
     | `cleanup_failed` | The cleanup after a release or expiry failed; the antenna is held, not allocatable, and the cleanup is repeated (5 s, 15 s, 60 s, then every 5 min). |
+
+    `restart_required` is `null`, or says that security updates were installed on
+    the host and need a restart, which Wi-Lab never does by itself (it is excluded
+    from needrestart, so an unattended upgrade cannot drop the networks): `service`
+    when a library Wi-Lab loaded was replaced (`systemctl restart wi-lab`), `system`
+    when an update asks for a reboot; `since` is when it was first seen, `message` a
+    sentence for display (the web UI shows it as a red bar). It does not make the
+    status `degraded`; the replaced libraries and packages are in `GET /monitoring`.
 
     The detail of every check is in `GET /monitoring`. Checks that run host
     commands are refreshed every 10 s in the background: this call runs no
@@ -227,8 +251,21 @@ def _assess(manager: NetworkManager, reservation_mgr: ReservationManager) -> dic
 
     status = "degraded" if reasons else ("ok" if snapshot else "standby")
     return {
+        "restart_required": _restart_required(checks.get("updates") or {}),
         "status": status, "degraded_reasons": reasons, "active_networks": len(snapshot),
         "antennas": antennas, "checks": checks, "checked_at": health.checked_at,
+    }
+
+
+def _restart_required(pending: dict[str, Any]) -> dict[str, Any] | None:
+    """`restart_required` of /status: None, or what needs a restart since when (never automatic)."""
+    service = bool(pending.get("service_restart_required"))
+    system = bool(pending.get("system_reboot_required"))
+    if not service and not system:
+        return None
+    return {
+        "service": service, "system": system, "since": pending.get("since"),
+        "message": RESTART_MESSAGES[(service, system)],
     }
 
 
@@ -242,6 +279,7 @@ def _system_status(
         "degraded_reasons": view["degraded_reasons"],
         "active_networks": view["active_networks"],
         "antennas": view["antennas"],
+        "restart_required": view["restart_required"],
         "reservation_policy": {
             "min_seconds": config.min_timeout,
             "max_seconds": config.max_timeout,
@@ -285,6 +323,7 @@ def monitoring(
     | `loops.stale` | Background loops that have not run for 3 minutes. |
     | `hostapd`, `dnsmasq` | Every settled network has its process alive; `missing` lists the others. |
     | `iptables_nat` | Every settled network with Internet has its `wilab-nat-<interface>` rule; `missing` lists the others, `errors` the failures reading the rules. |
+    | `updates` | Security updates that need a restart: libraries this process loaded that an update replaced (`service_restart_required`, `replaced_libraries`), and `/run/reboot-required` (`system_reboot_required`, `reboot_packages`); `since` is when first seen. |
     | `upstream_interface` | Host uplink state UP (or UNKNOWN with LOWER_UP) and an IPv4 address; it counts only while a network has Internet. |
 
     A network with a start, stop or restore in progress is not judged.

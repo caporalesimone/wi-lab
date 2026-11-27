@@ -174,6 +174,24 @@ To see why the initialization fails:
    `gdb -batch -ex "info symbol 0xaaf3a" /usr/sbin/hostapd` with the same
    debug directory names the function.
 
+### Issue 8: Red Bar "Security updates installed" (`restart_required` in `/status`)
+
+Unattended upgrades installed security updates, and the running service still uses the
+old code: a library it had loaded was replaced (`service`), or an update asks for a reboot
+(`system`, `/run/reboot-required`, usually a new kernel). Wi-Lab never restarts by itself:
+the installer excludes it from needrestart (`/etc/needrestart/conf.d/wilab.conf`), since a
+restart stops every active network.
+
+When no network is in use:
+
+```bash
+sudo systemctl restart wi-lab     # restart_required.service
+sudo reboot                       # restart_required.system
+```
+
+`GET /api/v2/monitoring` lists the replaced libraries and the packages (`checks.updates`).
+Before 4.1.0 needrestart restarted Wi-Lab after such an upgrade, dropping every network.
+
 ## Performance Issues
 
 ### WiFi Slow or Unstable
