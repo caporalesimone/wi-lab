@@ -148,27 +148,17 @@ cambia, si ferma e si rimanda alla versione successiva.
 | B9 | [HAP-7](#hap-7) | Bassa |  | Verificare se l'output debug hostapd influisce sulla stabilità a lungo termine. |
 | B10 | [REV-18](#rev-18) | Bassa |  | Riordinare i test: fixture condivise e collegate come in produzione, poi i test dei paragrafi 4.6 e 4.7. |
 | B11 | [PERF-1](#perf-1) | Bassa | parz. | Ridurre i comandi ridondanti durante l'avvio di una rete. **Fatto:** validazioni `iw`, `dnsmasq --version`, `nmcli --version`. I tre `nmcli` e la pausa di 0,2 s spariscono con NM-1. **Manca**, non fatto di proposito: `iptables-restore` in blocco (cambierebbe come si installano e tolgono tutte le regole). |
-| B12 | [PERF-2](#perf-2) | Bassa |  | Separare i controlli di stato attivo dalle query dettagliate. |
-| B13 | [PERF-5](#perf-5) | Bassa |  | Rispettare il timeout richiesto senza imporre un minimo nascosto. |
-| B14 | [PERF-4](#perf-4) | Bassa |  | Ridurre letture di discovery e probe hostapd non necessarie. |
-| B15 | [PERF-7](#perf-7) | Bassa |  | Punto informativo: nessuna crescita di memoria o descrittori trovata. Da riverificare con il test T-21. |
-| B16 | [API-7](#api-7) | Bassa |  | Valutare un modello API a risorse per le azioni enable/disable (`PATCH .../network`). **Rimandato** (decisione del 2026-11-25, [TODOs/api-review.md](TODOs/api-review.md)). |
-| B17 | [ARCH-2](#arch-2) | Media |  | Centralizzare la classificazione dei guasti. |
-| B18 | [ARCH-1](#arch-1) | Media |  | Separare le responsabilità di `NetworkManager`. |
-| B19 | [ARCH-4](#arch-4) | Media |  | Consolidare lo stato dei dispositivi in un registro unico. |
-| B20 | [ARCH-3](#arch-3) | Bassa | parz. | Separare il modello interno della rete dai modelli API. **Fatto:** la create usa `NetworkCreateBody` e la `GET` `NetworkResponse`. **Manca:** una dataclass interna al posto di `NetworkStatus` in `manager.active` (con `_expires_at_timestamp`). |
-| B21 | [ARCH-5](#arch-5) | Bassa |  | Costruire e avviare i manager esplicitamente tramite un contesto applicativo. |
-| B22 | [ARCH-6](#arch-6) | Bassa |  | Gestire dnsmasq come processo figlio in foreground. |
-| B23 | [ARCH-10](#arch-10) | Bassa |  | Definire regole di logging e limitare i messaggi ripetuti. |
-| B24 | [ARCH-9](#arch-9) | Bassa |  | Rimuovere codice, modelli e test inutilizzati. |
-| B25 | [ARCH-8](#arch-8) | Bassa |  | Sostituire l'accesso agli attributi privati di altre classi con metodi pubblici. |
-| B26 | [ARCH-11](#arch-11) | Bassa |  | Definire la strategia di integrazione prima di applicare patch specifiche del branch. |
-| B27 | [BUG-9](#bug-9) | Media |  | Allineare la validazione dei profili QoS custom al modello runtime. |
-| B28 | [NET-13](#net-13) | Bassa |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
-| B29 | [RACE-3](#race-3) | Bassa |  | Sincronizzare le operazioni QoS per interfaccia. |
-| B30 | [NET-12](#net-12) | Bassa |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
-| B31 | [NET-11](#net-11) | Media |  | Gestire o rifiutare esplicitamente valori QoS upload/download differenti. Cambia la validazione del QoS: vedi la nota sotto la tabella. |
-| B32 | [WD-8](#wd-8) | Media |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
+| B12 | [PERF-4](#perf-4) | Bassa |  | Ridurre letture di discovery e probe hostapd non necessarie. |
+| B13 | [PERF-7](#perf-7) | Bassa |  | Punto informativo: nessuna crescita di memoria o descrittori trovata. Da riverificare con il test T-21. |
+| B14 | [API-7](#api-7) | Bassa |  | Valutare un modello API a risorse per le azioni enable/disable (`PATCH .../network`). **Rimandato** (decisione del 2026-11-25, [TODOs/api-review.md](TODOs/api-review.md)). |
+| B15 | [ARCH-10](#arch-10) | Bassa |  | Definire regole di logging e limitare i messaggi ripetuti. |
+| B16 | [ARCH-11](#arch-11) | Bassa |  | Domande e proposte su cosa portare da `feature/device-capabilities` (CLAUDE.md, pyproject, CI, documentazione API, correzioni): da accettare o rifiutare una per una. |
+| B17 | [BUG-9](#bug-9) | Media |  | Allineare la validazione dei profili QoS custom al modello runtime. |
+| B18 | [NET-13](#net-13) | Bassa |  | Evitare che lo stop del profilo impedisca lo stop della rete. |
+| B19 | [RACE-3](#race-3) | Bassa |  | Sincronizzare le operazioni QoS per interfaccia. |
+| B20 | [NET-12](#net-12) | Bassa |  | Sincronizzare la fine del profilo QoS con lo stato QoS. |
+| B21 | [NET-11](#net-11) | Media |  | Gestire o rifiutare esplicitamente valori QoS upload/download differenti. Cambia la validazione del QoS: vedi la nota sotto la tabella. |
+| B22 | [WD-8](#wd-8) | Media |  | Conservare e riapplicare il profilo QoS dopo il ripristino della rete. |
 
 **TX power, da debuggare (fuori dal congelamento, come il QoS):**
 
@@ -216,6 +206,16 @@ NM-1 è chiuso nel codice; la prova sulla macchina è il paragrafo 5.8.
 | ✅ [REV-13](#rev-13) | Media | Frontend: polling della create (annullato non è successo, errori transitori saltati, `exhaustMap` e limite di 10 min, Stop e Release usabili, `starting` su ogni card, motivi dei `404` in frase). Compilato in Docker, non pubblicato. |
 | ✅ [REV-14](#rev-14) | Media | Frontend: ricarica tiene gli ID salvo `404`, Stop abilitato dove il server lo accetta, messaggio di recupero sulle card non mie, un solo dialog, password obbligatoria e lunghezze in byte UTF-8. |
 | ✅ [HAP-8](#hap-8) | Media | Ultime 40 righe di `hostapd -d` nel journal quando un avvio fallisce e quando il watchdog trova hostapd morto, anche senza `hostapd_debug_dir`; righe con chiavi scartate (anche nei report). |
+| ✅ [PERF-2](#perf-2) | Bassa | `active_status` senza comandi per sapere se la rete è attiva (Internet, TX power, QoS); elenco dei client riusato 1,5 s. |
+| ✅ [PERF-5](#perf-5) | Bassa | Il timeout passato è quello usato: niente minimo di 5 s nascosto, `exact_timeout` tolto. |
+| ✅ [ARCH-1](#arch-1) | Media | `NetworkManager` diviso: `SubnetAllocator`, `TxPowerControl`, `ClientLister`, `wifi/startup.py` con `RetryPolicy` (usata solo dal retry interno: route e watchdog hanno politiche diverse). `manager.py` da 1349 a 908 righe. |
+| ✅ [ARCH-2](#arch-2) | Media | `FailureKind` in `wifi/failures.py`, impostato dove nasce l'errore; una tabella per la create e una per il watchdog. |
+| ✅ [ARCH-3](#arch-3) | Bassa | `ActiveNetwork` (`wifi/active.py`) al posto di `NetworkStatus` in `manager.active`; il watchdog riparte da `network.request`. |
+| ✅ [ARCH-4](#arch-4) | Media | `DeviceRegistry` (`wilab/devices.py`) unico; `config.antennas` contiene solo le etichette del file. `retire()` non fatto (serve lo stato di reservation, manager e watchdog): resta per WD-5 p. 3. |
+| ✅ [ARCH-5](#arch-5) | Bassa | `AppContext` (`api/context.py`) costruito con l'app, `start()`/`stop()` in ordine fisso; i costruttori non avviano thread; niente singleton. |
+| ✅ [ARCH-6](#arch-6) | Bassa | dnsmasq figlio in primo piano come hostapd: niente file PID, niente scansione di `/proc`. Da provare sulla macchina: `--pid-file=` vuoto, errori di bind, arresto, riavvio DHCP. |
+| ✅ [ARCH-8](#arch-8) | Bassa | `HostapdManager.is_tracked`; nessun attributo privato letto da altre classi. |
+| ✅ [ARCH-9](#arch-9) | Bassa | Codice morto tolto, compreso `flush_all_rules` (avrebbe svuotato tutta la tabella NAT dell'host); avviso di avvio in una riga `INFO`. |
 | ✅ [REV-8](#rev-8) | Bassa | Il job di un avvio che ignora l'annullamento resta in `start_jobs` finché il thread gira: niente secondo thread, stop `503 / 1006` poi `200` o `409 / 1007`. |
 | ✅ [API-6](#api-6) | Bassa | `POST .../txpower` prende `tx_power_level`, come la create. Breaking, nel CHANGELOG. |
 | ✅ [NM-1](#nm-1) | Media | Nessun `nmcli` nel codice; precheck all'avvio (`78` se non root o manca un comando, avvisi per NetworkManager, `wpa_supplicant` su una radio, regole rimaste); stadi 06 e 07 dell'installer che propongono di disattivare NetworkManager e `wpa_supplicant` senza rischiare l'accesso; `uninstall.sh` propone di riattivarli. Chiude ARCH-7. [Capitolo 5](#cap-5). |
@@ -720,69 +720,8 @@ def execute_iptables_restore(rules: str) -> None:
 
 ---
 
-<a id="perf-2"></a>
-### B12. PERF-2 - `GET .../network` costa due o tre comandi a chiamata
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:505-565](wilab/wifi/manager.py#L505-L565), [wilab/wifi/manager.py:660-713](wilab/wifi/manager.py#L660-L713)
-
-**Problema.** Ogni lettura esegue `iw dev station dump`, `iw dev info` e legge il file dei lease,
-tenendo il lock del dispositivo. Anche `enable_internet`, `disable_internet`, `set_tx_power_level` e
-`_require_active_network` chiamano `get_status` solo per sapere se la rete è attiva, pagando lo stesso
-costo.
-
-**Come si riproduce.** Contare gli `execve` durante una `POST .../internet/enable`: compaiono
-`iw ... station dump` e `iw ... info`, che non servono.
-
-**Come correggerlo.** Separare "la rete è attiva?" da "dammi i dettagli".
-
-```python
-# wilab/wifi/manager.py
-def active_status(self, device_id: str) -> NetworkStatus | None:
-    """The stored status of an active network, without querying the radio."""
-    with self.device_lock(device_id):
-        return self.active.get(device_id)
-```
-
-Usarlo nei quattro punti citati al posto di `get_status`. Per i client che interrogano spesso,
-conservare l'elenco dei client per 1-2 secondi in `_get_status` (timestamp monotono per dispositivo).
-
----
-
-<a id="perf-5"></a>
-### B13. PERF-5 - Timeout minimo di 5 s imposto in silenzio
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/commands.py:160-183](wilab/network/commands.py#L160-L183), [wilab/network/subnet.py:12](wilab/network/subnet.py#L12)
-
-**Problema.** `execute_command` porta ogni timeout ad almeno 5 s, a meno che il chiamante passi
-`exact_timeout=True`. Chi scrive `timeout=2` (per esempio `host_ipv4_networks`) ottiene 5 s senza
-saperlo. Due parametri per dire una cosa sola, e un valore che non significa ciò che dice.
-
-**Come si riproduce.** Test: `execute_command(["sleep", "3"], timeout=1)` non va in timeout.
-
-**Come correggerlo.** Il timeout passato è quello usato; il default resta 8 s.
-
-```diff
---- a/wilab/network/commands.py
-+++ b/wilab/network/commands.py
--def execute_command(
--    cmd: list[str], check: bool = True, timeout: float = 8.0, *, exact_timeout: bool = False,
--) -> str:
-+def execute_command(cmd: list[str], check: bool = True, timeout: float = 8.0) -> str:
-@@
--        effective_timeout = bounded_timeout(
--            timeout if exact_timeout else max(5.0, timeout)
--        )
-+        effective_timeout = bounded_timeout(timeout)
-```
-
-Togliere `exact_timeout=True` dai chiamanti (`hostapd.py`, `discovery.py`) e rivedere i pochi punti che
-passano un timeout inferiore a 5 s per decidere il valore voluto: `subnet.py` (2 s) e il `usbreset`
-(15 s, già sopra il minimo).
-
----
-
 <a id="perf-4"></a>
-### B14. PERF-4 - Costo fisso del polling in background
+### B12. PERF-4 - Costo fisso del polling in background
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:49](wilab/wifi/watchdog.py#L49), [wilab/api/dependencies.py:92-123](wilab/api/dependencies.py#L92-L123), [wilab/config.py:207-235](wilab/config.py#L207-L235)
 
@@ -805,7 +744,7 @@ trascurabile; è un punto di eleganza e di rumore, non di necessità.
 ---
 
 <a id="perf-7"></a>
-### B15. PERF-7 - Memoria e descrittori: nessuna crescita trovata
+### B13. PERF-7 - Memoria e descrittori: nessuna crescita trovata
 
 **Gravità:** Bassa (informativo) · **Confidenza:** Confermato
 
@@ -830,7 +769,7 @@ def _allocate_ifb(self) -> str:
 ---
 
 <a id="api-7"></a>
-### B16. API-7 - Azioni modellate come percorsi
+### B14. API-7 - Azioni modellate come percorsi
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/routes/internet.py](wilab/api/routes/internet.py), [wilab/api/routes/txpower.py:51-87](wilab/api/routes/txpower.py#L51-L87)
 
@@ -856,228 +795,8 @@ Analogamente `PUT .../txpower` con lo stesso corpo della `POST` attuale.
 
 ---
 
-<a id="arch-2"></a>
-### B17. ARCH-2 - Classificazione dei guasti sparsa in quattro posti
-
-**Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/hostapd.py:62-78](wilab/wifi/hostapd.py#L62-L78), [wilab/wifi/manager.py:60-64](wilab/wifi/manager.py#L60-L64), [wilab/api/routes/network.py:232-251](wilab/api/routes/network.py#L232-L251), [wilab/wifi/watchdog.py:133-142](wilab/wifi/watchdog.py#L133-L142)
-
-**Problema.** Cosa sia un guasto è deciso dalla gerarchia di eccezioni in `hostapd.py`,
-dall'espressione `radio=` in `manager.py`, dalla traduzione in HTTP in `routes/network.py` e dalle
-decisioni in `watchdog.py`. Le route classificano anche confrontando testo
-(`"already active" in error_msg_lower`). HAP-2, HAP-3 e WD-2 sono conseguenze dirette: nessuno dei
-quattro posti ha una visione completa.
-
-**Come si riproduce.** Provare a rispondere alla domanda "cosa succede se hostapd esce con codice 1
-durante un riavvio del watchdog?": servono quattro file.
-
-**Come correggerlo.** Un'enumerazione impostata dove nasce l'errore e una sola tabella enum → azione.
-
-```python
-# wilab/wifi/failures.py
-class FailureKind(Enum):
-    TRANSIENT_RADIO = "transient_radio"     # retry, then restart later
-    CONFIGURATION = "configuration"         # the request can never work: tell the client
-    CLEANUP_FAILED = "cleanup_failed"       # resources may still be up: isolate the device
-    CONFLICT = "conflict"                   # already active, busy
-
-@dataclass
-class StartupFailure(Exception):
-    kind: FailureKind
-    stage: str
-    message: str
-```
-
-`hostapd.py` solleva eccezioni che portano il proprio `kind`; `manager.py` lo propaga senza
-ricalcolarlo; la route ha una tabella `kind → (status HTTP, codice)`; il watchdog una tabella
-`kind → azione`. I confronti di testo spariscono.
-
----
-
-<a id="arch-1"></a>
-### B18. ARCH-1 - `NetworkManager` fa troppe cose
-
-**Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py)
-
-**Problema.** 970 righe: ciclo di vita, politica di retry, allocazione delle subnet, elenco dei client,
-lettura dei lease, TX power, thread delle scadenze, integrazione con NetworkManager, contesto del
-portale. Il ciclo di retry da solo è lungo 90 righe con cinque livelli di annidamento e due blocchi
-`raise StartupFailure` quasi identici.
-
-**Come si riproduce.** Leggere `_start_network`.
-
-**Come correggerlo.** Estrarre, un pezzo alla volta e con i test verdi a ogni passo:
-
-| Nuovo modulo | Contenuto | Righe tolte |
-|---|---|---|
-| `wilab/network/subnet_allocator.py` | `_get_subnet`, `_assigned_subnets`, `_subnet_lock` | ~40 |
-| `wilab/wifi/txpower.py` | tutti i metodi `*tx_power*` e `_compute_level_dbm` | ~160 |
-| `wilab/wifi/clients.py` | `list_clients`, `_leases`, `_client_mac` | ~90 |
-| `wilab/wifi/startup.py` | `start_once(device, request)` (un tentativo) e `RetryPolicy` | ~150 |
-
-`RetryPolicy` è il pezzo che conta: la usano sia la route di creazione sia il watchdog, e questo elimina
-per costruzione HAP-3 e WD-2.
-
-```python
-@dataclass(frozen=True)
-class RetryPolicy:
-    attempts: int = 3
-    delay: float = 1.0
-    budget: float = 20.0
-    min_attempt_time: float = 4.0
-
-    def run(self, start_once: Callable[[], NetworkStatus], rollback: Callable[[], None]) -> NetworkStatus:
-        ...
-```
-
----
-
-<a id="arch-4"></a>
-### B19. ARCH-4 - Il registro dei dispositivi esiste in quattro copie
-
-**Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/config.py:26-39](wilab/config.py#L26-L39), [wilab/reservation.py:83-87](wilab/reservation.py#L83-L87), [wilab/wifi/watchdog.py:23](wilab/wifi/watchdog.py#L23), [wilab/wifi/manager.py:81](wilab/wifi/manager.py#L81), [wilab/api/dependencies.py:66-89](wilab/api/dependencies.py#L66-L89)
-
-**Problema.** `config.networks`, `ReservationManager._device_ids`, `NetworkWatchdog._watched`,
-`NetworkManager._device_locks`. Vengono tenuti allineati da `scan_devices`. `AppConfig`, un oggetto di
-configurazione validato, viene modificato a runtime per contenere i dispositivi scoperti e la loro
-porta USB. Nessuna delle quattro copie sa togliere un dispositivo: è la radice di WD-5.
-
-**Come si riproduce.** Cercare nel codice `config.networks`: 26 punti leggono la lista dei dispositivi
-dalla configurazione.
-
-**Come correggerlo.** Un registro unico con lo stato per dispositivo.
-
-```python
-# wilab/devices.py
-class DeviceState(Enum):
-    FREE = "free"
-    RESERVED = "reserved"
-    RECOVERING = "recovering"
-    UNAVAILABLE = "unavailable"
-
-@dataclass
-class Device:
-    interface: str
-    display_name: str
-    usb_port: str | None
-    lock: RLock = field(default_factory=threading.RLock)
-    state: DeviceState = DeviceState.FREE
-    missing_scans: int = 0
-
-class DeviceRegistry:
-    def add(self, device: Device) -> None: ...
-    def retire(self, interface: str) -> None: ...      # only when FREE or UNAVAILABLE, with no resources
-    def get(self, interface: str) -> Device: ...
-    def all(self) -> list[Device]: ...
-```
-
-`AppConfig.networks` torna a contenere solo le etichette lette dal file. Reservation, watchdog e
-manager ricevono il registro e non tengono copie. È un refactoring ampio: conviene farlo prima di
-WD-5 punto 3 e dopo aver messo in sicurezza i punti 1-14.
-
----
-
-<a id="arch-3"></a>
-### B20. ARCH-3 - Il modello dell'API è anche lo stato interno (parziale)
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:374-394](wilab/wifi/manager.py#L374-L394), [wilab/wifi/manager.py:516-565](wilab/wifi/manager.py#L516-L565)
-
-> **Stato (2026-11-25):** La create usa `NetworkCreateBody` e la `GET .../network` `NetworkResponse`, separati dal modello interno. **Manca** una dataclass interna al posto di `NetworkStatus` in `manager.active` (che porta ancora `_expires_at_timestamp`).
-
-**Problema.** `NetworkStatus`, il modello di risposta, è conservato in `manager.active`, modificato a
-ogni lettura, e porta un attributo nascosto impostato con `object.__setattr__` e letto con `hasattr`
-(`_expires_at_timestamp`). È la ragione per cui lo stato riportato è "ciò che Wi-Lab ricorda" e non
-"ciò che il sistema fa".
-
-**Come si riproduce.** Cercare `_expires_at_timestamp`: dieci punti con `hasattr` o `getattr`.
-
-**Come correggerlo.** Una dataclass interna e una funzione che costruisce la risposta.
-
-```python
-# wilab/wifi/manager.py
-@dataclass
-class ActiveNetwork:
-    interface: str
-    request: NetworkCreateRequest
-    subnet: str
-    internet_enabled: bool
-    deadline: float | None            # monotonic, see STAB-5
-    captive_portal_url: str | None = None
-    tx_power_level: int = 4
-
-    def to_status(self, *, clients: list[ClientInfo], dhcp: dict | None) -> NetworkStatus: ...
-```
-
-`self.active: dict[str, ActiveNetwork]`. Il watchdog non deve più ricostruire la richiesta campo per
-campo (`_restore_ap` oggi lo fa a mano e rifiuta di ripartire se un campo manca): usa `network.request`.
-
----
-
-<a id="arch-5"></a>
-### B21. ARCH-5 - Singleton collegati per effetto collaterale
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/api/dependencies.py:20-56](wilab/api/dependencies.py#L20-L56), [wilab/wifi/manager.py:86-91](wilab/wifi/manager.py#L86-L91)
-
-**Problema.** I manager sono variabili globali di modulo create al primo uso.
-`get_reservation_manager` collega anche il callback delle scadenze e avvia il watchdog: l'ordine di
-avvio dipende da quale richiesta o thread arriva per primo. `NetworkManager.__init__` avvia un thread.
-Le funzioni con default `Depends(...)` vengono anche chiamate direttamente.
-
-**Come si riproduce.** Leggere `lifespan`: chiama `get_manager` ma non `get_reservation_manager`; il
-watchdog parte quando la discovery fa la prima scansione.
-
-**Come correggerlo.** Un oggetto di contesto costruito in `lifespan`, con avvio e arresto espliciti.
-
-```python
-# wilab/api/context.py
-@dataclass
-class AppContext:
-    config: AppConfig
-    channels: ChannelManager
-    qos: QosManager
-    qos_profiles: QosProfileManager
-    manager: NetworkManager
-    reservations: ReservationManager
-
-    def start(self) -> None: ...       # cleanup, expiry loop, watchdog, discovery: fixed order
-    def stop(self) -> None: ...        # reverse order
-```
-
-`app.state.context = AppContext.build(config)`; le dipendenze FastAPI diventano
-`def get_manager(request: Request) -> NetworkManager: return request.app.state.context.manager`.
-I costruttori non avviano thread. I test costruiscono un contesto invece di azzerare sei globali.
-
----
-
-<a id="arch-6"></a>
-### B22. ARCH-6 - Tre modi di gestire un processo figlio
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/commands.py:49-157](wilab/network/commands.py#L49-L157), [wilab/network/dhcp.py](wilab/network/dhcp.py)
-
-**Problema.** hostapd è un figlio in primo piano posseduto direttamente; dnsmasq è un demone seguito
-tramite file PID e `/proc`; i comandi singoli usano `subprocess.run`. Il modo di hostapd è quello
-robusto. Quello di dnsmasq richiede file PID, `_owns_process`, `stop_process` e produce NET-6.
-
-**Come si riproduce.** Confrontare `HostapdManager.stop` con `DhcpServer.stop`.
-
-**Come correggerlo.** dnsmasq in primo piano.
-
-```python
-# wilab/network/dhcp.py, in start()
-process = start_foreground(["dnsmasq", "--keep-in-foreground", f"--conf-file={config_file}"])
-instance["process"] = process
-time.sleep(0.2)                                   # a configuration or bind error exits at once
-if process.poll() is not None:
-    raise DhcpServerError(f"dnsmasq exited with code {process.poll()}")
-```
-
-`stop()` chiama `process.stop()`; `is_running()` è `process.poll() is None`. Si possono cancellare
-`DNSMASQ_PID_DIR`, `_owns_process`, `stop_process` e il controllo "Existing dnsmasq PID file". Per
-conoscere il motivo di un'uscita, passare un `classify_output` e usare `output_tail` (HAP-8).
-
----
-
 <a id="arch-10"></a>
-### B23. ARCH-10 - Il logging non ha una regola
+### B15. ARCH-10 - Il logging non ha una regola
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** tutto `wilab/`
 
@@ -1099,84 +818,67 @@ Test T-13: un ciclo completo crea/cancella su hardware simulato non deve produrr
 
 ---
 
-<a id="arch-9"></a>
-### B24. ARCH-9 - Codice morto
-
-**Gravità:** Bassa · **Confidenza:** Confermato (ogni nome è stato cercato in `wilab/`) · **File:** vari
-
-**Problema.** Funzioni e modelli senza chiamanti nel codice di produzione:
-
-| Elemento | File | Nota |
-|---|---|---|
-| `NatManager.flush_all_rules` | `network/nat.py` | Svuoterebbe tutta la tabella NAT dell'host, Docker compreso. Non deve esistere nemmeno inutilizzata. |
-| `NatManager.disable_ip_forwarding` | `network/nat.py` | |
-| `IsolationManager.flush_all`, `get_active_subnets` | `network/isolation.py` | |
-| `execute_pkill` | `network/commands.py` | |
-| `HostapdManager.stop_all`, `DhcpServer.stop_all` | `wifi/hostapd.py`, `network/dhcp.py` | |
-| `NetworkManager.get_summary` | `wifi/manager.py` | "Backward-compatible", contro la regola del progetto |
-| `QosRequest`, `QosStatus`, `InterfaceStatus` | `models.py` | Endpoint inesistenti |
-| Percorsi commentati | `api/__init__.py` (`_candidate_frontend_paths`) | |
-| `"pid_file": None` | `wifi/hostapd.py` (`status`) | Campo residuo |
-
-`safety.py` parla ancora di rete host di Docker e dice all'operatore di "eseguire lo script di cleanup"
-per regole che l'avvio ormai rimuove da solo.
-
-**Come si riproduce.** `grep -rn "<nome>" wilab/` per ogni elemento.
-
-**Come correggerlo.** Cancellare gli elementi e i test che li esercitano (i test di codice morto
-gonfiano la copertura senza proteggere nulla). In `safety.py` tenere solo `log_host_impact_warning`,
-con il testo aggiornato.
-
----
-
-<a id="arch-8"></a>
-### B25. ARCH-8 - Attributi privati usati tra classi
-
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:158](wilab/wifi/manager.py#L158), [wilab/wifi/manager.py:525](wilab/wifi/manager.py#L525)
-
-**Problema.** `NetworkManager.release_device` legge `self.hostapd_manager._instances`; lo stato usa
-`st._expires_at_timestamp`. Un cambio interno a `HostapdManager` rompe il manager senza che i tipi lo
-segnalino.
-
-**Come si riproduce.** Cercare `\._[a-z]` su oggetti che non sono `self`.
-
-**Come correggerlo.**
-
-```diff
---- a/wilab/wifi/hostapd.py
-+++ b/wilab/wifi/hostapd.py
-+    def is_tracked(self, net_id: str) -> bool:
-+        """True while resources of this network still need a stop()."""
-+        return net_id in self._instances
-```
-
-e in `manager.py`: `self.hostapd_manager.is_tracked(device_id)`. Lo stesso per `DhcpServer`
-(`list_active` esiste già). `_expires_at_timestamp` sparisce con ARCH-3.
-
----
-
 <a id="arch-11"></a>
-### B26. ARCH-11 - Il layout di questo branch diverge dall'altro
+### B16. ARCH-11 - Cosa portare dal branch `feature/device-capabilities` (domande e proposte)
 
-**Gravità:** Bassa · **Confidenza:** Confermato · **File:** radice del repository
+**Gravità:** Bassa · **Confidenza:** Confermato (`git show feature/device-capabilities:<file>`, 2026-11-26) · **File:** radice del repository
 
-**Problema.** In questo branch `mypy.ini`, `pytest.ini`, `run-tests.sh` e `update_version.sh` sono
-nella radice. Le regole caricate all'inizio della sessione (dal branch `feature/device-capabilities`)
-dicono che non devono esserci: la configurazione degli strumenti va in `pyproject.toml` e gli script in
-`scripts/`. I due branch sono divergenti a partire da `main` (`67508ca`) ed entrambi rielaborano
-reservation e configurazione. In questo branch non esistono `CLAUDE.md` né `required_capabilities`.
+**Contesto.** `feature/device-capabilities` non verrà unito: è nato prima di questo branch (49 commit
+da `67508ca`) e contiene migliorie mai entrate qui. Non si fa un merge: si sceglie cosa riportare,
+una voce alla volta. Ogni voce sotto è una proposta da **accettare o rifiutare**; con la risposta
+diventa un lavoro del blocco B (nessuna cambia il contratto delle API, tranne dove è scritto).
 
-**Come si riproduce.** `git log --oneline feature/device-capabilities..fix/reservation-lifecycle`.
+**A. Regole del progetto e strumenti**
 
-**Come correggerlo.** Non è un difetto del codice: è un rischio di integrazione. Prima di applicare le
-correzioni di questo documento conviene decidere quale branch è la base e fare il merge, altrimenti
-ogni patch su `reservation.py`, `config.py` e `models.py` andrà rifatta. Nota: questo documento è
-scritto in italiano su richiesta esplicita, in deroga alla regola "tutto in inglese" dell'altro branch.
+| # | Proposta | Domanda | Note |
+|---|---|---|---|
+| A1 | Aggiungere `CLAUDE.md` con le regole del progetto, ripreso dall'altro branch e adattato a questo. | Accetti? Quali regole tenere? | Da tenere così: tutto in inglese nel repository (Fable-Notes resta l'eccezione in italiano); "cambio netto, niente compatibilità"; nessun `subprocess` fuori da `wilab/network/commands.py`; tipi ovunque; niente `print`; documentazione allineata al codice nello stesso commit; chiudere un lavoro con "cosa resta da fare". Da togliere o riscrivere: le regole sulle capability e su `POST /api/v1/device-reservation` (qui non esistono), il token GitHub in `.git/gh_token` (da confermare se lo usi ancora). Da aggiungere: le regole di questa sessione (e2e solo con conferma e a sistema libero, una riga di CHANGELOG per correzione, `copilot.md` mai nei commit, nessuna stampa di token o password). |
+| A2 | Un solo `pyproject.toml` con la configurazione di pytest, ruff e mypy; togliere `pytest.ini` e `mypy.ini`. | Accetti? | Nessuna tabella `[project]` e nessuna versione lì: la versione resta in `VERSION`. Va tenuto il marker `slow` e gli altri già registrati. |
+| A3 | Fissare le regole di ruff come nell'altro branch (`E4`, `E7`, `E9`, `F`). | Quale insieme di regole vuoi? | Oggi `make lint` usa le regole predefinite della versione installata e ha 83 errori già presenti (molti `B008` su `Depends()` e `BLE001`). Con l'insieme dell'altro branch gli errori quasi spariscono e `make lint` può entrare in CI. In alternativa: tenere le regole attuali e correggere o escludere i casi uno per uno. |
+| A4 | Spostare `update_version.sh` in `scripts/` e togliere `run-tests.sh` (si usano pytest e il Makefile). | Accetti? | Va aggiornato chi li cita (README, docs, Makefile). |
+| A5 | Report di copertura a ogni run di pytest. | Accetti? | Rallenta un po' `make test-local-quick`; si può tenere solo in `make test-local` e in CI. |
+| A6 | Test indipendenti dal sistema operativo (anche Windows). | Ti serve davvero? | Qui il codice usa `/proc`, `/sys`, `/run` e comandi Linux: è molto lavoro per un servizio che gira solo su Ubuntu. Proposta: **no**. |
+
+**B. CI e rilasci** (`.github/workflows/`)
+
+| # | Proposta | Domanda |
+|---|---|---|
+| B1 | Riepilogo nel job di CI con test e copertura di backend e frontend (`scripts/ci_summary.py`). | Accetti? |
+| B2 | Tenere solo le 3 run più recenti di ogni pull request (`scripts/cleanup_pr_runs.py`), senza cron. | Accetti? |
+| B3 | Bundle della documentazione API con nome che porta la versione, tenuto 90 giorni, e allegato a ogni release GitHub (`release-docs.yml`). | Accetti? |
+| B4 | Test unit del frontend e build del container del frontend in CI. | Accetti? Il frontend verrà rifatto: forse solo la build. |
+
+**C. Documentazione delle API**
+
+| # | Proposta | Domanda |
+|---|---|---|
+| C1 | `OPENAPI_TAGS` con una descrizione per ogni gruppo e `System` sempre per primo; foglio di stile condiviso (`wilab/api/docs_style.py`) che mostra le descrizioni sotto il titolo in `/docs` e nello `swagger.html` esportato. | Accetti? Da confrontare con quanto c'è già qui. |
+| C2 | `swagger.html` esportato autonomo, con i riferimenti allo schema già risolti. | Accetti? |
+
+**D. Correzioni e funzioni dell'altro branch**
+
+| # | Proposta | Domanda | Stato qui |
+|---|---|---|---|
+| D1 | `make reload-drivers` e `scripts/reload-drivers.sh`: ricaricare il driver degli adattatori a servizio fermo, con il Python del servizio installato. | Ti serve? | Non c'è. |
+| D2 | Un hostapd ucciso da un segnale riportato come crash con un suggerimento sul driver (`122215e`). | Accetti? | In parte: qui `HostapdSegfault` esiste; manca il suggerimento nel messaggio. |
+| D3 | Capability dichiarate in `config.yaml` e `required_capabilities` nella reservation. | Le vuoi in futuro? | No in questo branch: qui le antenne sono scoperte e la scelta dei canali passa da `GET /antennas/{interface}`. Riportarle è un cambio di API: non nella 4.1. |
+| D4 | Avviso "TX power non garantito" in API, UI, troubleshooting e CHANGELOG. | — | Già coperto qui: TX power dichiarato in debug (gruppo T). |
+| D5 | Pulizia delle regole all'avvio e NAT limitato alla subnet; Internet disattivato che taglia le connessioni aperte. | — | Già presenti qui (4.0.0). |
+
+**E. Regole sul CHANGELOG** (dall'altro branch)
+
+Sezioni nell'ordine Breaking Changes, Features, Bug Fixes, Maintenance, CI/CD, Tests; frasi brevi
+scritte per chi usa il prodotto; test elencati solo se danno valore; data aggiornata quando si
+modifica una versione già datata. **Domanda:** le adottiamo, in aggiunta alla regola già in uso qui
+"una riga per correzione e il capitolo di migrazione delle API"?
+
+Nota: l'altro branch usa CRLF nel working tree; qui `.gitattributes` impone LF ovunque. Proposta:
+tenere LF.
 
 ---
 
 <a id="bug-9"></a>
-### B27. BUG-9 - Un profilo QoS personalizzato può impedire l'avvio del servizio
+### B17. BUG-9 - Un profilo QoS personalizzato può impedire l'avvio del servizio
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:63-124](wilab/network/qos_profile.py#L63-L124), [wilab/data/qos-profiles/profile.schema.json](wilab/data/qos-profiles/profile.schema.json)
 
@@ -1249,7 +951,7 @@ Aggiungere allo schema `"minProperties": 1` per `advanced`, per rendere esplicit
 ---
 
 <a id="net-13"></a>
-### B28. NET-13 - QoS: lo stop del profilo può far fallire lo stop della rete
+### B18. NET-13 - QoS: lo stop del profilo può far fallire lo stop della rete
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:182-197](wilab/network/qos_profile.py#L182-L197), [wilab/wifi/manager.py:439-447](wilab/wifi/manager.py#L439-L447)
 
@@ -1284,7 +986,7 @@ dopo la pulizia.
 ---
 
 <a id="race-3"></a>
-### B29. RACE-3 - Lo stato di `QosManager` non ha lock
+### B19. RACE-3 - Lo stato di `QosManager` non ha lock
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos.py:50-136](wilab/network/qos.py#L50-L136)
 
@@ -1309,7 +1011,7 @@ non si intrecciano mai.
 ---
 
 <a id="net-12"></a>
-### B30. NET-12 - QoS: gara alla fine di un profilo `once`
+### B20. NET-12 - QoS: gara alla fine di un profilo `once`
 
 **Gravità:** Bassa · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:264-274](wilab/network/qos_profile.py#L264-L274)
 
@@ -1349,7 +1051,7 @@ può vedersi togliere le regole dal vecchio thread: lo stato dice "profilo attiv
 ---
 
 <a id="net-11"></a>
-### B31. NET-11 - QoS inline: `upload_quality` ignorato
+### B21. NET-11 - QoS inline: `upload_quality` ignorato
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/network/qos_profile.py:203-228](wilab/network/qos_profile.py#L203-L228), [wilab/models.py:316-343](wilab/models.py#L316-L343)
 
@@ -1388,7 +1090,7 @@ silenzio. In alternativa si può estendere `QosProfileStep` con qualità separat
 ---
 
 <a id="wd-8"></a>
-### B32. WD-8 - Una rete ripristinata perde il profilo QoS
+### B22. WD-8 - Una rete ripristinata perde il profilo QoS
 
 **Gravità:** Media · **Confidenza:** Confermato · **File:** [wilab/wifi/watchdog.py:121-132](wilab/wifi/watchdog.py#L121-L132), [wilab/wifi/manager.py:439-447](wilab/wifi/manager.py#L439-L447)
 
@@ -1561,6 +1263,343 @@ per il livello 4.
 Attenzione: se una rete precedente sullo stesso adattatore aveva abbassato la potenza, il valore può
 restare. `reset_interface` (STAB-4) dovrebbe quindi includere `iw dev <if> set txpower auto`, da
 eseguire a interfaccia ferma, cioè nel momento meno delicato.
+
+---
+
+<a id="perf-2"></a>
+### ✅ PERF-2 - `GET .../network` costa due o tre comandi a chiamata
+
+**Gravità:** Bassa · **Stato:** ✅ corretto il 2026-11-27 · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:505-565](wilab/wifi/manager.py#L505-L565), [wilab/wifi/manager.py:660-713](wilab/wifi/manager.py#L660-L713)
+
+**Problema.** Ogni lettura esegue `iw dev station dump`, `iw dev info` e legge il file dei lease,
+tenendo il lock del dispositivo. Anche `enable_internet`, `disable_internet`, `set_tx_power_level` e
+`_require_active_network` chiamano `get_status` solo per sapere se la rete è attiva, pagando lo stesso
+costo.
+
+**Come si riproduce.** Contare gli `execve` durante una `POST .../internet/enable`: compaiono
+`iw ... station dump` e `iw ... info`, che non servono.
+
+**Come correggerlo.** Separare "la rete è attiva?" da "dammi i dettagli".
+
+```python
+# wilab/wifi/manager.py
+def active_status(self, device_id: str) -> NetworkStatus | None:
+    """The stored status of an active network, without querying the radio."""
+    with self.device_lock(device_id):
+        return self.active.get(device_id)
+```
+
+Usarlo nei quattro punti citati al posto di `get_status`. Per i client che interrogano spesso,
+conservare l'elenco dei client per 1-2 secondi in `_get_status` (timestamp monotono per dispositivo).
+
+---
+
+<a id="perf-5"></a>
+### ✅ PERF-5 - Timeout minimo di 5 s imposto in silenzio
+
+**Gravità:** Bassa · **Stato:** ✅ corretto il 2026-11-27 · **Confidenza:** Confermato · **File:** [wilab/network/commands.py:160-183](wilab/network/commands.py#L160-L183), [wilab/network/subnet.py:12](wilab/network/subnet.py#L12)
+
+**Problema.** `execute_command` porta ogni timeout ad almeno 5 s, a meno che il chiamante passi
+`exact_timeout=True`. Chi scrive `timeout=2` (per esempio `host_ipv4_networks`) ottiene 5 s senza
+saperlo. Due parametri per dire una cosa sola, e un valore che non significa ciò che dice.
+
+**Come si riproduce.** Test: `execute_command(["sleep", "3"], timeout=1)` non va in timeout.
+
+**Come correggerlo.** Il timeout passato è quello usato; il default resta 8 s.
+
+```diff
+--- a/wilab/network/commands.py
++++ b/wilab/network/commands.py
+-def execute_command(
+-    cmd: list[str], check: bool = True, timeout: float = 8.0, *, exact_timeout: bool = False,
+-) -> str:
++def execute_command(cmd: list[str], check: bool = True, timeout: float = 8.0) -> str:
+@@
+-        effective_timeout = bounded_timeout(
+-            timeout if exact_timeout else max(5.0, timeout)
+-        )
++        effective_timeout = bounded_timeout(timeout)
+```
+
+Togliere `exact_timeout=True` dai chiamanti (`hostapd.py`, `discovery.py`) e rivedere i pochi punti che
+passano un timeout inferiore a 5 s per decidere il valore voluto: `subnet.py` (2 s) e il `usbreset`
+(15 s, già sopra il minimo).
+
+---
+
+<a id="arch-1"></a>
+### ✅ ARCH-1 - `NetworkManager` fa troppe cose
+
+**Gravità:** Media · **Stato:** ✅ corretto il 2026-11-27 · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py](wilab/wifi/manager.py)
+
+**Problema.** 970 righe: ciclo di vita, politica di retry, allocazione delle subnet, elenco dei client,
+lettura dei lease, TX power, thread delle scadenze, integrazione con NetworkManager, contesto del
+portale. Il ciclo di retry da solo è lungo 90 righe con cinque livelli di annidamento e due blocchi
+`raise StartupFailure` quasi identici.
+
+**Come si riproduce.** Leggere `_start_network`.
+
+**Come correggerlo.** Estrarre, un pezzo alla volta e con i test verdi a ogni passo:
+
+| Nuovo modulo | Contenuto | Righe tolte |
+|---|---|---|
+| `wilab/network/subnet_allocator.py` | `_get_subnet`, `_assigned_subnets`, `_subnet_lock` | ~40 |
+| `wilab/wifi/txpower.py` | tutti i metodi `*tx_power*` e `_compute_level_dbm` | ~160 |
+| `wilab/wifi/clients.py` | `list_clients`, `_leases`, `_client_mac` | ~90 |
+| `wilab/wifi/startup.py` | `start_once(device, request)` (un tentativo) e `RetryPolicy` | ~150 |
+
+`RetryPolicy` è il pezzo che conta: la usano sia la route di creazione sia il watchdog, e questo elimina
+per costruzione HAP-3 e WD-2.
+
+```python
+@dataclass(frozen=True)
+class RetryPolicy:
+    attempts: int = 3
+    delay: float = 1.0
+    budget: float = 20.0
+    min_attempt_time: float = 4.0
+
+    def run(self, start_once: Callable[[], NetworkStatus], rollback: Callable[[], None]) -> NetworkStatus:
+        ...
+```
+
+---
+
+<a id="arch-2"></a>
+### ✅ ARCH-2 - Classificazione dei guasti sparsa in quattro posti
+
+**Gravità:** Media · **Stato:** ✅ corretto il 2026-11-27 · **Confidenza:** Confermato · **File:** [wilab/wifi/hostapd.py:62-78](wilab/wifi/hostapd.py#L62-L78), [wilab/wifi/manager.py:60-64](wilab/wifi/manager.py#L60-L64), [wilab/api/routes/network.py:232-251](wilab/api/routes/network.py#L232-L251), [wilab/wifi/watchdog.py:133-142](wilab/wifi/watchdog.py#L133-L142)
+
+**Problema.** Cosa sia un guasto è deciso dalla gerarchia di eccezioni in `hostapd.py`,
+dall'espressione `radio=` in `manager.py`, dalla traduzione in HTTP in `routes/network.py` e dalle
+decisioni in `watchdog.py`. Le route classificano anche confrontando testo
+(`"already active" in error_msg_lower`). HAP-2, HAP-3 e WD-2 sono conseguenze dirette: nessuno dei
+quattro posti ha una visione completa.
+
+**Come si riproduce.** Provare a rispondere alla domanda "cosa succede se hostapd esce con codice 1
+durante un riavvio del watchdog?": servono quattro file.
+
+**Come correggerlo.** Un'enumerazione impostata dove nasce l'errore e una sola tabella enum → azione.
+
+```python
+# wilab/wifi/failures.py
+class FailureKind(Enum):
+    TRANSIENT_RADIO = "transient_radio"     # retry, then restart later
+    CONFIGURATION = "configuration"         # the request can never work: tell the client
+    CLEANUP_FAILED = "cleanup_failed"       # resources may still be up: isolate the device
+    CONFLICT = "conflict"                   # already active, busy
+
+@dataclass
+class StartupFailure(Exception):
+    kind: FailureKind
+    stage: str
+    message: str
+```
+
+`hostapd.py` solleva eccezioni che portano il proprio `kind`; `manager.py` lo propaga senza
+ricalcolarlo; la route ha una tabella `kind → (status HTTP, codice)`; il watchdog una tabella
+`kind → azione`. I confronti di testo spariscono.
+
+---
+
+<a id="arch-3"></a>
+### ✅ ARCH-3 - Il modello dell'API è anche lo stato interno (parziale)
+
+**Gravità:** Bassa · **Stato:** ✅ corretto il 2026-11-27 · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:374-394](wilab/wifi/manager.py#L374-L394), [wilab/wifi/manager.py:516-565](wilab/wifi/manager.py#L516-L565)
+
+> **Stato (2026-11-25):** La create usa `NetworkCreateBody` e la `GET .../network` `NetworkResponse`, separati dal modello interno. **Manca** una dataclass interna al posto di `NetworkStatus` in `manager.active` (che porta ancora `_expires_at_timestamp`).
+
+**Problema.** `NetworkStatus`, il modello di risposta, è conservato in `manager.active`, modificato a
+ogni lettura, e porta un attributo nascosto impostato con `object.__setattr__` e letto con `hasattr`
+(`_expires_at_timestamp`). È la ragione per cui lo stato riportato è "ciò che Wi-Lab ricorda" e non
+"ciò che il sistema fa".
+
+**Come si riproduce.** Cercare `_expires_at_timestamp`: dieci punti con `hasattr` o `getattr`.
+
+**Come correggerlo.** Una dataclass interna e una funzione che costruisce la risposta.
+
+```python
+# wilab/wifi/manager.py
+@dataclass
+class ActiveNetwork:
+    interface: str
+    request: NetworkCreateRequest
+    subnet: str
+    internet_enabled: bool
+    deadline: float | None            # monotonic, see STAB-5
+    captive_portal_url: str | None = None
+    tx_power_level: int = 4
+
+    def to_status(self, *, clients: list[ClientInfo], dhcp: dict | None) -> NetworkStatus: ...
+```
+
+`self.active: dict[str, ActiveNetwork]`. Il watchdog non deve più ricostruire la richiesta campo per
+campo (`_restore_ap` oggi lo fa a mano e rifiuta di ripartire se un campo manca): usa `network.request`.
+
+---
+
+<a id="arch-4"></a>
+### ✅ ARCH-4 - Il registro dei dispositivi esiste in quattro copie
+
+**Gravità:** Media · **Stato:** ✅ corretto il 2026-11-27 · **Confidenza:** Confermato · **File:** [wilab/config.py:26-39](wilab/config.py#L26-L39), [wilab/reservation.py:83-87](wilab/reservation.py#L83-L87), [wilab/wifi/watchdog.py:23](wilab/wifi/watchdog.py#L23), [wilab/wifi/manager.py:81](wilab/wifi/manager.py#L81), [wilab/api/dependencies.py:66-89](wilab/api/dependencies.py#L66-L89)
+
+**Problema.** `config.networks`, `ReservationManager._device_ids`, `NetworkWatchdog._watched`,
+`NetworkManager._device_locks`. Vengono tenuti allineati da `scan_devices`. `AppConfig`, un oggetto di
+configurazione validato, viene modificato a runtime per contenere i dispositivi scoperti e la loro
+porta USB. Nessuna delle quattro copie sa togliere un dispositivo: è la radice di WD-5.
+
+**Come si riproduce.** Cercare nel codice `config.networks`: 26 punti leggono la lista dei dispositivi
+dalla configurazione.
+
+**Come correggerlo.** Un registro unico con lo stato per dispositivo.
+
+```python
+# wilab/devices.py
+class DeviceState(Enum):
+    FREE = "free"
+    RESERVED = "reserved"
+    RECOVERING = "recovering"
+    UNAVAILABLE = "unavailable"
+
+@dataclass
+class Device:
+    interface: str
+    display_name: str
+    usb_port: str | None
+    lock: RLock = field(default_factory=threading.RLock)
+    state: DeviceState = DeviceState.FREE
+    missing_scans: int = 0
+
+class DeviceRegistry:
+    def add(self, device: Device) -> None: ...
+    def retire(self, interface: str) -> None: ...      # only when FREE or UNAVAILABLE, with no resources
+    def get(self, interface: str) -> Device: ...
+    def all(self) -> list[Device]: ...
+```
+
+`AppConfig.networks` torna a contenere solo le etichette lette dal file. Reservation, watchdog e
+manager ricevono il registro e non tengono copie. È un refactoring ampio: conviene farlo prima di
+WD-5 punto 3 e dopo aver messo in sicurezza i punti 1-14.
+
+---
+
+<a id="arch-5"></a>
+### ✅ ARCH-5 - Singleton collegati per effetto collaterale
+
+**Gravità:** Bassa · **Stato:** ✅ corretto il 2026-11-27 · **Confidenza:** Confermato · **File:** [wilab/api/dependencies.py:20-56](wilab/api/dependencies.py#L20-L56), [wilab/wifi/manager.py:86-91](wilab/wifi/manager.py#L86-L91)
+
+**Problema.** I manager sono variabili globali di modulo create al primo uso.
+`get_reservation_manager` collega anche il callback delle scadenze e avvia il watchdog: l'ordine di
+avvio dipende da quale richiesta o thread arriva per primo. `NetworkManager.__init__` avvia un thread.
+Le funzioni con default `Depends(...)` vengono anche chiamate direttamente.
+
+**Come si riproduce.** Leggere `lifespan`: chiama `get_manager` ma non `get_reservation_manager`; il
+watchdog parte quando la discovery fa la prima scansione.
+
+**Come correggerlo.** Un oggetto di contesto costruito in `lifespan`, con avvio e arresto espliciti.
+
+```python
+# wilab/api/context.py
+@dataclass
+class AppContext:
+    config: AppConfig
+    channels: ChannelManager
+    qos: QosManager
+    qos_profiles: QosProfileManager
+    manager: NetworkManager
+    reservations: ReservationManager
+
+    def start(self) -> None: ...       # cleanup, expiry loop, watchdog, discovery: fixed order
+    def stop(self) -> None: ...        # reverse order
+```
+
+`app.state.context = AppContext.build(config)`; le dipendenze FastAPI diventano
+`def get_manager(request: Request) -> NetworkManager: return request.app.state.context.manager`.
+I costruttori non avviano thread. I test costruiscono un contesto invece di azzerare sei globali.
+
+---
+
+<a id="arch-6"></a>
+### ✅ ARCH-6 - Tre modi di gestire un processo figlio
+
+**Gravità:** Bassa · **Stato:** ✅ corretto il 2026-11-27 · **Confidenza:** Confermato · **File:** [wilab/network/commands.py:49-157](wilab/network/commands.py#L49-L157), [wilab/network/dhcp.py](wilab/network/dhcp.py)
+
+**Problema.** hostapd è un figlio in primo piano posseduto direttamente; dnsmasq è un demone seguito
+tramite file PID e `/proc`; i comandi singoli usano `subprocess.run`. Il modo di hostapd è quello
+robusto. Quello di dnsmasq richiede file PID, `_owns_process`, `stop_process` e produce NET-6.
+
+**Come si riproduce.** Confrontare `HostapdManager.stop` con `DhcpServer.stop`.
+
+**Come correggerlo.** dnsmasq in primo piano.
+
+```python
+# wilab/network/dhcp.py, in start()
+process = start_foreground(["dnsmasq", "--keep-in-foreground", f"--conf-file={config_file}"])
+instance["process"] = process
+time.sleep(0.2)                                   # a configuration or bind error exits at once
+if process.poll() is not None:
+    raise DhcpServerError(f"dnsmasq exited with code {process.poll()}")
+```
+
+`stop()` chiama `process.stop()`; `is_running()` è `process.poll() is None`. Si possono cancellare
+`DNSMASQ_PID_DIR`, `_owns_process`, `stop_process` e il controllo "Existing dnsmasq PID file". Per
+conoscere il motivo di un'uscita, passare un `classify_output` e usare `output_tail` (HAP-8).
+
+---
+
+<a id="arch-8"></a>
+### ✅ ARCH-8 - Attributi privati usati tra classi
+
+**Gravità:** Bassa · **Stato:** ✅ corretto il 2026-11-27 · **Confidenza:** Confermato · **File:** [wilab/wifi/manager.py:158](wilab/wifi/manager.py#L158), [wilab/wifi/manager.py:525](wilab/wifi/manager.py#L525)
+
+**Problema.** `NetworkManager.release_device` legge `self.hostapd_manager._instances`; lo stato usa
+`st._expires_at_timestamp`. Un cambio interno a `HostapdManager` rompe il manager senza che i tipi lo
+segnalino.
+
+**Come si riproduce.** Cercare `\._[a-z]` su oggetti che non sono `self`.
+
+**Come correggerlo.**
+
+```diff
+--- a/wilab/wifi/hostapd.py
++++ b/wilab/wifi/hostapd.py
++    def is_tracked(self, net_id: str) -> bool:
++        """True while resources of this network still need a stop()."""
++        return net_id in self._instances
+```
+
+e in `manager.py`: `self.hostapd_manager.is_tracked(device_id)`. Lo stesso per `DhcpServer`
+(`list_active` esiste già). `_expires_at_timestamp` sparisce con ARCH-3.
+
+---
+
+<a id="arch-9"></a>
+### ✅ ARCH-9 - Codice morto
+
+**Gravità:** Bassa · **Stato:** ✅ corretto il 2026-11-27 · **Confidenza:** Confermato (ogni nome è stato cercato in `wilab/`) · **File:** vari
+
+**Problema.** Funzioni e modelli senza chiamanti nel codice di produzione:
+
+| Elemento | File | Nota |
+|---|---|---|
+| `NatManager.flush_all_rules` | `network/nat.py` | Svuoterebbe tutta la tabella NAT dell'host, Docker compreso. Non deve esistere nemmeno inutilizzata. |
+| `NatManager.disable_ip_forwarding` | `network/nat.py` | |
+| `IsolationManager.flush_all`, `get_active_subnets` | `network/isolation.py` | |
+| `execute_pkill` | `network/commands.py` | |
+| `HostapdManager.stop_all`, `DhcpServer.stop_all` | `wifi/hostapd.py`, `network/dhcp.py` | |
+| `NetworkManager.get_summary` | `wifi/manager.py` | "Backward-compatible", contro la regola del progetto |
+| `QosRequest`, `QosStatus`, `InterfaceStatus` | `models.py` | Endpoint inesistenti |
+| Percorsi commentati | `api/__init__.py` (`_candidate_frontend_paths`) | |
+| `"pid_file": None` | `wifi/hostapd.py` (`status`) | Campo residuo |
+
+`safety.py` parla ancora di rete host di Docker e dice all'operatore di "eseguire lo script di cleanup"
+per regole che l'avvio ormai rimuove da solo.
+
+**Come si riproduce.** `grep -rn "<nome>" wilab/` per ogni elemento.
+
+**Come correggerlo.** Cancellare gli elementi e i test che li esercitano (i test di codice morto
+gonfiano la copertura senza proteggere nulla). In `safety.py` tenere solo `log_host_impact_warning`,
+con il testo aggiornato.
 
 ---
 
@@ -2252,79 +2291,26 @@ più installato.
 Solo test di punti aperti o generali. I test unit vanno in `tests/unit-tests/` (hardware simulato), gli e2e in
 `tests/e2e-tests/` ([docs/e2e-testing.md](docs/e2e-testing.md)). Un test che oggi fallirebbe si scrive insieme alla correzione.
 
-### 4.1 Tre strumenti di prova da costruire prima
+### 4.1 Strumenti di prova
 
-Molti dei test sotto diventano semplici con tre aiuti condivisi, da mettere in `tests/helpers.py` o in
-`tests/conftest.py`.
-
-**Orologio finto.** Tutti i punti legati al tempo (WD-1, WD-3, WD-6, STAB-5) richiedono di far
-"passare" ore in millisecondi.
-
-```python
-class FakeClock:
-    """Replaces time.monotonic, time.time and time.sleep in the modules under test."""
-
-    def __init__(self) -> None:
-        self.monotonic_now = 1000.0
-        self.wall_now = 1_800_000_000.0
-
-    def monotonic(self) -> float:
-        return self.monotonic_now
-
-    def time(self) -> float:
-        return self.wall_now
-
-    def sleep(self, seconds: float) -> None:
-        self.advance(seconds)
-
-    def advance(self, seconds: float) -> None:
-        self.monotonic_now += seconds
-        self.wall_now += seconds
-
-    def jump_wall_clock(self, seconds: float) -> None:
-        self.wall_now += seconds          # an NTP step: only the wall clock moves
-```
-
-Per usarlo, i moduli devono chiamare `time.monotonic()` tramite il modulo `time` (lo fanno già), così
-`monkeypatch.setattr(watchdog.time, "monotonic", clock.monotonic)` funziona.
-
-**Un giro di watchdog chiamabile.** Oggi `_watch` è un ciclo infinito con le variabili di stato locali:
-non si può provare un singolo giro. Estrarre il corpo in un metodo `tick(state)` con lo stato in una
-piccola dataclass per dispositivo. È un refactoring puro e rende provabili WD-1, WD-2, WD-3 e WD-10
-senza thread e senza attese.
-
-**Registratore di comandi.** Una sostituzione di `execute_command` che registra ogni lista di argomenti
-e risponde da una tabella, con la possibilità di far fallire il comando N-esimo. Esiste già in forma
-sparsa in `conftest.py`; va reso un oggetto riusabile:
-
-```python
-class CommandRecorder:
-    def __init__(self) -> None:
-        self.calls: list[list[str]] = []
-        self.failures: dict[tuple[str, ...], Exception] = {}     # command prefix -> error to raise
-        self.outputs: dict[tuple[str, ...], str] = {}
-
-    def __call__(self, cmd: list[str], **kwargs: object) -> str:
-        self.calls.append(list(cmd))
-        for prefix, error in self.failures.items():
-            if tuple(cmd[: len(prefix)]) == prefix:
-                raise error
-        for prefix, output in self.outputs.items():
-            if tuple(cmd[: len(prefix)]) == prefix:
-                return output
-        return ""
-```
+✅ `FakeClock` e `CommandRecorder` sono in `tests/unit-tests/helpers.py` (con `test_helpers.py`).
+**Manca** il terzo: un giro di watchdog chiamabile. `_watch` è ancora un ciclo infinito con lo stato
+in variabili locali; va estratto in un metodo `tick(state)` con lo stato in una piccola dataclass per
+dispositivo. È un refactoring puro, serve a T-20 e rende provabili WD-1, WD-2, WD-3 e WD-10 senza
+thread e senza attese.
 
 ### 4.2 Test automatici
+
+Fatti e tolti da qui: T-13 e T-21 (`test_lifecycle_hygiene.py`; T-21 con 200 cicli invece di 2.000, per
+restare nella suite veloce), T-18 (`TestWallClockJumps` in `test_reservation.py`, con STAB-5).
+Restano quelli che oggi fallirebbero e si scrivono con la correzione: T-01 (SEC-1, aperto di
+proposito), T-19 (BUG-9, NET-11, QoS sperimentale), T-20 (serve il giro di watchdog del 4.1).
 
 | Id | Cosa verifica | Schede | File proposto |
 |---|---|---|---|
 | T-01 | La route del frontend non esce dalla propria cartella | SEC-1 | `tests/test_frontend_static.py` |
-| T-13 | Nessun record `ERROR` in un ciclo crea/cancella | ARCH-10 | `tests/test_logging.py` |
-| T-18 | Un salto dell'orologio non fa scadere le reservation | STAB-5 | `tests/test_reservation.py` |
 | T-19 | Catalogo QoS con profili sbagliati e QoS inline | BUG-9, NET-11 | `tests/test_qos_profile.py` |
 | T-20 | Simulazione di lunga durata con guasti casuali | WD, HAP (regressione) | `tests/test_soak.py` |
-| T-21 | Nessuna crescita di strutture dopo molti cicli | PERF-7 | `tests/test_soak.py` |
 
 **T-01 - Route del frontend.** Creare una cartella temporanea `root/app/` con `index.html` e un file
 `root/secret.txt` fuori da essa; sostituire `_candidate_frontend_paths` perché restituisca
@@ -2333,13 +2319,6 @@ normalizza i percorsi) con tre valori di `full_path`: `"../secret.txt"`, il perc
 `secret.txt`, e `"/" + percorso assoluto`. In tutti i casi la risposta non deve essere il file
 segreto. Un quarto caso con `"index.html"` deve restituirlo. Per ottenere la funzione: cercare tra
 `app.routes` quella con `path == "/{full_path:path}"` e usare `.endpoint`.
-
-**T-13 - Log puliti.** Con `caplog` a livello `ERROR`: creazione con Internet, lettura dello stato,
-cambio di Internet, stop. `caplog.records` deve essere vuoto. È il test che fa rispettare la regola
-"`ERROR` significa intervento".
-
-**T-18 - Salto dell'orologio.** Reservation di un'ora; `clock.jump_wall_clock(7200)`: `is_expired`
-resta falso e `expires_in` resta circa 3600. Poi `clock.advance(3601)`: scade.
 
 **T-19 - QoS.** Catalogo con un file che contiene un profilo valido e uno con `"advanced": {}`: il
 manager parte, il profilo valido c'è. Schema illeggibile: il manager parte con catalogo vuoto. Inline
@@ -2360,11 +2339,6 @@ dopo 30 minuti simulati senza guasti, devono valere le invarianti:
 Oggi questo test fallisce entro pochi minuti simulati (WD-1, WD-2, WD-4). È la definizione eseguibile
 di "le reti devono restare funzionanti": conviene scriverlo per primo e usarlo come misura del
 progresso. Marcarlo `slow` e registrare il marker in `pytest.ini`.
-
-**T-21 - Nessuna crescita.** 2.000 cicli crea/cancella su un dispositivo simulato; alla fine le
-dimensioni di `manager.active`, `hostapd_manager._instances`, `dhcp_server._instances`,
-`nat_manager._blocked_rules`, `captive_portals`, `watchdog.states` e il numero di thread
-(`threading.active_count()`) sono uguali a quelle iniziali.
 
 ### 4.3 Prove su hardware (manuali o con marker `hardware`)
 
@@ -2452,27 +2426,10 @@ la USB dalla VM (visto il 23/11 alle 17:50, come alle 13:37). Serve poi un ricol
 
 | Id | Cosa verifica | Schede | File proposto |
 |---|---|---|---|
-| [unit-test-2](#unit-test-2) | Annullamento con rollback fallito: nessuna quarantena | REV-2 | `test_async_create.py` |
-| ✅ [unit-test-4](#unit-test-4) | Un avvio riuscito non fallisce per il budget dei tentativi | REV-5 | `test_startup_classification.py` |
-| ✅ [unit-test-5](#unit-test-5) | Rilascio durante un ripristino del watchdog; arresto con una create in corso | REV-6 | `test_cancellable_starts.py` |
-| ✅ [unit-test-7](#unit-test-7) | Annullamento in timeout: il job resta finché il thread gira | REV-8 | `test_async_create.py` |
 | [unit-test-14](#unit-test-14) | Rami di guasto del watchdog | REV-10 | `test_watchdog.py` |
-| [unit-test-15](#unit-test-15) | Frontend: compilazione e spec di `startNetwork` | REV-13, REV-15 | `frontend/src/app/services/*.spec.ts` |
+| [unit-test-15](#unit-test-15) | Frontend: spec di `startNetwork` | REV-13, REV-15 | `frontend/src/app/services/*.spec.ts` |
 
-<a id="unit-test-2"></a>
-**unit-test-2 - Annullamento con rollback fallito.** ✅ Fatto con REV-2, in `test_async_create.py`. Avvio bloccato; lo stop di hostapd nel rollback
-solleva. `DELETE /reservations/{id}`: atteso `200`, `reason: reservation_released` alle chiamate
-successive, antenna senza `recovery_state`, cleanup affidato al ciclo in background. Con
-`DELETE .../network`: atteso `503 / 1012`, reservation valida.
-
-<a id="unit-test-4"></a>
-**unit-test-4 - Budget dei tentativi.** ✅ Fatto con REV-5, in `test_startup_classification.py`.
-
-<a id="unit-test-5"></a>
-**unit-test-5 - Avvii fuori dal job.** ✅ Fatto con REV-6, in `test_cancellable_starts.py`.
-
-<a id="unit-test-7"></a>
-**unit-test-7 - Annullamento in timeout.** ✅ Fatto con REV-8, in `test_async_create.py`.
+Fatti e tolti: unit-test-2, 4, 5, 7.
 
 <a id="unit-test-14"></a>
 **unit-test-14 - Watchdog: rami di guasto.** `dhcp_server.stop` che solleva in `_restore_dhcp`; cleanup
@@ -2481,8 +2438,8 @@ che fallisce in `_retry_pending`; rilascio subito dopo un nuovo tentativo riusci
 `unavailable`. Oggi fallisce (REV-10). I contatori `restarts` dalle API sono già in `test_watchdog.py`.
 
 <a id="unit-test-15"></a>
-**unit-test-15 - Frontend.** Un target che compila il frontend in una directory temporanea senza
-pubblicare, e alcune spec di `startNetwork` con un `HttpClient` finto: `202` → rete attiva; `202` →
+**unit-test-15 - Frontend.** ✅ La compilazione senza pubblicare c'è: `make frontend-check`. **Mancano**
+le spec di `startNetwork` con un `HttpClient` finto: `202` → rete attiva; `202` →
 `start_failed`; `404` per ognuno dei quattro `reason`; errore a metà polling; avvio annullato
 (`active: false`, `runtime_state: null`); `unsubscribe`.
 
