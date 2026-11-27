@@ -57,6 +57,7 @@
             "advanced": {
               "type": "object",
               "description": "Advanced netem override (mutually exclusive with quality)",
+              "minProperties": 1,
               "additionalProperties": false,
               "properties": {
                 "packet_loss_percent": {

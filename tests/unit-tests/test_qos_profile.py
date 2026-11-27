@@ -236,6 +236,51 @@ class TestQosProfileCatalogue:
             pm = QosProfileManager(str(catalogue_dir))
         assert len(pm.list_profiles()) == 0
 
+    # --- T-19 (BUG-9): a wrong custom profile never stops the service
+
+    def test_t19_profile_with_empty_advanced_is_skipped_valid_one_kept(self, catalogue_dir, caplog):
+        """BUG-9: `"advanced": {}` stopped QosProfileManager (and the service) with a ValidationError."""
+        import logging
+
+        profiles = [
+            {"id": "good", "description": "", "mode": "loop", "steps": [{"duration_sec": 5, "quality": 70}]},
+            {"id": "x", "description": "", "mode": "loop", "steps": [{"duration_sec": 5, "advanced": {}}]},
+        ]
+        self._write_json(catalogue_dir / "custom.json", profiles)
+        with caplog.at_level(logging.WARNING):
+            pm = QosProfileManager(str(catalogue_dir))
+        assert pm.get_profile("good") is not None
+        assert pm.get_profile("x") is None
+        assert "'x'" in caplog.text
+
+    def test_t19_profile_the_model_refuses_is_skipped(self, catalogue_dir, monkeypatch):
+        """Schema and model may still disagree: the model's refusal skips the profile too."""
+        profiles = [
+            {"id": "good", "description": "", "mode": "loop", "steps": [{"duration_sec": 5, "quality": 70}]},
+            {"id": "odd", "description": "", "mode": "loop", "steps": [{"duration_sec": 5, "quality": 70}]},
+        ]
+        self._write_json(catalogue_dir / "default.json", profiles)
+        real_step = qos_profile_module.QosProfileStep
+
+        def step(**fields):
+            if fields["quality"] == 70 and step.calls == 1:
+                raise ValueError("refused by the model")
+            step.calls += 1
+            return real_step(**fields)
+
+        step.calls = 0
+        monkeypatch.setattr(qos_profile_module, "QosProfileStep", step)
+        pm = QosProfileManager(str(catalogue_dir))
+        assert [p.id for p in pm.list_profiles()] == ["good"]
+
+    def test_t19_unreadable_schema_starts_with_an_empty_catalogue(self, catalogue_dir):
+        (catalogue_dir / "profile.schema.json").write_text("{not json")
+        self._write_json(catalogue_dir / "default.json", [
+            {"id": "a", "description": "", "mode": "loop", "steps": [{"duration_sec": 5, "quality": 70}]},
+        ])
+        pm = QosProfileManager(str(catalogue_dir))
+        assert pm.list_profiles() == []
+
     def test_multiple_files_merge(self, catalogue_dir):
         p1 = [{"id": "a", "description": "A", "mode": "loop", "steps": [{"duration_sec": 10, "quality": 80}]}]
         p2 = [{"id": "b", "description": "B", "mode": "once", "steps": [{"duration_sec": 5, "quality": 50}]}]
@@ -640,6 +685,26 @@ class TestQosProfileAPI:
             f"/api/v2/reservations/{reservation_id}/qos/profile",
             headers=auth_headers,
         )
+
+    @pytest.mark.parametrize("body", [
+        {"download_quality": 40, "upload_quality": 90},
+        {"download_quality": 40, "advanced": {"delay_ms": 100}},
+        {"upload_quality": 40, "advanced": {"delay_ms": 100}},
+    ])
+    def test_t19_inline_qos_that_cannot_be_applied_is_refused(self, client, auth_headers, reservation_id, body):
+        """NET-11: 40 down and 90 up applied 40 both ways and answered 200; quality with advanced was dropped."""
+        resp = client.post(
+            f"/api/v2/reservations/{reservation_id}/qos/profile", headers=auth_headers, json=body,
+        )
+        assert resp.status_code == 422, resp.text
+
+    def test_t19_equal_qualities_are_accepted(self, client, auth_headers, reservation_id):
+        resp = client.post(
+            f"/api/v2/reservations/{reservation_id}/qos/profile",
+            headers=auth_headers, json={"download_quality": 60, "upload_quality": 60},
+        )
+        assert resp.status_code == 200, resp.text
+        client.delete(f"/api/v2/reservations/{reservation_id}/qos/profile", headers=auth_headers)
 
     def test_start_profile_unknown_id(self, client, auth_headers, reservation_id):
         resp = client.post(

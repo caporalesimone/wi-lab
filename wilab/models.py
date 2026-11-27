@@ -615,6 +615,16 @@ class QosProfileStartRequest(BaseModel):
             raise ValueError("Cannot specify both 'profile_id' and inline QoS parameters")
         if not has_profile and not has_inline:
             raise ValueError("Must specify either 'profile_id' or at least one QoS parameter")
+        # One quality applies to both directions (NET-11): refuse what cannot be applied.
+        if (
+            self.download_quality is not None and self.upload_quality is not None
+            and self.download_quality != self.upload_quality
+        ):
+            raise ValueError(
+                "download_quality and upload_quality must be equal: one quality applies to both directions",
+            )
+        if self.advanced is not None and (self.download_quality is not None or self.upload_quality is not None):
+            raise ValueError("'advanced' cannot be combined with download_quality or upload_quality")
         return self
 
 

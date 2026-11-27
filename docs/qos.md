@@ -199,6 +199,8 @@ curl -X POST "$BASE/reservations/$RES/qos/profile" \
 
 This creates an auto-generated `once-hold-last` profile with a single step. The configuration is applied and held indefinitely until you stop it.
 
+One quality applies to both directions: `download_quality` and `upload_quality` may be sent alone or together with the same value; different values, or a quality together with `advanced`, answer `422` (they used to be ignored in silence).
+
 ### 3. Apply inline QoS with advanced override
 
 ```bash

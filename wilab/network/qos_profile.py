@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import jsonschema
+from pydantic import ValidationError
 
 from ..models import (
     QosProfile,
@@ -66,8 +67,13 @@ class QosProfileManager:
             logger.warning("Profile schema not found at %s", schema_path)
             return
 
-        with open(schema_path) as f:
-            schema = json.load(f)
+        try:
+            with open(schema_path) as f:
+                schema = json.load(f)
+        except (json.JSONDecodeError, OSError) as exc:
+            # No catalogue, but the service starts (BUG-9): QoS profiles are an extra.
+            logger.error("Cannot read QoS profile schema %s: %s; no profiles loaded", schema_path, exc)
+            return
 
         # Collect JSON files: default.json first, then the rest alphabetically
         json_files: list[Path] = []
@@ -88,15 +94,21 @@ class QosProfileManager:
                 logger.warning("Skipping invalid JSON file '%s': %s", json_file.name, exc)
                 continue
 
-            try:
-                jsonschema.validate(data, schema)
-            except jsonschema.ValidationError as exc:
-                logger.warning(
-                    "Schema validation failed for '%s': %s", json_file.name, exc.message
-                )
+            if not isinstance(data, list) or not data:
+                logger.warning("Skipping '%s': not a non-empty array of profiles", json_file.name)
                 continue
 
+            # Each profile is checked on its own (BUG-9): one wrong profile skips
+            # itself, not the valid ones next to it in the same file.
             for raw_profile in data:
+                try:
+                    jsonschema.validate(raw_profile, schema["items"])
+                except jsonschema.ValidationError as exc:
+                    name = raw_profile.get("id") if isinstance(raw_profile, dict) else None
+                    logger.warning(
+                        "Schema validation failed for profile '%s' in '%s': %s", name, json_file.name, exc.message,
+                    )
+                    continue
                 pid = raw_profile["id"]
                 if pid in self._profiles:
                     logger.warning(
@@ -105,23 +117,30 @@ class QosProfileManager:
                         json_file.name,
                     )
                     continue
-                steps = [
-                    QosProfileStep(
-                        duration_sec=s["duration_sec"],
-                        quality=s.get("quality"),
-                        dl_speed_kbit=s.get("dl_speed_kbit"),
-                        ul_speed_kbit=s.get("ul_speed_kbit"),
-                        advanced=QosQualityAdvanced(**s["advanced"]) if s.get("advanced") else None,
+                # A profile the schema lets through but the model refuses is
+                # skipped with a warning: it never stops the service (BUG-9).
+                try:
+                    steps = [
+                        QosProfileStep(
+                            duration_sec=s["duration_sec"],
+                            quality=s.get("quality"),
+                            dl_speed_kbit=s.get("dl_speed_kbit"),
+                            ul_speed_kbit=s.get("ul_speed_kbit"),
+                            advanced=QosQualityAdvanced(**s["advanced"]) if "advanced" in s else None,
+                        )
+                        for s in raw_profile["steps"]
+                    ]
+                    profile = QosProfile(
+                        id=pid,
+                        description=raw_profile.get("description", ""),
+                        source_file=json_file.name,
+                        mode=QosProfileMode(raw_profile["mode"]),
+                        steps=steps,
                     )
-                    for s in raw_profile["steps"]
-                ]
-                self._profiles[pid] = QosProfile(
-                    id=pid,
-                    description=raw_profile.get("description", ""),
-                    source_file=json_file.name,
-                    mode=QosProfileMode(raw_profile["mode"]),
-                    steps=steps,
-                )
+                except (ValidationError, ValueError) as exc:
+                    logger.warning("Skipping invalid profile '%s' in '%s': %s", pid, json_file.name, exc)
+                    continue
+                self._profiles[pid] = profile
 
     # ------------------------------------------------------------------
     # Public API — catalogue
