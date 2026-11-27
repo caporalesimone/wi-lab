@@ -1044,6 +1044,23 @@ def test_is_enabled_ignores_escaped_ssid(monkeypatch, status, enabled):
     assert mgr.is_enabled("wlan0") is enabled
 
 
+@pytest.mark.parametrize("status, expected", [
+    ("state=ENABLED\nbss[0]=wlan0\nchannel=100\n", hostapd.Probe(True, "ENABLED", 100)),
+    ("state=DFS\nbss[0]=wlan0\nchannel=52\n", hostapd.Probe(False, "DFS", 52)),
+    ("state=DISABLED\nbss[0]=wlan0\n", hostapd.Probe(False, "DISABLED", None)),
+])
+def test_probe_reports_state_and_channel(monkeypatch, status, expected):
+    """REV-12: the watchdog tells a radar check and a moved channel from a fault."""
+    mgr = hostapd.HostapdManager()
+    mgr._instances["wlan0"] = {
+        "interface": "wlan0", "ssid": "x", "control_dir": "/run/x",
+        "process": SimpleNamespace(poll=lambda: None),
+    }
+    monkeypatch.setattr(mgr, "is_running", lambda net_id: True)
+    monkeypatch.setattr(hostapd, "execute_command", lambda cmd, **kw: status)
+    assert mgr.probe("wlan0") == expected
+
+
 class _BlockFirewall:
     """FORWARD only, in memory: the second change fails."""
 

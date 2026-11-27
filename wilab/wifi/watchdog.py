@@ -15,6 +15,7 @@ from ..network.commands import CommandError
 from ..network.dhcp import DhcpServerError
 from ..reservation import Reservation, ReservationManager
 from .failures import FailureKind
+from .hostapd import DFS_READY_TIMEOUT, Probe
 from .interface import interface_present
 
 if TYPE_CHECKING:
@@ -81,6 +82,7 @@ class DeviceWatch:
     restart_reason: str = ""    # the same, as the stable reason shown in GET .../network restarts
     healthy_ticks: int = 0      # since the last network check (WD-7)
     last_error: str = ""        # log a repeated failure's traceback once (WD-9)
+    dfs_since: float | None = None   # monotonic start of a radar check after a radar event (REV-12)
 
 
 @dataclass
@@ -222,7 +224,10 @@ class NetworkWatchdog:
             # Half stopped on purpose: repairing it would undo the client's stop.
             return
         alive = self.manager.hostapd_manager.is_running(device)
-        enabled = self.manager.hostapd_manager.is_enabled(device) if alive else False
+        probe = self.manager.hostapd_manager.probe(device) if alive else Probe(False)
+        if self._radar_check(watch, status, probe):
+            return
+        enabled = probe.enabled
         watch.misses = 0 if enabled else watch.misses + (1 if enabled is None else 2)
         if not alive or watch.misses >= MISS_LIMIT or watch.restart_network:
             self._restart(reservations, watch, reservation, status, alive)
@@ -236,6 +241,32 @@ class NetworkWatchdog:
                 watch.healthy_ticks = 0
                 watch.restart_network = self._verify(device)
                 watch.restart_reason = "network_check_failed" if watch.restart_network else ""
+
+    def _radar_check(self, watch: "DeviceWatch", status: "ActiveNetwork", probe: Probe) -> bool:
+        """Follow a radar event on a DFS channel (REV-12); True while hostapd is in its radar check.
+
+        A radar makes hostapd leave the channel: it moves to another one (the AP
+        stays `ENABLED`) or runs a new radar check (`DFS`, up to DFS_READY_TIMEOUT).
+        Neither is a fault: misses are not counted during the check, and the
+        channel in use is what GET .../network shows. A check that lasts longer
+        counts as misses again.
+        """
+        if probe.channel is not None and probe.channel != status.radio_channel:
+            moved = probe.channel != status.channel
+            if moved or status.radio_channel is not None:
+                logger.warning(
+                    "hostapd on %s moved from channel %d to %d (radar event)",
+                    watch.device, status.radio_channel or status.channel, probe.channel,
+                )
+            status.radio_channel = probe.channel if moved else None
+        if probe.state != "DFS":
+            watch.dfs_since = None
+            return False
+        now = time.monotonic()
+        if watch.dfs_since is None:
+            watch.dfs_since = now
+            logger.warning("hostapd on %s is checking for radar; waiting up to %.0f s", watch.device, DFS_READY_TIMEOUT)
+        return now - watch.dfs_since < DFS_READY_TIMEOUT
 
     def _restart(
         self, reservations: ReservationManager, watch: "DeviceWatch", reservation: Reservation,

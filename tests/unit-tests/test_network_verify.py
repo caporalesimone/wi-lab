@@ -6,6 +6,7 @@ from unittest.mock import Mock
 import pytest
 from conftest import active_network
 
+from wilab.wifi.hostapd import Probe
 from wilab import heartbeat
 from wilab.network import captive, isolation, nat
 from wilab.network.commands import CommandError
@@ -193,7 +194,7 @@ def test_watchdog_checks_every_sixth_healthy_tick_and_restores_on_request(monkey
     monkeypatch.setitem(mgr.active, device, active_network(interface=device))
     monkeypatch.setattr(heartbeat, "beat", lambda _name: None)
     monkeypatch.setattr(mgr.hostapd_manager, "is_running", Mock(return_value=True))
-    monkeypatch.setattr(mgr.hostapd_manager, "is_enabled", Mock(return_value=True))
+    monkeypatch.setattr(mgr.hostapd_manager, "probe", Mock(return_value=Probe(True)))
     monkeypatch.setattr(mgr.dhcp_server, "is_running", Mock(return_value=True))
     verify = Mock(side_effect=[(["NAT POSTROUTING rule"], False), (["captive portal server"], True)])
     monkeypatch.setattr(mgr, "verify_network", verify)

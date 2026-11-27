@@ -28,6 +28,7 @@ class ActiveNetwork:
     expires_at: str | None = None    # shown expiry (UTC, RFC 3339)
     deadline: float | None = None    # monotonic expiry (STAB-5); None: no expiry
     active: bool = True
+    radio_channel: int | None = None   # the channel after a radar moved the AP, None if unmoved (REV-12)
 
     # Settings that cannot change while the network runs: read from the request.
     @property
@@ -89,7 +90,7 @@ class ActiveNetwork:
             interface=self.interface,
             active=self.active,
             ssid=req.ssid,
-            channel=req.channel,
+            channel=self.radio_channel or req.channel,
             password=req.password,
             encryption=req.encryption,
             band=req.band,

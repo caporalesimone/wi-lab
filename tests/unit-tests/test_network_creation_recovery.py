@@ -5,6 +5,7 @@ import pytest
 from conftest import active_network, create_network, network_body, registry_of
 from fastapi.testclient import TestClient
 
+from wilab.wifi.hostapd import Probe
 from wilab.api import create_app
 from wilab.api.routes import network
 from wilab.models import NetworkStatus
@@ -380,8 +381,8 @@ def test_watchdog_waits_for_confirmed_ap_failure(monkeypatch, ap_alive, checks, 
     status = active_network(interface=device)
     monkeypatch.setitem(manager.active, device, status)
     monkeypatch.setattr(manager.hostapd_manager, "is_running", Mock(return_value=ap_alive))
-    enabled = Mock(return_value=False)
-    monkeypatch.setattr(manager.hostapd_manager, "is_enabled", enabled)
+    enabled = Mock(return_value=Probe(False))
+    monkeypatch.setattr(manager.hostapd_manager, "probe", enabled)
     readiness_at_restart = []
     restore = Mock(side_effect=lambda *_: readiness_at_restart.append(enabled.call_count))
     monkeypatch.setattr(manager.watchdog, "_restore_ap", restore)

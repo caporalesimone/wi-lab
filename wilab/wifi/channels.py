@@ -349,6 +349,8 @@ class ChannelManager:
         # Per antenna (`antennas[].show_dfs_channels`): whether its DFS channels are usable.
         self._show_dfs_channels = show_dfs_channels or (lambda interface: True)
         self._cache: dict[str, InterfaceChannels] = {}
+        # Bumped by invalidate() (REV-12): a reading started before it is not cached.
+        self._generation = 0
         self._lock = threading.Lock()
 
     # -- public API --
@@ -358,11 +360,16 @@ class ChannelManager:
         with self._lock:
             if interface in self._cache:
                 return self._cache[interface]
+            generation = self._generation
 
         # Resolve outside lock to avoid blocking other interfaces.
         channels = self._resolve_channels(interface)
 
         with self._lock:
+            if self._generation != generation:
+                # invalidate() ran meanwhile: this reading may predate it, use it once
+                # without caching it.
+                return channels
             # Another thread may have filled the cache in the meantime.
             if interface not in self._cache:
                 self._cache[interface] = channels
@@ -371,6 +378,7 @@ class ChannelManager:
     def invalidate(self, interface: str | None = None) -> None:
         """Drop cached data.  If *interface* is ``None``, flush everything."""
         with self._lock:
+            self._generation += 1
             if interface is None:
                 self._cache.clear()
             else:

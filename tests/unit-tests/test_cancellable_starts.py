@@ -7,6 +7,7 @@ from unittest.mock import Mock
 from conftest import active_network, network_body
 from fastapi.testclient import TestClient
 
+from wilab.wifi.hostapd import Probe
 from wilab.wifi import manager as manager_module
 from wilab.wifi.manager import StartupFailure
 
@@ -97,7 +98,7 @@ def test_recovery_probe_avoids_dfs_channels(monkeypatch, context):
     device = manager.config.antennas[0].device_id
     start = Mock()
     monkeypatch.setattr(manager.hostapd_manager, "start", start)
-    monkeypatch.setattr(manager.hostapd_manager, "is_enabled", Mock(return_value=True))
+    monkeypatch.setattr(manager.hostapd_manager, "probe", Mock(return_value=Probe(True)))
     monkeypatch.setattr(manager.dhcp_server, "start", Mock())
     monkeypatch.setattr(manager.dhcp_server, "is_running", Mock(return_value=True))
     monkeypatch.setattr(manager, "release_device", Mock())

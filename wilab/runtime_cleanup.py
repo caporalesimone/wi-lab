@@ -69,12 +69,23 @@ def _stale_ifbs() -> list[str]:
 
 def cleanup_runtime() -> None:
     """Remove processes, files and devices left by a previous Wi-Lab run. Never raises."""
+    for step in (_stop_orphans, _remove_files, _remove_ifbs):
+        try:
+            step()
+        except OSError as exc:   # /proc or a runtime directory unreadable (REV-12)
+            logger.error("Startup cleanup step %s failed: %s", step.__name__.lstrip("_"), exc)
+
+
+def _stop_orphans() -> None:
     for pid, program in _orphans():
         try:
             stop_process(pid)
             logger.warning("Stopped orphan %s (pid %d) left by a previous run", program, pid)
         except CommandError as exc:
             logger.error("Could not stop orphan %s (pid %d): %s", program, pid, exc)
+
+
+def _remove_files() -> None:
     for directory in RUNTIME_DIRS:
         path = Path(directory)
         if not path.is_dir():
@@ -93,6 +104,9 @@ def cleanup_runtime() -> None:
             logger.warning("Removed %d stale entries from %s", removed, directory)
     for legacy in LEGACY_RUNTIME_DIRS:
         shutil.rmtree(legacy, ignore_errors=True)   # emptied above; the directory goes too
+
+
+def _remove_ifbs() -> None:
     for name in _stale_ifbs():
         try:
             execute_command(["ip", "link", "del", name])

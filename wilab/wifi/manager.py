@@ -601,8 +601,7 @@ class NetworkManager:
             if st is None:
                 return None
             if st.expired(time.monotonic()):
-                logger.info("Network %s expired, stopping", device_id)
-                self.stop_network(device_id)
+                self._expire_held(device_id)
                 return None
             return st if st.active else None
 
@@ -627,8 +626,7 @@ class NetworkManager:
         
         # Check if network has expired (monotonic deadline, STAB-5)
         if network.expired(time.monotonic()):
-            logger.info("Network %s expired, stopping", device_id)
-            self.stop_network(device_id)
+            self._expire_held(device_id)
             cfg_net = self.devices.get(device_id)
             if not cfg_net:
                 return None
@@ -914,17 +912,27 @@ class NetworkManager:
         if not lock.acquire(blocking=False):
             return
         try:
-            if self.active.get(device_id) is not status or not self.cleanup_due(device_id):
-                return
-            first = device_id not in self._cleanup_failures
-            if first:
-                logger.info("[expiry-loop] Network %s expired, stopping", device_id)
-            try:
-                self._tracked_stop(device_id)
-            except RuntimeError as e:
-                if first:
-                    logger.warning("[expiry-loop] Failed stopping %s: %s", device_id, e)
+            if self.active.get(device_id) is status:
+                self._expire_held(device_id)
         finally:
             lock.release()
+
+    def _expire_held(self, device_id: str) -> None:
+        """Stop an expired network, with the device lock held; never raises (REV-12).
+
+        The expiry loop and the reads that find the network expired first take
+        this one path: a failed stop goes to the background backoff (WD-6)
+        instead of out of a GET.
+        """
+        if not self.cleanup_due(device_id):
+            return
+        first = device_id not in self._cleanup_failures
+        if first:
+            logger.info("Network %s expired, stopping", device_id)
+        try:
+            self._tracked_stop(device_id)
+        except RuntimeError as e:
+            if first:
+                logger.warning("Failed stopping expired network %s: %s", device_id, e)
 
 

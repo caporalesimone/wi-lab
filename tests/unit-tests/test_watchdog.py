@@ -8,6 +8,7 @@ import pytest
 from conftest import active_network, create_network, network_body
 from fastapi.testclient import TestClient
 
+from wilab.wifi.hostapd import Probe
 from wilab import heartbeat
 from wilab.models import NetworkStatus
 from wilab.wifi import watchdog as watchdog_module
@@ -152,7 +153,7 @@ def test_watchdog_retries_with_backoff_until_the_ap_is_back(monkeypatch, context
 
     start.side_effect = start_again
     monkeypatch.setattr(manager.hostapd_manager, "is_running", Mock(return_value=True))
-    monkeypatch.setattr(manager.hostapd_manager, "is_enabled", Mock(return_value=True))
+    monkeypatch.setattr(manager.hostapd_manager, "probe", Mock(return_value=Probe(True)))
     monkeypatch.setattr(manager.dhcp_server, "is_running", Mock(return_value=True))
     # 1010: not due; 1015: retry 1 fails (next at 1015 + 30); 1040: not due;
     # 1045: retry 2 succeeds; 1050: normal supervision of the restored AP.
@@ -224,7 +225,7 @@ def _dhcp_setup(context, monkeypatch, ticks, dhcp_restart_works=True):
         manager.active, device, active_network(interface=device, subnet="192.0.2.0/24"),
     )
     monkeypatch.setattr(manager.hostapd_manager, "is_running", Mock(return_value=True))
-    monkeypatch.setattr(manager.hostapd_manager, "is_enabled", Mock(return_value=True))
+    monkeypatch.setattr(manager.hostapd_manager, "probe", Mock(return_value=Probe(True)))
     clock = {"now": 0.0, "dhcp": True}
     tick_iter = iter(ticks)
 
@@ -385,7 +386,7 @@ def _watch_until_a_restart(context, monkeypatch, ticks, *, dhcp_restart_works=Tr
     monkeypatch.setattr(watchdog_module.time, "monotonic", lambda: tick["now"])
     monkeypatch.setattr(manager.watchdog, "_pause", wait)
     monkeypatch.setattr(manager.hostapd_manager, "is_running", lambda _device: tick["alive"])
-    monkeypatch.setattr(manager.hostapd_manager, "is_enabled", lambda _device: tick["enabled"])
+    monkeypatch.setattr(manager.hostapd_manager, "probe", lambda _device: Probe(tick["enabled"]))
     monkeypatch.setattr(manager.dhcp_server, "is_running", lambda _device: tick["dhcp"])
     monkeypatch.setattr(manager, "verify_network", verify or Mock(return_value=([], False)))
 

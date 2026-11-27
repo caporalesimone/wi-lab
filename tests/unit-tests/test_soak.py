@@ -28,6 +28,7 @@ import pytest
 from conftest import registry_of
 from helpers import FakeClock
 
+from wilab.wifi.hostapd import Probe
 from wilab import heartbeat
 from wilab.config import load_config
 from wilab.models import NetworkCreateRequest
@@ -86,6 +87,9 @@ class SimHostapd:
 
     def is_running(self, net_id: str) -> bool:
         return self.alive.get(net_id, False)
+
+    def probe(self, net_id: str) -> Probe:
+        return Probe(self.is_enabled(net_id))
 
     def is_enabled(self, net_id: str) -> bool | None:
         if not self.is_running(net_id):

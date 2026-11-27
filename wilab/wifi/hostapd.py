@@ -7,6 +7,7 @@ import signal
 import tempfile
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import partial
 from typing import NotRequired, TypedDict
 
@@ -136,6 +137,20 @@ class HostapdInitFailure(HostapdRadioFailure):
     Observed as a transient failure: an immediate new start on the same radio succeeds.
     A radio failure on every attempt and request, not only during a retry (HAP-3).
     """
+
+
+@dataclass(frozen=True)
+class Probe:
+    """One probe of a running hostapd (watchdog).
+
+    enabled: True or False from hostapd's answer, None when it did not answer in time.
+    state: hostapd's `state=` (`ENABLED`, `DFS` during a radar check, ...), None if unknown.
+    channel: the channel it uses now, which a radar event can move (REV-12).
+    """
+
+    enabled: bool | None
+    state: str | None = None
+    channel: int | None = None
 
 
 class HostapdInstance(TypedDict):
@@ -627,9 +642,13 @@ class HostapdManager:
         True or False is hostapd's answer; None when hostapd_cli did not answer
         in time (a loaded host, not necessarily a broken AP: WD-10).
         """
+        return self.probe(net_id).enabled
+
+    def probe(self, net_id: str) -> "Probe":
+        """hostapd's STATUS: enabled as in is_enabled, plus its state and channel (REV-12)."""
         instance = self._instances.get(net_id)
         if instance is None or not self.is_running(net_id):
-            return False
+            return Probe(False)
         interface = instance["interface"]
         monitor = instance.get("monitor")
         fields: dict[str, str] | None = None
@@ -646,13 +665,18 @@ class HostapdManager:
                     check=False, timeout=STATUS_PROBE_TIMEOUT,
                 )
             except CommandTimeout:
-                return None
+                return Probe(None)
             except CommandError:
-                return False
+                return Probe(False)
             fields = parse_fields(status)
         # The control socket is private to this instance, so state and interface
         # are enough; hostapd escapes the SSID in this output.
-        return fields.get("state") == "ENABLED" and fields.get("bss[0]") == interface
+        channel = fields.get("channel", "")
+        return Probe(
+            fields.get("state") == "ENABLED" and fields.get("bss[0]") == interface,
+            fields.get("state"),
+            int(channel) if channel.isdigit() else None,
+        )
     
     def stations(self, net_id: str) -> set[str] | None:
         """Associated stations from the control connection; None when it is not connected."""
