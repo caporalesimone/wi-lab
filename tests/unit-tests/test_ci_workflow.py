@@ -12,7 +12,8 @@ def test_ci_runs_checks_and_publishes_offline_docs_without_cleanup_permissions()
     backend = workflow["jobs"]["backend"]["steps"]
     commands = "\n".join(step.get("run", "") for step in backend)
     assert "make type-check" in commands
-    assert "make test-local-quick" in commands
+    assert "make lint" in commands
+    assert "make test-local" in commands.splitlines()   # with coverage, not the quick run
     assert "scripts/export_api_docs.py" in commands
     assert any(step.get("uses", "").startswith("actions/upload-artifact@") for step in backend)
     frontend = workflow["jobs"]["frontend"]
