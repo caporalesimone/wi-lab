@@ -212,3 +212,5 @@ config.yaml
 
 #other files
 test-report.txt
+# Long-run stress test event logs
+tests/long-run/results/
