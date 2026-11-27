@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from wilab.api import create_app, dependencies
 from wilab.api.routes import network
 from wilab.models import NetworkStatus
+from wilab.wifi.failures import FailureKind
 from wilab.wifi.hostapd import HostapdError
 from wilab.wifi.manager import NetworkManager, StartupFailure
 
@@ -53,7 +54,7 @@ def api(monkeypatch):
                 raise StartupFailure("AP start cancelled", stage="hostapd")
         outcome = script["outcome"]
         if outcome == "radio":
-            raise StartupFailure("radio timeout", radio=True)
+            raise StartupFailure("radio timeout", kind=FailureKind.TRANSIENT_RADIO)
         if outcome == "stage":
             raise StartupFailure("dnsmasq refused the configuration", stage="dhcp")
         manager.active[device] = active_network(interface=device)
@@ -551,7 +552,9 @@ def stuck_rollback(api, monkeypatch):
         while not script["release"].wait(0.01):
             if cancelled is not None and cancelled():
                 manager.hostapd_manager._instances[dev] = Mock()
-                raise StartupFailure("rollback failed: hostapd did not stop", stage="hostapd", cleanup_failed=True)
+                raise StartupFailure(
+                    "rollback failed: hostapd did not stop", stage="hostapd", kind=FailureKind.CLEANUP_FAILED,
+                )
         raise AssertionError("the test cancels the start")
 
     def hostapd_stop(net_id):

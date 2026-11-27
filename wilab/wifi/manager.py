@@ -32,10 +32,10 @@ from ..reservation import Reservation, ReservationManager
 from ..timestamps import format_utc_timestamp
 from .active import ActiveNetwork
 from .channels import ChannelManager
+from .failures import FailureKind
 from .hostapd import (
     HostapdError,
     HostapdManager,
-    HostapdRadioFailure,
 )
 from .interface import (
     InterfaceError,
@@ -132,14 +132,28 @@ STARTUP_STAGES = {
 
 
 class StartupFailure(ValueError):
+    """A network start that failed; *kind* is set once, here in the manager (ARCH-2)."""
+
     def __init__(
-        self, message: str, *, radio: bool = False, cleanup_failed: bool = False,
+        self, message: str, *, kind: FailureKind = FailureKind.CONFIGURATION,
         stage: str | None = None,
     ):
         super().__init__(message)
-        self.radio = radio
-        self.cleanup_failed = cleanup_failed
+        self.kind = kind
         self.stage = stage   # one of STARTUP_STAGES' values, or "interface"
+
+    # Derived from kind for existing readers; new code reads kind.
+    @property
+    def radio(self) -> bool:
+        return self.kind.radio
+
+    @property
+    def cleanup_failed(self) -> bool:
+        return self.kind.cleanup_failed
+
+
+def _cleanup_failed(radio: bool) -> FailureKind:
+    return FailureKind.RADIO_CLEANUP_FAILED if radio else FailureKind.CLEANUP_FAILED
 
 
 class NetworkManager:
@@ -427,7 +441,10 @@ class NetworkManager:
 
         # Check if network is already active (check both self.active and hostapd)
         if device_id in self.active:
-            raise ValueError(f"Network {device_id} is already active. Stop it first before creating a new one.")
+            raise StartupFailure(
+                f"Network {device_id} is already active. Stop it first before creating a new one.",
+                kind=FailureKind.CONFLICT,
+            )
         # Logged only for a create that really starts (a refused one used to log it too).
         logger.info(f"Starting network {device_id} with SSID '{req.ssid}'")
         
@@ -435,7 +452,9 @@ class NetworkManager:
         try:
             self.release_device(device_id)
         except RuntimeError as e:
-            raise StartupFailure(f"Failed to clean up previous startup: {e}", cleanup_failed=True) from e
+            raise StartupFailure(
+                f"Failed to clean up previous startup: {e}", kind=FailureKind.CLEANUP_FAILED,
+            ) from e
         
         expires_at_str = format_utc_timestamp(expires_at_timestamp)
         # Monotonic from here on (STAB-5): a wall-clock jump must not expire the network.
@@ -458,7 +477,7 @@ class NetworkManager:
                 # The adapter disconnected (USB drop or driver reset): a radio
                 # fault, so the client may retry and the adapter can be recovered.
                 raise StartupFailure(
-                    f"Interface {cfg_net.interface} is not present", radio=True,
+                    f"Interface {cfg_net.interface} is not present", kind=FailureKind.TRANSIENT_RADIO,
                 ) from e
             raise StartupFailure(str(e), stage="interface") from e
 
@@ -480,7 +499,11 @@ class NetworkManager:
             # `iw` could not read the channels: a radio fault if the antenna is gone.
             raise StartupFailure(
                 f"Cannot read the channels of {cfg_net.interface}: {e}",
-                radio=not interface_present(cfg_net.interface), stage="interface",
+                kind=(
+                    FailureKind.CONFIGURATION if interface_present(cfg_net.interface)
+                    else FailureKind.TRANSIENT_RADIO
+                ),
+                stage="interface",
             ) from e
 
         # A classified radio failure happened in this request (HAP-3): a later
@@ -561,16 +584,18 @@ class NetworkManager:
                     )
             except (HostapdError, CommandError, DhcpServerError, CaptivePortalError) as e:
                 logger.error("Failed to %s for %s: %s", stage, device_id, e)
-                radio_seen = radio_seen or isinstance(e, HostapdRadioFailure)
-                radio = isinstance(e, HostapdRadioFailure) or (radio_seen and stage == "start AP")
+                # Only hostapd tells a radio failure apart; every other cause is a stage failure.
+                cause = e.kind if isinstance(e, HostapdError) else FailureKind.CONFIGURATION
+                radio_seen = radio_seen or cause is FailureKind.TRANSIENT_RADIO
+                radio = cause is FailureKind.TRANSIENT_RADIO or (radio_seen and stage == "start AP")
                 try:
                     self.release_device(device_id)
                 except RuntimeError:
                     logger.exception("Startup rollback failed for %s", device_id)
                     raise StartupFailure(
                         f"Failed to {stage}: {e}",
-                        radio=radio or not interface_present(cfg_net.interface),
-                        cleanup_failed=True, stage=STARTUP_STAGES.get(stage),
+                        kind=_cleanup_failed(radio or not interface_present(cfg_net.interface)),
+                        stage=STARTUP_STAGES.get(stage),
                     ) from e
                 if not interface_present(cfg_net.interface):
                     # Whatever hostapd reported, the netdev vanished under it: a
@@ -582,14 +607,14 @@ class NetworkManager:
                     )
                     raise StartupFailure(
                         f"Failed to {stage}: interface {cfg_net.interface} disappeared ({e})",
-                        radio=True,
+                        kind=FailureKind.TRANSIENT_RADIO,
                     ) from e
 
                 if (
                     attempt < STARTUP_ATTEMPTS
                     and allow_internal_retry
                     and stage == "start AP"
-                    and isinstance(e, HostapdRadioFailure)
+                    and cause is FailureKind.TRANSIENT_RADIO
                     and (
                         deadline is None
                         or time.monotonic() + STARTUP_RETRY_DELAY < deadline
@@ -606,7 +631,9 @@ class NetworkManager:
                         )
                         continue
                 raise StartupFailure(
-                    f"Failed to {stage}: {e}", radio=radio, stage=STARTUP_STAGES.get(stage),
+                    f"Failed to {stage}: {e}",
+                    kind=FailureKind.TRANSIENT_RADIO if radio else FailureKind.CONFIGURATION,
+                    stage=STARTUP_STAGES.get(stage),
                 ) from e
             except Exception as e:
                 # Anything else (a bug, an OSError from a library, a KeyError) after
@@ -618,8 +645,9 @@ class NetworkManager:
                 except RuntimeError:
                     logger.exception("Startup rollback failed for %s", device_id)
                     raise StartupFailure(
-                        f"Failed to {stage}: {e!r}", radio=not interface_present(cfg_net.interface),
-                        cleanup_failed=True, stage=STARTUP_STAGES.get(stage),
+                        f"Failed to {stage}: {e!r}",
+                        kind=_cleanup_failed(not interface_present(cfg_net.interface)),
+                        stage=STARTUP_STAGES.get(stage),
                     ) from e
                 raise StartupFailure(f"Failed to {stage}: {e!r}", stage=STARTUP_STAGES.get(stage)) from e
             else:

@@ -35,6 +35,7 @@ from ...network.commands import CommandError
 from ...reservation import EXPIRED, Reservation, ReservationManager
 from ...timestamps import format_utc_timestamp
 from ...wifi.channels import ChannelManager, FieldError
+from ...wifi.failures import FailureKind
 from ...wifi.hostapd import AP_READY_TIMEOUT, DFS_READY_TIMEOUT
 from ...wifi.manager import (
     UNKNOWN_ANTENNA,
@@ -50,6 +51,23 @@ from .recovery_responses import (
 
 # After a radio failure the create job starts the AP again after these pauses.
 CREATE_RETRY_DELAYS = (5, 10)
+
+# What the create job does with a failed start, by kind (ARCH-2). A cancelled
+# start (release or stop meanwhile) ends as cancelled whatever the kind, except
+# "refuse", where nothing was started:
+# - refuse: start_failed (1013), nothing started, no channel re-read
+# - fail: rolled back, reservation kept, start_failed (1013) with the stage
+# - retry: start again after CREATE_RETRY_DELAYS, then quarantine (radio fault),
+#   or end the reservation if it expires too soon for another start
+# - quarantine: never retried, the rollback left resources up: isolate the
+#   adapter (USB recovery only when kind.radio)
+_ON_START_FAILURE: dict[FailureKind, Literal["refuse", "fail", "retry", "quarantine"]] = {
+    FailureKind.CONFLICT: "refuse",
+    FailureKind.CONFIGURATION: "fail",
+    FailureKind.TRANSIENT_RADIO: "retry",
+    FailureKind.CLEANUP_FAILED: "quarantine",
+    FailureKind.RADIO_CLEANUP_FAILED: "quarantine",
+}
 START_MARGIN = 5.0   # seconds for gateway, DHCP, NAT and the rest after the AP is up
 
 # Seconds before repeating a stop that did not complete (hostapd stuck in the
@@ -501,20 +519,23 @@ def _start_with_retries(
             )
             return StartOutcome("started")
         except StartupFailure as e:
+            action = _ON_START_FAILURE[e.kind]
+            if action == "refuse":   # another network is active: nothing was started
+                return _failed(str(e), e.stage)
             # The next attempt reads the channel list again (BUG-4).
             channel_mgr.invalidate(device_id)
             if cancel.is_set():
-                if e.cleanup_failed:
+                if e.kind.cleanup_failed:
                     # Not a radio fault and no quarantine (REV-2): what the rollback left
                     # goes to the canceller's path. A release hands it to the background
                     # cleanup, a stop answers 503 / 1012 and its repetition finishes it.
                     logger.warning("AP start on %s cancelled; its rollback failed: %s", device_id, e)
                 return StartOutcome("cancelled")
-            if not (e.radio or e.cleanup_failed):
+            if action == "fail":
                 # Rolled back, reservation kept: the stage tells the client what failed.
                 return _failed(str(e), e.stage)
             failures += 1
-            if not e.cleanup_failed and failures <= len(CREATE_RETRY_DELAYS):
+            if action == "retry" and failures <= len(CREATE_RETRY_DELAYS):
                 delay = CREATE_RETRY_DELAYS[failures - 1]
                 if _time_left(reservation) >= delay + _start_time(req):
                     logger.info(
@@ -533,10 +554,10 @@ def _start_with_retries(
                 reservation_mgr.delete(reservation.reservation_id, EXPIRED)
                 return StartOutcome("ended", reason="reservation_expired")
             manager.quarantine_radio(
-                reservation_mgr, reservation, radio_fault=e.radio, band=req.band, channel=req.channel,
+                reservation_mgr, reservation, radio_fault=e.kind.radio, band=req.band, channel=req.channel,
             )
             return StartOutcome("ended", reason="reservation_invalidated")
-        except ValueError as e:   # another network already active, unknown antenna, no free subnet
+        except ValueError as e:   # unknown antenna, no free subnet
             return _failed(str(e))
 
 

@@ -5,13 +5,14 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from .. import heartbeat
 from ..models import NetworkCreateRequest
 from ..network.commands import CommandError
 from ..network.dhcp import DhcpServerError
 from ..reservation import Reservation, ReservationManager
+from .failures import FailureKind
 
 if TYPE_CHECKING:
     from .active import ActiveNetwork
@@ -35,6 +36,21 @@ MISS_LIMIT = 6
 # Delay before each new attempt after a restore that failed for a non-radio
 # reason; the last value repeats while the reservation is valid.
 RETRY_BACKOFF = (15.0, 30.0, 60.0, 120.0, 300.0)
+# What the watchdog does when a restore (or a later restore attempt) fails, by
+# kind (ARCH-2):
+# - isolate: quarantine the adapter even if the reservation was released
+#   meanwhile, since the rollback may have left processes or rules up
+# - quarantine: quarantine the adapter; a restore cancelled meanwhile does
+#   nothing instead (a later attempt of an owed network quarantines all the same)
+# - retry_later: owe the network and try again after RETRY_BACKOFF
+# A quarantine counts as a radio fault (USB recovery) when kind.radio.
+_ON_RESTORE_FAILURE: dict[FailureKind, Literal["isolate", "quarantine", "retry_later"]] = {
+    FailureKind.CLEANUP_FAILED: "isolate",
+    FailureKind.RADIO_CLEANUP_FAILED: "isolate",
+    FailureKind.TRANSIENT_RADIO: "quarantine",
+    FailureKind.CONFIGURATION: "retry_later",
+    FailureKind.CONFLICT: "retry_later",
+}
 
 
 @dataclass
@@ -272,17 +288,17 @@ class NetworkWatchdog:
                 cancelled=lambda: self._cancelled(reservation),
             )
         except StartupFailure as exc:
-            if exc.cleanup_failed or exc.radio:
+            if _ON_RESTORE_FAILURE[exc.kind] != "retry_later":
                 logger.warning("AP restore retry on %s failed: %s; quarantining", device, exc)
                 self._drop_pending(device)
                 self.manager.quarantine_radio(
-                    reservations, reservation, radio_fault=exc.radio,
+                    reservations, reservation, radio_fault=exc.kind.radio,
                     band=pending.band, channel=pending.channel,
                 )
                 return
             self._fail_again(pending, exc)
             return
-        except Exception as exc:  # ValueError, or anything unexpected (REV-1)
+        except Exception as exc:  # ValueError (unknown antenna, no subnet), or anything unexpected (REV-1)
             if not isinstance(exc, ValueError):
                 logger.exception("AP restore retry failed unexpectedly on %s", device)
             self._fail_again(pending, exc)
@@ -343,14 +359,15 @@ class NetworkWatchdog:
             )
         except StartupFailure as exc:
             logger.warning("AP restart failed on %s: %s", device, exc)
-            if exc.cleanup_failed or (exc.radio and not self._cancelled(reservation)):
+            action = _ON_RESTORE_FAILURE[exc.kind]
+            if action == "isolate" or (action == "quarantine" and not self._cancelled(reservation)):
                 self.manager.quarantine_radio(
-                    reservations, reservation, radio_fault=exc.radio, band=band, channel=channel,
+                    reservations, reservation, radio_fault=exc.kind.radio, band=band, channel=channel,
                 )
             elif not self._cancelled(reservation):
                 self._owe(reservation, request, band, channel, exc)
             return
-        except Exception as exc:  # ValueError (e.g. already active), or anything unexpected (REV-1)
+        except Exception as exc:  # ValueError (unknown antenna, no subnet), or anything unexpected (REV-1)
             if isinstance(exc, ValueError):
                 logger.warning("AP restart failed on %s: %s", device, exc)
             else:

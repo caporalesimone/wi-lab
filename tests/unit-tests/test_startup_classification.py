@@ -7,6 +7,7 @@ import pytest
 from wilab.config import load_config
 from wilab.models import NetworkCreateRequest
 from wilab.wifi import manager as manager_module
+from wilab.wifi.failures import FailureKind
 from wilab.wifi.hostapd import HostapdError, HostapdInitFailure, HostapdRadioFailure
 from wilab.wifi.manager import NetworkManager, StartupFailure
 
@@ -43,7 +44,7 @@ def test_init_failure_is_radio_on_every_request(monkeypatch, manager, allow_inte
     monkeypatch.setattr(manager.hostapd_manager, "start", start)
     with pytest.raises(StartupFailure) as failure:
         manager.start_network(device, _request(), allow_internal_retry=allow_internal_retry)
-    assert failure.value.radio and not failure.value.cleanup_failed
+    assert failure.value.kind is FailureKind.TRANSIENT_RADIO
     assert start.call_count == (3 if allow_internal_retry else 1)
 
 
@@ -53,7 +54,7 @@ def test_unclassified_hostapd_error_is_not_radio(monkeypatch, manager) -> None:
     monkeypatch.setattr(manager.hostapd_manager, "start", start)
     with pytest.raises(StartupFailure) as failure:
         manager.start_network(device, _request(), allow_internal_retry=True)
-    assert not failure.value.radio
+    assert failure.value.kind is FailureKind.CONFIGURATION
     assert start.call_count == 1  # not retried
 
 

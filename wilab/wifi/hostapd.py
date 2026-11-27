@@ -20,6 +20,7 @@ from ..network.commands import (
 )
 from ..paths import HOSTAPD_RUNTIME_DIR, make_private_dir
 from .channels import ChannelLayout, channel_layouts
+from .failures import FailureKind
 from .interface import interface_present
 
 logger = logging.getLogger(__name__)
@@ -106,9 +107,14 @@ def _classify_output(line: bytes) -> str | None:
 class HostapdError(Exception):
     """Exception raised for hostapd operation failures."""
 
+    # hostapd refused or exited without a radio symptom: the request cannot work as is.
+    kind = FailureKind.CONFIGURATION
+
 
 class HostapdRadioFailure(HostapdError):
     """Radio startup failed without a confirmed configuration error."""
+
+    kind = FailureKind.TRANSIENT_RADIO
 
 
 class HostapdSegfault(HostapdRadioFailure):

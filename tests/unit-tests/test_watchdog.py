@@ -12,6 +12,7 @@ from wilab import heartbeat
 from wilab.api import create_app, dependencies
 from wilab.models import NetworkStatus
 from wilab.wifi import watchdog as watchdog_module
+from wilab.wifi.failures import FailureKind
 from wilab.wifi.manager import StartupFailure
 
 
@@ -167,7 +168,7 @@ def test_watchdog_retries_with_backoff_until_the_ap_is_back(monkeypatch):
 
 def test_radio_failure_on_retry_quarantines(monkeypatch):
     _, manager, reservations, reservation, start, quarantine = _failed_restore(monkeypatch)
-    start.side_effect = StartupFailure("beacon setup failed", radio=True)
+    start.side_effect = StartupFailure("beacon setup failed", kind=FailureKind.TRANSIENT_RADIO)
     _run_ticks(monkeypatch, manager, reservations, reservation.device_id, [1015.0])
     quarantine.assert_called_once()
     assert quarantine.call_args.kwargs["radio_fault"] is True

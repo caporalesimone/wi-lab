@@ -12,6 +12,7 @@ from wilab.network.commands import CommandError
 from wilab.network.dhcp import DhcpServerError
 from wilab.reservation import ReservationManager
 from wilab.wifi import recovery
+from wilab.wifi.failures import FailureKind
 from wilab.wifi.manager import StartupFailure
 
 RESERVE = "/api/v2/reservations"
@@ -28,7 +29,7 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
     radio = config.antennas[0]
     monkeypatch.setattr(radio, "usb_recovery_port", authorized_port)
     manager = dependencies.get_manager(config)
-    start = Mock(side_effect=StartupFailure("radio timeout", radio=True))
+    start = Mock(side_effect=StartupFailure("radio timeout", kind=FailureKind.TRANSIENT_RADIO))
     schedule = Mock()
     monkeypatch.setattr(manager, "start_network", start)
     monkeypatch.setattr(manager.recovery, "schedule", schedule)
@@ -84,7 +85,7 @@ def test_radio_failure_recovered_by_a_later_start_answers_200(monkeypatch):
     def start(*args, **kwargs):
         calls.append(kwargs["allow_internal_retry"])
         if len(calls) == 1:
-            raise StartupFailure("radio timeout", radio=True)
+            raise StartupFailure("radio timeout", kind=FailureKind.TRANSIENT_RADIO)
     monkeypatch.setattr(manager, "start_network", start)
     monkeypatch.setattr(manager, "get_status", lambda device: NetworkStatus(interface=device, active=True))
     pauses = []
@@ -101,7 +102,7 @@ def test_reservation_too_short_for_another_start_is_released_without_quarantine(
     """A: no time left for the next start -> 404 reservation_expired, antenna free again, no quarantine."""
     config = dependencies.get_config()
     manager = dependencies.get_manager(config)
-    start = Mock(side_effect=StartupFailure("radio timeout", radio=True))
+    start = Mock(side_effect=StartupFailure("radio timeout", kind=FailureKind.TRANSIENT_RADIO))
     monkeypatch.setattr(manager, "start_network", start)
     monkeypatch.setattr(manager.recovery, "schedule", Mock())
     pauses = []

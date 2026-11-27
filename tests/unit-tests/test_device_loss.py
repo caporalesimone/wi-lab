@@ -21,6 +21,7 @@ from wilab.network.commands import CommandError
 from wilab.reservation import ReservationManager
 from wilab.wifi import hostapd, recovery
 from wilab.wifi import manager as manager_module
+from wilab.wifi.failures import FailureKind
 from wilab.wifi.interface import InterfaceError
 from wilab.wifi.manager import StartupFailure
 
@@ -120,8 +121,7 @@ def test_interface_vanishing_during_start_is_a_radio_failure(monkeypatch):
     with pytest.raises(StartupFailure) as error:
         mgr.start_network(device, REQUEST)
 
-    assert error.value.radio is True
-    assert error.value.cleanup_failed is False
+    assert error.value.kind is FailureKind.TRANSIENT_RADIO
     assert "disappeared" in str(error.value)
     start_mock.assert_called_once()  # no internal retry while the adapter is gone
     assert device not in mgr.active
@@ -149,7 +149,7 @@ def test_interface_vanishing_with_failed_cleanup_is_still_a_radio_failure(monkey
 
     with pytest.raises(StartupFailure) as error:
         mgr.start_network(device, REQUEST)
-    assert (error.value.radio, error.value.cleanup_failed) == (True, True)
+    assert error.value.kind is FailureKind.RADIO_CLEANUP_FAILED
 
 
 @pytest.mark.parametrize("present, expected", [(False, StartupFailure), (True, ValueError)])
@@ -165,7 +165,7 @@ def test_missing_interface_at_validation(monkeypatch, present, expected):
     with pytest.raises(expected) as error:
         mgr.start_network(device, REQUEST)
     if expected is StartupFailure:
-        assert error.value.radio is True
+        assert error.value.kind is FailureKind.TRANSIENT_RADIO
 
 
 def test_api_vanished_interface_is_waited_for_not_quarantined(monkeypatch):
@@ -305,7 +305,7 @@ def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch):
     mgr = dependencies.get_manager(config)
     monkeypatch.setattr(
         mgr, "start_network",
-        Mock(side_effect=StartupFailure("rollback failed", cleanup_failed=True)),
+        Mock(side_effect=StartupFailure("rollback failed", kind=FailureKind.CLEANUP_FAILED)),
     )
     schedule = Mock()
     monkeypatch.setattr(mgr.recovery, "schedule", schedule)
