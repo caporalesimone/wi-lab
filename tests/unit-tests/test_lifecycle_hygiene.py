@@ -9,7 +9,7 @@ import threading
 from unittest.mock import Mock
 
 import pytest
-from conftest import create_network, network_body
+from conftest import ap, create_network, network_body
 from fastapi.testclient import TestClient
 
 RESERVE = "/api/v2/reservations"
@@ -43,12 +43,12 @@ def lab(monkeypatch, context, app):
 
 
 def _cycle(client, headers, url):
-    _created, network = create_network(client, headers, f"{url}/network", BODY)
+    _created, network = create_network(client, headers, ap(url), BODY)
     assert network.status_code == 200 and network.json()["active"], network.text
-    assert client.get(f"{url}/network", headers=headers).status_code == 200
-    assert client.post(f"{url}/internet/disable", headers=headers).status_code == 200
-    assert client.post(f"{url}/internet/enable", headers=headers).status_code == 200
-    assert client.delete(f"{url}/network", headers=headers).status_code == 200
+    assert client.get(ap(url), headers=headers).status_code == 200
+    assert client.post(ap(url, "/internet/disable"), headers=headers).status_code == 200
+    assert client.post(ap(url, "/internet/enable"), headers=headers).status_code == 200
+    assert client.delete(ap(url), headers=headers).status_code == 200
 
 
 def test_a_full_cycle_logs_no_error(lab, caplog):

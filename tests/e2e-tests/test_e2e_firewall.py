@@ -77,7 +77,7 @@ def test_success_means_the_firewall_is_in_place(wilab: WiLab, server: Server, in
     start = time.time()
     response = wilab.create(antenna, internet_enabled=internet)
     assert response.status_code == 200, response.text
-    network = wilab.http.get(f"/reservations/{antenna.reservation_id}/network").json()
+    network = wilab.http.get(f"/access-point/{antenna.reservation_id}").json()
     assert network["internet"]["enabled"] is internet
     nat = server.iptables_rules("nat")
     forward = server.iptables_rules("filter")
@@ -118,7 +118,7 @@ def test_host_is_guarded_from_ap_clients(wilab: WiLab, server: Server, captive_p
     assert ("--dport 53" in accepted) is captive_portal
     if captive_portal:
         # The portal page, on captive_portal_port (8081 by default, no longer 80).
-        network = wilab.http.get(f"/reservations/{antenna.reservation_id}/network").json()
+        network = wilab.http.get(f"/access-point/{antenna.reservation_id}").json()
         assert f"--dport {urlsplit(network['captive_portal']['url']).port or 80}" in accepted
     assert "8080" not in accepted and "--dport 22" not in accepted
     assert v4[-1] == f"-A {chain} -j REJECT --reject-with icmp-port-unreachable"

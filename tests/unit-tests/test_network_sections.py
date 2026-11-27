@@ -1,4 +1,4 @@
-"""Sectioned network API (API-8, ARCH-3): create body, GET .../network response, Swagger groups."""
+"""Sectioned network API (API-8, ARCH-3): create body, GET /access-point/{reservation_id} response, Swagger groups."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,7 +12,7 @@ from wilab.models import (
     NetworkTxPower,
 )
 
-CREATE = "/api/v2/reservations/{reservation_id}/network"
+CREATE = "/api/v2/access-point/{reservation_id}"
 
 
 @pytest.fixture
@@ -119,7 +119,7 @@ class TestResponse:
 
 class TestSwagger:
     def test_create_examples_are_valid_bodies_with_every_optional_field(self, spec):
-        examples = spec["paths"]["/api/v2/reservations/{reservation_id}/network"]["post"]["requestBody"][
+        examples = spec["paths"]["/api/v2/access-point/{reservation_id}"]["post"]["requestBody"][
             "content"]["application/json"]["examples"]
         assert examples
         for name, example in examples.items():
@@ -130,7 +130,7 @@ class TestSwagger:
             assert "hidden" in value["wifi"], name
 
     def test_get_examples_match_the_response_model(self, spec):
-        examples = spec["paths"]["/api/v2/reservations/{reservation_id}/network"]["get"]["responses"]["200"][
+        examples = spec["paths"]["/api/v2/access-point/{reservation_id}"]["get"]["responses"]["200"][
             "content"]["application/json"]["examples"]
         for example in examples.values():
             NetworkResponse(**example["value"])

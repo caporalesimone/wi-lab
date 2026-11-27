@@ -61,7 +61,7 @@ class NetworkCreateRequest(BaseModel):
             "165-177); every channel of the block must be available, DFS ones included. "
             "On 2.4 GHz 40 MHz is accepted, but hostapd falls back to 20 MHz when it sees "
             "neighbouring networks (20/40 coexistence): check `reported_channel_width` in "
-            "`GET .../network`. Only widths listed for the generation and the channel in "
+            "`GET /access-point/{reservation_id}`. Only widths listed for the generation and the channel in "
             "`GET /antennas/{interface}/capabilities` are accepted."
         ),
     )
@@ -180,8 +180,8 @@ class NetworkStatus(BaseModel):
         None, description=(
             "Watchdog state: restoring_ap, restoring_dhcp, dhcp_failed, or restore_failed "
             "(AP restart failed; the watchdog retries with backoff while the reservation is valid); "
-            "stop_failed: a stop did not complete (503 / 1012), repeat DELETE .../network. "
-            "starting: a create is running, poll GET .../network. start_failed: the create "
+            "stop_failed: a stop did not complete (503 / 1012), repeat DELETE /access-point/{reservation_id}. "
+            "starting: a create is running, poll GET /access-point/{reservation_id}. start_failed: the create "
             "failed for a non-radio reason, see `error`."
         ),
     )
@@ -220,7 +220,7 @@ class NetworkStatus(BaseModel):
 
 # --- Network API models (API-8, first step of ARCH-3) ---
 #
-# The create body and the GET .../network response are grouped in sections:
+# The create body and the GET /access-point/{reservation_id} response are grouped in sections:
 # radio, wifi (with security), internet, captive_portal, plus ip and reservation
 # in the response. Inside Wi-Lab the flat NetworkCreateRequest and NetworkStatus
 # stay the working models: the body is converted to the first, which runs every
@@ -295,7 +295,7 @@ class CaptivePortalSettings(BaseModel):
 
 
 class NetworkCreateBody(BaseModel):
-    """Body of `POST .../network`. Only `radio` and `wifi` are required."""
+    """Body of `POST /access-point/{reservation_id}`. Only `radio` and `wifi` are required."""
 
     # API-10: an unknown field (a typo such as `captive-portal`) is a 422, not ignored.
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -418,7 +418,7 @@ class StartError(BaseModel):
 
 
 class NetworkResponse(BaseModel):
-    """`GET .../network`. Sections are null while the network is not running."""
+    """`GET /access-point/{reservation_id}`. Sections are null while the network is not running."""
 
     interface: str
     active: bool
@@ -427,7 +427,7 @@ class NetworkResponse(BaseModel):
     restarts: RestartsInfo = Field(default_factory=RestartsInfo)
     error: StartError | None = Field(None, description=(
         "Set only with `runtime_state: start_failed`: why the create failed. The reservation "
-        "is still valid; a new create starts again, `DELETE .../network` clears it"
+        "is still valid; a new create starts again, `DELETE /access-point/{reservation_id}` clears it"
     ))
     radio: RadioInfo | None = None
     wifi: WifiInfo | None = None

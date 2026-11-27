@@ -32,7 +32,7 @@ class AntennaState(BaseModel):
     interface: str = Field(..., description="Linux interface name; identifies the antenna in this API")
     display_name: str
     reservation: ReservationInfo | None = Field(..., description="null when the antenna is not reserved")
-    network_active: bool
+    access_point_active: bool
     recovery_state: Literal["recovering", "unavailable"] | None = Field(
         None, description="Present only while the antenna is quarantined",
     )
@@ -65,9 +65,9 @@ _LIST_EXAMPLES = {
             "reservation_policy": _POLICY_EXAMPLE,
             "antennas": [
                 {"interface": "wlx7419f8176286", "display_name": "antenna-1", "reservation": None,
-                 "network_active": False},
+                 "access_point_active": False},
                 {"interface": "wlx7419f817651c", "display_name": "antenna-2", "reservation": None,
-                 "network_active": False},
+                 "access_point_active": False},
             ],
         },
     },
@@ -78,9 +78,9 @@ _LIST_EXAMPLES = {
             "reservation_policy": _POLICY_EXAMPLE,
             "antennas": [
                 {"interface": "wlx7419f8176286", "display_name": "antenna-1",
-                 "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540}, "network_active": True},
+                 "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540}, "access_point_active": True},
                 {"interface": "wlx7419f817651c", "display_name": "antenna-2", "reservation": None,
-                 "network_active": False},
+                 "access_point_active": False},
             ],
         },
     },
@@ -91,10 +91,10 @@ _LIST_EXAMPLES = {
             "reservation_policy": _POLICY_EXAMPLE,
             "antennas": [
                 {"interface": "wlx7419f8176286", "display_name": "antenna-1", "reservation": None,
-                 "network_active": False, "recovery_state": "unavailable"},
+                 "access_point_active": False, "recovery_state": "unavailable"},
                 {"interface": "wlx7419f817651c", "display_name": "antenna-2",
                  "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 54},
-                 "network_active": False, "runtime_state": "restoring_ap"},
+                 "access_point_active": False, "runtime_state": "restoring_ap"},
             ],
         },
     },
@@ -166,7 +166,7 @@ class AntennaDetails(BaseModel):
     display_name: str = Field(description="Name from `antennas` in the configuration, else the interface")
     device: DeviceDetails | None = Field(description="Where the antenna is attached; null if sysfs does not show it")
     reservation: ReservationInfo | None = Field(description="null when the antenna is not reserved")
-    network_active: bool
+    access_point_active: bool
     recovery_state: Literal["recovering", "unavailable"] | None = Field(
         None, description="Present only while the antenna is quarantined",
     )
@@ -193,7 +193,7 @@ _DETAILS_EXAMPLES = {
             "display_name": "antenna-1",
             "device": {"bus": "usb", "address": "2-1", "driver": "mt7921u"},
             "reservation": {"expires_at": "2026-11-27T19:11:57Z", "expires_in": 3298},
-            "network_active": True,
+            "access_point_active": True,
             "health": {
                 "ap_restores": {"used": 1, "limit": 5, "window_minutes": 60, "frees_at": "2026-11-27T18:42:10Z"},
                 "dhcp_restarts": {"used": 0, "limit": 3, "window_minutes": 60, "frees_at": None},
@@ -209,7 +209,7 @@ _DETAILS_EXAMPLES = {
             "display_name": "antenna-2",
             "device": {"bus": "usb", "address": "2-2", "driver": "mt7921u"},
             "reservation": None,
-            "network_active": False,
+            "access_point_active": False,
             "recovery_state": "unavailable",
             "health": {
                 "ap_restores": {"used": 5, "limit": 5, "window_minutes": 60, "frees_at": "2026-11-27T18:55:02Z"},
@@ -280,7 +280,7 @@ def list_antennas(
     get an antenna: another client may take the last free one in between.
 
     Each entry of `antennas` has `reservation` (`null` when free; both fields
-    `null` for an unlimited one) and `network_active`. Two fields appear only
+    `null` for an unlimited one) and `access_point_active`. Two fields appear only
     when they apply:
 
     - `recovery_state`: `recovering` (USB reset and probe running) or
@@ -336,7 +336,7 @@ def get_antenna(
 ) -> AntennaDetails:
     """The antenna as it is now.
 
-    `reservation`, `network_active` and, when they apply, `recovery_state` and
+    `reservation`, `access_point_active` and, when they apply, `recovery_state` and
     `runtime_state` are the antenna's entry of `antennas[]` in `GET /antennas`.
     `device` is where it is attached (bus, port, kernel driver).
 
@@ -362,7 +362,7 @@ def get_antenna(
 @router.get(
     "/{interface}/capabilities",
     response_model=AntennaCapabilities,
-    summary="Read what a network on an antenna can use",
+    summary="Read what an access point on an antenna can use",
     responses={
         200: {"content": {"application/json": {"example": _CAPABILITIES_EXAMPLE}}},
         401: {"description": "Unauthorized (missing or invalid auth token)"},

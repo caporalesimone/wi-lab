@@ -29,7 +29,7 @@ class ClientLister:
         self._dhcp_server = dhcp_server
         self._captive_portals = captive_portals
         # Client list per device, reused for CLIENTS_CACHE_SECONDS (PERF-2): clients
-        # polling GET .../network every second cost one `iw station dump` at most.
+        # polling GET /access-point/{reservation_id} every second cost one `iw station dump` at most.
         self._cache: dict[str, tuple[float, list[ClientInfo]]] = {}
 
     def connected(self, device_id: str) -> list[ClientInfo]:

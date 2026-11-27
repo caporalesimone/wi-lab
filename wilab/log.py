@@ -73,7 +73,7 @@ _READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 class AccessFilter(logging.Filter):
     """Writes the successful reads of uvicorn's access log at DEBUG.
 
-    Clients poll `GET /status` and `GET .../network` every few seconds: at INFO
+    Clients poll `GET /status` and `GET /access-point/{reservation_id}` every few seconds: at INFO
     those lines were most of the journal and said nothing. What changes
     something (POST, PUT, DELETE) and every answer of 400 or more stay INFO:
     they are the record of who did what.

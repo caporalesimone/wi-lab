@@ -253,7 +253,7 @@ class TestApi:
         manager = client.app.state.context.manager
         start = Mock()
         monkeypatch.setattr(manager, "start_network", start)
-        resp = create_network(client, {"Authorization": token}, f"/api/v2/reservations/{reservation_id}/network", network_body(**{"encryption": "wpa2", **BASE, **body}))[1]
+        resp = create_network(client, {"Authorization": token}, f"/api/v2/access-point/{reservation_id}", network_body(**{"encryption": "wpa2", **BASE, **body}))[1]
         return resp, start
 
     def test_wpa_returns_422_before_radio_work(self, client, token, reservation_id, monkeypatch):

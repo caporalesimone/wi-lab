@@ -192,7 +192,7 @@ def test_api_vanished_interface_is_waited_for_not_quarantined(monkeypatch, conte
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     with TestClient(app) as client:
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
-        _, result = create_network(client, headers, f"/api/v2/reservations/{rid}/network", network_body(**PAYLOAD))
+        _, result = create_network(client, headers, f"/api/v2/access-point/{rid}", network_body(**PAYLOAD))
         assert pauses == [5]
         assert result.json()["runtime_state"] == "start_failed"
         assert result.json()["error"]["code"] == 1013
@@ -320,7 +320,7 @@ def test_api_cleanup_failure_quarantine_heals_without_restart(monkeypatch, conte
         assert reservations.get(rid).device_id == device
         for _ in config.antennas[1:]:
             assert client.post(RESERVE, headers=headers, json={"duration_seconds": 60}).status_code == 200
-        _, result = create_network(client, headers, f"/api/v2/reservations/{rid}/network", network_body(**PAYLOAD))
+        _, result = create_network(client, headers, f"/api/v2/access-point/{rid}", network_body(**PAYLOAD))
         assert (result.status_code, result.json()["detail"]["reason"]) == (404, "reservation_invalidated")
         schedule.assert_not_called()
         status = client.get("/api/v2/status", headers=headers).json()

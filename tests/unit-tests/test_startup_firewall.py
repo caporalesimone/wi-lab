@@ -104,7 +104,7 @@ def test_api_reports_start_failed_and_keeps_the_reservation(monkeypatch, context
         rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 60}).json()[
             "reservation_id"
         ]
-        _, response = create_network(client, headers, f"/api/v2/reservations/{rid}/network", network_body(**body))
+        _, response = create_network(client, headers, f"/api/v2/access-point/{rid}", network_body(**body))
         network = response.json()
         assert network["runtime_state"] == "start_failed"
         assert "enable Internet" in network["error"]["message"]

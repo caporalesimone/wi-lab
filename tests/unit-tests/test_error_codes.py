@@ -47,9 +47,10 @@ def test_every_operation_with_a_reservation_id_answers_404_with_the_exact_reason
         operations = _operations_with_a_reservation_id(client)
         # The paths the review found uncovered must be in the list, or it is derived wrongly
         # (there is no plain `/qos` operation on a reservation any more, only `/qos/profile`).
-        paths = {path.removeprefix("/api/v2/reservations/{reservation_id}") for _, path in operations}
-        assert {"/internet/disable", "/txpower", "/qos/profile"} <= paths
-        assert ("POST", "/api/v2/reservations/{reservation_id}/txpower") in operations
+        paths = {path for _, path in operations}
+        assert {"/api/v2/access-point/{reservation_id}/internet/disable", "/api/v2/access-point/{reservation_id}/tx-power",
+                "/api/v2/reservations/{reservation_id}/qos/profile"} <= paths
+        assert ("POST", "/api/v2/access-point/{reservation_id}/tx-power") in operations
         reservations = context.reservations
 
         def reserve():

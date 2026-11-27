@@ -24,7 +24,7 @@ journalctl -u wi-lab.service --no-pager -g 'API failure operation='
 ```
 
 For example, `API failure operation=stop_network http_status=503 detail_code=1012`
-identifies a `DELETE .../network` that did not complete (hostapd stuck in the
+identifies a `DELETE /access-point/{reservation_id}` that did not complete (hostapd stuck in the
 kernel). The diagnostic line is emitted only for API `5xx` responses. It omits
 request paths, reservation IDs, tokens, and response bodies. A failed
 asynchronous create is not an API `5xx`: its outcome is logged by the create

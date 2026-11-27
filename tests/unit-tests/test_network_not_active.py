@@ -21,13 +21,13 @@ def idle_reservation(app):
 
 
 ACTIONS = [
-    ("post", "/internet/enable", None),
-    ("post", "/internet/disable", None),
-    ("get", "/txpower", None),
-    ("post", "/txpower", {"tx_power_level": 2}),
-    ("post", "/qos/profile", {"download_speed_kbit": 1000}),
-    ("get", "/qos/profile", None),
-    ("delete", "/qos/profile", None),
+    ("post", "/access-point/{rid}/internet/enable", None),
+    ("post", "/access-point/{rid}/internet/disable", None),
+    ("get", "/access-point/{rid}/tx-power", None),
+    ("post", "/access-point/{rid}/tx-power", {"tx_power_level": 2}),
+    ("post", "/reservations/{rid}/qos/profile", {"download_speed_kbit": 1000}),
+    ("get", "/reservations/{rid}/qos/profile", None),
+    ("delete", "/reservations/{rid}/qos/profile", None),
 ]
 
 
@@ -35,10 +35,10 @@ ACTIONS = [
 def test_action_without_network_is_409_1007(idle_reservation, method, path, body):
     client, headers, rid = idle_reservation
     kwargs = {"headers": headers, **({"json": body} if body is not None else {})}
-    response = getattr(client, method)(f"/api/v2/reservations/{rid}{path}", **kwargs)
+    response = getattr(client, method)("/api/v2" + path.format(rid=rid), **kwargs)
     assert response.status_code == 409, response.text
     assert response.json()["detail"]["code"] == 1007
-    assert response.json()["detail"]["reason"] == "network_not_active"
+    assert response.json()["detail"]["reason"] == "access_point_not_active"
 
 
 @pytest.mark.parametrize(("method", "path", "body"), ACTIONS)
@@ -50,7 +50,7 @@ def test_action_on_a_half_stopped_network_is_409_1012(idle_reservation, method, 
     manager._stop_failed.add(device)
     try:
         kwargs = {"headers": headers, **({"json": body} if body is not None else {})}
-        response = getattr(client, method)(f"/api/v2/reservations/{rid}{path}", **kwargs)
+        response = getattr(client, method)("/api/v2" + path.format(rid=rid), **kwargs)
     finally:
         manager._stop_failed.discard(device)
     assert response.status_code == 409, response.text
@@ -59,15 +59,15 @@ def test_action_on_a_half_stopped_network_is_409_1012(idle_reservation, method, 
 
 def test_unknown_reservation_is_still_404(idle_reservation):
     client, headers, _rid = idle_reservation
-    response = client.post("/api/v2/reservations/deadbeef/internet/enable", headers=headers)
+    response = client.post("/api/v2/access-point/deadbeef/internet/enable", headers=headers)
     assert response.status_code == 404
 
 
 def test_openapi_documents_1007():
     paths = create_app().openapi()["paths"]
     for path, method in (
-        ("/api/v2/reservations/{reservation_id}/internet/enable", "post"),
-        ("/api/v2/reservations/{reservation_id}/txpower", "get"),
+        ("/api/v2/access-point/{reservation_id}/internet/enable", "post"),
+        ("/api/v2/access-point/{reservation_id}/tx-power", "get"),
         ("/api/v2/reservations/{reservation_id}/qos/profile", "post"),
     ):
         assert "1007" in paths[path][method]["responses"]["409"]["description"], (path, method)
@@ -77,7 +77,7 @@ def test_openapi_documents_1007():
 @pytest.mark.parametrize(("method", "path", "manager_call"), [
     ("post", "/internet/enable", "enable_internet"),
     ("post", "/internet/disable", "disable_internet"),
-    ("get", "/txpower", "get_tx_power_info"),
+    ("get", "/tx-power", "get_tx_power_info"),
 ])
 def test_an_internal_error_on_a_valid_reservation_is_never_404(idle_reservation, monkeypatch, method, path, manager_call, context):
     """REV-11 point 2: a 404 on these calls always means the reservation ended."""
@@ -88,5 +88,5 @@ def test_an_internal_error_on_a_valid_reservation_is_never_404(idle_reservation,
         raise ValueError("Channel unknown for this network")
 
     monkeypatch.setattr(manager, manager_call, broken)
-    response = getattr(client, method)(f"/api/v2/reservations/{rid}{path}", headers=headers)
+    response = getattr(client, method)(f"/api/v2/access-point/{rid}{path}", headers=headers)
     assert response.status_code == 500, response.text

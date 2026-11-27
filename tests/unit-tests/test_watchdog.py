@@ -185,7 +185,7 @@ def test_release_stops_the_retries(monkeypatch, context):
 def test_api_reports_restore_failed_and_delete_stops_retries(monkeypatch, context, app):
     config, manager, _, reservation, _, _ = _failed_restore(context, monkeypatch)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    path = f"/api/v2/reservations/{reservation.reservation_id}/network"
+    path = f"/api/v2/access-point/{reservation.reservation_id}"
     with TestClient(app) as client:
         network = client.get(path, headers=headers).json()
         assert (network["active"], network["runtime_state"]) == (False, "restore_failed")
@@ -202,7 +202,7 @@ def test_new_create_replaces_the_pending_restore(monkeypatch, context, app):
     config, manager, _, reservation, start, _ = _failed_restore(context, monkeypatch)
     start.side_effect = None
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    path = f"/api/v2/reservations/{reservation.reservation_id}/network"
+    path = f"/api/v2/access-point/{reservation.reservation_id}"
     body = network_body(ssid="new", channel=1, band="2.4ghz", encryption="open", tx_power_level=4)
     with TestClient(app) as client:
         assert create_network(client, headers, path, body)[1].status_code == 200
@@ -334,7 +334,7 @@ def test_get_network_has_the_restarts_section(monkeypatch, context, app):
             "reservation_id"]
         reservation = context.reservations.get(rid)
         reservation.record_restart("ap", "hostapd_not_running")
-        body = client.get(f"/api/v2/reservations/{rid}/network", headers=headers).json()
+        body = client.get(f"/api/v2/access-point/{rid}", headers=headers).json()
     assert body["restarts"]["ap"] == 1 and body["restarts"]["dhcp"] == 0
     assert body["restarts"]["last_reason"] == "hostapd_not_running"
     assert body["restarts"]["last_at"].endswith("Z")
@@ -399,7 +399,7 @@ def _watch_until_a_restart(context, monkeypatch, ticks, *, dhcp_restart_works=Tr
     monkeypatch.setattr(manager.watchdog, "_restore_dhcp", restore_dhcp)
     monkeypatch.setattr(manager.watchdog, "_restore_ap", Mock())
     manager.watchdog._watch(reservations, device)
-    monkeypatch.delitem(manager.active, device)   # GET .../network then reads only the reservation
+    monkeypatch.delitem(manager.active, device)   # GET /access-point/{reservation_id} then reads only the reservation
     return reservation
 
 
@@ -417,13 +417,13 @@ _HEALTHY = (True, True, True)
 ], ids=["hostapd_not_running", "hostapd_not_enabled", "dnsmasq_not_running", "dhcp_failed",
         "network_check_failed"])
 def test_every_restart_reason_reaches_get_network(monkeypatch, ticks, options, expected, context, app):
-    """unit-test-14 (b): each value of restarts.last_reason, from the watch loop to GET .../network."""
+    """unit-test-14 (b): each value of restarts.last_reason, from the watch loop to GET /access-point/{reservation_id}."""
     reservation = _watch_until_a_restart(context, monkeypatch, ticks, **options)
     config = context.config
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     with TestClient(app) as client:
         restarts = client.get(
-            f"/api/v2/reservations/{reservation.reservation_id}/network", headers=headers,
+            f"/api/v2/access-point/{reservation.reservation_id}", headers=headers,
         ).json()["restarts"]
     assert (restarts["ap"], restarts["dhcp"], restarts["last_reason"]) == expected
     assert restarts["last_at"].endswith("Z")
@@ -483,7 +483,7 @@ def test_restart_counters_live_as_long_as_the_reservation(scripted_creates, cont
     reservations = context.reservations
     rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300}).json()[
         "reservation_id"]
-    url = f"/api/v2/reservations/{rid}/network"
+    url = f"/api/v2/access-point/{rid}"
     reservation = reservations.get(rid)
     reservation.record_restart("ap", "hostapd_not_running")
     reservation.record_restart("dhcp", "dnsmasq_not_running")
@@ -516,7 +516,7 @@ def test_restart_counters_live_as_long_as_the_reservation(scripted_creates, cont
     manager.watchdog.states.pop(reservation.device_id)
     assert client.delete(f"/api/v2/reservations/{rid}", headers=headers).status_code == 200
     fresh = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300}).json()
-    zero = client.get(f"/api/v2/reservations/{fresh['reservation_id']}/network", headers=headers).json()
+    zero = client.get(f"/api/v2/access-point/{fresh['reservation_id']}", headers=headers).json()
     assert zero["restarts"] == {"ap": 0, "dhcp": 0, "last_at": None, "last_reason": None}
 
 

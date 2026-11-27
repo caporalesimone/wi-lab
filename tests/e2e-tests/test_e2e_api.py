@@ -60,7 +60,7 @@ def test_unknown_create_field_is_rejected(wilab: WiLab) -> None:
 
 
 def test_create_returns_the_network_state(wilab: WiLab) -> None:
-    """API-5: the polling of a create ends with the network as GET .../network reports it."""
+    """API-5: the polling of a create ends with the network as GET /access-point/{reservation_id} reports it."""
     antenna = wilab.reserve()
     response = wilab.create(antenna)
     assert response.status_code == 200, response.text
@@ -71,7 +71,7 @@ def test_create_returns_the_network_state(wilab: WiLab) -> None:
 def test_create_is_asynchronous_and_idempotent(wilab: WiLab) -> None:
     """The create answers 202 at once, the polling ends with the network, the same body is 200."""
     antenna = wilab.reserve()
-    url = f"/reservations/{antenna.reservation_id}/network"
+    url = f"/access-point/{antenna.reservation_id}"
     body = network_body(ssid="wilab-async", channel=6, band="2.4ghz", encryption="open", tx_power_level=2)
     started = time.monotonic()
     accepted = wilab.http.post(url, json=body)
@@ -98,12 +98,12 @@ def test_release_during_a_start_answers_at_once(wilab: WiLab, server: Server) ->
     antenna = wilab.reserve()
     rid = antenna.reservation_id
     body = network_body(ssid="wilab-cancel", channel=6, band="2.4ghz", encryption="open", tx_power_level=2)
-    assert wilab.http.post(f"/reservations/{rid}/network", json=body).status_code == 202
+    assert wilab.http.post(f"/access-point/{rid}", json=body).status_code == 202
     started = time.monotonic()
     assert wilab.http.delete(f"/reservations/{rid}").status_code == 200
     assert time.monotonic() - started < 15
     wilab.reserved.remove(rid)
-    gone = wilab.http.get(f"/reservations/{rid}/network")
+    gone = wilab.http.get(f"/access-point/{rid}")
     assert (gone.status_code, gone.json()["detail"]["reason"]) == (404, "reservation_released")
 
     assert server.pids("hostapd") == []   # the fixture keeps every other antenna idle
@@ -177,13 +177,13 @@ def test_actions_without_a_network_share_one_status_code(wilab: WiLab) -> None:
     profiles = wilab.http.get("/qos/profiles").json()
     first_profile = profiles[0]["id"] if isinstance(profiles, list) and profiles else "none"
     codes = {
-        "internet/enable": wilab.http.post(f"/reservations/{rid}/internet/enable").status_code,
+        "internet/enable": wilab.http.post(f"/access-point/{rid}/internet/enable").status_code,
         "qos/profile": wilab.http.post(
             f"/reservations/{rid}/qos/profile", json={"profile_id": first_profile},
         ).status_code,
-        "txpower": wilab.http.post(f"/reservations/{rid}/txpower", json={"tx_power_level": 2}).status_code,
+        "txpower": wilab.http.post(f"/access-point/{rid}/tx-power", json={"tx_power_level": 2}).status_code,
     }
-    assert set(codes.values()) == {409}, codes  # 409 / 1007 network_not_active (API-2)
+    assert set(codes.values()) == {409}, codes  # 409 / 1007 access_point_not_active (API-2)
 
 
 # --------------------------------------------------------------------------- network behaviour
@@ -242,7 +242,7 @@ def test_channel_width_and_generation_reach_the_radio(
     )
     assert response.status_code == 200, response.text
     assert server.iw_channel_width(antenna.interface) == width
-    network = wilab.http.get(f"/reservations/{antenna.reservation_id}/network").json()
+    network = wilab.http.get(f"/access-point/{antenna.reservation_id}").json()
     assert network["radio"]["channel_width"] == {"requested": width, "reported": width}
     assert network["radio"]["wifi_generation"] == generation
 
@@ -252,7 +252,7 @@ def test_24ghz_40mhz_reports_the_width_it_got(wilab: WiLab, server: Server) -> N
     antenna = wilab.reserve()
     response = wilab.create(antenna, channel=1, channel_width=40)
     assert response.status_code == 200, response.text
-    network = wilab.http.get(f"/reservations/{antenna.reservation_id}/network").json()
+    network = wilab.http.get(f"/access-point/{antenna.reservation_id}").json()
     width = network["radio"]["channel_width"]
     assert width["requested"] == 40
     assert width["reported"] in (20, 40)
@@ -271,8 +271,8 @@ def test_txpower_reports_what_the_radio_applied(wilab: WiLab, server: Server) ->
     assert wilab.create(antenna).status_code == 200
     rid = antenna.reservation_id
     for level in (1, 2, 3, 4):
-        assert wilab.http.post(f"/reservations/{rid}/txpower", json={"tx_power_level": level}).status_code == 200
-        reported = wilab.http.get(f"/reservations/{rid}/txpower").json()["tx_power"]["reported_dbm"]
+        assert wilab.http.post(f"/access-point/{rid}/tx-power", json={"tx_power_level": level}).status_code == 200
+        reported = wilab.http.get(f"/access-point/{rid}/tx-power").json()["tx_power"]["reported_dbm"]
         on_air = server.iw_txpower_dbm(antenna.interface)
         assert reported is not None and on_air is not None
         assert abs(reported - on_air) < 0.5, (level, reported, on_air)
@@ -283,7 +283,7 @@ def test_txpower_change_is_fast(wilab: WiLab) -> None:
     antenna = wilab.reserve()
     assert wilab.create(antenna).status_code == 200
     start = time.monotonic()
-    response = wilab.http.post(f"/reservations/{antenna.reservation_id}/txpower", json={"tx_power_level": 3})
+    response = wilab.http.post(f"/access-point/{antenna.reservation_id}/tx-power", json={"tx_power_level": 3})
     assert response.status_code == 200
     assert time.monotonic() - start < 3
 
@@ -322,7 +322,7 @@ def test_polling_during_a_create_gets_an_answer_within_the_busy_limit(wilab: WiL
     def poll() -> None:
         while not stop.is_set():
             start = time.monotonic()
-            response = wilab.http.get(f"/reservations/{rid}/network")
+            response = wilab.http.get(f"/access-point/{rid}")
             results.append((
                 response.status_code, time.monotonic() - start,
                 response.headers.get("Retry-After"), detail_code(response),

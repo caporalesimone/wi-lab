@@ -94,7 +94,7 @@ class NetworkNotActive(ValueError):
     """The reservation is valid but it has no running network (API-2)."""
 
     def __init__(self, device_id: str) -> None:
-        super().__init__(f"Network {device_id} is not active")
+        super().__init__(f"No access point is active on {device_id}")
         self.device_id = device_id
 
 
@@ -103,7 +103,7 @@ class NetworkStopError(RuntimeError):
 
     Answered `503 / 1012` (stop_incomplete) with `Retry-After`. The network
     stays in `active` so that repeating the stop finishes it; until
-    then the watchdog leaves it alone and `GET .../network` reports
+    then the watchdog leaves it alone and `GET /access-point/{reservation_id}` reports
     `runtime_state: stop_failed`.
     """
 
@@ -399,7 +399,7 @@ class NetworkManager:
         # A running network must be stopped first (the route answers 409 / 1008 before this).
         if device_id in self.active:
             raise StartupFailure(
-                f"Network {device_id} is already active. Stop it first before creating a new one.",
+                f"An access point is already active on {device_id}. Stop it first before creating a new one.",
                 kind=FailureKind.CONFLICT,
             )
         # Logged only for a create that really starts (a refused one used to log it too).
@@ -499,7 +499,7 @@ class NetworkManager:
     def stop_network(self, device_id: str, *, client: bool = False) -> None:
         """Stop the network of *device_id*.
 
-        *client*: the stop the reservation owner asked for (DELETE .../network).
+        *client*: the stop the reservation owner asked for (DELETE /access-point/{reservation_id}).
         Only that one, when it fails, marks the network `stop_failed` for the
         owner to repeat (REV-9). A rollback, an expiry or a background cleanup
         that fails is retried by the server, not by the client.
@@ -596,7 +596,7 @@ class NetworkManager:
         if errors:
             if client:
                 self._stop_failed.add(device_id)
-            raise NetworkStopError(f"Failed to stop network {device_id}: {'; '.join(errors)}")
+            raise NetworkStopError(f"Failed to stop the access point on {device_id}: {'; '.join(errors)}")
 
         # Remove from active dict
         self.active.pop(device_id, None)

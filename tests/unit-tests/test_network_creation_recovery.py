@@ -42,7 +42,7 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
         reservation = client.post(RESERVE, headers=headers, json={"duration_seconds": 300})
         assert reservation.status_code == 200
         rid = reservation.json()["reservation_id"]
-        create = f"/api/v2/reservations/{rid}/network"
+        create = f"/api/v2/access-point/{rid}"
 
         accepted, terminal = create_network(client, headers, create, network_body(**PAYLOAD))
         assert accepted.status_code == 202
@@ -65,7 +65,7 @@ def test_one_create_retries_radio_failures_then_quarantines(monkeypatch, caplog,
         overall = client.get("/api/v2/status", headers=headers).json()
         # A quarantined adapter makes the service degraded even with no active network.
         listing = client.get("/api/v2/antennas", headers=headers).json()["antennas"]
-        assert (overall["service"]["health"], sum(a["network_active"] for a in listing)) == ("degraded", 0)
+        assert (overall["service"]["health"], sum(a["access_point_active"] for a in listing)) == ("degraded", 0)
         state = listing[0]
         assert state["recovery_state"] == ("recovering" if authorized_port else "unavailable")
 
@@ -95,7 +95,7 @@ def test_radio_failure_recovered_by_a_later_start_answers_200(monkeypatch, conte
     headers = {"Authorization": f"Bearer {config.auth_token}"}
     with TestClient(app) as client:
         rid = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()["reservation_id"]
-        _, result = create_network(client, headers, f"{RESERVE}/{rid}/network", network_body(**PAYLOAD))
+        _, result = create_network(client, headers, f"/api/v2/access-point/{rid}", network_body(**PAYLOAD))
     assert result.status_code == 200 and result.json()["active"] is True
     assert (calls, pauses) == ([True, False], [5])
 
@@ -114,7 +114,7 @@ def test_reservation_too_short_for_another_start_is_released_without_quarantine(
         reserved = client.post(RESERVE, headers=headers, json={"duration_seconds": 300}).json()
         monkeypatch.setattr(network, "START_MARGIN", 400)   # the next start would not fit
         _, result = create_network(
-            client, headers, f"{RESERVE}/{reserved['reservation_id']}/network", network_body(**PAYLOAD),
+            client, headers, f"/api/v2/access-point/{reserved['reservation_id']}", network_body(**PAYLOAD),
         )
         assert result.status_code == 404
         assert result.json()["detail"]["reason"] == "reservation_expired"
@@ -232,13 +232,13 @@ def test_api_viewers_share_recovery_guidance_and_examples():
         schema = client.get("/openapi.json").json()
     overview = schema["info"]["description"]
     assert "1001" not in overview  # radio failures are retried by the server (A)
-    assert "never release the ID" in overview and "poll `GET .../network`" in overview
+    assert "never release the ID" in overview and "poll `GET /access-point/{reservation_id}`" in overview
     assert schema["tags"][0]["name"] == "System"
     paths = schema["paths"]
-    create = paths["/api/v2/reservations/{reservation_id}/network"]["post"]["responses"]
+    create = paths["/api/v2/access-point/{reservation_id}"]["post"]["responses"]
     reserve = paths[RESERVE]["post"]["responses"]
     assert "headers" not in create["409"]
-    # Asynchronous create: 202 starting; failures are read with GET .../network.
+    # Asynchronous create: 202 starting; failures are read with GET /access-point/{reservation_id}.
     assert create["202"]["content"]["application/json"]["example"]["runtime_state"] == "starting"
     assert "1013" not in str(create.get("500", {}))
     # Its only 503 is 1006 for the same body on a running network (REV-11), never recovery codes.
@@ -253,7 +253,7 @@ def test_api_viewers_share_recovery_guidance_and_examples():
         "all_free": ("good", 2), "one_reserved": ("good", 1), "degraded_quarantine": ("degraded", 0),
     }
     assert [r["code"] for r in status_examples["degraded_quarantine"]["value"]["service"]["degraded_reasons"]] == [
-        "antenna_quarantined", "network_being_repaired",
+        "antenna_quarantined", "access_point_being_repaired",
     ]
     assert status_examples["all_free"]["value"]["service"]["restart_required"] is None
     assert status_examples["all_free"]["value"]["checked_at"].endswith("Z")
@@ -262,7 +262,7 @@ def test_api_viewers_share_recovery_guidance_and_examples():
     assert antennas[0]["recovery_state"] == "unavailable"
     assert antennas[0]["reservation"] is None   # nulls kept in the examples
     assert antennas[1]["runtime_state"] == "restoring_ap"
-    content = paths["/api/v2/reservations/{reservation_id}/network"]["get"]["responses"]["200"]["content"]["application/json"]
+    content = paths["/api/v2/access-point/{reservation_id}"]["get"]["responses"]["200"]["content"]["application/json"]
     assert "example" not in content
     assert content["examples"]["restoring_dhcp"]["value"]["runtime_state"] == "restoring_dhcp"
 
@@ -361,7 +361,7 @@ def test_runtime_recovery_status_is_reported_without_reading_radio(monkeypatch, 
     radio_status = Mock(side_effect=AssertionError("Should not query the recovering radio"))
     monkeypatch.setattr(manager, "get_status", radio_status)
     headers = {"Authorization": f"Bearer {config.auth_token}"}
-    path = f"/api/v2/reservations/{reservation.reservation_id}/network"
+    path = f"/api/v2/access-point/{reservation.reservation_id}"
 
     with TestClient(app) as client:
         response = client.get(path, headers=headers)

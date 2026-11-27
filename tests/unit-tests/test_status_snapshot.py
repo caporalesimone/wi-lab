@@ -49,7 +49,7 @@ def test_network_mid_operation_does_not_make_status_degraded(stopping_network):
     finally:
         release.set()
         thread.join()
-    assert sum(a["network_active"] for a in client.get("/api/v2/antennas", headers=headers).json()["antennas"]) == 1
+    assert sum(a["access_point_active"] for a in client.get("/api/v2/antennas", headers=headers).json()["antennas"]) == 1
     assert data["service"]["health"] == "good"
 
 

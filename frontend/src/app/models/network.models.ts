@@ -56,7 +56,7 @@ export interface InterfaceInfo {
   display_name: string;
   /** null: no reservation holds the antenna. Unlimited: both fields null. */
   reservation: StatusReservation | null;
-  network_active: boolean;
+  access_point_active: boolean;
   recovery_state?: RecoveryState;
   runtime_state?: RuntimeState;
 }
@@ -117,7 +117,7 @@ export interface ReservationResponse {
   expires_in: number | null;
 }
 
-/** GET .../network: sections are null while the network is not running. */
+/** GET /access-point/{reservation_id}: sections are null while the network is not running. */
 export interface NetworkStatus {
   interface: string;
   active: boolean;
@@ -155,7 +155,7 @@ export interface NetworkStatus {
   clients: ClientInfo[] | null;
 }
 
-/** POST .../network body: only radio and wifi are required. */
+/** POST /access-point/{reservation_id} body: only radio and wifi are required. */
 export interface NetworkCreateRequest {
   radio: {
     band: string;

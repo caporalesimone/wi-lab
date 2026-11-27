@@ -80,7 +80,7 @@ def test_shutdown_cancels_a_running_create(monkeypatch, context, app):
             "/api/v2/reservations", headers=headers, json={"duration_seconds": 300},
         ).json()["reservation_id"]
         body = network_body(ssid="shutdown", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)
-        assert client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=body).status_code == 202
+        assert client.post(f"/api/v2/access-point/{rid}", headers=headers, json=body).status_code == 202
         assert started.wait(2)
         monkeypatch.setattr(manager, "release_device", release)
         begin = time.monotonic()

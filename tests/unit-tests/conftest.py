@@ -39,6 +39,11 @@ REQUIRED_YAML = "".join(
 )
 
 
+def ap(reservation_url: str, suffix: str = "") -> str:
+    """The access point URL of a reservation URL (`/api/v2/reservations/<id>`), plus *suffix*."""
+    return reservation_url.replace("/reservations/", "/access-point/", 1) + suffix
+
+
 def make_config(**settings) -> AppConfig:
     """An AppConfig with every required setting, overridden by *settings*."""
     return AppConfig(**{**REQUIRED_SETTINGS, **settings})
@@ -454,9 +459,9 @@ def _fresh_health_checks(monkeypatch):
 
 
 def create_network(client, headers, url, body, timeout: float = 5.0):
-    """POST a create and poll GET .../network until the start ends (REV-16).
+    """POST a create and poll GET /access-point/{reservation_id} until the start ends (REV-16).
 
-    *url* is the network URL (`/api/v2/reservations/{id}/network`). Returns
+    *url* is the network URL (`/api/v2/access-point/{id}`). Returns
     `(created, outcome)`: the POST answer, and the first GET answer that is not
     `starting` (the network, `start_failed`, or 404 with the reason). A POST
     refused at once (422, 409, 404) is returned as both.

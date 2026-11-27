@@ -135,7 +135,7 @@ def test_degraded_reasons_name_the_problem_and_the_antenna(monkeypatch, context,
 
 
 def test_half_stopped_network_is_reported_as_stop_incomplete_only(running, monkeypatch):
-    """API-1 #1: /status shows stop_failed like GET .../network, not as a dead dnsmasq."""
+    """API-1 #1: /status shows stop_failed like GET /access-point/{reservation_id}, not as a dead dnsmasq."""
     get, _state, manager, device = running
     monkeypatch.setattr(manager.dhcp_server, "is_running", Mock(return_value=False))  # stopped by the stop
     manager._stop_failed.add(device)
@@ -145,7 +145,7 @@ def test_half_stopped_network_is_reported_as_stop_incomplete_only(running, monke
         manager._stop_failed.discard(device)
     entry = next(a for a in data["antennas"] if a["interface"] == device)
     assert entry["runtime_state"] == "stop_failed"
-    assert [r["code"] for r in data["service"]["degraded_reasons"]] == ["network_stop_incomplete"]
+    assert [r["code"] for r in data["service"]["degraded_reasons"]] == ["access_point_stop_incomplete"]
 
 
 def test_upstream_shows_the_interface_details(monkeypatch, context):
@@ -166,3 +166,15 @@ def test_upstream_shows_the_interface_details(monkeypatch, context):
         "name": "eth0", "operstate": "UP", "mac": "bc:24:11:07:a6:9b",
         "mtu": 1500, "ipv4": ["192.0.2.10/24"], "ipv6": ["2001:db8::10/64"], "gateway": "192.0.2.1",
     }
+
+
+def test_every_reason_message_formats():
+    """A path in a message (`DELETE /access-point/{{reservation_id}}`) must not be a format field."""
+    import string
+
+    from wilab.api.routes.status import REASON_MESSAGES
+    for code, template in REASON_MESSAGES.items():
+        fields = {name for _, name, _, _ in string.Formatter().parse(template) if name}
+        assert fields <= {"state", "count", "wait", "loops"}, (code, fields)
+        message = template.format(**dict.fromkeys(fields, "x"))
+        assert "{" not in message.replace("{reservation_id}", ""), code

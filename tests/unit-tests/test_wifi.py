@@ -583,7 +583,7 @@ class TestInternetControl:
         cfg = load_config()
         mgr = NetworkManager(cfg, configured_devices(cfg))
         
-        with pytest.raises(NetworkNotActive, match="is not active"):
+        with pytest.raises(NetworkNotActive, match="No access point is active"):
             mgr.enable_internet('wls16')
 
 

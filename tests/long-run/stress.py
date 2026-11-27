@@ -109,9 +109,9 @@ def wait_reserve(client: WiLab, interface: str, rec: Recorder, duration: int = 4
 
 
 def stop_network(client: WiLab, antenna: Antenna, rec: Recorder) -> None:
-    """DELETE .../network until it answers 200 or 409 / 1007 (both: stopped)."""
+    """DELETE /access-point/{reservation_id} until it answers 200 or 409 / 1007 (both: stopped)."""
     for _ in range(30):
-        response = client.http.delete(f"/reservations/{antenna.reservation_id}/network")
+        response = client.http.delete(f"/access-point/{antenna.reservation_id}")
         code = detail_code(response)
         if response.status_code == 200 or (response.status_code == 409 and code == 1007):
             return
@@ -176,7 +176,7 @@ def exercise(client: WiLab, antenna: Antenna, rng: random.Random, rec: Recorder,
             response = client.http.get("/status")
         else:
             verb = "disable" if action == "internet_off" else "enable"
-            response = client.http.post(f"/reservations/{antenna.reservation_id}/internet/{verb}")
+            response = client.http.post(f"/access-point/{antenna.reservation_id}/internet/{verb}")
         if response.status_code == 503 and detail_code(response) == 1006:
             rec.event("busy", interface=antenna.interface, action=action)
         elif response.status_code != 200:
@@ -236,7 +236,7 @@ def assert_clean(client: WiLab, server: Server, rec: Recorder, interfaces: list[
         problems.append(f"antennas still in recovery: {recovering}")
     if status["service"]["health"] == "degraded":
         problems.append(f"status degraded: {status["service"]["degraded_reasons"]}")
-    running = [a["interface"] for a in listing["antennas"] if a["network_active"]]
+    running = [a["interface"] for a in listing["antennas"] if a["access_point_active"]]
     if running:
         problems.append(f"active networks: {running}")
     if server.pids("hostapd"):

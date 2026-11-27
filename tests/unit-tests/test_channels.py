@@ -279,9 +279,9 @@ class TestAntennasAPI:
         from wilab.wifi.discovery import DeviceInfo
         monkeypatch.setattr(antennas, "detect_device", lambda i: DeviceInfo("usb", "2-1", "mt7921u"))
         antenna = client.get('/api/v2/antennas/wls16', headers={'Authorization': valid_token}).json()
-        assert list(antenna) == ["interface", "display_name", "device", "reservation", "network_active", "health"]
+        assert list(antenna) == ["interface", "display_name", "device", "reservation", "access_point_active", "health"]
         assert antenna["device"] == {"bus": "usb", "address": "2-1", "driver": "mt7921u"}
-        assert antenna["reservation"] is None and antenna["network_active"] is False
+        assert antenna["reservation"] is None and antenna["access_point_active"] is False
         data = client.get('/api/v2/antennas/wls16/capabilities', headers={'Authorization': valid_token}).json()
         assert list(data) == ["interface", "encryptions", "bands"]
         assert data["interface"] == "wls16"
@@ -500,7 +500,7 @@ class TestNetworkCreationChannelValidation:
         _set_show_dfs_channels(context, show_dfs_channels)
         start_network = Mock()
         monkeypatch.setattr(context.manager, "start_network", start_network)
-        url = f"/api/v2/reservations/{reservation_id}/network"
+        url = f"/api/v2/access-point/{reservation_id}"
         headers = {"Authorization": valid_token}
 
         listing = client.get("/api/v2/antennas/wls16/capabilities", headers=headers)
@@ -527,7 +527,7 @@ class TestNetworkCreationChannelValidation:
 
     def test_disabled_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestNet', channel=14, password='testpass123', encryption='wpa2', band='2.4ghz', tx_power_level=4),
         )
@@ -536,7 +536,7 @@ class TestNetworkCreationChannelValidation:
 
     def test_unsupported_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestNet', channel=173, password='testpass123', encryption='wpa2', band='5ghz', tx_power_level=4),
         )
@@ -547,7 +547,7 @@ class TestNetworkCreationChannelValidation:
 
     def test_no_ir_channel_returns_422(self, client, valid_token, reservation_id):
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestNet', channel=12, password='testpass123', encryption='wpa2', band='2.4ghz', tx_power_level=4),
         )

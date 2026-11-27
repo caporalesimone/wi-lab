@@ -13,26 +13,27 @@ from ...reservation import Reservation
 from ...wifi.manager import NetworkManager, NetworkNotActive
 from .recovery_responses import (
     DEVICE_BUSY_RESPONSE,
-    NETWORK_NOT_ACTIVE_RESPONSE,
+    ACCESS_POINT_NOT_ACTIVE_RESPONSE,
     require_stop_complete,
 )
 
 router = APIRouter(
-    prefix="/reservations", tags=["Internet"],
+    prefix="/access-point", tags=["Access point"],
     responses={503: {"description": "Adapter busy (1006): repeat after Retry-After"}},
 )
 
 
 @router.post(
     "/{reservation_id}/internet/enable",
+    summary="Enable Internet access on the access point",
     responses={
         503: DEVICE_BUSY_RESPONSE,
-        409: NETWORK_NOT_ACTIVE_RESPONSE,
+        409: ACCESS_POINT_NOT_ACTIVE_RESPONSE,
         200: {
             "description": "Internet access enabled successfully",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Network wls16 internet enabled successfully"}
+                    "example": {"detail": "Internet enabled on the access point on wls16"}
                 }
             },
         },
@@ -57,7 +58,7 @@ def internet_enable(
         require_stop_complete(manager, device_id)
         try:
             manager.enable_internet(device_id)
-            return {"detail": f"Network {device_id} internet enabled successfully"}
+            return {"detail": f"Internet enabled on the access point on {device_id}"}
         except NetworkNotActive:
             raise  # 409 / 1007 (API-2)
         except ValueError as e:
@@ -70,14 +71,15 @@ def internet_enable(
 
 @router.post(
     "/{reservation_id}/internet/disable",
+    summary="Disable Internet access on the access point",
     responses={
         503: DEVICE_BUSY_RESPONSE,
-        409: NETWORK_NOT_ACTIVE_RESPONSE,
+        409: ACCESS_POINT_NOT_ACTIVE_RESPONSE,
         200: {
             "description": "Internet access disabled successfully",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Network wls16 internet disabled successfully"}
+                    "example": {"detail": "Internet disabled on the access point on wls16"}
                 }
             },
         },
@@ -102,7 +104,7 @@ def internet_disable(
         require_stop_complete(manager, device_id)
         try:
             manager.disable_internet(device_id)
-            return {"detail": f"Network {device_id} internet disabled successfully"}
+            return {"detail": f"Internet disabled on the access point on {device_id}"}
         except NetworkNotActive:
             raise  # 409 / 1007 (API-2)
         except ValueError as e:

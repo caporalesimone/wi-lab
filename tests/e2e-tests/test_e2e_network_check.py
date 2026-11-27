@@ -15,7 +15,7 @@ from wilab_e2e import Server, WiLab, wait_for
 
 
 def _gateway(wilab: WiLab, reservation_id: str) -> str:
-    subnet = ipaddress.ip_network(wilab.http.get(f"/reservations/{reservation_id}/network").json()["ip"]["subnet"])
+    subnet = ipaddress.ip_network(wilab.http.get(f"/access-point/{reservation_id}").json()["ip"]["subnet"])
     return f"{subnet[1]}/{subnet.prefixlen}"
 
 
@@ -48,7 +48,7 @@ def test_lost_gateway_and_nat_rule_are_repaired_in_place(wilab: WiLab, server: S
     # The check runs every 30 s on a healthy network.
     assert wait_for(lambda: _has_address(antenna.interface, gateway), timeout=45, interval=2)
     assert _masquerade_rule(server, antenna.interface) is not None
-    body = wilab.http.get(f"/reservations/{antenna.reservation_id}/network").json()
+    body = wilab.http.get(f"/access-point/{antenna.reservation_id}").json()
     assert body["active"] is True and not body.get("runtime_state")
     journal = server.journal(start)
     assert "repaired in place" in journal
@@ -66,22 +66,22 @@ def test_disabled_internet_stays_disabled(wilab: WiLab, server: Server) -> None:
     antenna = wilab.reserve()
     rid = antenna.reservation_id
     assert wilab.create(antenna, internet_enabled=True).status_code == 200
-    subnet = wilab.http.get(f"/reservations/{rid}/network").json()["ip"]["subnet"]
+    subnet = wilab.http.get(f"/access-point/{rid}").json()["ip"]["subnet"]
     assert _masquerade_rule(server, antenna.interface) is not None
     start = time.time()
-    assert wilab.http.post(f"/reservations/{rid}/internet/disable").status_code == 200
+    assert wilab.http.post(f"/access-point/{rid}/internet/disable").status_code == 200
 
     def disabled() -> None:
         nat = server.iptables_rules("nat")
         assert not [line for line in nat.splitlines() if subnet in line and "MASQUERADE" in line], nat
         block = [line for line in server.iptables_rules().splitlines() if f"wilab-block-{antenna.interface}" in line]
         assert block, "no wilab-block rule"
-        network = wilab.http.get(f"/reservations/{rid}/network").json()
+        network = wilab.http.get(f"/access-point/{rid}").json()
         assert network["internet"]["enabled"] is False, network
         assert network["active"] is True and network["runtime_state"] is None, network
 
     disabled()
     time.sleep(40)
     disabled()
-    assert wilab.http.get(f"/reservations/{rid}/network").json()["restarts"]["ap"] == 0
+    assert wilab.http.get(f"/access-point/{rid}").json()["restarts"]["ap"] == 0
     assert "repaired in place" not in server.journal(start)

@@ -37,14 +37,14 @@ def test_reservation_duration_must_be_an_integer(api, duration):
 def test_create_rejects_values_of_another_type(api, field, value):
     client, headers, rid = api
     body = network_body(**{**VALID, field: value})
-    response = client.post(f"/api/v2/reservations/{rid}/network", headers=headers, json=body)
+    response = client.post(f"/api/v2/access-point/{rid}", headers=headers, json=body)
     assert response.status_code == 422, response.text
 
 
 @pytest.mark.parametrize("body", [{"level": 2}, {"tx_power_level": "2"}, {"tx_power_level": True}])
 def test_txpower_takes_only_an_integer_tx_power_level(api, body):
     client, headers, rid = api
-    response = client.post(f"/api/v2/reservations/{rid}/txpower", headers=headers, json=body)
+    response = client.post(f"/api/v2/access-point/{rid}/tx-power", headers=headers, json=body)
     assert response.status_code == 422, response.text
 
 

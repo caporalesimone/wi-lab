@@ -1,4 +1,4 @@
-"""TX power (transmit power) management endpoints."""
+"""Transmit power of the access point (under debugging: the drivers in use do not apply it reliably)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -15,12 +15,12 @@ from ...wifi.manager import NetworkManager, NetworkNotActive
 from ...wifi.txpower import TxPowerMismatchError
 from .recovery_responses import (
     DEVICE_BUSY_RESPONSE,
-    NETWORK_NOT_ACTIVE_RESPONSE,
+    ACCESS_POINT_NOT_ACTIVE_RESPONSE,
     require_stop_complete,
 )
 
 router = APIRouter(
-    prefix="/reservations", tags=["TX Power"],
+    prefix="/access-point", tags=["Access point"],
     responses={503: {"description": "Adapter busy (1006): repeat after Retry-After"}},
 )
 VALID_TX_POWER_LEVELS = (1, 2, 3, 4)
@@ -39,11 +39,12 @@ def _validation_example(message: str) -> dict:
 
 
 @router.get(
-    "/{reservation_id}/txpower",
+    "/{reservation_id}/tx-power",
+    summary="Read the transmit power (under debugging, not stable)",
     response_model=TxPowerInfo,
     responses={
         503: DEVICE_BUSY_RESPONSE,
-        409: NETWORK_NOT_ACTIVE_RESPONSE,
+        409: ACCESS_POINT_NOT_ACTIVE_RESPONSE,
         200: {
             "description": "TX power info retrieved successfully",
             "content": {"application/json": {"example": _TX_POWER_EXAMPLE}},
@@ -59,9 +60,11 @@ def get_tx_power(
     manager: NetworkManager = Depends(get_manager),
 ):
     """
-    Get current TX power details for an active network.
+    The transmit power of the running access point: the levels 1-4 in dBm and
+    the level requested and reported by the radio.
 
-    Requires a valid reservation token.
+    **Under debugging, not stable:** the drivers in use do not apply the
+    requested power reliably.
     """
     with hold_reservation(reservation_mgr, reservation):
         require_stop_complete(manager, reservation.device_id)
@@ -76,11 +79,12 @@ def get_tx_power(
 
 
 @router.post(
-    "/{reservation_id}/txpower",
+    "/{reservation_id}/tx-power",
+    summary="Set the transmit power (under debugging, not stable)",
     response_model=TxPowerInfo,
     responses={
         503: DEVICE_BUSY_RESPONSE,
-        409: NETWORK_NOT_ACTIVE_RESPONSE,
+        409: ACCESS_POINT_NOT_ACTIVE_RESPONSE,
         200: {
             "description": "TX power level set successfully",
             "content": {"application/json": {"example": _TX_POWER_EXAMPLE}},
@@ -112,9 +116,11 @@ def set_tx_power(
     manager: NetworkManager = Depends(get_manager),
 ):
     """
-    Set TX power level (1-4) for an active network.
+    Set the transmit power of the running access point with `tx_power_level`
+    1-4, the name of the create field (`radio.tx_power_level`).
 
-    Requires a valid reservation token.
+    **Under debugging, not stable:** the drivers in use do not apply the
+    requested power reliably.
     """
     if req.tx_power_level not in VALID_TX_POWER_LEVELS:
         raise HTTPException(

@@ -1,6 +1,6 @@
 """Watchdog on the real service: AP restores after hostapd dies (WD-1, WD-2, PERF-4),
 DHCP repair after dnsmasq dies (WD-3), the `restarts` counters of
-GET .../network (e2e-test-6) and a create sent during a repair (e2e-test-7).
+GET /access-point/{reservation_id} (e2e-test-6) and a create sent during a repair (e2e-test-7).
 
 The watchdog budgets (3 AP restores and 3 DHCP restarts per hour per antenna)
 live in the running service. Each test reserves an antenna that still has the
@@ -28,7 +28,7 @@ def _kill_only_hostapd(server: Server) -> None:
 
 
 def _restored(wilab: WiLab, antenna: Antenna) -> bool:
-    response = wilab.http.get(f"/reservations/{antenna.reservation_id}/network")
+    response = wilab.http.get(f"/access-point/{antenna.reservation_id}")
     body = response.json()
     return response.status_code == 200 and body.get("active") is True and not body.get("runtime_state")
 
@@ -89,7 +89,7 @@ def test_hostapd_segfault_wakes_the_watchdog_and_the_control_connection_follows(
 
 
 def _network(wilab: WiLab, antenna: Antenna) -> dict:
-    return wilab.http.get(f"/reservations/{antenna.reservation_id}/network").json()
+    return wilab.http.get(f"/access-point/{antenna.reservation_id}").json()
 
 
 def test_failed_restore_is_reported_and_retried(wilab: WiLab, server: Server) -> None:
@@ -115,7 +115,7 @@ def test_failed_restore_is_reported_and_retried(wilab: WiLab, server: Server) ->
 
 
 def test_delete_stops_the_retries_and_keeps_the_reservation(wilab: WiLab, server: Server) -> None:
-    """WD-2: DELETE .../network gives up a network the watchdog could not restore."""
+    """WD-2: DELETE /access-point/{reservation_id} gives up a network the watchdog could not restore."""
     antenna = reserve_with_budget(wilab, server, ap=1)
     assert wilab.create(antenna).status_code == 200
     _kill_only_hostapd(server)
@@ -186,7 +186,7 @@ _NO_RESTARTS = {"ap": 0, "dhcp": 0, "last_at": None, "last_reason": None}
 
 
 def _restarts(wilab: WiLab, antenna: Antenna) -> dict | None:
-    """`restarts` of GET .../network; None while the device is busy (503 / 1006)."""
+    """`restarts` of GET /access-point/{reservation_id}; None while the device is busy (503 / 1006)."""
     response = wilab.network(antenna)
     return response.json()["restarts"] if response.status_code == 200 else None
 

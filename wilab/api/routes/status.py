@@ -122,7 +122,7 @@ class SystemStatus(BaseModel):
                         "service": {"health": "degraded", "free_antennas": 0, "degraded_reasons": [
                             {"code": "antenna_quarantined", "interface": "wlan0",
                              "message": "Antenna quarantined (unavailable)"},
-                            {"code": "network_being_repaired", "interface": "wlan1",
+                            {"code": "access_point_being_repaired", "interface": "wlan1",
                              "message": "Network being repaired by the watchdog (restoring_ap)"},
                         ], "restart_required": {
                             "service": True, "system": False, "since": "2026-11-27T06:39:50Z",
@@ -155,7 +155,7 @@ def system_status(
     | `restart_required` | `null`, or the security updates that need a restart (below). Always present. |
 
     A reserve is the only sure way to get an antenna: another client may take the
-    last free one in between. Which antennas run a network is `antennas[].network_active`
+    last free one in between. Which antennas run a network is `antennas[].access_point_active`
     of `GET /antennas`.
 
     Each `service.degraded_reasons` entry has a stable `code`, the `interface` it
@@ -164,8 +164,8 @@ def system_status(
     | `code` | Meaning |
     |---|---|
     | `antenna_quarantined` | The antenna has `recovery_state` (in `GET /antennas`): `recovering` (USB reset and probe running) or `unavailable` (re-probed every 30 s, backing off to 15 min). It may return by itself. Not allocatable, even with `reservation: null`. |
-    | `network_being_repaired` | A reserved network has `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`). Its owner waits. |
-    | `network_stop_incomplete` | A `DELETE .../network` answered `503 / 1012`: the network is half stopped (`runtime_state: stop_failed`) until its owner repeats the DELETE. |
+    | `access_point_being_repaired` | A reserved network has `runtime_state` (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`, `restore_failed`). Its owner waits. |
+    | `access_point_stop_incomplete` | A `DELETE /access-point/{reservation_id}` answered `503 / 1012`: the network is half stopped (`runtime_state: stop_failed`) until its owner repeats the DELETE. |
     | `hostapd_not_running`, `dnsmasq_not_running` | The AP or DHCP process of that network is dead; the watchdog normally repairs it within seconds. |
     | `nat_rule_missing` | That network has Internet enabled but its NAT rule is missing. |
     | `command_stuck` | A host command did not exit even after SIGKILL: usually a hung Wi-Fi driver; the adapter may need a reset. |
@@ -216,13 +216,13 @@ def system_status(
 # Stable codes of `degraded_reasons`.
 REASON_MESSAGES = {
     "antenna_quarantined": "Antenna quarantined ({state})",
-    "network_being_repaired": "Network being repaired by the watchdog ({state})",
+    "access_point_being_repaired": "Network being repaired by the watchdog ({state})",
     "hostapd_not_running": "hostapd is not running",
     "dnsmasq_not_running": "dnsmasq (DHCP) is not running",
     "nat_rule_missing": "NAT rule missing: no Internet access",
     "command_stuck": "{count} host command(s) stuck in the kernel; the adapter may need a reset",
     "loop_stalled": "Background loop stalled: {loops}",
-    "network_stop_incomplete": "A stop did not complete (hostapd stuck in the kernel); the owner repeats DELETE .../network",
+    "access_point_stop_incomplete": "A stop did not complete (hostapd stuck in the kernel); the owner repeats DELETE /access-point/{{reservation_id}}",
     "cleanup_failed": "Cleanup failed {count} time(s) in a row; the antenna stays held, next attempt in {wait} s",
 }
 
@@ -248,17 +248,17 @@ def antenna_state(
         "expires_at": format_utc_timestamp(reservation.expires_at),
         "expires_in": reservation.expires_in,
     }
-    entry["network_active"] = n.device_id in active
+    entry["access_point_active"] = n.device_id in active
     if reservation is not None and (runtime_state := manager.watchdog.state(reservation)):
         entry["runtime_state"] = runtime_state
-        reasons.append(_reason("network_being_repaired", n.interface, state=runtime_state))
+        reasons.append(_reason("access_point_being_repaired", n.interface, state=runtime_state))
     elif reservation is not None and (job := manager.start_job(reservation)) is not None:
         entry["runtime_state"] = job.state  # starting or start_failed: not a fault
     elif manager.stop_failed(n.device_id):
-        # Same state as GET .../network; its half-stopped processes are not
+        # Same state as GET /access-point/{reservation_id}; its half-stopped processes are not
         # reported again as hostapd/dnsmasq/NAT problems below.
         entry["runtime_state"] = "stop_failed"
-        reasons.append(_reason("network_stop_incomplete", n.interface))
+        reasons.append(_reason("access_point_stop_incomplete", n.interface))
     if n.device_id in recovery:
         state = "recovering" if recovery[n.device_id] else "unavailable"
         entry["recovery_state"] = state

@@ -1,4 +1,4 @@
-"""Asynchronous create: 202 + polling of GET .../network, cancel by release or stop.
+"""Asynchronous create: 202 + polling of GET /access-point/{reservation_id}, cancel by release or stop.
 
 The contract agreed with the client developers (4.0.0):
 - POST answers 202 with the network in `runtime_state: starting`, the same schema as GET;
@@ -13,7 +13,7 @@ import time
 from unittest.mock import Mock
 
 import pytest
-from conftest import active_network, configured_devices, network_body
+from conftest import ap, active_network, configured_devices, network_body
 from fastapi.testclient import TestClient
 
 from wilab.api.routes import network
@@ -79,13 +79,13 @@ def api(monkeypatch, context, app):
 
 
 def _state(client, headers, url):
-    return client.get(f"{url}/network", headers=headers)
+    return client.get(ap(url), headers=headers)
 
 
 def test_create_answers_202_and_the_network_appears_by_polling(api):
     client, headers, url, script, _manager = api
     script["release"].clear()
-    created = client.post(f"{url}/network", headers=headers, json=BODY)
+    created = client.post(ap(url), headers=headers, json=BODY)
     assert created.status_code == 202
     assert (created.json()["active"], created.json()["runtime_state"]) == (False, "starting")
     polled = _state(client, headers, url)
@@ -102,10 +102,10 @@ def test_create_answers_202_and_the_network_appears_by_polling(api):
 def test_same_body_while_starting_is_202_then_200_another_body_is_1008(api):
     client, headers, url, script, _manager = api
     script["release"].clear()
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     other = network_body(ssid="other", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)
-    resp = client.post(f"{url}/network", headers=headers, json=other)
+    resp = client.post(ap(url), headers=headers, json=other)
     assert (resp.status_code, resp.json()["detail"]["code"]) == (409, 1008)
     script["release"].set()
     _wait_until(lambda: _state(client, headers, url).json()["active"])
@@ -115,23 +115,23 @@ def test_same_body_while_starting_is_202_then_200_another_body_is_1008(api):
 def test_non_radio_failure_is_start_failed_until_a_new_create_or_a_stop(api):
     client, headers, url, script, _manager = api
     script["outcome"] = "stage"
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     failed = _wait_until(lambda: (r := _state(client, headers, url).json())["runtime_state"] == "start_failed" and r)
     assert failed["error"]["code"] == 1013 and failed["error"]["stage"] == "dhcp"
     assert client.get(url, headers=headers).status_code == 200  # the reservation is still valid
     assert _state(client, headers, url).json()["runtime_state"] == "start_failed"  # stays visible
-    assert client.delete(f"{url}/network", headers=headers).status_code == 200
+    assert client.delete(ap(url), headers=headers).status_code == 200
     cleared = _state(client, headers, url).json()
     assert (cleared["active"], cleared["runtime_state"], cleared["error"]) == (False, None, None)
     script["outcome"] = "ok"
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     _wait_until(lambda: _state(client, headers, url).json()["active"])
 
 
 def test_every_start_failing_ends_with_404_reservation_invalidated(api):
     client, headers, url, script, _manager = api
     script["outcome"] = "radio"
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     gone = _wait_until(lambda: (r := _state(client, headers, url)).status_code == 404 and r)
     assert gone.json()["detail"]["reason"] == "reservation_invalidated"
     assert script["calls"] == 3
@@ -141,7 +141,7 @@ def test_reservation_too_short_for_another_start_ends_with_404_expired(api, monk
     client, headers, url, script, _manager = api
     monkeypatch.setattr(network, "START_MARGIN", 400)
     script["outcome"] = "radio"
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     gone = _wait_until(lambda: (r := _state(client, headers, url)).status_code == 404 and r)
     assert gone.json()["detail"]["reason"] == "reservation_expired"
 
@@ -149,7 +149,7 @@ def test_reservation_too_short_for_another_start_ends_with_404_expired(api, monk
 def test_release_during_a_start_cancels_it_at_once(api):
     client, headers, url, script, manager = api
     script["release"].clear()  # a long start (e.g. a DFS channel)
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     began = time.monotonic()
     assert client.delete(url, headers=headers).status_code == 200
     assert time.monotonic() - began < 3
@@ -160,8 +160,8 @@ def test_release_during_a_start_cancels_it_at_once(api):
 def test_stop_during_a_start_cancels_it_and_keeps_the_reservation(api):
     client, headers, url, script, manager = api
     script["release"].clear()
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
-    assert client.delete(f"{url}/network", headers=headers).status_code == 200
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
+    assert client.delete(ap(url), headers=headers).status_code == 200
     state = _state(client, headers, url).json()
     assert (state["active"], state["runtime_state"]) == (False, None)
     assert client.get(url, headers=headers).status_code == 200
@@ -172,7 +172,7 @@ def test_stop_during_a_start_cancels_it_and_keeps_the_reservation(api):
 def test_create_during_a_watchdog_repair_is_1009(api, monkeypatch, watchdog_state):
     client, headers, url, _script, manager = api
     monkeypatch.setattr(manager.watchdog, "state", lambda _reservation: watchdog_state)
-    resp = client.post(f"{url}/network", headers=headers, json=BODY)
+    resp = client.post(ap(url), headers=headers, json=BODY)
     assert (resp.status_code, resp.json()["detail"]["code"]) == (409, 1009)
 
 
@@ -188,12 +188,12 @@ def test_the_same_create_sent_twice_at_once_starts_one_ap_and_both_get_202(api, 
     context.channels.validate_network.side_effect = slow_validation
     answers = []
     first = threading.Thread(
-        target=lambda: answers.append(client.post(f"{url}/network", headers=headers, json=BODY).status_code),
+        target=lambda: answers.append(client.post(ap(url), headers=headers, json=BODY).status_code),
     )
     first.start()
     assert inside.wait(5)  # the first request is past the job check, not yet registered
     context.channels.validate_network.side_effect = None
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     go.set()
     first.join(5)
     assert answers == [202]
@@ -208,7 +208,7 @@ def test_start_failed_always_carries_1013_also_for_an_unexpected_error(api):
         def start_network(*_args, _error=error, **_kwargs):
             raise _error
         manager.start_network = start_network
-        assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+        assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
         failed = _wait_until(
             lambda: (r := _state(client, headers, url).json())["runtime_state"] == "start_failed" and r,
         )
@@ -253,27 +253,27 @@ def real_start(monkeypatch, context, app):
 def test_unexpected_error_in_a_start_leaves_nothing_running(real_start, monkeypatch, error):
     client, headers, url, manager, stop = real_start
     monkeypatch.setattr(manager.isolation_manager, "add_network", Mock(side_effect=error))
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     failed = _wait_until(lambda: (r := _state(client, headers, url).json())["runtime_state"] == "start_failed" and r)
     assert (failed["error"]["code"], failed["error"]["stage"]) == (1013, "isolation")
     device = failed["interface"]
     stop.assert_called_with(device)   # the rollback stopped hostapd
     assert not manager.has_leftovers(device)
     assert device not in manager.active
-    assert client.delete(f"{url}/network", headers=headers).status_code == 200   # clears start_failed
-    again = client.delete(f"{url}/network", headers=headers)
+    assert client.delete(ap(url), headers=headers).status_code == 200   # clears start_failed
+    again = client.delete(ap(url), headers=headers)
     assert (again.status_code, again.json()["detail"]["code"]) == (409, 1007)
 
 
 def test_stop_releases_what_a_failed_start_left(real_start):
-    """A start whose rollback failed left hostapd: DELETE .../network stops it instead of a bare 200."""
+    """A start whose rollback failed left hostapd: DELETE /access-point/{reservation_id} stops it instead of a bare 200."""
     client, headers, url, manager, stop = real_start
     device = manager.config.antennas[0].device_id
     manager.hostapd_manager._instances[device] = Mock()   # left by an earlier start
-    assert client.delete(f"{url}/network", headers=headers).status_code == 200
+    assert client.delete(ap(url), headers=headers).status_code == 200
     stop.assert_called_with(device)
     assert not manager.has_leftovers(device)
-    again = client.delete(f"{url}/network", headers=headers)
+    again = client.delete(ap(url), headers=headers)
     assert (again.status_code, again.json()["detail"]["code"]) == (409, 1007)
 
 
@@ -281,7 +281,7 @@ def test_stop_releases_what_a_failed_start_left(real_start):
 
 
 def test_a_cancel_that_times_out_is_503_then_the_real_state_and_a_working_stop(api, monkeypatch):
-    """unit-test-7: a start that ignores the cancel; DELETE .../network answers 503 / 1006, then works."""
+    """unit-test-7: a start that ignores the cancel; DELETE /access-point/{reservation_id} answers 503 / 1006, then works."""
     client, headers, url, _script, manager = api
     monkeypatch.setattr(NetworkManager.cancel_start, "__defaults__", (0.05,))   # CANCEL_TIMEOUT
     finish = threading.Event()
@@ -292,18 +292,18 @@ def test_a_cancel_that_times_out_is_503_then_the_real_state_and_a_working_stop(a
         return manager.active[device]
 
     monkeypatch.setattr(manager, "start_network", start_ignoring_the_cancel)
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     job = next(iter(manager.start_jobs.values()))
     device = job.reservation.device_id
-    busy = client.delete(f"{url}/network", headers=headers)
+    busy = client.delete(ap(url), headers=headers)
     assert (busy.status_code, busy.json()["detail"]["code"]) == (503, 1006)
     assert busy.headers["Retry-After"] == "2"
     # REV-8: the job is kept while its thread runs: the repeated stop is busy again,
     # and a create with other settings is refused instead of starting a second thread.
     assert manager.start_jobs.get(device) is job
-    again = client.delete(f"{url}/network", headers=headers)
+    again = client.delete(ap(url), headers=headers)
     assert (again.status_code, again.json()["detail"]["code"]) == (503, 1006)
-    other = client.post(f"{url}/network", headers=headers, json={**BODY, "wifi": {**BODY["wifi"], "ssid": "other"}})
+    other = client.post(ap(url), headers=headers, json={**BODY, "wifi": {**BODY["wifi"], "ssid": "other"}})
     assert (other.status_code, other.json()["detail"]["code"]) == (409, 1008)
     assert manager.start_jobs.get(device) is job
     finish.set()
@@ -312,7 +312,7 @@ def test_a_cancel_that_times_out_is_503_then_the_real_state_and_a_working_stop(a
     state = _state(client, headers, url)
     assert state.status_code == 200
     assert (state.json()["active"], state.json()["runtime_state"]) == (True, None)
-    assert client.delete(f"{url}/network", headers=headers).status_code == 200
+    assert client.delete(ap(url), headers=headers).status_code == 200
     assert device not in manager.active
     assert manager.start_jobs == {}
     after = _state(client, headers, url).json()
@@ -373,7 +373,7 @@ def test_release_during_each_phase_of_the_real_start_leaves_nothing(tracked_star
         ssid="phases", channel=6, encryption="open", band="2.4ghz", tx_power_level=4,
         internet_enabled=True, captive_portal=True,
     )
-    assert client.post(f"{url}/network", headers=headers, json=body).status_code == 202
+    assert client.post(ap(url), headers=headers, json=body).status_code == 202
     assert entered.wait(5)
     job = next(iter(manager.start_jobs.values()))
     device = job.reservation.device_id
@@ -418,7 +418,7 @@ def test_release_during_the_pause_between_two_starts_returns_at_once(api, monkey
 
     monkeypatch.setattr(network, "_pause", pause)
     script["outcome"] = "radio"
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     job = next(iter(manager.start_jobs.values()))
     assert pausing.wait(5)
     began = time.monotonic()
@@ -441,7 +441,7 @@ def test_start_failed_does_not_pass_to_the_next_reservation_after_an_expiry(api,
     """unit-test-11 (b): start_failed, then expiry and cleanup (not a release), then a new reservation."""
     client, headers, url, script, manager = api
     script["outcome"] = "stage"
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     _wait_until(lambda: _state(client, headers, url).json()["runtime_state"] == "start_failed")
     reservations = context.reservations
     rid = url.rsplit("/", 1)[1]
@@ -475,7 +475,7 @@ def test_reservation_expiring_during_the_start(real_start, monkeypatch, context)
         finish.wait(5)
 
     monkeypatch.setattr(manager.hostapd_manager, "start", slow_hostapd)
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     assert entered.wait(5)
     job = next(iter(manager.start_jobs.values()))
     device = job.reservation.device_id
@@ -509,7 +509,7 @@ def test_create_when_the_channel_list_cannot_be_read_is_not_a_500(api, monkeypat
         context.channels, "validate_network",
         Mock(side_effect=CommandError("Command 'iw' failed with code 1: ", returncode=1)),
     )
-    created = client.post(f"{url}/network", headers=headers, json=BODY)
+    created = client.post(ap(url), headers=headers, json=BODY)
     assert created.status_code == 202, created.text
 
 
@@ -563,7 +563,7 @@ def stuck_rollback(api, monkeypatch):
     quarantine = Mock()
     monkeypatch.setattr(manager, "quarantine_radio", quarantine)
     script["release"].clear()
-    assert client.post(f"{url}/network", headers=headers, json=BODY).status_code == 202
+    assert client.post(ap(url), headers=headers, json=BODY).status_code == 202
     _wait_until(lambda: script["calls"])
     yield client, headers, url, manager, device, quarantine
     manager.hostapd_manager._instances.pop(device, None)
@@ -580,16 +580,16 @@ def test_release_during_a_start_whose_rollback_fails_is_a_release(stuck_rollback
     assert antenna.get("recovery_state") in (None, "ok")
     assert any(r["code"] == "cleanup_failed" for r in status["service"]["degraded_reasons"])
     # Not the client's to repeat any more (REV-9).
-    assert not any(r["code"] == "network_stop_incomplete" for r in status["service"]["degraded_reasons"])
+    assert not any(r["code"] == "access_point_stop_incomplete" for r in status["service"]["degraded_reasons"])
     assert manager.has_leftovers(device)
 
 
 def test_stop_during_a_start_whose_rollback_fails_is_1012_and_keeps_the_reservation(stuck_rollback):
-    """REV-2: DELETE .../network answers 503 / 1012, the reservation stays valid."""
+    """REV-2: DELETE /access-point/{reservation_id} answers 503 / 1012, the reservation stays valid."""
     client, headers, url, _manager, _device, quarantine = stuck_rollback
-    first = client.delete(f"{url}/network", headers=headers)
+    first = client.delete(ap(url), headers=headers)
     if first.status_code == 503 and first.json()["detail"]["code"] == 1006:
-        first = _wait_until(lambda: (r := client.delete(f"{url}/network", headers=headers)).status_code != 503
+        first = _wait_until(lambda: (r := client.delete(ap(url), headers=headers)).status_code != 503
                             or r.json()["detail"]["code"] != 1006 and r)
     assert (first.status_code, first.json()["detail"]["code"]) == (503, 1012)
     assert client.get(url, headers=headers).status_code == 200

@@ -15,7 +15,7 @@ import {
   ReservationResponse
 } from '../models/network.models';
 
-/** How often GET .../network is read while a create is starting. */
+/** How often GET /access-point/{reservation_id} is read while a create is starting. */
 const CREATE_POLL_MS = 1500;
 /**
  * Longest wait for the end of a start (REV-13): a DFS start with the server's
@@ -111,7 +111,7 @@ export class WilabApiService {
   // ---- Network (keyed by reservation_id) ----
 
   public getNetworkStatus(reservationId: string): Observable<NetworkStatus> {
-    return this.http.get<NetworkStatus>(`${this.apiUrl}/reservations/${reservationId}/network`, {
+    return this.http.get<NetworkStatus>(`${this.apiUrl}/access-point/${reservationId}`, {
       headers: this.getHeaders()
     }).pipe(
       retryWhenBusy(),
@@ -121,7 +121,7 @@ export class WilabApiService {
 
   /**
    * Asynchronous create: the POST answers 202 with runtime_state "starting", then
-   * GET .../network is polled until the start ends (REV-13).
+   * GET /access-point/{reservation_id} is polled until the start ends (REV-13).
    * Emits the 202 body first (the card shows "starting" at once), then the final
    * network: `active: true` (the AP is up), "start_failed" (see `error`), or
    * `active: false` with runtime_state null (the start was cancelled, e.g. from
@@ -132,7 +132,7 @@ export class WilabApiService {
    * error. Radio failures are retried by the server: never repeat the create for them.
    */
   public startNetwork(reservationId: string, config: NetworkCreateRequest): Observable<NetworkStatus> {
-    const url = `${this.apiUrl}/reservations/${reservationId}/network`;
+    const url = `${this.apiUrl}/access-point/${reservationId}`;
     const poll = timer(CREATE_POLL_MS, CREATE_POLL_MS).pipe(
       exhaustMap(() => this.http.get<NetworkStatus>(url, { headers: this.getHeaders() }).pipe(
         catchError((error: HttpErrorResponse) => isTransient(error) ? EMPTY : throwError(() => error)),
@@ -150,7 +150,7 @@ export class WilabApiService {
 
   public stopNetwork(reservationId: string): Observable<object> {
     return this.http.delete(
-      `${this.apiUrl}/reservations/${reservationId}/network`,
+      `${this.apiUrl}/access-point/${reservationId}`,
       { headers: this.getHeaders() }
     ).pipe(
       // 1012: the stop did not complete (hostapd stuck a few seconds); repeating it finishes it.
@@ -163,7 +163,7 @@ export class WilabApiService {
 
   public enableInternet(reservationId: string): Observable<object> {
     return this.http.post(
-      `${this.apiUrl}/reservations/${reservationId}/internet/enable`,
+      `${this.apiUrl}/access-point/${reservationId}/internet/enable`,
       {},
       { headers: this.getHeaders() }
     ).pipe(
@@ -174,7 +174,7 @@ export class WilabApiService {
 
   public disableInternet(reservationId: string): Observable<object> {
     return this.http.post(
-      `${this.apiUrl}/reservations/${reservationId}/internet/disable`,
+      `${this.apiUrl}/access-point/${reservationId}/internet/disable`,
       {},
       { headers: this.getHeaders() }
     ).pipe(

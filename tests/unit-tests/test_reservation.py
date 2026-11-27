@@ -457,7 +457,7 @@ def test_slow_lifecycle_operation_does_not_block_event_loop(operation, valid_tok
                 assert finish.wait(timeout=10)
 
             monkeypatch.setattr(manager, "start_network", slow_start)
-            path = f"/api/v2/reservations/{reservation_id}/network"
+            path = f"/api/v2/access-point/{reservation_id}"
             payload = network_body(
                 ssid="test", channel=1, password="testpassword",
                 encryption="wpa2", band="2.4ghz", tx_power_level=4,
@@ -521,7 +521,7 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
         first_id = first["reservation_id"]
 
         def network(rid: str) -> str:
-            return f"/api/v2/reservations/{rid}/network"
+            return f"/api/v2/access-point/{rid}"
 
         slow = client.post(network(first_id), headers=headers, json=network_body(**payload))
         assert slow.status_code == 202   # the start runs in the background
@@ -539,9 +539,9 @@ def test_slow_ap_start_does_not_block_other_radio_or_status(valid_token, monkeyp
             first_state = pool.submit(client.get, network(first_id), headers=headers).result(timeout=2)
             assert first_state.json()["runtime_state"] == "starting"   # answered while the start holds the device
             status = pool.submit(client.get, "/api/v2/antennas", headers=headers).result(timeout=2)
-            assert status.status_code == 200 and sum(a["network_active"] for a in status.json()["antennas"]) == 1
+            assert status.status_code == 200 and sum(a["access_point_active"] for a in status.json()["antennas"]) == 1
             assert all(n["reservation"] for n in status.json()["antennas"])
-            assert [n["network_active"] for n in status.json()["antennas"]].count(True) == 1
+            assert [n["access_point_active"] for n in status.json()["antennas"]].count(True) == 1
         finally:
             finish.set()
         done = _wait_for(lambda: client.get(network(first_id), headers=headers).json()["active"])
@@ -1147,8 +1147,9 @@ class TestGoneReasons:
         assert mgr.ended_reason(rid) == "reservation_released"
 
     @pytest.mark.parametrize(("method", "suffix"), [
-        ("get", ""), ("delete", ""), ("get", "/network"), ("post", "/network"),
-        ("delete", "/network"), ("post", "/internet/enable"), ("get", "/txpower"),
+        ("get", "/reservations/{rid}"), ("delete", "/reservations/{rid}"), ("get", "/access-point/{rid}"),
+        ("post", "/access-point/{rid}"), ("delete", "/access-point/{rid}"),
+        ("post", "/access-point/{rid}/internet/enable"), ("get", "/access-point/{rid}/tx-power"),
     ])
     def test_every_endpoint_with_an_id_answers_the_reason(self, client, valid_token, method, suffix):
         headers = {"Authorization": valid_token}
@@ -1156,11 +1157,11 @@ class TestGoneReasons:
             "reservation_id"]
         assert client.delete(f"/api/v2/reservations/{rid}", headers=headers).status_code == 200
         kwargs = {"json": network_body(ssid="x", channel=6, encryption="open", band="2.4ghz",
-                                       tx_power_level=4)} if (method, suffix) == ("post", "/network") else {}
-        resp = client.request(method, f"/api/v2/reservations/{rid}{suffix}", headers=headers, **kwargs)
+                                       tx_power_level=4)} if (method, suffix) == ("post", "/access-point/{rid}") else {}
+        resp = client.request(method, "/api/v2" + suffix.format(rid=rid), headers=headers, **kwargs)
         assert resp.status_code == 404
         assert resp.json()["detail"]["reason"] == "reservation_released"
-        unknown = client.request(method, f"/api/v2/reservations/deadbeef{suffix}", headers=headers, **kwargs)
+        unknown = client.request(method, "/api/v2" + suffix.format(rid="deadbeef"), headers=headers, **kwargs)
         assert unknown.json()["detail"]["reason"] == "reservation_not_found"
 
     def test_openapi_documents_the_reasons_on_every_id_path(self, client):

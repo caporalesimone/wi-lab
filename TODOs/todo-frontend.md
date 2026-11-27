@@ -117,9 +117,9 @@ container, on the Wi-Lab machine or anywhere else. Wi-Lab becomes API only.
   2026-11-27; the new UI must have them):
   - **Cancel a start.** The card that launched a start disables everything
     while it polls, and Stop is disabled on the others. The backend accepts
-    `DELETE .../network` (and the release) during `starting`: a "Cancel start"
+    `DELETE /access-point/{reservation_id}` (and the release) during `starting`: a "Cancel start"
     button unsubscribes the polling, calls the stop, then reads the status.
-  - **`restarts`** of `GET .../network` is not shown: a line "Watchdog
+  - **`restarts`** of `GET /access-point/{reservation_id}` is not shown: a line "Watchdog
     restarts: AP n, DHCP m, last <reason> at <time>" when `ap + dhcp > 0`.
   - **`error` of `start_failed`** appears only in a toast of the card that
     polled: show `error.message` and `error.stage` under the state, on every

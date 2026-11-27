@@ -287,13 +287,13 @@ Route handlers are synchronous (`def`), so Starlette runs them in its worker
 thread pool, not in the event loop. Every Linux command is therefore blocking
 but isolated to one worker thread. An AP start runs in its own `create-<interface>`
 thread (`StartJob` in `NetworkManager.start_jobs`): the create answers `202` at
-once and `GET .../network` reads the job without waiting for the device lock.
+once and `GET /access-point/{reservation_id}` reads the job without waiting for the device lock.
 A release or a stop sets the job's cancel event first (`cancel_start`), so it
 never waits for a long start: the hostapd readiness wait and the pauses check it.
 The job answers no request, so it raises no HTTP error: `_run_start` returns a
 `StartOutcome` (`started`, `cancelled`, `ended` when the reservation ended,
 `start_failed` with the `1013` error) and `_run_job` stores it for
-`GET .../network`. Unit tests go through the same path: `create_network` in
+`GET /access-point/{reservation_id}`. Unit tests go through the same path: `create_network` in
 `tests/unit-tests/conftest.py` posts the create and polls the outcome.
 
 ```mermaid
@@ -428,7 +428,7 @@ sequenceDiagram
     participant DH as DhcpServer
     participant FW as NAT / isolation
 
-    C->>R: POST /reservations/{id}/network
+    C->>R: POST /access-point/{id}
     R->>R: validate body: SSID, password, channel/band (422)
     R->>R: require_token (401)
     R->>RM: resolve_reservation (404 if unknown, expired, invalidated)
@@ -466,7 +466,7 @@ sequenceDiagram
     end
     NM->>OS: set TX power level (best effort)
     NM->>NM: active[antenna] = NetworkStatus
-    NM-->>R: status (the job ends, GET .../network shows the network)
+    NM-->>R: status (the job ends, GET /access-point/{reservation_id} shows the network)
 ```
 
 ### 5.2 hostapd startup and readiness
@@ -504,7 +504,7 @@ the AP. The watchdog probe (`is_enabled`) uses the same rule. The timeout is 10 
 
 The request body (sections `radio`, `wifi`, `internet`, `captive_portal`, model
 `NetworkCreateBody`) is converted to the flat `NetworkCreateRequest` the
-manager works with, and `GET .../network` builds the sectioned
+manager works with, and `GET /access-point/{reservation_id}` builds the sectioned
 `NetworkResponse` from the internal `NetworkStatus` (Fable API-8, first step of ARCH-3). The body
 is validated before any antenna is touched: `ssid` must be
 1–32 bytes in UTF-8, `password` 8–63 bytes for WPA modes, neither may contain
@@ -751,7 +751,7 @@ sequenceDiagram
     end
 
     rect rgba(128,128,128,0.08)
-    Note over C,EX: Create (POST /reservations/{id}/network)
+    Note over C,EX: Create (POST /access-point/{id})
     C->>A: body {radio, wifi, internet, captive_portal}
     A->>A: NetworkCreateBody to flat request, field rules (FieldError keeps the path)
     alt body invalid
@@ -776,7 +776,7 @@ sequenceDiagram
         A-->>C: 422 "radio.channel: ..." or "radio.channel_width: ..."
     end
     A->>J: StartJob(reservation, request) in NetworkManager.start_jobs, thread started
-    A-->>C: 202 runtime_state starting (same schema as GET .../network)
+    A-->>C: 202 runtime_state starting (same schema as GET /access-point/{reservation_id})
     J->>RM: hold the reservation, waiting for the device lock
     loop Layer 2: up to 3 rounds, pauses 5 s and 10 s (device lock held, cancel checked)
     J->>NM: start_network(device, request, allow_internal_retry = round 1, cancelled)
@@ -820,10 +820,10 @@ sequenceDiagram
     end
     end
     loop every 1-2 s until runtime_state is not starting
-        C->>A: GET .../network
+        C->>A: GET /access-point/{reservation_id}
         A-->>C: starting from the job (no device lock), then the outcome
     end
-    opt DELETE .../network or DELETE /reservations/{id} during the start
+    opt DELETE /access-point/{reservation_id} or DELETE /reservations/{id} during the start
         A->>J: cancel: hostapd wait and pauses stop at the next check, rollback
         A-->>C: 200 (network stopped, or reservation released)
     end
@@ -849,7 +849,7 @@ sequenceDiagram
             WD->>FW: verify gateway, ip_forward, NAT, Internet block, isolation, captive portal, re-add missing rules
         end
     end
-    C->>A: GET .../network, Internet, TX power, QoS (any call with an id except create and release)
+    C->>A: GET /access-point/{reservation_id}, Internet, TX power, QoS (any call with an id except create and release)
     A->>RM: hold the reservation, wait at most 5 s for the device lock
     alt lock still held after 5 s (a start or restore is running)
         A-->>C: 503 / 1006 Retry-After 2 (nothing changed)
@@ -861,8 +861,8 @@ sequenceDiagram
     end
 
     rect rgba(128,128,128,0.08)
-    Note over C,EX: Stop (DELETE /reservations/{id}/network)
-    C->>A: DELETE .../network
+    Note over C,EX: Stop (DELETE /access-point/{id})
+    C->>A: DELETE /access-point/{reservation_id}
     A->>NM: stop_network(device) under the device lock
     NM->>H: SIGTERM, after 2 s SIGKILL, wait 2 s more
     alt hostapd stuck in the kernel (driver firmware timeout)
@@ -872,7 +872,7 @@ sequenceDiagram
             A->>NM: stop_network again
         end
         A-->>C: 503 / 1012 stop_incomplete, Retry-After 5 (still stuck after 15 s)
-        C->>A: DELETE .../network again after Retry-After
+        C->>A: DELETE /access-point/{reservation_id} again after Retry-After
         A->>NM: stop_network: hostapd has exited, NAT released
         A-->>C: 200
     else
@@ -1014,7 +1014,7 @@ answers either.
   60, 120 s, then every 300 s) while the reservation is valid. Retries stop
   when a retry succeeds, the reservation is released, expires or is
   quarantined, or the client creates a network (`POST`) or gives it up
-  (`DELETE .../network` returns `200` and keeps the reservation). A radio
+  (`DELETE /access-point/{reservation_id}` returns `200` and keeps the reservation). A radio
   failure during a retry quarantines as usual. Retries do not count against
   the restore budget.
 - **Failed cleanup (REV-10):** a restore whose cleanup (or whose start's
@@ -1026,7 +1026,7 @@ answers either.
   is cleared by the teardown and must be reapplied.
 - Every AP restore and DHCP-only restart is counted on the `Reservation`
   (`ap_restarts`, `dhcp_restarts`, last time and reason) when it begins,
-  whether it succeeds or not. `GET .../network` shows them in `restarts`; the
+  whether it succeeds or not. `GET /access-point/{reservation_id}` shows them in `restarts`; the
   counters never decrease during the reservation, so a client compares them
   before and after a test. In-place repairs that do not interrupt the AP
   (gateway address, rules) are not counted.

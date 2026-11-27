@@ -54,7 +54,7 @@ Durations and countdowns such as `expires_in`, `next_available_in` and
   of the health checks is `checks` of **System → Read the service health**
   (`GET /api/v2/status`).
 
-- **Antennas** comes before **Network**: `GET /api/v2/antennas` lists the antennas with their
+- **Antennas** comes before **Access point**: `GET /api/v2/antennas` lists the antennas with their
   state, `free_antennas` and `reservation_policy` (the limits of a reservation);
   `GET /api/v2/antennas/{interface}` is one antenna now (attachment, reservation, network,
   quarantine and repair health); `GET /api/v2/antennas/{interface}/capabilities` is what a
@@ -84,7 +84,7 @@ told directly (`404` with `reason: reservation_invalidated` on its next call). S
 
 In **Create a network on a reserved adapter (asynchronous)**, the body is grouped in
 `radio`, `wifi` (with `security`), `internet` and `captive_portal`, like the
-answer of **GET .../network**; every example shows all the optional fields
+answer of **GET /access-point/{reservation_id}**; every example shows all the optional fields
 with their defaults. The schema describes each `wifi.security.encryption`
 value, `radio.channel_width` and `radio.wifi_generation`; the
 examples **5 GHz Wi-Fi 5 network at 80 MHz** and **Legacy WPA (TKIP) network
@@ -93,14 +93,14 @@ accepted: the `422` example **encryption wpa is no longer accepted** shows the
 message, which points to `wpa2`. The other `422` examples show an antenna that
 lacks `wpa1`, a channel that cannot be used at the requested width, and an
 unsupported Wi-Fi generation. What each antenna accepts is in
-**Antennas → Read what a network on an antenna can use**. See
+**Antennas → Read what an access point on an antenna can use**. See
 [AP creation procedure, 2.2.1](ap-creation-procedure.md#221-encryption-channel-width-and-wi-fi-generation).
 
-## Network creation failure
+## Access point creation failure
 
-In the **Network** group, open **Create a network on a reserved adapter
-(asynchronous)**. It answers `202` with `runtime_state: starting`; then read
-**Get network** until the outcome: the network, `runtime_state: start_failed`
+In the **Access point** group, open **Create the access point on the reserved
+antenna (asynchronous)**. It answers `202` with `runtime_state: starting`; then
+read **Read the access point** until the outcome: the access point, `runtime_state: start_failed`
 with `error` (`1013` and the failed `stage`, reservation still valid), or `404`
 whose `detail.reason` is `reservation_invalidated` (every start failed, antenna
 quarantined) or `reservation_expired`. Its `409` examples distinguish another
@@ -115,24 +115,24 @@ reservation request can be retried after `Retry-After`. `409 / 1005` is ordinary
 reservation contention and can include `detail.next_available_in`. A release
 always answers `200`, even if the server must repeat the cleanup.
 
-`409 / 1007` (`network_not_active`) is the answer of the Internet, TX power
+`409 / 1007` (`access_point_not_active`) is the answer of the Internet, TX power
 and QoS profile endpoints when the reservation is valid but has no running
 network; `404` there always means the reservation is gone.
 
 `503 / 1006` (`device_busy`, example **1006 - adapter busy, retry**) is
-documented on **Get network**, the network stop and the Internet, TX power and
+documented on **Read the access point**, the access point stop and the Internet, TX power and
 QoS profile endpoints: another operation on the same adapter, for example a
 network start, still held it after 5 s. Nothing was changed; repeat the
 request after `Retry-After` (2 s). The create and the release never answer
-it, and **Get network** answers at once while a create is starting.
+it, and **Read the access point** answers at once while a create is starting.
 
 For a complete interactive example:
 
 1. In **Reservation**, execute the timed example for `POST /api/v2/reservations`.
-2. In **Network**, copy the returned `reservation_id` into the create endpoint
-   and choose a channel supported by the adapter. Then execute **Get network**
-   until `runtime_state` is no longer `starting`.
-3. Use **Read system and adapter status** to distinguish
+2. In **Access point**, copy the returned `reservation_id` into the create endpoint
+   and choose a channel supported by the adapter. Then execute **Read the access
+   point** until `runtime_state` is no longer `starting`.
+3. Use **Antennas → List the antennas** to distinguish
    `recovery_state` (quarantine) from `runtime_state` (AP/DHCP restoration).
    During restoration, read status instead of sending another create.
 4. When finished, delete the reservation by ID; Wi-Lab stops the network.

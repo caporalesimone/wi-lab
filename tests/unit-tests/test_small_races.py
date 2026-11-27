@@ -102,7 +102,7 @@ def test_the_channel_a_radar_moved_to_is_shown(monkeypatch, context):
     status, restore = _watch(context, monkeypatch, probes, [0.0, 5.0])
     restore.assert_not_called()
     assert status.channel == 52               # the request, used by a restore
-    assert status.status().channel == 100     # what GET .../network shows
+    assert status.status().channel == 100     # what GET /access-point/{reservation_id} shows
 
 
 def test_the_moved_channel_is_cleared_when_back_on_the_requested_one(monkeypatch, context):

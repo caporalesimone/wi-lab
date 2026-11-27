@@ -28,10 +28,10 @@ string (`"6"`), `true` for a number, or a number for a boolean is a `422`.
 
 **Not stable in 4.1:**
 
-- **TX power** (`GET`/`POST .../txpower`, and `radio.tx_power_level` beyond its
+- **TX power** (`GET`/`POST /access-point/{reservation_id}/tx-power`, and `radio.tx_power_level` beyond its
   validation) is under debugging: the drivers in use do not apply the requested
   power reliably, so a change may answer `422` or report another level. The
-  field of `POST .../txpower` is `tx_power_level`, as in the create.
+  field of `POST /access-point/{reservation_id}/tx-power` is `tx_power_level`, as in the create.
 - **QoS profiles** ([QoS](qos.md)) are experimental and untested.
 
 Both may change in any release: do not build client logic on them.
@@ -170,7 +170,7 @@ extra rule is `wpa1`: 802.11n (`wifi_generation` 4) at 20 MHz only.
 ### 2.2 Build the request
 
 ```http
-POST /api/v2/reservations/{reservation_id}/network
+POST /api/v2/access-point/{reservation_id}
 Content-Type: application/json
 
 {
@@ -191,7 +191,7 @@ Content-Type: application/json
 }
 ```
 
-The body has the same sections as `GET .../network`. Only `radio` and `wifi`
+The body has the same sections as `GET /access-point/{reservation_id}`. Only `radio` and `wifi`
 are required; `internet` and `captive_portal` can be omitted.
 
 | Field | Required | Rules |
@@ -252,22 +252,22 @@ points to `wpa2` (same network as before) or `wpa1` (real legacy WPA).
 - On 2.4 GHz `channel_width: 40` is accepted: the second channel is 4 above
   (or 4 below when above is not available). It occupies most of the band, and
   hostapd falls back to 20 MHz when it sees neighbouring networks (20/40
-  coexistence), which is common with several APs on. `GET .../network` reports
+  coexistence), which is common with several APs on. `GET /access-point/{reservation_id}` reports
   the width the radio actually uses in `radio.channel_width.reported`.
 - `wifi_generation: 6` (802.11ax) is accepted where the antenna supports
   802.11ax in AP mode. On 5 GHz it is announced together with 802.11ac.
 
 ### 2.3 Send it, then poll
 
-The create is **asynchronous**. `POST .../network` checks the request and
+The create is **asynchronous**. `POST /access-point/{reservation_id}` checks the request and
 answers at once; the AP starts in the background, and the client reads the
-outcome with `GET .../network`:
+outcome with `GET /access-point/{reservation_id}`:
 
-1. `POST .../network` answers `202` with the network in
+1. `POST /access-point/{reservation_id}` answers `202` with the network in
    `"runtime_state": "starting"`, `"active": false`. The body has the same
-   schema as `GET .../network` (a client library that sees only the body
+   schema as `GET /access-point/{reservation_id}` (a client library that sees only the body
    decides from `active` and `runtime_state`).
-2. Read `GET .../network` every 1–2 s while `runtime_state` is `starting`. It
+2. Read `GET /access-point/{reservation_id}` every 1–2 s while `runtime_state` is `starting`. It
    answers at once, even while the antenna is busy with the start.
 3. Stop at the first outcome (2.4).
 
@@ -298,21 +298,21 @@ The actions for every call, in one place, are in [3.1](#31-what-to-do-with-each-
 
 | Response | Meaning | Client action |
 |---|---|---|
-| `202` | Start accepted (also the same body while that start runs). | Poll `GET .../network`. |
+| `202` | Start accepted (also the same body while that start runs). | Poll `GET /access-point/{reservation_id}`. |
 | `200` | The same body on a network that already runs with exactly these settings: the network. Nothing was restarted. | Done. |
-| `409 / 1008` (`network_already_active`) | A network with **different** settings runs or is starting on this reservation. | Read it with `GET .../network`; `DELETE .../network` first to replace it. |
-| `409 / 1012` (`stop_incomplete`) | The last `DELETE .../network` did not complete (`runtime_state: stop_failed`). | Repeat `DELETE .../network` until `200`, then the create. |
-| `409 / 1009` (`restoration_in_progress`) | The watchdog is repairing this network (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`). | Do not create. Poll `GET .../network` until `runtime_state` is `null`. |
+| `409 / 1008` (`access_point_already_active`) | A network with **different** settings runs or is starting on this reservation. | Read it with `GET /access-point/{reservation_id}`; `DELETE /access-point/{reservation_id}` first to replace it. |
+| `409 / 1012` (`stop_incomplete`) | The last `DELETE /access-point/{reservation_id}` did not complete (`runtime_state: stop_failed`). | Repeat `DELETE /access-point/{reservation_id}` until `200`, then the create. |
+| `409 / 1009` (`restoration_in_progress`) | The watchdog is repairing this network (`restoring_ap`, `restoring_dhcp`, `dhcp_failed`). | Do not create. Poll `GET /access-point/{reservation_id}` until `runtime_state` is `null`. |
 | `422` | Invalid body (including `encryption: wpa`), channel unsupported/disabled on this antenna, or an encryption, channel width or Wi-Fi generation the antenna does not support. | Fix the request. Do not repeat the same body. |
 | `404` | The reservation ID is no longer valid; `detail.reason` says why. | See 3.1. |
 | `401` | Missing or invalid token. | Fix the token. |
 
-**Outcomes of the polling (`GET .../network`):**
+**Outcomes of the polling (`GET /access-point/{reservation_id}`):**
 
 | Answer | Meaning | Client action |
 |---|---|---|
 | `200`, `active: true`, `runtime_state: null` | The AP is up and DHCP is running. | Done. |
-| `200`, `runtime_state: "start_failed"`, `error` | A non-radio startup error: `error.code` `1013`, `error.stage` says what failed (`hostapd` e.g. exit code 1, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation`, `host_guard`), `error.message` for display. The start was rolled back and the reservation is **still valid**. `start_failed` stays until a new create, a `DELETE .../network` or the end of the reservation. | No automatic retry (it is usually a configuration or host problem). Show the message. A new create starts again; release the ID if you give up. |
+| `200`, `runtime_state: "start_failed"`, `error` | A non-radio startup error: `error.code` `1013`, `error.stage` says what failed (`hostapd` e.g. exit code 1, `interface`, `gateway`, `dhcp`, `captive_portal`, `nat`, `internet_block`, `isolation`, `host_guard`), `error.message` for display. The start was rolled back and the reservation is **still valid**. `start_failed` stays until a new create, a `DELETE /access-point/{reservation_id}` or the end of the reservation. | No automatic retry (it is usually a configuration or host problem). Show the message. A new create starts again; release the ID if you give up. |
 | `404`, `detail.reason: reservation_invalidated` | **Every start failed**: the antenna was quarantined and the reservation invalidated. | Reserve again (you will get another antenna). **Do not release** the old ID. |
 | `404`, `detail.reason: reservation_expired` | The reservation expired, also when it would have expired before the next start. | Reserve again if needed. |
 
@@ -330,7 +330,7 @@ of them. Further rules:
 - **After a transport error, send the same create again, or just poll.** The
   same body never starts a second AP: `202` while that start runs, `200` once
   it runs. Then handle the answer as usual.
-- **Stopping or releasing during a start cancels it.** `DELETE .../network`
+- **Stopping or releasing during a start cancels it.** `DELETE /access-point/{reservation_id}`
   cancels the start and keeps the reservation; `DELETE /reservations/{id}`
   cancels it and releases. Both answer within seconds, also during a long DFS
   start.
@@ -341,15 +341,15 @@ of them. Further rules:
 
 - **No network: `409 / 1007`.** Internet, TX power and QoS profile requests
   on a valid reservation that has no running network return `409` with
-  `detail.code: 1007` (`network_not_active`). Create a network first. A `404`
+  `detail.code: 1007` (`access_point_not_active`). Create a network first. A `404`
   on these endpoints always means the reservation itself is unknown, expired
   or invalidated.
-- **Half-stopped network: `409 / 1012`.** After a `DELETE .../network` that
+- **Half-stopped network: `409 / 1012`.** After a `DELETE /access-point/{reservation_id}` that
   answered `503 / 1012` (`runtime_state: stop_failed`), Internet, TX power and
   QoS profile requests return `409` with `detail.code: 1012`
   (`stop_incomplete`): repeat the DELETE until `200`.
 - **Adapter busy: `503 / 1006`.** Every request on a reservation except the
-  release (`GET`/`DELETE .../network`, Internet, TX power, QoS profile, and
+  release (`GET`/`DELETE /access-point/{reservation_id}`, Internet, TX power, QoS profile, and
   the create in one case below) waits at most **5 s** for another operation on the
   same adapter, such as a network start (for its duration see
   [2.3](#23-send-it-then-poll)) or a stop that the server is repeating.
@@ -358,8 +358,8 @@ of them. Further rules:
   same request after `Retry-After`. A create that starts a network never
   returns `1006`: it answers `202` at once and the start, in the background,
   waits for the adapter. Only the same body sent again on a network already
-  running (the `200` answer) reads the network like `GET .../network` and can
-  return `1006`. During a start `GET .../network` answers at once, and the
+  running (the `200` answer) reads the network like `GET /access-point/{reservation_id}` and can
+  return `1006`. During a start `GET /access-point/{reservation_id}` answers at once, and the
   release never returns `1006`.
 
   ```json
@@ -370,7 +370,7 @@ of them. Further rules:
               "message": "Another operation on this adapter is still running; retry after Retry-After"}}
   ```
 
-- `GET /api/v2/reservations/{reservation_id}/network` returns the network in
+- `GET /api/v2/access-point/{reservation_id}` returns the network in
   sections:
 
   ```json
@@ -413,23 +413,23 @@ of them. Further rules:
 - Wi-Lab's watchdog checks every running AP about every 5 seconds and restarts
   it with the same settings and reservation, up to 3 times per hour per
   antenna; a fourth failure within the hour quarantines the antenna. While this
-  happens, `GET .../network` and `GET /api/v2/status` report `runtime_state`:
+  happens, `GET /access-point/{reservation_id}` and `GET /api/v2/status` report `runtime_state`:
 
   | `runtime_state` | Meaning | Client action |
   |---|---|---|
   | `starting` | A create is running (2.3). | Poll until the outcome. |
-  | `start_failed` | The last create failed for a non-radio reason; see `error` (2.4). | A new create, or `DELETE .../network` to clear it. |
+  | `start_failed` | The last create failed for a non-radio reason; see `error` (2.4). | A new create, or `DELETE /access-point/{reservation_id}` to clear it. |
   | `restoring_ap` | The AP is being restarted. Clients will need to reconnect. | Wait. Do not send a create. |
   | `restoring_dhcp` | Only DHCP is being restarted. The AP stays up. | Wait. |
   | `dhcp_failed` | DHCP could not be repaired alone (a restart failed, or dnsmasq died more than 3 times in an hour). Within 5 s the watchdog restarts the whole network (`restoring_ap`). | Wait. |
-  | `restore_failed` | The AP restart failed for a non-radio reason (also a cleanup that failed once). The AP is down (`active: false`); the watchdog retries after 15 s, 30 s, 60 s, 120 s, then every 5 minutes while the reservation is valid. | Wait for `runtime_state` to clear, or `DELETE .../network` to stop the retries (the reservation stays valid), or create a new network. |
-  | `stop_failed` | After a `DELETE .../network` answered `503 / 1012` (also in `GET /status`). Only the owner's stop sets it: a failed expiry, rollback or background cleanup is retried by the server and shows as `cleanup_failed`: the stop did not complete, usually because hostapd stayed stuck in the kernel for a few seconds after a driver firmware timeout. The network is half stopped and the watchdog leaves it alone. | Repeat `DELETE .../network` after `Retry-After` (5 s). |
+  | `restore_failed` | The AP restart failed for a non-radio reason (also a cleanup that failed once). The AP is down (`active: false`); the watchdog retries after 15 s, 30 s, 60 s, 120 s, then every 5 minutes while the reservation is valid. | Wait for `runtime_state` to clear, or `DELETE /access-point/{reservation_id}` to stop the retries (the reservation stays valid), or create a new network. |
+  | `stop_failed` | After a `DELETE /access-point/{reservation_id}` answered `503 / 1012` (also in `GET /status`). Only the owner's stop sets it: a failed expiry, rollback or background cleanup is retried by the server and shows as `cleanup_failed`: the stop did not complete, usually because hostapd stayed stuck in the kernel for a few seconds after a driver firmware timeout. The network is half stopped and the watchdog leaves it alone. | Repeat `DELETE /access-point/{reservation_id}` after `Retry-After` (5 s). |
 
 - An AP restart clears traffic shaping and QoS profiles: reapply them after a
   `restoring_ap` phase.
 - **You do not need to poll `runtime_state` all the time.** A repair that
   starts and ends between two reads leaves `runtime_state` at `null`, but
-  `GET .../network` always has a `restarts` section that counts the repairs
+  `GET /access-point/{reservation_id}` always has a `restarts` section that counts the repairs
   over the whole reservation (it never decreases, also when you recreate the
   network):
 
@@ -454,7 +454,7 @@ of them. Further rules:
 - `GET /api/v2/status` reports `recovery_state` (`recovering` or `unavailable`)
   for quarantined antennas. They can show `reservation: null` but are **not**
   allocatable.
-- To stop the AP but keep the antenna: `DELETE .../network`. To finish: release
+- To stop the AP but keep the antenna: `DELETE /access-point/{reservation_id}`. To finish: release
   the reservation.
 
 ### 2.7 Captive portal
@@ -481,7 +481,7 @@ in.
 
 After sign-in, the client uses the DNS server from the configuration and the
 network's normal Internet setting: with `internet.enabled: false` it stays
-offline. `GET .../network` reports `captive_portal.enabled`, `captive_portal.url`
+offline. `GET /access-point/{reservation_id}` reports `captive_portal.enabled`, `captive_portal.url`
 and, for each client, `captive_authorized`.
 
 Notes:
@@ -543,10 +543,10 @@ GET /api/v2/antennas
   "reservation_policy": {"min_seconds": 60, "max_seconds": 86400, "allow_unlimited": false},
   "antennas": [
     {"interface": "wlx7419f8176286", "display_name": "antenna-1", "reservation": null,
-     "network_active": false, "recovery_state": "unavailable"},
+     "access_point_active": false, "recovery_state": "unavailable"},
     {"interface": "wlx7419f817651c", "display_name": "antenna-2",
      "reservation": {"expires_at": "2026-11-19T23:00:00Z", "expires_in": 540},
-     "network_active": true}
+     "access_point_active": true}
   ]
 }
 ```
@@ -554,8 +554,8 @@ GET /api/v2/antennas
 | `service.degraded_reasons[].code` | Meaning | Client action |
 |---|---|---|
 | `antenna_quarantined` | The antenna has `recovery_state`: `recovering` (Wi-Lab is resetting and probing it) or `unavailable` (no USB reset running; re-probed after 30 s, backing off to every 15 min). | Do not count it as available. It may return by itself; report it if `unavailable` persists. |
-| `network_being_repaired` | A reserved AP has `runtime_state`: `restoring_ap`, `restoring_dhcp`, `dhcp_failed` (whole network restarted within 5 s) or `restore_failed` (AP down, retried with backoff). See [2.6](#26-after-the-ap-is-running). | Owner: wait (or `DELETE .../network` on `restore_failed`). Others: nothing to do. |
-| `network_stop_incomplete` | A `DELETE .../network` on that antenna answered `503 / 1012`: the network is half stopped (`runtime_state: stop_failed`). | Its owner repeats the DELETE; others do nothing. |
+| `access_point_being_repaired` | A reserved AP has `runtime_state`: `restoring_ap`, `restoring_dhcp`, `dhcp_failed` (whole network restarted within 5 s) or `restore_failed` (AP down, retried with backoff). See [2.6](#26-after-the-ap-is-running). | Owner: wait (or `DELETE /access-point/{reservation_id}` on `restore_failed`). Others: nothing to do. |
+| `access_point_stop_incomplete` | A `DELETE /access-point/{reservation_id}` on that antenna answered `503 / 1012`: the network is half stopped (`runtime_state: stop_failed`). | Its owner repeats the DELETE; others do nothing. |
 | `hostapd_not_running`, `dnsmasq_not_running` | The AP or DHCP process of that network is not alive. | Report it; the watchdog normally repairs it within seconds. |
 | `nat_rule_missing` | That network has Internet enabled but lost its NAT rule. | Report it; Internet does not work there until the watchdog repairs it. |
 | `command_stuck` | A host command (`ip`, `iw`, `usbreset`, ...) did not exit even after SIGKILL: usually a hung Wi-Fi driver. Set also when no antenna is reserved. | Report it: the adapter may need a reset or the host a reboot. |
@@ -570,7 +570,7 @@ monitoring views; clients only need `service`.
 
 - Each antenna has `reservation` (`null` when no reservation holds it;
   `{expires_at, expires_in}` otherwise, both `null` when unlimited) and
-  `network_active` (a network runs on it).
+  `access_point_active` (a network runs on it).
 - `reservation: null` does **not** mean the antenna can be reserved: an entry
   with `recovery_state` is excluded from allocation.
 - How a client learns that *its* antenna was quarantined: every call with the
@@ -600,7 +600,7 @@ sequenceDiagram
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 0 - before reserving (optional, no reservation needed)
     C->>W: GET /antennas
-    W-->>C: free_antennas, reservation_policy, antennas[] (reservation, network_active, recovery_state)
+    W-->>C: free_antennas, reservation_policy, antennas[] (reservation, access_point_active, recovery_state)
     Note over C: allow_unlimited tells whether duration_seconds 0 is accepted.<br/>Entries with recovery_state are not allocatable.
     end
 
@@ -644,12 +644,12 @@ sequenceDiagram
 
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 3 - create the AP (asynchronous: POST, then poll GET)
-    C->>W: POST /reservations/{id}/network {radio, wifi, internet, captive_portal}
+    C->>W: POST /access-point/{id} {radio, wifi, internet, captive_portal}
     alt 202 runtime_state starting
-        W-->>C: accepted, same schema as GET .../network
+        W-->>C: accepted, same schema as GET /access-point/{reservation_id}
         Note over W: In the background: prepares the radio, starts hostapd, waits for the AP<br/>(10 s, 75 s on DFS), gateway, DHCP, NAT, isolation. Radio failure: up to<br/>3 starts 1 s apart, then one after 5 s, then one after 10 s
         loop every 1-2 s while runtime_state is starting
-            C->>W: GET /reservations/{id}/network
+            C->>W: GET /access-point/{id}
             alt runtime_state starting
                 W-->>C: still starting (answered at once)
             else active true, runtime_state null
@@ -672,28 +672,28 @@ sequenceDiagram
     else 422
         W-->>C: message starts with the field path (radio.channel: ..., wifi.security.password: ...)
         Note over C: Fix that field. Never repeat the same body
-    else 409 / 1008 network_already_active
+    else 409 / 1008 access_point_already_active
         W-->>C: a network with different settings runs or is starting
-        Note over C: Read it with GET .../network, or DELETE .../network first
+        Note over C: Read it with GET /access-point/{reservation_id}, or DELETE /access-point/{reservation_id} first
     else 409 / 1012 stop_incomplete
-        W-->>C: the last DELETE .../network did not complete
-        Note over C: Repeat DELETE .../network until 200, then the create
+        W-->>C: the last DELETE /access-point/{reservation_id} did not complete
+        Note over C: Repeat DELETE /access-point/{reservation_id} until 200, then the create
     else 409 / 1009 restoration_in_progress
         W-->>C: the watchdog is repairing this AP
-        Note over C: Do not create. Poll GET .../network until runtime_state is null
+        Note over C: Do not create. Poll GET /access-point/{reservation_id} until runtime_state is null
     else 404
         W-->>C: the reservation id is no longer valid, detail.reason says why
         Note over C: invalidated or expired: reserve again. released or not_found: stop
     else transport error (no answer)
-        Note over C: Send the SAME create again, or poll GET .../network:<br/>the same body never starts a second AP
+        Note over C: Send the SAME create again, or poll GET /access-point/{reservation_id}:<br/>the same body never starts a second AP
     end
-    Note over C,W: DELETE .../network or DELETE /reservations/{id} during starting cancels the start
+    Note over C,W: DELETE /access-point/{reservation_id} or DELETE /reservations/{id} during starting cancels the start
     end
 
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 4 - while the AP is in use
     par Owner polls its network (every 5 to 30 s)
-        C->>W: GET /reservations/{id}/network
+        C->>W: GET /access-point/{id}
         alt 200, runtime_state null
             W-->>C: active, radio, wifi, ip, internet, captive_portal, clients, reservation
         else 200, runtime_state restoring_ap
@@ -704,10 +704,10 @@ sequenceDiagram
             Note over C: Wait
         else 200, runtime_state restore_failed
             W-->>C: AP down, the watchdog retries (15 s, 30 s, 60 s, 120 s, then every 5 min)
-            Note over C: Wait, or DELETE .../network to stop the retries, or create again
+            Note over C: Wait, or DELETE /access-point/{reservation_id} to stop the retries, or create again
         else 200, runtime_state stop_failed
             W-->>C: a previous stop did not complete
-            Note over C: Repeat DELETE .../network (phase 5)
+            Note over C: Repeat DELETE /access-point/{reservation_id} (phase 5)
         else 503 / 1006 + Retry-After 2
             W-->>C: another operation holds the antenna, nothing changed
             Note over C: Automatic retry allowed after Retry-After
@@ -721,7 +721,7 @@ sequenceDiagram
         Note over C: Show degraded with the affected antenna
     end
     opt Change the running network
-        C->>W: POST .../internet/enable or disable, POST .../txpower, POST or DELETE .../qos/profile
+        C->>W: POST /access-point/{reservation_id}/internet/enable or disable, POST /access-point/{reservation_id}/tx-power, POST or DELETE .../qos/profile
         alt 200
             W-->>C: applied
         else 409 / 1007
@@ -739,7 +739,7 @@ sequenceDiagram
     rect rgba(128,128,128,0.08)
     Note over C,W: Phase 5 - stop the AP and keep the reservation (optional)
     loop Until 200, 409 / 1007 or 404
-        C->>W: DELETE /reservations/{id}/network
+        C->>W: DELETE /access-point/{id}
         alt 200
             W-->>C: stopped (also cancels the retries of restore_failed)
         else 409 / 1007
@@ -776,7 +776,7 @@ Every answer leads to exactly one of these actions:
 | Action | Meaning |
 |---|---|
 | **DONE** | Success. Go on. |
-| **WAIT** | The server is working on it. Send nothing that changes the network; read the state again (`GET .../network`) every few seconds. |
+| **WAIT** | The server is working on it. Send nothing that changes the network; read the state again (`GET /access-point/{reservation_id}`) every few seconds. |
 | **REPEAT** | Send the **same** request again (same ID, same body) after `Retry-After`. Automatic retries are allowed only here. |
 | **FIX** | The request is wrong. Change it; never resend the same one. |
 | **RESERVE AGAIN** | The reservation ID is gone. Stop using it, **do not release it**, and reserve again (`POST /reservations`) if you still need an AP. You may get another antenna. |
@@ -787,7 +787,7 @@ Every answer leads to exactly one of these actions:
 | any | `401` | FIX | Wrong or missing token. |
 | any call with an ID | `404` + `reason: reservation_invalidated` or `reservation_expired` | RESERVE AGAIN | The ID was invalidated (its antenna was quarantined: radio failures, also during a watchdog restart) or expired. Never release it. On a release: DONE. |
 | | `404` + `reason: reservation_released` or `reservation_not_found` | DONE | Released (by you or release-all), never existed, or ended more than an hour ago. Nothing to release. |
-| `GET`/`DELETE .../network`, Internet, TX power, QoS | `503 / 1006` + `Retry-After: 2` | REPEAT | Another operation holds the antenna. Nothing was changed. Never on the release; on the create see its row. |
+| `GET`/`DELETE /access-point/{reservation_id}`, Internet, TX power, QoS | `503 / 1006` + `Retry-After: 2` | REPEAT | Another operation holds the antenna. Nothing was changed. Never on the release; on the create see its row. |
 | `POST /reservations` | `200` | DONE | Keep `reservation_id` and `interface`. |
 | | `409 / 1005` | REPEAT | All antennas reserved (with `interface`: that one). Wait `next_available_in`, or a backoff of 10–60 s when it is `null`. |
 | | `503 / 1002` + `Retry-After: 10` | REPEAT | An antenna is being recovered. |
@@ -795,27 +795,27 @@ Every answer leads to exactly one of these actions:
 | | `422` | FIX | `duration_seconds` out of limits, `0` while unlimited reservations are off, or `interface: ...` not a managed antenna. |
 | `GET /antennas/{interface}/capabilities` | `503` | REPEAT | After a few seconds; the radio is being reset. Or create with the defaults. |
 | | `404` | RESERVE AGAIN | The antenna is no longer managed. |
-| `POST .../network` (create) | `202` | WAIT | Start accepted: poll `GET .../network` every 1–2 s (rows below). |
+| `POST /access-point/{reservation_id}` (create) | `202` | WAIT | Start accepted: poll `GET /access-point/{reservation_id}` every 1–2 s (rows below). |
 | | `200` | DONE | The same body on a network already running with it: the network. |
 | | `503 / 1006` + `Retry-After: 2` | REPEAT | Only for the same body on a running network: another operation holds the antenna. Nothing was changed. |
 | | `422` | FIX | The message starts with the field path, e.g. `radio.channel_width: ...`. |
-| | `409 / 1008` | FIX | A network with **different** settings runs or is starting (the same body answers `202` or `200`). Read it with `GET .../network`; `DELETE .../network` first to replace it. |
-| | `409 / 1012` | REPEAT | The last `DELETE .../network` did not complete: repeat it until `200`, then send the create again. |
+| | `409 / 1008` | FIX | A network with **different** settings runs or is starting (the same body answers `202` or `200`). Read it with `GET /access-point/{reservation_id}`; `DELETE /access-point/{reservation_id}` first to replace it. |
+| | `409 / 1012` | REPEAT | The last `DELETE /access-point/{reservation_id}` did not complete: repeat it until `200`, then send the create again. |
 | | `409 / 1009` | WAIT | Until `runtime_state` is `null`, then create only if `active` is `false`. |
 | | `500 / 500` | STOP | An unexpected server error. |
-| | no answer (timeout, connection lost) | REPEAT | Send the **same** create again, or poll `GET .../network`: the same body never starts a second AP. |
-| `GET .../network` | `200`, `runtime_state: starting` | WAIT | A create is running; read again in 1–2 s. |
+| | no answer (timeout, connection lost) | REPEAT | Send the **same** create again, or poll `GET /access-point/{reservation_id}`: the same body never starts a second AP. |
+| `GET /access-point/{reservation_id}` | `200`, `runtime_state: starting` | WAIT | A create is running; read again in 1–2 s. |
 | | `200`, `runtime_state: start_failed` | STOP | Non-radio failure (`error.code` `1013`, `error.stage`, `error.message`), rolled back; the reservation is still valid. A new create starts again; release the ID if you give up. |
 | | `200`, `runtime_state: null` | DONE | |
 | | `200`, `restoring_ap`, `restoring_dhcp`, `dhcp_failed` | WAIT | The watchdog is repairing the network. After `restoring_ap`, devices reconnect and QoS profiles must be reapplied. |
-| | `200`, `restore_failed` | WAIT | The AP is down and the watchdog retries. Or `DELETE .../network` to give up, or create again. |
-| | `200`, `stop_failed` | REPEAT | Repeat the `DELETE .../network` that answered `503 / 1012`. |
+| | `200`, `restore_failed` | WAIT | The AP is down and the watchdog retries. Or `DELETE /access-point/{reservation_id}` to give up, or create again. |
+| | `200`, `stop_failed` | REPEAT | Repeat the `DELETE /access-point/{reservation_id}` that answered `503 / 1012`. |
 | Internet, TX power, QoS | `409 / 1007` | FIX | No running network: create it first. |
-| | `409 / 1012` | REPEAT | The last stop did not complete: repeat `DELETE .../network` until `200`. |
+| | `409 / 1012` | REPEAT | The last stop did not complete: repeat `DELETE /access-point/{reservation_id}` until `200`. |
 | | `422` | FIX | Includes a TX power the driver does not support and an unknown QoS `profile_id`. |
 | QoS profile start | `409 / 1010` | FIX | A profile already runs: stop it first. |
 | QoS profile stop | `409 / 1011` | DONE | No profile runs. |
-| `DELETE .../network` | `200` | DONE | The reservation stays. |
+| `DELETE /access-point/{reservation_id}` | `200` | DONE | The reservation stays. |
 | | `409 / 1007` | DONE | Already inactive. Also the normal end of a stop that answered `503 / 1006` because a start was slow to cancel (more than 30 s): repeat until `200` or `409 / 1007`; both mean stopped. |
 | | `503 / 1012` + `Retry-After: 5` | REPEAT | The stop did not complete, even after the server repeated it for 15 s (hostapd stuck in the kernel). Rare. Repeat until `200`. |
 | `DELETE /reservations/{id}` | `200` | DONE | Always, even if the cleanup failed: the server then keeps the antenna out of the pool and repeats the cleanup by itself. |
@@ -830,7 +830,7 @@ happens, from the most to the least common case:
 1. **The server absorbs it: WAIT.** Wi-Lab starts the AP again by itself
    during the create: up to 3 times 1 s apart, then after 5 s and after
    10 s. The polling just shows `starting` a little longer, then the network.
-   The same holds for a watchdog restart of a running AP: `GET .../network`
+   The same holds for a watchdog restart of a running AP: `GET /access-point/{reservation_id}`
    shows `restoring_ap`, then `runtime_state: null`, and `restarts.ap` grows.
    Nearly every hostapd crash ends here.
 2. **The reservation is invalidated: RESERVE AGAIN.** It happens when every
@@ -848,7 +848,7 @@ without special code for crashes.
 
 ```python
 def create_ap(api, reservation_id, body):
-    url = f"/reservations/{reservation_id}/network"
+    url = f"/access-point/{reservation_id}"
     try:
         r = api.post(url, json=body, timeout=30)
     except TransportError:

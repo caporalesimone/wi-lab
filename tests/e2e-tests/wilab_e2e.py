@@ -420,7 +420,7 @@ class WiLab:
         return Antenna(data["reservation_id"], data["interface"], data["display_name"])
 
     def release(self, antenna: Antenna) -> None:
-        self.http.delete(f"/reservations/{antenna.reservation_id}/network")
+        self.http.delete(f"/access-point/{antenna.reservation_id}")
         self.http.delete(f"/reservations/{antenna.reservation_id}")
         if antenna.reservation_id in self.reserved:
             self.reserved.remove(antenna.reservation_id)
@@ -433,13 +433,13 @@ class WiLab:
         }
         body.update(overrides)
         body = {key: value for key, value in body.items() if value is not None}
-        return self.http.post(f"/reservations/{antenna.reservation_id}/network", json=network_body(**body))
+        return self.http.post(f"/access-point/{antenna.reservation_id}", json=network_body(**body))
 
     def network(self, antenna: Antenna) -> httpx.Response:
-        return self.http.get(f"/reservations/{antenna.reservation_id}/network")
+        return self.http.get(f"/access-point/{antenna.reservation_id}")
 
     def wait_start(self, antenna: Antenna, timeout: float = 360) -> httpx.Response:
-        """Poll GET .../network until `runtime_state` is no longer `starting`; the raw answer."""
+        """Poll GET /access-point/{reservation_id} until `runtime_state` is no longer `starting`; the raw answer."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             time.sleep(1)
@@ -459,7 +459,7 @@ class WiLab:
     def _start_outcome(response: httpx.Response) -> httpx.Response:
         """The polled end of a start, so that `status_code == 200` means "the network is up".
 
-        GET .../network answers 200 also when the start failed (`runtime_state:
+        GET /access-point/{reservation_id} answers 200 also when the start failed (`runtime_state:
         start_failed` with `error`) or left no network: that is returned as a 500
         whose `detail` is the error (code 1013), which `detail_code` reads.
         """
@@ -467,13 +467,13 @@ class WiLab:
             return response
         state = response.json()
         detail = state.get("error") or {
-            "code": 500, "reason": state.get("runtime_state") or "network_not_active",
+            "code": 500, "reason": state.get("runtime_state") or "access_point_not_active",
             "message": f"The start ended without a network: {state}",
         }
         return httpx.Response(500, json={"detail": detail}, request=response.request)
 
     def delete_network(self, antenna: Antenna) -> int:
-        return self.http.delete(f"/reservations/{antenna.reservation_id}/network").status_code
+        return self.http.delete(f"/access-point/{antenna.reservation_id}").status_code
 
     def gone_answers(self, reservation_id: str) -> dict[str, tuple[int, str | None]]:
         """Status and `detail.reason` of every call that takes a reservation ID.
@@ -482,15 +482,16 @@ class WiLab:
         at the body, so the bodies only need to be valid.
         """
         base = f"/reservations/{reservation_id}"
+        point = f"/access-point/{reservation_id}"
         create = network_body(ssid="wilab-e2e-gone", channel=6, band="2.4ghz", encryption="open", tx_power_level=2)
         calls = {
             "GET": lambda: self.http.get(base),
-            "GET network": lambda: self.http.get(f"{base}/network"),
-            "POST network": lambda: self.http.post(f"{base}/network", json=create),
-            "DELETE network": lambda: self.http.delete(f"{base}/network"),
-            "GET txpower": lambda: self.http.get(f"{base}/txpower"),
-            "POST txpower": lambda: self.http.post(f"{base}/txpower", json={"tx_power_level": 2}),
-            "POST internet/enable": lambda: self.http.post(f"{base}/internet/enable"),
+            "GET access-point": lambda: self.http.get(point),
+            "POST access-point": lambda: self.http.post(point, json=create),
+            "DELETE access-point": lambda: self.http.delete(point),
+            "GET tx-power": lambda: self.http.get(f"{point}/tx-power"),
+            "POST tx-power": lambda: self.http.post(f"{point}/tx-power", json={"tx_power_level": 2}),
+            "POST internet/enable": lambda: self.http.post(f"{point}/internet/enable"),
             "DELETE": lambda: self.http.delete(base),
         }
         answers = {}
@@ -501,7 +502,7 @@ class WiLab:
 
     def close(self) -> None:
         for rid in list(self.reserved):
-            self.http.delete(f"/reservations/{rid}/network")
+            self.http.delete(f"/access-point/{rid}")
             self.http.delete(f"/reservations/{rid}")
         self.reserved.clear()
         self.http.close()

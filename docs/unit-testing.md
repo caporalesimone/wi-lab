@@ -305,14 +305,14 @@ test configuration, the devices an app built by the tests starts with;
 `internet`, `captive_portal`) from flat fields. Every create runs as in
 production: the `POST` answers `202` and the start runs in a background job.
 `create_network(client, headers, url, body)` sends the `POST` and polls
-`GET .../network` until the start ends; it returns the `POST` answer and the
+`GET /access-point/{reservation_id}` until the start ends; it returns the `POST` answer and the
 outcome (the network, `runtime_state: start_failed` with `error`, or `404`
 with the `reason`). `test_async_create.py` tests the contract itself
 (`202`, polling, cancel).
 
 ```python
 body = network_body(ssid="TestAP", channel=6, band="2.4ghz", encryption="open", tx_power_level=4)
-created, outcome = create_network(client, headers, f"/api/v2/reservations/{rid}/network", body)
+created, outcome = create_network(client, headers, f"/api/v2/access-point/{rid}", body)
 assert created.status_code == 202 and outcome.json()["active"] is True
 ```
 

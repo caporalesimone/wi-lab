@@ -626,7 +626,7 @@ class TestQosProfileAPI:
         monkeypatch.setattr(mgr.hostapd_manager, 'stop', lambda *a, **kw: None)
 
         # Start a network
-        resp = create_network(client, auth_headers, f"/api/v2/reservations/{rid}/network", network_body(ssid="QoSProfileTest", channel=6, encryption="open", band="2.4ghz", tx_power_level=4))[1]
+        resp = create_network(client, auth_headers, f"/api/v2/access-point/{rid}", network_body(ssid="QoSProfileTest", channel=6, encryption="open", band="2.4ghz", tx_power_level=4))[1]
         assert resp.status_code == 200, resp.text
         return rid
 

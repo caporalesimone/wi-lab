@@ -79,7 +79,7 @@ class DeviceWatch:
     restores: deque[float] = field(default_factory=deque)        # monotonic times of AP restores
     dhcp_restores: deque[float] = field(default_factory=deque)   # same, DHCP-only restarts (WD-3)
     restart_network: str = ""   # why the whole network must be restored on the next tick (WD-3, WD-7)
-    restart_reason: str = ""    # the same, as the stable reason shown in GET .../network restarts
+    restart_reason: str = ""    # the same, as the stable reason shown in GET /access-point/{reservation_id} restarts
     healthy_ticks: int = 0      # since the last network check (WD-7)
     last_error: str = ""        # log a repeated failure's traceback once (WD-9)
     dfs_since: float | None = None   # monotonic start of a radar check after a radar event (REV-12)
@@ -264,7 +264,7 @@ class NetworkWatchdog:
         A radar makes hostapd leave the channel: it moves to another one (the AP
         stays `ENABLED`) or runs a new radar check (`DFS`, up to DFS_READY_TIMEOUT).
         Neither is a fault: misses are not counted during the check, and the
-        channel in use is what GET .../network shows. A check that lasts longer
+        channel in use is what GET /access-point/{reservation_id} shows. A check that lasts longer
         counts as misses again.
         """
         if probe.channel is not None and probe.channel != status.radio_channel:

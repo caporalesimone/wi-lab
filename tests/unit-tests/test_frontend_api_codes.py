@@ -7,8 +7,8 @@ APP = Path(__file__).resolve().parents[2] / "frontend/src/app"
 
 def test_codes_and_hints_are_defined():
     recovery = (APP / "services/recovery-response.ts").read_text()
-    assert "DeviceBusy = 1006" in recovery and "NetworkNotActive = 1007" in recovery
-    assert "[RecoveryCode.DeviceBusy]:" in recovery and "[RecoveryCode.NetworkNotActive]:" in recovery
+    assert "DeviceBusy = 1006" in recovery and "AccessPointNotActive = 1007" in recovery
+    assert "[RecoveryCode.DeviceBusy]:" in recovery and "[RecoveryCode.AccessPointNotActive]:" in recovery
     assert "codes: RecoveryCode[] = [RecoveryCode.DeviceBusy]" in recovery
     assert "retryAfterSeconds(error, 503, code)" in recovery
 

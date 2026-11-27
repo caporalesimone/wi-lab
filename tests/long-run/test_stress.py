@@ -182,7 +182,7 @@ def test_hold_while_the_other_antenna_churns(idle: WiLab, server, base_url, toke
                     restarts = state["restarts"]["ap"]
                 rec.event("hold_ok", clients=len(state.get("clients") or []))
             exercise(hold_client, antenna, rng, rec, 15)
-        stopped = hold_client.http.delete(f"/reservations/{antenna.reservation_id}/network")
+        stopped = hold_client.http.delete(f"/access-point/{antenna.reservation_id}")
         if not stop_or_gone(stopped):
             rec.fail("hold_stop", status=stopped.status_code)
         hold_client.release(antenna)

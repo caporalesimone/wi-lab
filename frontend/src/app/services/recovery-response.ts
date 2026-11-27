@@ -8,8 +8,8 @@ export enum RecoveryCode {
   DeviceUnavailable = 1003,
   NoDeviceAvailable = 1005,
   DeviceBusy = 1006,
-  NetworkNotActive = 1007,
-  NetworkAlreadyActive = 1008,
+  AccessPointNotActive = 1007,
+  AccessPointAlreadyActive = 1008,
   RestorationInProgress = 1009,
   StopIncomplete = 1012
 }
@@ -17,8 +17,8 @@ export enum RecoveryCode {
 /** Readable explanation of domain codes that the raw body does not make obvious. */
 const CODE_HINTS: Partial<Record<number, string>> = {
   [RecoveryCode.DeviceBusy]: 'The antenna is busy with another operation. Try again in a few seconds.',
-  [RecoveryCode.NetworkNotActive]: 'The network is not running on this antenna. Start WiFi first.',
-  [RecoveryCode.NetworkAlreadyActive]: 'A network with different settings is already running or starting on this antenna. Stop it first.',
+  [RecoveryCode.AccessPointNotActive]: 'The network is not running on this antenna. Start WiFi first.',
+  [RecoveryCode.AccessPointAlreadyActive]: 'A network with different settings is already running or starting on this antenna. Stop it first.',
   [RecoveryCode.RestorationInProgress]: 'The network is being restarted by the watchdog. Wait a few seconds.',
   [RecoveryCode.StopIncomplete]: 'The last stop did not complete. Stop WiFi again, then start it.',
 };

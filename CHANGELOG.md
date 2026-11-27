@@ -16,7 +16,7 @@ updates its date.
 
 | Item | Count |
 |---|---:|
-| ⚠️ Breaking changes | 13 |
+| ⚠️ Breaking changes | 14 |
 | ✨ New features | 5 |
 | 🐛 Bug fixes | 33 |
 | 🔧 Maintenance changes | 16 |
@@ -35,11 +35,12 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - `antennas[].show_dfs` is renamed `show_dfs_channels`, without an alias: the old name stops the service with a message naming the new one.
 - Ubuntu Server 25.04 or newer is required, not only tested (tested on Ubuntu Server 26.04.1 LTS, kernel 7.0.0-44).
 - NetworkManager is no longer supported: the host network must be on systemd-networkd. The installer offers to disable and mask NetworkManager and `wpa_supplicant`, never when the host needs them; `uninstall.sh` offers to re-enable them. When upgrading, run the installer again (Fable NM-1).
-- The reservation, create and `POST .../txpower` bodies accept only the JSON types they document: `"6"`, `true` or `6.0` for an integer, or `"false"` and `0` for a boolean, are `422` (Fable REV-11).
-- `POST .../txpower` takes `tx_power_level` instead of `level`, as `radio.tx_power_level` in the create (Fable API-6).
+- The reservation, create and `POST /access-point/{reservation_id}/tx-power` bodies accept only the JSON types they document: `"6"`, `true` or `6.0` for an integer, or `"false"` and `0` for a boolean, are `422` (Fable REV-11).
+- `POST /access-point/{reservation_id}/tx-power` takes `tx_power_level` instead of `level`, as `radio.tx_power_level` in the create (Fable API-6).
 - `GET /status` is the only system status: `version`, `service`, and the health checks of the former `GET /monitoring` (`checked_at`, `check_interval_seconds`, `checks`). `GET /monitoring` is removed. `antennas` and `reservation_policy` moved to `GET /api/v2/antennas`, which also has `free_antennas` (the same value as `service.free_antennas`).
-- `GET /antennas/{interface}` is the antenna now: `interface`, `display_name`, `device`, its state as in `GET /antennas` (`reservation`, `network_active`, `recovery_state`, `runtime_state`) and `health`. `encryptions` and `bands` moved to the new `GET /antennas/{interface}/capabilities`, which does not change while the adapter stays the same. In every antenna object `interface` is the first field.
-- `GET /status`: the string `status` (`standby`, `ok`, `degraded`) and the top-level `degraded_reasons`, `active_networks` and `restart_required` are replaced by one object, `service`: `{"health": "good" | "degraded", "free_antennas": N, "degraded_reasons": [...], "restart_required": null | {...}}`. `free_antennas` counts the antennas a reservation would get now; the running networks are `antennas[]` of `GET /antennas` with `network_active: true`.
+- The access point endpoints move from the reservation to their own path, and "network" becomes "access point" in the API: `POST`/`GET`/`DELETE /reservations/{id}/network` → `/access-point/{id}`, `.../internet/enable|disable` → `/access-point/{id}/internet/enable|disable`, `.../txpower` → `/access-point/{id}/tx-power`; `network_active` → `access_point_active`; error reasons `network_not_active` (1007) and `network_already_active` (1008) → `access_point_not_active` and `access_point_already_active`; `degraded_reasons` codes `network_being_repaired` and `network_stop_incomplete` → `access_point_being_repaired` and `access_point_stop_incomplete`. QoS profiles stay under `/reservations/{id}/qos/profile` (experimental).
+- `GET /antennas/{interface}` is the antenna now: `interface`, `display_name`, `device`, its state as in `GET /antennas` (`reservation`, `access_point_active`, `recovery_state`, `runtime_state`) and `health`. `encryptions` and `bands` moved to the new `GET /antennas/{interface}/capabilities`, which does not change while the adapter stays the same. In every antenna object `interface` is the first field.
+- `GET /status`: the string `status` (`standby`, `ok`, `degraded`) and the top-level `degraded_reasons`, `active_networks` and `restart_required` are replaced by one object, `service`: `{"health": "good" | "degraded", "free_antennas": N, "degraded_reasons": [...], "restart_required": null | {...}}`. `free_antennas` counts the antennas a reservation would get now; the running networks are `antennas[]` of `GET /antennas` with `access_point_active: true`.
 
 ### ✨ Features
 
@@ -65,9 +66,9 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The service stop releases antennas in parallel and ends within systemd's timeout (now 60 s), instead of being killed half-way. Reinstall the systemd unit (Fable STAB-8).
 - On a loaded host, slow answers of hostapd no longer restart a healthy AP: only 3 real "not ENABLED" answers, or 6 probes without an answer, do (Fable WD-10).
 - A network's DHCP leases are deleted when it ends: the next user no longer sees the previous clients. A DHCP repair keeps them (Fable NET-7).
-- A start that ignores a cancel is no longer forgotten while it runs: `DELETE .../network` answers `503 / 1006` until it ends, then `200` or `409 / 1007` (Fable REV-8).
-- Cancelling a start whose rollback fails no longer quarantines the antenna: the release answers `200`, `DELETE .../network` answers `503 / 1012` until the stop completes (Fable REV-2).
-- `stop_failed` appears only after the client's own `DELETE .../network` failed. On a half-stopped network, Internet, TX power and QoS answer `409 / 1012` (Fable REV-9).
+- A start that ignores a cancel is no longer forgotten while it runs: `DELETE /access-point/{reservation_id}` answers `503 / 1006` until it ends, then `200` or `409 / 1007` (Fable REV-8).
+- Cancelling a start whose rollback fails no longer quarantines the antenna: the release answers `200`, `DELETE /access-point/{reservation_id}` answers `503 / 1012` until the stop completes (Fable REV-2).
+- `stop_failed` appears only after the client's own `DELETE /access-point/{reservation_id}` failed. On a half-stopped network, Internet, TX power and QoS answer `409 / 1012` (Fable REV-9).
 - A watchdog restore whose cleanup fails once shows `restore_failed` and is retried 15 s later, instead of ending the reservation with a USB reset (Fable REV-10).
 - A radar event on a DFS channel is no longer an AP fault: the watchdog waits for hostapd's radar check (up to 75 s), and `channel` shows the channel the AP moved to (Fable REV-12).
 - An antenna unplugged for good leaves the pool after about 2 minutes when nothing holds it, so `/status` is no longer `degraded` until a restart; it is added again if it comes back (Fable WD-5).
@@ -77,7 +78,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The last 40 lines of `hostapd -d` reach the journal when a start fails or hostapd dies, without passwords or keys (Fable HAP-8).
 - A wrong custom QoS profile is skipped with a warning instead of stopping the service (Fable BUG-9).
 - Inline QoS with different download and upload qualities, or a quality with `advanced`, answers `422` instead of applying only one (Fable NET-11).
-- Internet and `GET .../txpower` answer `500`, not `404`, for an internal error, so a client does not take its reservation for ended (Fable REV-11).
+- Internet and `GET /access-point/{reservation_id}/tx-power` answer `500`, not `404`, for an internal error, so a client does not take its reservation for ended (Fable REV-11).
 - `next_available_in` of a `409 / 1005` is rounded up like `GET /status` (Fable REV-11).
 - The installer's API test checks `GET /api/v2/status` and fails the installation if the API does not answer; it called an endpoint that no longer exists.
 - `uninstall.sh` removes what a stopped service leaves: the `wilab-protect-existing` rule, `/tmp/wilab-*`, the systemd-networkd rule and QoS devices. `config.yaml` is kept.
@@ -122,26 +123,27 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 
 ### 🔌 API changes from 4.0.0 (client migration)
 
-- `GET /status`: read `service.health` (`good` or `degraded`) where you compared `status` with `"degraded"` (`standby` and `ok` are gone), `service.degraded_reasons` instead of `degraded_reasons`, and `service.restart_required` (always present, `null` when nothing is needed) instead of `restart_required`. `active_networks` is removed: count `antennas[]` with `network_active: true`. `service.free_antennas` says how many antennas are free right now; to get one, reserve it, since another client may take it in between.
+- Access point: call `/access-point/{reservation_id}` instead of `/reservations/{reservation_id}/network` (same methods, bodies and answers), `/access-point/{reservation_id}/internet/enable|disable` and `/access-point/{reservation_id}/tx-power`. Read `access_point_active` instead of `network_active`, and compare `detail.reason` and `degraded_reasons[].code` with the `access_point_*` names (codes 1007 and 1008 are unchanged). Success messages in `detail` changed wording (`Access point on wls16 stopped`): do not parse them.
+- `GET /status`: read `service.health` (`good` or `degraded`) where you compared `status` with `"degraded"` (`standby` and `ok` are gone), `service.degraded_reasons` instead of `degraded_reasons`, and `service.restart_required` (always present, `null` when nothing is needed) instead of `restart_required`. `active_networks` is removed: count `antennas[]` with `access_point_active: true`. `service.free_antennas` says how many antennas are free right now; to get one, reserve it, since another client may take it in between.
 - `GET /status` no longer has `antennas` and `reservation_policy`: read them from `GET /api/v2/antennas` (`{free_antennas, reservation_policy, antennas}`; each antenna starts with `interface`). `GET /monitoring` is removed: its `checked_at`, `check_interval_seconds` and `checks` are in `GET /status`.
-- `GET /antennas/{interface}`: read `encryptions` and `bands` from `GET /antennas/{interface}/capabilities` (same content); the antenna itself now also has `reservation`, `network_active` and, when set, `recovery_state` and `runtime_state`, as in `GET /antennas`. A `503` (radio being reset) comes only from `.../capabilities`.
+- `GET /antennas/{interface}`: read `encryptions` and `bands` from `GET /antennas/{interface}/capabilities` (same content); the antenna itself now also has `reservation`, `access_point_active` and, when set, `recovery_state` and `runtime_state`, as in `GET /antennas`. A `503` (radio being reset) comes only from `.../capabilities`.
 - `GET /status` is documented by a schema in Swagger: required fields, `null` values shown in the examples, `recovery_state` and `runtime_state` present only when set.
 - `GET /status`: `checks.upstream_interface` gives the interface data (`operstate`, `mac`, `mtu`, `ipv4` and `ipv6` addresses with prefix, `gateway`) instead of `up`, `has_ip` and `reachable`; it is information only. The `degraded_reasons` code `upstream_unreachable` is gone: the host uplink no longer makes the service degraded.
-- Strict types: send integers and booleans as JSON numbers and booleans. A string such as `"6"`, `true` for a number or `6.0` is now `422` in `POST /reservations`, `POST .../network` and `POST .../txpower` (REV-11).
-- `POST .../txpower`: the body is `{"tx_power_level": 2}`; `{"level": 2}` is now `422` (API-6).
+- Strict types: send integers and booleans as JSON numbers and booleans. A string such as `"6"`, `true` for a number or `6.0` is now `422` in `POST /reservations`, `POST /access-point/{reservation_id}` and `POST /access-point/{reservation_id}/tx-power` (REV-11).
+- `POST /access-point/{reservation_id}/tx-power`: the body is `{"tx_power_level": 2}`; `{"level": 2}` is now `422` (API-6).
 - **Not stable in 4.1:** TX power is under debugging (the drivers in use do not apply it reliably) and QoS profiles are experimental. Both may change in any release; the rest of the API is frozen for 4.1.
-- `DELETE .../network` on a network that is not running now stops what a failed start may have left (hostapd, rules) before answering `200`; if that cleanup fails it answers `503 / 1012` with `Retry-After`, like any incomplete stop (REV-1). Before it answered `200` and left them.
-- Internet, TX power and QoS profile requests can answer `409 / 1012` (`stop_incomplete`): the last `DELETE .../network` did not complete; repeat it until `200` (REV-9).
-- Cancelling a start (release or `DELETE .../network`) whose rollback fails: the release answers `200` (before: `404 reservation_invalidated` and the antenna quarantined); `DELETE .../network` answers `503 / 1012`, repeat it (REV-2).
-- `GET /status`: `runtime_state: stop_failed` and `network_stop_incomplete` appear only after the client's own `DELETE .../network` failed (REV-9).
+- `DELETE /access-point/{reservation_id}` on a network that is not running now stops what a failed start may have left (hostapd, rules) before answering `200`; if that cleanup fails it answers `503 / 1012` with `Retry-After`, like any incomplete stop (REV-1). Before it answered `200` and left them.
+- Internet, TX power and QoS profile requests can answer `409 / 1012` (`stop_incomplete`): the last `DELETE /access-point/{reservation_id}` did not complete; repeat it until `200` (REV-9).
+- Cancelling a start (release or `DELETE /access-point/{reservation_id}`) whose rollback fails: the release answers `200` (before: `404 reservation_invalidated` and the antenna quarantined); `DELETE /access-point/{reservation_id}` answers `503 / 1012`, repeat it (REV-2).
+- `GET /status`: `runtime_state: stop_failed` and `access_point_stop_incomplete` appear only after the client's own `DELETE /access-point/{reservation_id}` failed (REV-9).
 - A watchdog restore whose cleanup fails once now shows `runtime_state: restore_failed` and is retried, instead of `404 reservation_invalidated` (REV-10).
 - QoS (experimental): `POST .../qos/profile` with different `download_quality` and `upload_quality`, or a quality with `advanced`, is now `422` (NET-11).
 - `GET /status` has a new field `restart_required` (`null` or `{service, system, since, message}`); `checks` a new check `os_updates`. Additive: it never makes the status `degraded`.
 - `GET /antennas/{interface}` has a new object `health` (repair budgets, quarantines, USB resets).
-- `GET .../network`: after a radar event on a DFS channel `channel` is the channel the AP moved to, which can differ from the one requested (REV-12).
+- `GET /access-point/{reservation_id}`: after a radar event on a DFS channel `channel` is the channel the AP moved to, which can differ from the one requested (REV-12).
 - An antenna whose interface has been gone for about 2 minutes, with nothing holding it, leaves `GET /status` and `GET /antennas`; `GET /antennas/{interface}` then answers `404` and a reserve by that `interface` answers as for an unknown antenna (WD-5).
 - Channels 120, 124 and 128 (5 GHz) are no longer listed by `GET /antennas/{interface}/capabilities` and are `422` in the create (HAP-9).
-- `POST .../network` can answer `503 / 1006` with `Retry-After: 2`, only when the same body finds the network already running (the `200` case) and another operation holds the adapter: repeat it. It was possible before but documented as never happening (REV-11).
+- `POST /access-point/{reservation_id}` can answer `503 / 1006` with `Retry-After: 2`, only when the same body finds the network already running (the `200` case) and another operation holds the adapter: repeat it. It was possible before but documented as never happening (REV-11).
 
 ---
 

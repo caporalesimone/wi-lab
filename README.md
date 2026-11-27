@@ -191,14 +191,14 @@ curl -X POST http://localhost:8080/api/v2/reservations \
 # }
 
 # 2. Create a WiFi network on the reserved device (asynchronous: answers 202, "runtime_state": "starting")
-curl -X POST http://localhost:8080/api/v2/reservations/a1b2c3d4/network \
+curl -X POST http://localhost:8080/api/v2/access-point/a1b2c3d4 \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
   -d '{"radio": {"band": "2.4ghz", "channel": 6, "tx_power_level": 4},
        "wifi": {"ssid": "TestNetwork", "security": {"encryption": "wpa2", "password": "mypassword"}}}'
 
 # 3. Poll every 1-2 s until "runtime_state" is no longer "starting" ("active": true: the AP is up)
-curl http://localhost:8080/api/v2/reservations/a1b2c3d4/network \
+curl http://localhost:8080/api/v2/access-point/a1b2c3d4 \
   -H "Authorization: Bearer change-me"
 
 # 4. Release the reservation when done (also stops the network)

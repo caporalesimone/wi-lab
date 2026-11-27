@@ -116,7 +116,7 @@ class TxPowerControl:
         return result
 
     def info(self, device_id: str, interface: str, channel: int, level: int) -> dict:
-        """Requested *level* next to what the interface reports (GET .../txpower)."""
+        """Requested *level* next to what the interface reports (GET /access-point/{reservation_id}/tx-power)."""
         # Get channel capabilities and compute levels
         caps = self.channel_capabilities(interface, channel)
         levels_dbm = self.levels_dbm(caps["max_dbm"])

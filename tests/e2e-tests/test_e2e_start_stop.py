@@ -32,7 +32,7 @@ def test_non_radio_failure_ends_in_start_failed(wilab: WiLab, server: Server) ->
 
     The polling ends in `runtime_state: start_failed` with `error` 1013 / stage
     `dhcp`; the reservation stays valid, nothing is left on the host, `/status`
-    is not degraded, `DELETE .../network` clears the error and a new create works.
+    is not degraded, `DELETE /access-point/{reservation_id}` clears the error and a new create works.
     """
     antenna = wilab.reserve()
     # No network yet on this antenna, so the port is free and taken at once.
@@ -62,11 +62,11 @@ def test_non_radio_failure_ends_in_start_failed(wilab: WiLab, server: Server) ->
 
 
 def _stop(wilab: WiLab, antenna: Antenna) -> list[tuple[int, int | None]]:
-    """DELETE .../network, repeated after `503 / 1006` as the API says; every answer."""
+    """DELETE /access-point/{reservation_id}, repeated after `503 / 1006` as the API says; every answer."""
     answers: list[tuple[int, int | None]] = []
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
-        response = wilab.http.delete(f"/reservations/{antenna.reservation_id}/network")
+        response = wilab.http.delete(f"/access-point/{antenna.reservation_id}")
         answers.append((response.status_code, detail_code(response)))
         if (response.status_code, detail_code(response)) != (503, 1006):
             break
@@ -75,7 +75,7 @@ def _stop(wilab: WiLab, antenna: Antenna) -> list[tuple[int, int | None]]:
 
 
 def test_stop_during_a_start_cancels_it_and_keeps_the_reservation(wilab: WiLab, server: Server) -> None:
-    """e2e-test-2: `DELETE .../network` while the start runs.
+    """e2e-test-2: `DELETE /access-point/{reservation_id}` while the start runs.
 
     On a DFS channel, when the antenna offers one, the start waits about 60 s
     for the radar check, so the stop surely lands inside it. Expected: `200`,
@@ -107,7 +107,7 @@ def test_stop_during_a_start_cancels_it_and_keeps_the_reservation(wilab: WiLab, 
 def test_expiry_stops_the_network(wilab: WiLab, server: Server) -> None:
     """e2e-test-9: a 60 s reservation expires with its network running.
 
-    Within about 10 s of the expiry `GET .../network` answers `404
+    Within about 10 s of the expiry `GET /access-point/{reservation_id}` answers `404
     reservation_expired`, the radio is no longer an AP, no rule is left and
     `/status` shows the antenna free with no network. Takes about 75 s.
     """
@@ -126,7 +126,7 @@ def test_expiry_stops_the_network(wilab: WiLab, server: Server) -> None:
         entry = wilab.device(antenna.interface)
         return (
             gone_reason(wilab.network(antenna)) == "reservation_expired"
-            and entry["reservation"] is None and entry["network_active"] is False
+            and entry["reservation"] is None and entry["access_point_active"] is False
             and server.iw_info(antenna.interface).get("type") != "AP"
         )
 
@@ -136,7 +136,7 @@ def test_expiry_stops_the_network(wilab: WiLab, server: Server) -> None:
 
 
 def test_stop_of_a_frozen_hostapd(wilab: WiLab, server: Server) -> None:
-    """e2e-test-8: `SIGSTOP` to hostapd, then `DELETE .../network`.
+    """e2e-test-8: `SIGSTOP` to hostapd, then `DELETE /access-point/{reservation_id}`.
 
     SIGKILL ends a stopped process, so the stop usually completes (`200`); a
     process stuck in the kernel answers `503 / 1012` instead. Both are allowed,
@@ -151,7 +151,7 @@ def test_stop_of_a_frozen_hostapd(wilab: WiLab, server: Server) -> None:
     server.kill(pids[0], "STOP")
     try:
         began = time.monotonic()
-        stopped = wilab.http.delete(f"/reservations/{antenna.reservation_id}/network", timeout=40)
+        stopped = wilab.http.delete(f"/access-point/{antenna.reservation_id}", timeout=40)
         seconds = time.monotonic() - began
         print(f"\nDELETE with hostapd stopped: {stopped.status_code} in {seconds:.1f} s")
         assert seconds < 20, seconds

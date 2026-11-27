@@ -26,8 +26,8 @@ from ...reservation import Reservation
 from ...wifi.manager import NetworkManager, NetworkNotActive
 from .recovery_responses import (
     DEVICE_BUSY_RESPONSE,
-    NETWORK_NOT_ACTIVE_EXAMPLE,
-    NETWORK_NOT_ACTIVE_RESPONSE,
+    ACCESS_POINT_NOT_ACTIVE_EXAMPLE,
+    ACCESS_POINT_NOT_ACTIVE_RESPONSE,
     STOP_INCOMPLETE_EXAMPLE,
     require_stop_complete,
 )
@@ -113,12 +113,12 @@ def _build_profile_state(interface: str, pm: QosProfileManager) -> QosProfileSta
         409: {
             "description": (
                 "A profile is already active (stop it first), or `detail.code: 1007` "
-                "(`network_not_active`): the reservation has no running network, or "
+                "(`access_point_not_active`): the reservation has no running network, or "
                 "`detail.code: 1012` (`stop_incomplete`): the network is half stopped, "
-                "repeat `DELETE .../network`."
+                "repeat `DELETE /access-point/{reservation_id}`."
             ),
             "content": {"application/json": {"examples": {
-                "network_not_active": {"value": NETWORK_NOT_ACTIVE_EXAMPLE},
+                "access_point_not_active": {"value": ACCESS_POINT_NOT_ACTIVE_EXAMPLE},
                 "stop_incomplete": {"value": STOP_INCOMPLETE_EXAMPLE},
             }}},
         },
@@ -182,7 +182,7 @@ def start_profile(
         200: {"description": "Current profile state"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation not found"},
-        409: NETWORK_NOT_ACTIVE_RESPONSE,
+        409: ACCESS_POINT_NOT_ACTIVE_RESPONSE,
     },
     summary="Get active QoS profile state",
     description="Returns the current profile state for the reserved interface, including step progress.",
@@ -207,7 +207,7 @@ def get_profile_state(
         200: {"description": "Profile stopped and QoS cleared"},
         401: {"description": "Unauthorized"},
         404: {"description": "Reservation not found / no active profile"},
-        409: NETWORK_NOT_ACTIVE_RESPONSE,
+        409: ACCESS_POINT_NOT_ACTIVE_RESPONSE,
     },
     summary="Stop the active QoS profile",
     description="Stops the active profile and clears all QoS rules from the interface.",

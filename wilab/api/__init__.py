@@ -40,8 +40,8 @@ API_DESCRIPTION = """
 Authenticate with a Bearer token. Reserve an adapter with
 `POST /api/v2/reservations` (for example `{"duration_seconds": 120}`),
 then pass the returned `reservation_id` to the network endpoints. The create
-is asynchronous: `POST .../network` answers `202` with `runtime_state:
-starting`; poll `GET .../network` until `runtime_state` is `null` (the AP is
+is asynchronous: `POST /access-point/{reservation_id}` answers `202` with `runtime_state:
+starting`; poll `GET /access-point/{reservation_id}` until `runtime_state` is `null` (the AP is
 up), `start_failed` (see `error`) or the answer is `404` (see `detail.reason`).
 Release with `DELETE /api/v2/reservations/{reservation_id}` when finished; this
 also stops the network, or cancels a start in progress, and always answers `200`.
@@ -71,11 +71,11 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 
 | Operation and response | Client action |
 |---|---|
-| Create `202` | Start accepted (also the same body while it runs): poll `GET .../network`. |
+| Create `202` | Start accepted (also the same body while it runs): poll `GET /access-point/{reservation_id}`. |
 | Create `200` | The same body on a network already running with it: done. |
-| Create `409`, `detail.code: 1008` | A network with different settings runs or is starting on this reservation; read it with `GET .../network`. |
-| Create `409`, `detail.code: 1012` | The last stop on this reservation did not complete: repeat `DELETE .../network` until `200`, then the create. |
-| Create `409`, `detail.code: 1009` | The watchdog is repairing this network: poll `GET .../network` until `runtime_state` is `null`. |
+| Create `409`, `detail.code: 1008` | A network with different settings runs or is starting on this reservation; read it with `GET /access-point/{reservation_id}`. |
+| Create `409`, `detail.code: 1012` | The last stop on this reservation did not complete: repeat `DELETE /access-point/{reservation_id}` until `200`, then the create. |
+| Create `409`, `detail.code: 1009` | The watchdog is repairing this network: poll `GET /access-point/{reservation_id}` until `runtime_state` is `null`. |
 | Polling: `runtime_state: start_failed` | Non-radio failure, `error.code` 1013 with `error.stage`. The reservation is still valid: no automatic retry; release it if no longer needed. |
 | `404` on any call with a reservation ID | `detail.reason` (stable): `reservation_invalidated` (every start failed, antenna quarantined) or `reservation_expired`: reserve again, never release the ID. `reservation_released` or `reservation_not_found`: nothing to do. |
 | Reserve `409`, `detail.code: 1005` | Ordinary contention. Use `detail.next_available_in` as an estimate, not a guarantee. |
@@ -87,7 +87,7 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 | `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Never on a release; on the create only when the same body finds the network already running (the `200` case). |
 
 A transport timeout is not a recovery code. For a lost create response, send
-the same create again (same ID and body) or poll `GET .../network`: the same
+the same create again (same ID and body) or poll `GET /access-point/{reservation_id}`: the same
 body never starts a second AP. A lost reservation response may already have
 allocated an adapter: do not blindly repeat it.
 
@@ -112,12 +112,12 @@ the state of one adapter:
 | `recovery_state` | `unavailable` | Adapter quarantined, no USB reset running. Wi-Lab re-probes it periodically (30 s, backing off to 15 min) and returns it to the pool when it works. Not allocatable meanwhile; report it if it persists. |
 | `runtime_state` | `restoring_ap`, `restoring_dhcp` | The owner's network is being repaired. Wait; do not send a create. |
 | `runtime_state` | `dhcp_failed` | DHCP could not be repaired alone; within 5 s the watchdog restarts the whole network (`restoring_ap`). Wait. |
-| `runtime_state` | `restore_failed` | AP down: the restart failed and the watchdog retries (15 s, 30 s, 60 s, 120 s, then every 5 min). Wait, or `DELETE .../network` to stop the retries, or create a new network. |
+| `runtime_state` | `restore_failed` | AP down: the restart failed and the watchdog retries (15 s, 30 s, 60 s, 120 s, then every 5 min). Wait, or `DELETE /access-point/{reservation_id}` to stop the retries, or create a new network. |
 
 `GET /api/v2/antennas` distinguishes quarantined adapters (`recovery_state`)
 from reserved networks being repaired (`runtime_state`). `reservation: null`
 does not make a quarantined adapter allocatable. During
-`restoring_ap` or `restoring_dhcp`, poll `GET .../network` instead of sending a new
+`restoring_ap` or `restoring_dhcp`, poll `GET /access-point/{reservation_id}` instead of sending a new
 create. `dhcp_failed` is brief: the watchdog then restarts the whole network.
 """
 
@@ -125,13 +125,11 @@ OPENAPI_TAGS = [
     {"name": "System", "description": "Service health and the detail of the health checks: poll status."},
     {"name": "Reservation", "description": "Allocate or release an adapter. Use the returned reservation ID for device operations."},
     {"name": "Antennas", "description": "The antennas with their state, how many are free and the "
-     "reservation limits; one antenna with its repair health; what a network on it can use (encryptions, "
+     "reservation limits; one antenna with its repair health; what an access point on it can use (encryptions, "
      "Wi-Fi generations, channel widths, channels): fill a create form from here. No reservation needed."},
-    {"name": "Network", "description": "Create, stop and inspect an AP. The create is asynchronous: poll `GET .../network` for the outcome."},
-    {"name": "Internet", "description": "Enable or disable Internet access for a reserved network."},
-    {"name": "TX Power", "description": "**Under debugging, not stable:** the drivers in use do not "
-     "apply the requested power reliably. Inspect or request transmit power with `tx_power_level` 1-4, "
-     "the name of the create field."},
+    {"name": "Access point", "description": "Create, stop and inspect the access point of a reservation, "
+     "turn its Internet access on and off, read and set its transmit power (**under debugging, not stable**). "
+     "The create is asynchronous: poll `GET /access-point/{reservation_id}` for the outcome."},
     {"name": "QoS Profiles", "description": "**Experimental, not stable:** untested, may change in any "
      "release. Inspect and manage traffic shaping profiles for a reserved network."},
     {"name": "Maintenance", "description": "Operator-only commands, not for clients; they may be "
@@ -247,10 +245,10 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             return PlainTextResponse("Internal Server Error", status_code=500)
 
     @app.exception_handler(NetworkNotActive)
-    async def network_not_active_handler(request: Request, exc: NetworkNotActive) -> JSONResponse:
+    async def access_point_not_active_handler(request: Request, exc: NetworkNotActive) -> JSONResponse:
         # API-2: one answer for "valid reservation, no network", distinct from 404.
         return api_error_response(
-            request, 409, domain_error(ApiErrorCode.NETWORK_NOT_ACTIVE, str(exc)),
+            request, 409, domain_error(ApiErrorCode.ACCESS_POINT_NOT_ACTIVE, str(exc)),
         )
 
     @app.exception_handler(DeviceBusyError)

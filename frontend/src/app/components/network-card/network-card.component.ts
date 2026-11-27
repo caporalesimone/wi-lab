@@ -74,7 +74,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
     return this.slot.myReservation?.reservation_id ?? '';
   }
 
-  /** GET .../network when read; /status (every 10 s) only before the first read (REV-13). */
+  /** GET /access-point/{reservation_id} when read; /status (every 10 s) only before the first read (REV-13). */
   public get runtimeState() {
     return this.status === null ? this.slot.runtimeState : this.status.runtime_state;
   }
@@ -85,7 +85,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   /**
-   * DELETE .../network answers 200 also with no running network in these states:
+   * DELETE /access-point/{reservation_id} answers 200 also with no running network in these states:
    * it cancels the start, clears start_failed or gives up the watchdog's retries (REV-14).
    */
   public get canStop(): boolean {
@@ -96,7 +96,7 @@ export class NetworkCardComponent implements OnInit, OnDestroy, OnChanges {
       || this.runtimeState === 'stop_failed';
   }
 
-  /** A sentence for every runtime_state of GET .../network or /status. */
+  /** A sentence for every runtime_state of GET /access-point/{reservation_id} or /status. */
   public get runtimeStateLabel(): string | null {
     switch (this.runtimeState) {
       case 'starting': return 'Starting the access point...';

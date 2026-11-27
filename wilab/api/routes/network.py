@@ -85,7 +85,7 @@ _STOP_RESPONSE_503 = {
         "`detail.code: 1006` (`device_busy`): the adapter is busy, nothing was changed; repeat "
         "after `Retry-After` (2 s). `detail.code: 1012` (`stop_incomplete`): the stop did not "
         "complete even after the server repeated it for 15 s (hostapd stuck in the kernel after "
-        "a driver firmware timeout). The network is half stopped: `GET .../network` reports "
+        "a driver firmware timeout). The network is half stopped: `GET /access-point/{reservation_id}` reports "
         "`runtime_state: stop_failed` and the watchdog leaves it alone. Repeat the DELETE after "
         "`Retry-After` (5 s)."
     ),
@@ -93,7 +93,7 @@ _STOP_RESPONSE_503 = {
         **DEVICE_BUSY_RESPONSE["content"]["application/json"]["examples"],  # type: ignore[index]
         "stop_incomplete": {"summary": "1012 - stop not completed, repeat after Retry-After", "value": {"detail": {
             "code": 1012, "reason": "stop_incomplete",
-            "message": "Failed to stop network wlan0: hostapd: Failed to stop hostapd for wlan0: "
+            "message": "Failed to stop the access point on wlan0: hostapd: Failed to stop hostapd for wlan0: "
                        "Process 101153 stuck in the kernel",
         }}},
     }}},
@@ -102,7 +102,7 @@ _STOP_RESPONSE_503 = {
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/reservations", tags=["Network"],
+    prefix="/access-point", tags=["Access point"],
 )
 
 
@@ -154,7 +154,7 @@ _CREATE_RESPONSES: dict = {
     202: {
         "description": (
             "Start accepted: the network with `active: false` and `runtime_state: starting` "
-            "(the same schema as `GET .../network`). Poll `GET .../network` every 1-2 s. "
+            "(the same schema as `GET /access-point/{reservation_id}`). Poll `GET /access-point/{reservation_id}` every 1-2 s. "
             "Also the answer to the same body while that start is running."
         ),
         "content": {"application/json": {"example": _STARTING_EXAMPLE}},
@@ -173,21 +173,21 @@ _CREATE_RESPONSES: dict = {
         "description": (
             "A network with different settings runs or is starting (1008; the same body "
             "answers 202 or 200), a watchdog repair in progress (1009), or the last stop did "
-            "not complete (1012: repeat DELETE .../network, then the create)."
+            "not complete (1012: repeat DELETE /access-point/{reservation_id}, then the create)."
         ),
         "content": {"application/json": {"examples": {
             "active_network": {"value": {"detail": domain_error(
-                ApiErrorCode.NETWORK_ALREADY_ACTIVE,
-                "Network wlan0 is already active. Stop it first before creating a new one.",
+                ApiErrorCode.ACCESS_POINT_ALREADY_ACTIVE,
+                "An access point is already active on wlan0. Stop it first before creating a new one.",
             )}},
             "restoration_in_progress": {
-                "value": {"detail": domain_error(ApiErrorCode.RESTORATION_IN_PROGRESS, "Network restoration is in progress")},
+                "value": {"detail": domain_error(ApiErrorCode.RESTORATION_IN_PROGRESS, "Access point restoration is in progress")},
             },
             "stop_incomplete": {
-                "summary": "1012 - the last stop did not complete: repeat DELETE .../network, then the create",
+                "summary": "1012 - the last stop did not complete: repeat DELETE /access-point/{reservation_id}, then the create",
                 "value": {"detail": domain_error(
                     ApiErrorCode.STOP_INCOMPLETE,
-                    "The stop of the network on wlan0 did not complete: repeat DELETE .../network first",
+                    "The stop of the access point on wlan0 did not complete: repeat DELETE /access-point/{{reservation_id}} first",
                 )},
             },
         }}},
@@ -336,10 +336,10 @@ _CREATE_BODY_EXAMPLES: dict = {
 
 
 @router.post(
-    "/{reservation_id}/network",
+    "/{reservation_id}",
     response_model=NetworkResponse,
     status_code=202,
-    summary="Create a network on a reserved adapter (asynchronous)",
+    summary="Create the access point on the reserved antenna (asynchronous)",
     responses=_CREATE_RESPONSES,
 )
 def start_network(
@@ -359,16 +359,16 @@ def start_network(
     The request is checked at once: `422` (invalid body or a setting the antenna
     does not support), `404` (the reservation ID is gone, see `detail.reason`),
     `409 / 1008` (a network with other settings runs or is starting), `409 / 1012`
-    (the last stop did not complete: repeat `DELETE .../network`, then the create),
+    (the last stop did not complete: repeat `DELETE /access-point/{reservation_id}`, then the create),
     `409 / 1009` (the watchdog is repairing the network).
     Otherwise the answer is **`202`** with the network in `runtime_state:
-    starting`, and the start runs in the background. **Poll `GET .../network`**
+    starting`, and the start runs in the background. **Poll `GET /access-point/{reservation_id}`**
     every 1-2 s until one of these outcomes:
 
-    | `GET .../network` | Meaning | Client action |
+    | `GET /access-point/{reservation_id}` | Meaning | Client action |
     |---|---|---|
     | `active: true`, `runtime_state: null` | The AP is up | Done |
-    | `runtime_state: start_failed`, `error` | Non-radio failure (`error.code` 1013 with `error.stage`), rolled back; the reservation is still valid | Show the error; a new create starts again, `DELETE .../network` clears it |
+    | `runtime_state: start_failed`, `error` | Non-radio failure (`error.code` 1013 with `error.stage`), rolled back; the reservation is still valid | Show the error; a new create starts again, `DELETE /access-point/{reservation_id}` clears it |
     | `404`, `detail.reason: reservation_invalidated` | Every start failed: the antenna is quarantined | Reserve again; do not release the ID |
     | `404`, `detail.reason: reservation_expired` | The reservation expired, also when it would expire before the next start | Reserve again if needed |
 
@@ -379,12 +379,12 @@ def start_network(
     80 s, several minutes on DFS channels (radar check). Expiry is not extended.
 
     The same body again is safe: `202` while that start runs, `200` with the
-    network once it runs. `DELETE .../network` during the start cancels it (the
+    network once it runs. `DELETE /access-point/{reservation_id}` during the start cancels it (the
     reservation stays); releasing the reservation cancels it too. Other calls on
     the reservation answer `503 / 1006` until the start ends.
 
     **Body:** settings are grouped in `radio`, `wifi` (with `security`),
-    `internet` and `captive_portal`, the same sections as `GET .../network`.
+    `internet` and `captive_portal`, the same sections as `GET /access-point/{reservation_id}`.
     Only `radio` and `wifi` are required.
 
     **Captive portal** (optional `captive_portal.enabled`, default `false`; omitted means
@@ -407,13 +407,13 @@ def start_network(
     the defaults keep the previous behaviour. `GET /antennas/{interface}/capabilities` lists
     what the antenna supports; anything else returns `422`.
     40 MHz on 2.4 GHz may fall back to 20 MHz when neighbouring networks are
-    present: `GET .../network` reports the actual `radio.channel_width.reported`.
+    present: `GET /access-point/{reservation_id}` reports the actual `radio.channel_width.reported`.
     """
     req = body.to_request()
     device_id = reservation.device_id
     if manager.watchdog.state(reservation) in ("restoring_ap", "restoring_dhcp", "dhcp_failed"):
         raise HTTPException(status_code=409, detail=domain_error(
-            ApiErrorCode.RESTORATION_IN_PROGRESS, "Network restoration is in progress",
+            ApiErrorCode.RESTORATION_IN_PROGRESS, "Access point restoration is in progress",
         ))
     job = manager.start_job(reservation)
     if job is not None and job.state == "starting":
@@ -421,8 +421,8 @@ def start_network(
             # The same create again, e.g. after a lost answer: keep polling the same start.
             return _json(202, _state_response(reservation, "starting"))
         raise HTTPException(status_code=409, detail=domain_error(
-            ApiErrorCode.NETWORK_ALREADY_ACTIVE,
-            f"A network with other settings is starting on {device_id}",
+            ApiErrorCode.ACCESS_POINT_ALREADY_ACTIVE,
+            f"An access point with other settings is starting on {device_id}",
         ))
     if device_id in manager.active:
         if manager.runs(device_id, req):
@@ -433,11 +433,11 @@ def start_network(
             # Its own code, not 1008: the client must repeat the DELETE, then the create.
             raise HTTPException(status_code=409, detail=domain_error(
                 ApiErrorCode.STOP_INCOMPLETE,
-                f"The stop of the network on {device_id} did not complete: repeat DELETE .../network first",
+                f"The stop of the access point on {device_id} did not complete: repeat DELETE /access-point/{{reservation_id}} first",
             ))
         raise HTTPException(status_code=409, detail=domain_error(
-            ApiErrorCode.NETWORK_ALREADY_ACTIVE,
-            f"Network {device_id} is already active with other settings. Stop it first.",
+            ApiErrorCode.ACCESS_POINT_ALREADY_ACTIVE,
+            f"An access point with other settings is already active on {device_id}. Stop it first.",
         ))
     try:
         channel_mgr.validate_network(
@@ -461,7 +461,7 @@ def start_network(
                 # The same create sent twice at once: one start, both answers 202.
                 return _json(202, _state_response(reservation, "starting"))
             raise HTTPException(status_code=409, detail=domain_error(
-                ApiErrorCode.NETWORK_ALREADY_ACTIVE, f"A network is starting on {device_id}",
+                ApiErrorCode.ACCESS_POINT_ALREADY_ACTIVE, f"An access point is starting on {device_id}",
             ))
         job = StartJob(reservation=reservation, request=req)
         job.thread = threading.Thread(
@@ -474,7 +474,7 @@ def start_network(
 
 
 class StartOutcome(NamedTuple):
-    """How a create job ended; read by `GET .../network`, never answered to a request."""
+    """How a create job ended; read by `GET /access-point/{reservation_id}`, never answered to a request."""
 
     state: Literal["started", "cancelled", "ended", "start_failed"]
     error: dict | None = None   # `start_failed`: the error detail (always 1013)
@@ -571,7 +571,7 @@ def _run_job(
     manager: NetworkManager, channel_mgr: ChannelManager, reservation_mgr: ReservationManager,
     job: StartJob,
 ) -> None:
-    """Background body of an asynchronous create; the outcome is read with GET .../network."""
+    """Background body of an asynchronous create; the outcome is read with GET /access-point/{reservation_id}."""
     device_id = job.reservation.device_id
     log.bind(antenna=device_id, reservation=job.reservation.reservation_id)   # this thread's whole life
     try:
@@ -631,14 +631,15 @@ def _start_time(req) -> float:
 
 
 @router.delete(
-    "/{reservation_id}/network",
+    "/{reservation_id}",
+    summary="Stop the access point",
     responses={
         503: _STOP_RESPONSE_503,
         200: {
-            "description": "Network stopped successfully",
+            "description": "Access point stopped",
             "content": {
                 "application/json": {
-                    "example": {"detail": "Network wls16 stopped successfully"}
+                    "example": {"detail": "Access point on wls16 stopped"}
                 }
             },
         },
@@ -682,7 +683,7 @@ def stop_network(
             )
         if reservation.device_id not in manager.active:
             _release_leftovers(manager, reservation.device_id)
-            return {"detail": f"Network {reservation.device_id} stopped successfully"}
+            return {"detail": f"Access point on {reservation.device_id} stopped"}
         # The start completed just before the cancel: stop the network it left.
     with hold_reservation(reservation_mgr, reservation):
         device_id = reservation.device_id
@@ -694,12 +695,12 @@ def stop_network(
                 # A start that failed and could not roll back left hostapd or rules (REV-1).
                 _release_leftovers(manager, device_id)
                 manager.watchdog.forget(device_id)
-                return {"detail": f"Network {device_id} stopped successfully"}
+                return {"detail": f"Access point on {device_id} stopped"}
             if manager.watchdog.forget(device_id):
                 # The client gives up a network the watchdog failed to restore (WD-2).
-                return {"detail": f"Network {device_id} stopped successfully"}
+                return {"detail": f"Access point on {device_id} stopped"}
             raise HTTPException(status_code=409, detail=domain_error(
-                ApiErrorCode.NETWORK_NOT_ACTIVE, f"Network {device_id} is already inactive",
+                ApiErrorCode.ACCESS_POINT_NOT_ACTIVE, f"No access point is active on {device_id}",
             ))
 
         deadline = monotonic() + STOP_RETRY_BUDGET
@@ -718,7 +719,7 @@ def stop_network(
                     ) from exc
                 logger.info("Stop of %s did not complete; repeating it: %s", device_id, exc)
                 sleep(STOP_RETRY_PAUSE)
-        return {"detail": f"Network {device_id} stopped successfully"}
+        return {"detail": f"Access point on {device_id} stopped"}
 
 
 def _release_leftovers(manager: NetworkManager, device_id: str) -> None:
@@ -802,7 +803,8 @@ _GET_RESPONSES: dict = {
 
 
 @router.get(
-    "/{reservation_id}/network",
+    "/{reservation_id}",
+    summary="Read the access point: state, settings, clients",
     response_model=NetworkResponse,
     responses=_GET_RESPONSES,
 )
@@ -837,7 +839,7 @@ def get_network(
 
 
 def _network_response(manager: NetworkManager, reservation: Reservation) -> NetworkResponse:
-    """`GET .../network` for a reservation whose device the caller holds."""
+    """`GET /access-point/{reservation_id}` for a reservation whose device the caller holds."""
     device_id = reservation.device_id
     st = manager.get_status(device_id)
     if not st:

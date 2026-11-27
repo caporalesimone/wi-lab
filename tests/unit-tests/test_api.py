@@ -96,7 +96,7 @@ class TestStatusEndpoint:
         assert data['service'] == {'health': 'good', 'free_antennas': total - 1, 'degraded_reasons': [], 'restart_required': None}
         listing = client.get('/api/v2/antennas', headers=headers).json()
         assert listing['free_antennas'] == total - 1
-        assert not any(a['network_active'] for a in listing['antennas'])
+        assert not any(a['access_point_active'] for a in listing['antennas'])
         other = next(a['interface'] for a in listing['antennas'] if a['reservation'] is None)
         context.reservations._blocked[other] = False          # quarantined: degraded and not free
         data = client.get('/api/v2/status', headers=headers).json()
@@ -112,7 +112,7 @@ class TestStatusEndpoint:
         data = resp.json()
         listing = client.get('/api/v2/antennas', headers={'Authorization': valid_token}).json()
         assert data['service'] == {'health': 'good', 'free_antennas': len(listing['antennas']), 'degraded_reasons': [], 'restart_required': None}
-        assert not any(a['network_active'] for a in listing['antennas'])
+        assert not any(a['access_point_active'] for a in listing['antennas'])
         assert data['checks']['commands'] == {'stuck': 0}
 
     def test_status_degraded_when_a_command_is_stuck_in_the_kernel(self, client, valid_token, monkeypatch):
@@ -262,7 +262,7 @@ class TestAuthentication:
         start = Mock()
         monkeypatch.setattr(manager, 'start_network', start)
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestAP', channel=6, encryption='open', band='dual', tx_power_level=4),
         )
@@ -282,14 +282,14 @@ class TestAuthentication:
     def test_start_network_without_auth(self, client, reservation_id):
         """Test that network creation without auth is rejected."""
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             json=network_body(ssid='TestAP', channel=6, encryption='wpa2', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 401  # Unauthorized (no token)
     
     def test_start_network_with_invalid_token(self, client, invalid_token, reservation_id):
         """Test that request with invalid token is rejected."""
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': invalid_token},
             json=network_body(ssid='TestAP', channel=6, encryption='wpa2', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 401  # Unauthorized
@@ -300,7 +300,7 @@ class TestAuthentication:
         monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **kw: {'gateway': '192.168.10.1'})
         monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **kw: {})
 
-        resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
+        resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert resp.status_code == 200, resp.text
         assert resp.json()['active'] is True
 
@@ -311,7 +311,7 @@ class TestNetworkCreateEndpoint:
     def test_start_network_invalid_reservation(self, client, valid_token):
         """Test starting with an invalid reservation token returns 404."""
         resp = client.post(
-            '/api/v2/reservations/invalid-token/network',
+            '/api/v2/access-point/invalid-token',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 404  # Reservation not found
@@ -319,7 +319,7 @@ class TestNetworkCreateEndpoint:
     def test_start_network_invalid_encryption(self, client, valid_token, reservation_id):
         """Test that invalid encryption is rejected."""
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestAP', channel=6, encryption='invalid-encryption', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 422  # Validation error
@@ -327,7 +327,7 @@ class TestNetworkCreateEndpoint:
     def test_start_network_invalid_band(self, client, valid_token, reservation_id):
         """Test that invalid band is rejected."""
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestAP', channel=6, encryption='wpa2', band='invalid-band'))
         assert resp.status_code == 422  # Validation error
@@ -343,7 +343,7 @@ class TestNetworkCreateEndpoint:
     def test_start_network_rejects_unsafe_or_invalid_fields(self, client, valid_token, reservation_id, body):
         """BUG-1: invalid SSID, password or channel must be a 422 before hostapd is touched."""
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token},
             json=network_body(**{**body, 'band': '2.4ghz', 'tx_power_level': 4}),
         )
@@ -359,7 +359,7 @@ class TestNetworkCreateEndpoint:
         )
 
         created, resp = create_network(
-            client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network',
+            client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}',
             network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert created.status_code == 202
         assert resp.json()['runtime_state'] == 'start_failed'
@@ -369,7 +369,7 @@ class TestNetworkCreateEndpoint:
         }
 
     def test_create_returns_the_network(self, client, valid_token, reservation_id, monkeypatch):
-        """API-5: a successful create answers what GET .../network answers."""
+        """API-5: a successful create answers what GET /access-point/{reservation_id} answers."""
         from unittest.mock import Mock
 
         from wilab.models import NetworkStatus
@@ -383,7 +383,7 @@ class TestNetworkCreateEndpoint:
             wifi_generation=4, subnet='192.168.120.0/24', internet_enabled=True,
         )
         monkeypatch.setattr(manager, 'get_status', lambda device: status)
-        url = f'/api/v2/reservations/{reservation_id}/network'
+        url = f'/api/v2/access-point/{reservation_id}'
         headers = {'Authorization': valid_token}
 
         resp = create_network(client, headers, url, network_body(
@@ -402,7 +402,7 @@ class TestNetworkCreateEndpoint:
     def test_start_network_422_has_coded_detail(self, client, valid_token, reservation_id):
         """Validation errors should expose a stable code and a display message."""
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token},
             json=network_body(invalid='payload'))
         assert resp.status_code == 422
@@ -418,7 +418,7 @@ class TestNetworkGetEndpoint:
     def test_get_network_status_inactive(self, client, valid_token, reservation_id):
         """Test getting status of inactive network via valid reservation."""
         resp = client.get(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 200
@@ -429,7 +429,7 @@ class TestNetworkGetEndpoint:
     def test_get_network_status_invalid_reservation(self, client, valid_token):
         """Test getting status with invalid reservation returns 404."""
         resp = client.get(
-            '/api/v2/reservations/invalid-token/network',
+            '/api/v2/access-point/invalid-token',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 404
@@ -456,12 +456,12 @@ class TestNetworkGetEndpoint:
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         # Start network via reservation token
-        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
         # Get network status
         resp = client.get(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 200
@@ -515,11 +515,11 @@ class TestNetworkGetEndpoint:
         )
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
-        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
         resp = client.get(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 200
@@ -554,15 +554,15 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
-        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
         stop_resp = client.delete(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token}
         )
         assert stop_resp.status_code == 200
-        assert stop_resp.json() == {'detail': 'Network wls16 stopped successfully'}
+        assert stop_resp.json() == {'detail': 'Access point on wls16 stopped'}
     
     def test_same_create_again_answers_the_network_a_different_one_1008(
         self, client, valid_token, reservation_id, monkeypatch, context,
@@ -578,7 +578,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
         headers = {'Authorization': valid_token}
-        url = f'/api/v2/reservations/{reservation_id}/network'
+        url = f'/api/v2/access-point/{reservation_id}'
         body = network_body(
             ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz',
             tx_power_level=4,
@@ -598,7 +598,7 @@ class TestNetworkDeleteEndpoint:
         resp = client.post(url, headers=headers, json=other)
         assert resp.status_code == 409
         # API-3: an AP already running has its own code, not only a message.
-        assert (resp.json()['detail']['code'], resp.json()['detail']['reason']) == (1008, 'network_already_active')
+        assert (resp.json()['detail']['code'], resp.json()['detail']['reason']) == (1008, 'access_point_already_active')
 
     def test_stop_stuck_in_the_kernel_is_503_and_a_repeat_finishes_it(
         self, client, valid_token, reservation_id, monkeypatch, context,
@@ -618,7 +618,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
         headers = {'Authorization': valid_token}
-        url = f'/api/v2/reservations/{reservation_id}/network'
+        url = f'/api/v2/access-point/{reservation_id}'
         assert create_network(client, headers, url, network_body(
             ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz',
             tx_power_level=4))[1].status_code == 200
@@ -674,7 +674,7 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(manager.dhcp_server, 'start', dhcp_fails)
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
         _, resp = create_network(
-            client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network',
+            client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}',
             network_body(ssid='TestAP', channel=6, encryption='open', band='2.4ghz', tx_power_level=4),
         )
         assert resp.json()['runtime_state'] == 'start_failed'
@@ -689,18 +689,18 @@ class TestNetworkDeleteEndpoint:
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.delete(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 409
         data = resp.json()
-        assert data['detail']['code'] == 1007  # network_not_active
-        assert data['detail']['message'] == 'Network wls16 is already inactive'
+        assert data['detail']['code'] == 1007  # access_point_not_active
+        assert data['detail']['message'] == 'No access point is active on wls16'
     
     def test_stop_network_invalid_reservation(self, client, valid_token):
         """Test stopping with invalid reservation returns 404."""
         resp = client.delete(
-            '/api/v2/reservations/invalid-token/network',
+            '/api/v2/access-point/invalid-token',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 404
@@ -720,10 +720,10 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 10.0)
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
-        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=2))[1]
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=2))[1]
         assert start_resp.status_code == 200
 
-        resp = client.get(f'/api/v2/reservations/{reservation_id}/txpower', headers={'Authorization': valid_token})
+        resp = client.get(f'/api/v2/access-point/{reservation_id}/tx-power', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
 
@@ -746,10 +746,10 @@ class TestTxPowerGetEndpoint:
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
-        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
-        resp = client.get(f'/api/v2/reservations/{reservation_id}/txpower', headers={'Authorization': valid_token})
+        resp = client.get(f'/api/v2/access-point/{reservation_id}/tx-power', headers={'Authorization': valid_token})
         assert resp.status_code == 200
         data = resp.json()
 
@@ -783,7 +783,7 @@ class TestTxPowerPostEndpoint:
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/txpower',
+            f'/api/v2/access-point/{reservation_id}/tx-power',
             headers={'Authorization': valid_token},
             json={'tx_power_level': 2},
         )
@@ -807,7 +807,7 @@ class TestTxPowerPostEndpoint:
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/txpower',
+            f'/api/v2/access-point/{reservation_id}/tx-power',
             headers={'Authorization': valid_token},
             json={'tx_power_level': 2},
         )
@@ -819,7 +819,7 @@ class TestTxPowerPostEndpoint:
 
     def test_post_txpower_out_of_range_returns_422_coded_error(self, client, valid_token, reservation_id):
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/txpower',
+            f'/api/v2/access-point/{reservation_id}/tx-power',
             headers={'Authorization': valid_token},
             json={'tx_power_level': 9},
         )
@@ -839,7 +839,7 @@ class TestTxPowerPostEndpoint:
         assert resp.status_code == 200
         schema = resp.json()
 
-        txpower_post = schema['paths']['/api/v2/reservations/{reservation_id}/txpower']['post']
+        txpower_post = schema['paths']['/api/v2/access-point/{reservation_id}/tx-power']['post']
         responses = txpower_post['responses']
         assert '422' in responses
 
@@ -856,7 +856,7 @@ class TestTxPowerPostEndpoint:
         assert resp.status_code == 200
         schema = resp.json()
 
-        network_get = schema['paths']['/api/v2/reservations/{reservation_id}/network']['get']
+        network_get = schema['paths']['/api/v2/access-point/{reservation_id}']['get']
         response_422 = network_get['responses']['422']
         json_schema = response_422['content']['application/json']['schema']
 
@@ -876,7 +876,7 @@ class TestInternetControlEndpoints:
 
         monkeypatch.setattr(manager, 'disable_internet', fail)
         response = client.post(
-            f'/api/v2/reservations/{reservation_id}/internet/disable',
+            f'/api/v2/access-point/{reservation_id}/internet/disable',
             headers={'Authorization': valid_token}
         )
         assert response.status_code == 500
@@ -897,17 +897,17 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         # Start network first
-        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
         # Enable internet
         enable_resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/internet/enable',
+            f'/api/v2/access-point/{reservation_id}/internet/enable',
             headers={'Authorization': valid_token}
         )
         assert enable_resp.status_code == 200
         data = enable_resp.json()
-        assert data == {'detail': 'Network wls16 internet enabled successfully'}
+        assert data == {'detail': 'Internet enabled on the access point on wls16'}
     
     def test_disable_internet_success(self, client, valid_token, reservation_id, monkeypatch):
         """Test disabling internet on active network succeeds and returns detail message."""
@@ -923,24 +923,24 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         # Start network first
-        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
+        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
         assert start_resp.status_code == 200
 
         # Enable internet first
         enable_resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/internet/enable',
+            f'/api/v2/access-point/{reservation_id}/internet/enable',
             headers={'Authorization': valid_token}
         )
         assert enable_resp.status_code == 200
 
         # Then disable internet
         disable_resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/internet/disable',
+            f'/api/v2/access-point/{reservation_id}/internet/disable',
             headers={'Authorization': valid_token}
         )
         assert disable_resp.status_code == 200
         data = disable_resp.json()
-        assert data == {'detail': 'Network wls16 internet disabled successfully'}
+        assert data == {'detail': 'Internet disabled on the access point on wls16'}
     
     def test_enable_internet_inactive(self, client, valid_token, reservation_id, monkeypatch):
         """Test enabling internet on inactive network fails."""
@@ -949,7 +949,7 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/internet/enable',
+            f'/api/v2/access-point/{reservation_id}/internet/enable',
             headers={'Authorization': valid_token}
         )
         # API-2: a valid reservation without a network is 409 / 1007, never 404.
@@ -963,7 +963,7 @@ class TestInternetControlEndpoints:
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.post(
-            f'/api/v2/reservations/{reservation_id}/internet/disable',
+            f'/api/v2/access-point/{reservation_id}/internet/disable',
             headers={'Authorization': valid_token}
         )
         # API-2: a valid reservation without a network is 409 / 1007, never 404.
@@ -977,7 +977,7 @@ class TestReservationRequiredForOperations:
     def test_network_op_without_reservation_returns_404(self, client, valid_token):
         """Any network operation with invalid reservation returns 404."""
         resp = client.get(
-            '/api/v2/reservations/nonexistent-token/network',
+            '/api/v2/access-point/nonexistent-token',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 404
@@ -988,7 +988,7 @@ class TestReservationRequiredForOperations:
     def test_internet_op_without_reservation_returns_404(self, client, valid_token):
         """Internet enable with invalid reservation returns 404."""
         resp = client.post(
-            '/api/v2/reservations/nonexistent-token/internet/enable',
+            '/api/v2/access-point/nonexistent-token/internet/enable',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 404
@@ -996,7 +996,7 @@ class TestReservationRequiredForOperations:
     def test_txpower_op_without_reservation_returns_404(self, client, valid_token):
         """TX power GET with invalid reservation returns 404."""
         resp = client.get(
-            '/api/v2/reservations/nonexistent-token/txpower',
+            '/api/v2/access-point/nonexistent-token/tx-power',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 404
@@ -1011,7 +1011,7 @@ class TestReservationRequiredForOperations:
         r.expires_at = time.time() - 1
 
         resp = client.get(
-            f'/api/v2/reservations/{r.reservation_id}/network',
+            f'/api/v2/access-point/{r.reservation_id}',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 404
@@ -1036,7 +1036,7 @@ class TestReservationRequiredForOperations:
 
         # Try to use the released token
         resp = client.post(
-            f'/api/v2/reservations/{rid}/network',
+            f'/api/v2/access-point/{rid}',
             headers={'Authorization': valid_token},
             json=network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))
         assert resp.status_code == 404
@@ -1047,7 +1047,7 @@ class TestStatusReservationInfo:
     """Tests for reservation info in status endpoint (Task 6)."""
 
     def test_status_antennas_have_reservation_and_network_active(self, client, valid_token, monkeypatch):
-        """Each antenna has `reservation` (null when free) and `network_active` (API-1)."""
+        """Each antenna has `reservation` (null when free) and `access_point_active` (API-1)."""
         cfg = load_config()
         rmgr = ReservationManager(configured_devices(cfg))
         monkeypatch.setattr(client.app.state.context, 'reservations', rmgr)
@@ -1059,7 +1059,7 @@ class TestStatusReservationInfo:
         assert 'display_name' in net_entry
         assert 'interface' in net_entry
         assert net_entry['reservation'] is None
-        assert net_entry['network_active'] is False
+        assert net_entry['access_point_active'] is False
         assert 'reserved' not in net_entry and 'reservation_remaining_seconds' not in net_entry
 
     def test_status_reservation_expiry_after_reservation(self, client, valid_token, reservation_id):
@@ -1085,7 +1085,7 @@ class TestGetNetworkExpiryAlwaysPresent:
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
         resp = client.get(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 200
@@ -1115,10 +1115,10 @@ class TestGetNetworkExpiryAlwaysPresent:
         monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
         monkeypatch.setattr(client.app.state.context, 'manager', manager)
 
-        create_network(client, {'Authorization': valid_token}, f'/api/v2/reservations/{reservation_id}/network', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
+        create_network(client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
 
         resp = client.get(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token}
         )
         assert resp.status_code == 200
@@ -1234,7 +1234,7 @@ class TestUnlimitedReservationAPI:
         reservation_id = create_resp.json()['reservation_id']
 
         get_resp = client.get(
-            f'/api/v2/reservations/{reservation_id}/network',
+            f'/api/v2/access-point/{reservation_id}',
             headers={'Authorization': valid_token},
         )
         assert get_resp.status_code == 200
@@ -1375,7 +1375,7 @@ def stop_clock(monkeypatch, app, context):
     with TestClient(app) as client:
         rid = client.post("/api/v2/reservations", headers=headers, json={"duration_seconds": 300}).json()[
             "reservation_id"]
-        url = f"/api/v2/reservations/{rid}/network"
+        url = f"/api/v2/access-point/{rid}"
         body = network_body(ssid="stop-budget", channel=6, encryption="open", band="2.4ghz", tx_power_level=4)
         assert create_network(client, headers, url, body)[1].json()["active"] is True
         yield client, headers, url, manager, clock
