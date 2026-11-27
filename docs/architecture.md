@@ -22,13 +22,14 @@ flowchart LR
 
     subgraph Process["Wi-Lab process (Uvicorn + FastAPI)"]
         R["Routes /api/v2<br/>reservations, antennas, network, internet,<br/>txpower, qos, status, monitoring"]
-        D["dependencies.py<br/>singletons and discovery service"]
+        D["AppContext (context.py)<br/>every singleton, start and stop"]
         RM["ReservationManager<br/>reservations, quarantine"]
         NM["NetworkManager<br/>AP lifecycle, device locks"]
         WD["NetworkWatchdog<br/>one thread per antenna"]
         RR["RadioRecovery<br/>USB reset worker"]
         CM["ChannelManager<br/>channel cache"]
-        DISC["discovery.py<br/>antenna detection"]
+        DS2["DeviceDiscovery (api/discovery.py)<br/>adds antennas while running"]
+        DISC["wifi/discovery.py<br/>antenna detection"]
         subgraph Drivers["Linux wrappers"]
             HA["HostapdManager"]
             DH["DhcpServer"]
@@ -54,7 +55,8 @@ flowchart LR
     D --> RM
     D --> NM
     D --> CM
-    D --> DISC
+    D --> DS2
+    DS2 --> DISC
     NM --> WD
     NM --> RR
     NM --> HA
@@ -82,8 +84,10 @@ flowchart LR
 | `main.py` | Process entry point: logging, safety checks, configuration, Uvicorn. |
 | `wilab/config.py` | YAML configuration, antenna selection for each scan (names, `disable`, order). |
 | `wilab/wifi/discovery.py` | Detects AP-capable Wi-Fi interfaces, udev readiness, USB port, default routes. |
-| `wilab/api/__init__.py` | FastAPI app, lifespan (startup/shutdown), error handlers, frontend static files, OpenAPI. |
-| `wilab/api/dependencies.py` | Lazily created singletons, `hold_reservation`, device scan and discovery service. |
+| `wilab/api/__init__.py` | FastAPI app (`create_app(config)` builds its `AppContext`), lifespan (starts and stops the context), error handlers, frontend static files, OpenAPI. |
+| `wilab/api/context.py` | `AppContext`: config, channel cache, QoS managers, `NetworkManager`, `ReservationManager` and device discovery, built once and wired explicitly; `start()` and `stop()` run the background work in a fixed order (Fable ARCH-5). |
+| `wilab/api/discovery.py` | `DeviceDiscovery`: the device scan and the discovery thread. |
+| `wilab/api/dependencies.py` | FastAPI dependencies that read the request's `app.state.context`, `hold_reservation`. |
 | `wilab/api/errors.py` | Error codes (`ApiErrorCode`, the whole 1001-1013 range in one enum), the `detail` envelope (`domain_error`) and the `404` reasons. |
 | `wilab/api/routes/*.py` | HTTP endpoints. `network.py` contains the asynchronous create (`StartJob` thread, paused retries, `StartOutcome`) and the stop; its OpenAPI examples are module constants (`_CREATE_RESPONSES`, `_GET_RESPONSES`). `recovery_responses.py` builds the answers shared by several routes (`1002`, `1003`, `1006`). |
 | `wilab/reservation.py` | In-memory reservation store, expiry, quarantine state. |
@@ -140,18 +144,18 @@ sequenceDiagram
     M->>C: load_config()
     C->>C: read config.yaml and validate (no antenna managed yet)
     C-->>M: AppConfig with an empty antenna pool
+    M->>M: create_app(config): AppContext.build(config)<br/>creates every manager, starts no thread
     M->>U: run app on 0.0.0.0:8080
-    U->>L: lifespan startup
-    L->>C: get_config() (runtime instance)
-    L->>NM: get_manager() creates NetworkManager
+    U->>L: lifespan startup: AppContext.start()
     L->>L: remove leftover NAT, captive portal and host guard rules
     L->>L: stop orphan hostapd/dnsmasq, empty runtime dirs,<br/>delete wilab-ifb devices (STAB-4)
-    NM->>NM: start expiry thread (every 5 s)
     L->>L: set regulatory domain (iw reg set)
+    L->>NM: start the expiry thread (every 5 s)
+    L->>NM: start the watchdogs and the re-probe loop
     L->>D: start device discovery
     L->>L: start health-checks thread and, under systemd, the watchdog pings (READY=1)
     L-->>U: ready, serve requests
-    D->>RM: first scan, immediately: create ReservationManager,<br/>start watchdogs, add the antennas found
+    D->>RM: first scan, immediately: add the antennas found
     loop for the whole process lifetime
         D->>D: wait 5 s while no antenna is managed, otherwise 30 s
         D->>RM: scan again and add new antennas
@@ -160,14 +164,18 @@ sequenceDiagram
 
 Notes:
 
-- `main.py` loads the configuration only to fail fast on an invalid file. The
-  runtime instance is loaded again in the lifespan through `get_config()`.
+- `main.py` loads the configuration once and builds the app with it: the
+  `AppContext` and discovery use that same object (Fable ARCH-5).
 - Until the first scan adds an antenna, reservations return `503 / 1003`. The
   first scan runs as soon as the API starts, so this window is normally short.
-- The first scan creates `ReservationManager` through
-  `get_reservation_manager()`: it receives the device-lock provider and
-  `release_device` as its cleanup callback, connects the expiry hook and starts
-  the watchdog. Each antenna added later gets its own watchdog thread.
+- `AppContext.build()` creates `ReservationManager` with the device-lock
+  provider and `release_device` as its cleanup callback and connects the expiry
+  hook; no constructor starts a thread. `start()` runs the steps above in this
+  fixed order, whatever request or thread comes first, and `stop()` reverses
+  them at shutdown. Each antenna added later gets its own watchdog thread.
+- Request handlers get the managers from `request.app.state.context`; code
+  outside a request (discovery, watchdog, `main.py`) receives them explicitly.
+  There is no module-level singleton.
 
 ### Discovery service
 
@@ -310,8 +318,7 @@ flowchart TB
 | Device lock (`RLock` per antenna) | `NetworkManager.device_lock()` | Start, stop, status, cleanup, watchdog restore and USB recovery of one antenna. Different antennas never wait for each other. |
 | Store lock | `ReservationManager._lock` | Reservation maps and quarantine state. Held only briefly. |
 | Firewall lock | `NetworkManager._firewall_lock` | iptables changes (NAT, isolation, captive portal, host guard) shared by all antennas, and the firewall reads of the health checks (`firewall_status()`), so a read never collides with a change. Every `iptables` call goes through `execute_iptables()`, which adds `-w 5`: with the legacy backend iptables then waits up to 5 s for the global xtables lock (also taken by Docker, ufw or fail2ban) instead of failing at once (NET-1). The nf_tables backend accepts and ignores `-w`. |
-| Scan lock | `dependencies._scan_lock` | One device scan at a time. |
-| Singleton lock | `dependencies._singleton_lock` | Lazy creation of the managers. |
+| Scan lock | `DeviceDiscovery._scan_lock` | One device scan at a time. |
 
 Rules:
 
@@ -1128,7 +1135,8 @@ sequenceDiagram
 ```
 
 On shutdown (`SIGTERM` from systemd) uvicorn gives running requests 10 s
-(`timeout_graceful_shutdown`), then the lifespan stops device discovery, waits up
+(`timeout_graceful_shutdown`), then the lifespan calls `AppContext.stop()`: it
+stops the systemd pings and the health checks, stops device discovery, waits up
 to 10 s for it and calls `shutdown_all()`: it stops the recovery worker and the
 watchdogs, cancels every running create at once (each rolls back in parallel
 instead of holding its device lock through retries and pauses), then runs
