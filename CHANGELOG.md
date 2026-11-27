@@ -12,7 +12,7 @@ All notable changes to Wi-Lab are documented in this file.
 |---|---:|
 | 🐛 Bug fixes | 25 |
 | ⚠️ Breaking changes | 6 |
-| 🔧 Maintenance changes | 12 |
+| 🔧 Maintenance changes | 13 |
 | ✨ New features | 1 |
 | ✅ Test changes | 7 |
 | 📦 Commits since 4.0.0 | 62 |
@@ -78,6 +78,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - What a failed network start is (radio fault, configuration, conflict, failed cleanup) is decided once where the error is born, as a `FailureKind`; the create job and the watchdog each map it to an action with one table instead of combining flags. The API answers are unchanged (Fable ARCH-2).
  - The network manager is split into smaller parts (start attempts and their retries, TX power, client list, subnet allocation), each in its own module; behaviour, logs and API answers are unchanged (Fable ARCH-1).
 - The service's managers are built once with the app and started and stopped in a fixed order at startup and shutdown, instead of being created by whichever request or thread used them first; no constructor starts a thread any more (Fable ARCH-5).
+- The managed antennas are kept in one device registry, which also holds each antenna's lock, instead of four lists kept in step by discovery; the configuration only holds what config.yaml says and is no longer changed at runtime. Allocation order, subnets and API answers are unchanged (Fable ARCH-4).
 
 ### ✅ Tests
 

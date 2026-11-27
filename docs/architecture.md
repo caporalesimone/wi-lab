@@ -24,7 +24,8 @@ flowchart LR
         R["Routes /api/v2<br/>reservations, antennas, network, internet,<br/>txpower, qos, status, monitoring"]
         D["AppContext (context.py)<br/>every singleton, start and stop"]
         RM["ReservationManager<br/>reservations, quarantine"]
-        NM["NetworkManager<br/>AP lifecycle, device locks"]
+        NM["NetworkManager<br/>AP lifecycle"]
+        DR["DeviceRegistry (devices.py)<br/>managed devices, device locks"]
         WD["NetworkWatchdog<br/>one thread per antenna"]
         RR["RadioRecovery<br/>USB reset worker"]
         CM["ChannelManager<br/>channel cache"]
@@ -56,6 +57,10 @@ flowchart LR
     D --> NM
     D --> CM
     D --> DS2
+    D --> DR
+    DS2 --> DR
+    RM --> DR
+    NM --> DR
     DS2 --> DISC
     NM --> WD
     NM --> RR
@@ -82,16 +87,17 @@ flowchart LR
 | Path | Responsibility |
 |---|---|
 | `main.py` | Process entry point: logging, safety checks, configuration, Uvicorn. |
-| `wilab/config.py` | YAML configuration, antenna selection for each scan (names, `disable`, order). |
+| `wilab/config.py` | YAML configuration (its `antennas` are only the labels of config.yaml, never changed at runtime), antenna selection for each scan (names, `disable`, order). |
+| `wilab/devices.py` | `Device` (interface, display name, USB port, `show_dfs_channels`, its lock) and `DeviceRegistry`: the one list of managed devices, in the order they were added, shared by every manager (Fable ARCH-4). |
 | `wilab/wifi/discovery.py` | Detects AP-capable Wi-Fi interfaces, udev readiness, USB port, default routes. |
 | `wilab/api/__init__.py` | FastAPI app (`create_app(config)` builds its `AppContext`), lifespan (starts and stops the context), error handlers, frontend static files, OpenAPI. |
-| `wilab/api/context.py` | `AppContext`: config, channel cache, QoS managers, `NetworkManager`, `ReservationManager` and device discovery, built once and wired explicitly; `start()` and `stop()` run the background work in a fixed order (Fable ARCH-5). |
-| `wilab/api/discovery.py` | `DeviceDiscovery`: the device scan and the discovery thread. |
+| `wilab/api/context.py` | `AppContext`: config, device registry, channel cache, QoS managers, `NetworkManager`, `ReservationManager` and device discovery, built once and wired explicitly; `start()` and `stop()` run the background work in a fixed order (Fable ARCH-5). |
+| `wilab/api/discovery.py` | `DeviceDiscovery`: the device scan and the discovery thread; adds devices to the registry. |
 | `wilab/api/dependencies.py` | FastAPI dependencies that read the request's `app.state.context`, `hold_reservation`. |
 | `wilab/api/errors.py` | Error codes (`ApiErrorCode`, the whole 1001-1013 range in one enum), the `detail` envelope (`domain_error`) and the `404` reasons. |
 | `wilab/api/routes/*.py` | HTTP endpoints. `network.py` contains the asynchronous create (`StartJob` thread, paused retries, `StartOutcome`) and the stop; its OpenAPI examples are module constants (`_CREATE_RESPONSES`, `_GET_RESPONSES`). `recovery_responses.py` builds the answers shared by several routes (`1002`, `1003`, `1006`). |
 | `wilab/reservation.py` | In-memory reservation store, expiry, quarantine state. |
-| `wilab/wifi/manager.py` | `NetworkManager`: start/stop pipeline, device locks, expiry loop; owns the parts below and keeps their public methods (`list_clients`, `set_tx_power_level`, `get_tx_power_info`) as delegates. |
+| `wilab/wifi/manager.py` | `NetworkManager`: start/stop pipeline, expiry loop; owns the parts below and keeps their public methods (`list_clients`, `set_tx_power_level`, `get_tx_power_info`) as delegates. |
 | `wilab/wifi/startup.py` | One AP start attempt through its stages (`StartAttempt`), the internal retry (`RetryPolicy`, `run_startup`) with rollback, `StartupFailure` and the stage names. |
 | `wilab/wifi/txpower.py` | `TxPowerControl`: the four TX power levels of a channel, setting and reading them with `iw`, `TxPowerMismatchError`. |
 | `wilab/wifi/clients.py` | `ClientLister`: associated stations with a DHCP lease, the 1.5 s client cache, the client MAC lookup of the captive portal. |
@@ -142,9 +148,9 @@ sequenceDiagram
     M->>M: log version, startup prechecks (fatal: exit 78)
     M->>M: host impact warning
     M->>C: load_config()
-    C->>C: read config.yaml and validate (no antenna managed yet)
-    C-->>M: AppConfig with an empty antenna pool
-    M->>M: create_app(config): AppContext.build(config)<br/>creates every manager, starts no thread
+    C->>C: read config.yaml and validate (antenna labels only)
+    C-->>M: AppConfig
+    M->>M: create_app(config): AppContext.build(config)<br/>creates an empty DeviceRegistry and every manager, starts no thread
     M->>U: run app on 0.0.0.0:8080
     U->>L: lifespan startup: AppContext.start()
     L->>L: remove leftover NAT, captive portal and host guard rules
@@ -155,10 +161,10 @@ sequenceDiagram
     L->>D: start device discovery
     L->>L: start health-checks thread and, under systemd, the watchdog pings (READY=1)
     L-->>U: ready, serve requests
-    D->>RM: first scan, immediately: add the antennas found
+    D->>RM: first scan, immediately: add the antennas found to the registry
     loop for the whole process lifetime
         D->>D: wait 5 s while no antenna is managed, otherwise 30 s
-        D->>RM: scan again and add new antennas
+        D->>RM: scan again and add new antennas to the registry
     end
 ```
 
@@ -168,11 +174,18 @@ Notes:
   `AppContext` and discovery use that same object (Fable ARCH-5).
 - Until the first scan adds an antenna, reservations return `503 / 1003`. The
   first scan runs as soon as the API starts, so this window is normally short.
-- `AppContext.build()` creates `ReservationManager` with the device-lock
-  provider and `release_device` as its cleanup callback and connects the expiry
-  hook; no constructor starts a thread. `start()` runs the steps above in this
-  fixed order, whatever request or thread comes first, and `stop()` reverses
-  them at shutdown. Each antenna added later gets its own watchdog thread.
+- `AppContext.build()` creates the `DeviceRegistry` and passes it to
+  `NetworkManager`, `ReservationManager` and discovery; `ReservationManager`
+  gets `release_device` as its cleanup callback and the expiry hook is
+  connected; no constructor starts a thread. `start()` runs the steps above in
+  this fixed order, whatever request or thread comes first, and `stop()`
+  reverses them at shutdown.
+- The managed devices exist once, in the `DeviceRegistry` (Fable ARCH-4).
+  Reservations allocate in its order, the subnet allocator numbers subnets in
+  its order, `/status` and `GET /antennas` list it, and each `Device` carries
+  its device lock. Nothing else keeps a device list, and the configuration is
+  never changed at runtime. The watchdog subscribes to the registry when it
+  starts: one watcher thread for each device, also for the ones added later.
 - Request handlers get the managers from `request.app.state.context`; code
   outside a request (discovery, watchdog, `main.py`) receives them explicitly.
   There is no module-level singleton.
@@ -183,7 +196,7 @@ Notes:
 flowchart TD
     S["device-discovery thread starts with the API"] --> SC["scan now<br/>(only the first scan logs configuration warnings)"]
     SC --> A{"new AP-capable antennas?"}
-    A -->|yes| ADD["append to the pool, register in ReservationManager,<br/>start a watchdog, warm the channel cache"]
+    A -->|yes| ADD["add to the DeviceRegistry (the watchdog starts watching it),<br/>reset the radio, warm the channel cache"]
     A -->|no| N
     ADD --> N{"pool still empty?"}
     N -->|yes| F["wait 5 s"]
@@ -194,14 +207,16 @@ flowchart TD
     SL -.->|shutdown| X
 ```
 
-Each scan (`scan_devices()`):
+Each scan (`DeviceDiscovery.scan()`):
 
 1. Serializes with the scan lock.
 2. Re-reads `antennas` from `config.yaml`, so new display names, `disable` and `show_dfs_channels`
    flags apply to antennas found later.
 3. Discovers radios and keeps only those not already managed (by interface and
    by phy), not disabled and not upstream.
-4. Appends them to the pool: existing antennas keep their position and subnet.
+4. Adds them to the `DeviceRegistry`: existing antennas keep their position and
+   subnet. The labels are read from the file for this scan only; the loaded
+   `AppConfig` is not changed.
 
 A scan never removes, disables or renames an antenna already in the pool; that
 requires a service restart. A failed scan (for example an invalid
@@ -315,7 +330,7 @@ flowchart TB
 
 | Lock | Owner | Protects |
 |---|---|---|
-| Device lock (`RLock` per antenna) | `NetworkManager.device_lock()` | Start, stop, status, cleanup, watchdog restore and USB recovery of one antenna. Different antennas never wait for each other. |
+| Device lock (`RLock` per antenna) | `Device.lock`, through `DeviceRegistry.lock()` | Start, stop, status, cleanup, watchdog restore and USB recovery of one antenna. Different antennas never wait for each other. |
 | Store lock | `ReservationManager._lock` | Reservation maps and quarantine state. Held only briefly. |
 | Firewall lock | `NetworkManager._firewall_lock` | iptables changes (NAT, isolation, captive portal, host guard) shared by all antennas, and the firewall reads of the health checks (`firewall_status()`), so a read never collides with a change. Every `iptables` call goes through `execute_iptables()`, which adds `-w 5`: with the legacy backend iptables then waits up to 5 s for the global xtables lock (also taken by Docker, ufw or fail2ban) instead of failing at once (NET-1). The nf_tables backend accepts and ignores `-w`. |
 | Scan lock | `DeviceDiscovery._scan_lock` | One device scan at a time. |
