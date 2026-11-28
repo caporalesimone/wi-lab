@@ -73,21 +73,21 @@ Prese (non vanno ridiscusse):
 - **`health` in `GET /antennas/{interface}` (2026-11-27):** budget usati e limite del driver, quando si
   libera il prossimo, quarantene e ultimo reset USB, dall'avvio del servizio. Non in `GET /antennas`.
 - **Frontend:** riscritto in un container Docker separato, Wi-Lab solo API, niente CORS; account da
-  decidere. Tutto in [TODOs/todo-frontend.md](TODOs/todo-frontend.md), compreso ciò che era REV-15.
+  decidere. Tutto in [TODOs/frontend/](TODOs/frontend/) (container, nuova applicazione, account; ciò che era REV-15 è in [missing-functions.md](TODOs/frontend/missing-functions.md)).
 - **HAP-5 non confermata (2026-11-27):** su 4.378 avvii nel journal del 26-27/11, quelli in parallelo con
   l'altra antenna falliscono come quelli isolati (±1 s: 5,0 % contro 7,1 %; ±3 s: 6,5 % contro 5,8 %).
   Gli avvii non si serializzano. Il 6 % di primi tentativi falliti sono i segfault di hostapd 2.11
-  (`TODOs/crash-hostapd.md`), recuperati dal retry.
+  ([TODOs/reliability/hostapd-segfault-fix.md](TODOs/reliability/hostapd-segfault-fix.md)), recuperati dal retry.
 - **WD-7, trasmissione reale (2026-11-27):** con `mt7921u` i beacon partono dal firmware e
   `tx_packets` non li conta (3 pacchetti in 10 s con l'AP attivo), `survey dump` è vuoto in modalità AP.
   Il controllo serve per driver che contano i beacon (Realtek): va in
-  [TODOs/ap-health-validation.md](TODOs/ap-health-validation.md), con un'opzione per driver.
+  [TODOs/reliability/beacon-check.md](TODOs/reliability/beacon-check.md), con un'opzione per driver.
 - **Tipi stretti, nome del TX power, QoS e TX power non stabili nella 4.1.0:** come nel CHANGELOG
   (capitolo API). Il gruppo T del paragrafo 2.2 può cambiare le risposte di `.../txpower`.
 - **Configurazione:** tutti i campi obbligatori tranne `hostapd_debug_dir` e `antennas`;
   `protected_commands_password` e `cors_origins` obbligatori ma possono essere `null`.
 - **STAB-7:** lockfile con pip; uv eventualmente dopo la 4.1.0.
-- **API-7 e "estendere una reservation":** rimandati ([TODOs/api-review.md](TODOs/api-review.md)).
+- **API-7 e "estendere una reservation":** rimandati ([TODOs/api/patch-access-point.md](TODOs/api/patch-access-point.md), [TODOs/reservations/extend.md](TODOs/reservations/extend.md)).
 
 Gravità: **Critica** sicurezza o perdita del servizio · **Alta** una rete o un adattatore resta rotto
 senza che il client lo sappia · **Media** comportamento sbagliato in un caso realistico · **Bassa**
@@ -121,7 +121,7 @@ cambia, si ferma e si rimanda alla versione successiva.
 | B1 | [NET-14](#net-14) | Media | Provare con un client vero le tre garanzie del firewall (pulizia all'avvio, NAT solo dalla subnet, Internet disattivato che taglia le connessioni aperte). Nel codice dalla 4.0.0. |
 | B2 | [ARCH-11](#arch-11) | Bassa | Cosa resta da portare da `feature/device-capabilities`: `CLAUDE.md`, CI (riepilogo, pulizia delle run, documentazione nelle release, frontend), documentazione delle API, suggerimento sul driver nei crash. |
 | B3 | [HAP-7](#hap-7) | Bassa | Verificare se l'output debug di hostapd influisce sulla stabilità a lungo termine. |
-| B4 | [API-7](#api-7) | Bassa | `PATCH .../network` o `PUT` per Internet e TX power. **Rimandato** ([TODOs/api-review.md](TODOs/api-review.md)). |
+| B4 | [API-7](#api-7) | Bassa | `PATCH .../network` o `PUT` per Internet e TX power. **Rimandato** ([TODOs/api/patch-access-point.md](TODOs/api/patch-access-point.md)). |
 | B5 | [NET-13](#net-13) | Bassa | Evitare che lo stop del profilo QoS impedisca lo stop della rete. |
 | B6 | [RACE-3](#race-3) | Bassa | Sincronizzare le operazioni QoS per interfaccia. |
 | B7 | [NET-12](#net-12) | Bassa | Sincronizzare la fine del profilo QoS con lo stato QoS. |
@@ -221,7 +221,7 @@ Non ci sono workflow di rilascio. L'altro branch aveva in più:
 | B1 | **Riepilogo della run** (`scripts/ci_summary.py`, 140 righe con i suoi test): test passati e falliti (da `--junitxml`) e copertura in Markdown nella pagina della run (`$GITHUB_STEP_SUMMARY`), invece di cercarli nel log. | Job backend: `pytest --junitxml=junit.xml`, poi `ci_summary.py junit` e `coverage report --format=markdown`; job frontend: lo stesso per le spec. | Piccolo. Lo script va portato con i suoi test; per il frontend serve prima che le spec producano un file di risultati (oggi Node `--test` stampa TAP: `--test-reporter=junit`). | Da decidere |
 | B2 | **Pulizia delle run delle pull request** (`scripts/cleanup_pr_runs.py`): a ogni run di una PR tiene le 3 più recenti di quella PR e cancella le altre con i loro artifact. Mai le run di `main`, dei rilasci e manuali; niente cron. | Nuovo job `cleanup-runs` dopo gli altri, solo su `pull_request` dello stesso repository, con `permissions: actions: write`. | Piccolo. Serve solo se le PR accumulano molte run (spazio degli artifact). | Da decidere |
 | B3 | **Documentazione API nei rilasci** (`release-docs.yml`): alla pubblicazione di una release GitHub allega `wi-lab-api-docs-<versione>.zip` (`openapi.json`, `swagger.html`, `redoc.html` che si aprono senza server); manuale con `workflow_dispatch`. Nella CI l'artifact prende il nome dalla versione e dura 90 giorni. | Nuovo workflow con `permissions: contents: write`; nella CI cambia solo il nome dell'artifact. | Piccolo; ha senso dal primo rilascio fatto con GitHub Releases (la 4.1.0). Va con C2 se il `swagger.html` deve essere autonomo. | Da decidere |
-| B4 | **Frontend in CI**: spec e build del container. | Job frontend: `make frontend-test` (oggi solo build). Con il nuovo frontend ([TODOs/todo-frontend.md](TODOs/todo-frontend.md)): build dell'immagine su ogni PR, pubblicazione su `ghcr.io` ai tag. | Le spec subito (minuti di Docker in più). L'immagine dipende dal container del nuovo frontend: il TODO lo prevede già. | Spec: da decidere; immagine: con il nuovo frontend |
+| B4 | **Frontend in CI**: spec e build del container. | Job frontend: `make frontend-test` (oggi solo build). Con il nuovo frontend ([TODOs/frontend/docker-container.md](TODOs/frontend/docker-container.md)): build dell'immagine su ogni PR, pubblicazione su `ghcr.io` ai tag. | Le spec subito (minuti di Docker in più). L'immagine dipende dal container del nuovo frontend: il TODO lo prevede già. | Spec: da decidere; immagine: con il nuovo frontend |
 
 **C. Documentazione delle API**
 
@@ -274,7 +274,7 @@ impostare il TX power è una `POST`, pur essendo un'operazione idempotente.
 
 **Come si riproduce.** Leggere l'elenco dei percorsi.
 
-**Come correggerlo.** Aggiungere il nuovo endpoint (non breaking) e poi togliere i vecchi (breaking). Decisione del 2026-11-25: rimandato, annotato in [TODOs/api-review.md](TODOs/api-review.md).
+**Come correggerlo.** Aggiungere il nuovo endpoint (non breaking) e poi togliere i vecchi (breaking). Decisione del 2026-11-25: rimandato, annotato in [TODOs/api/patch-access-point.md](TODOs/api/patch-access-point.md).
 
 ```python
 class InternetRequest(BaseModel):
