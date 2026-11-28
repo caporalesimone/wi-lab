@@ -37,20 +37,29 @@ A **profile** is an ordered sequence of steps. Each step defines a duration and 
 
 ## Profile Catalogue
 
-wi-lab ships with 10 built-in profiles simulating common scenarios:
+wi-lab ships with 10 built-in profiles simulating common scenarios. Every profile that
+imitates a real network limits the bandwidth; latency and loss are moderate, as on a real
+mobile link, where retransmissions hide most of the radio loss.
 
 | Profile ID | Mode | Steps | Scenario |
 |---|---|---|---|
-| `4g_urban_stationary` | loop | 4 | Stable urban, minor signal fluctuations |
-| `4g_urban_moving` | loop | 7 | On foot in city, signal dips between buildings |
-| `4g_highway` | loop | 7 | Vehicle at highway speed, frequent cell handovers |
-| `4g_train_tunnel` | once | 7 | Train entering/exiting a tunnel |
-| `4g_rural` | loop | 6 | Rural area, low signal, occasional drops |
-| `4g_congested_stadium` | loop | 6 | Many users sharing same cell |
-| `4g_to_3g_fallback` | once | 6 | 4G loss → 3G fallback with speed caps → recovery |
-| `wifi_interference` | loop | 6 | Periodic interference from nearby networks |
-| `satellite_link` | loop | 2 | Geostationary satellite: high latency, stable bandwidth |
-| `progressive_degradation` | once | 8 | Progressive signal loss for stress testing |
+| `4g_urban_stationary` | loop | 4 | Urban 4G, stationary: 20–35 Mbit/s down, 30–50 ms added RTT, short dips |
+| `4g_urban_moving` | loop | 7 | On foot in a city: bandwidth drops between buildings |
+| `4g_highway` | loop | 7 | Vehicle at highway speed: variable bandwidth, handovers as 1 s outages |
+| `4g_train_tunnel` | once-hold-last | 7 | Train in a tunnel: 30 s without connectivity, then 4G until stopped |
+| `4g_rural` | loop | 6 | Weak rural 4G: 0.5–5 Mbit/s, 80–200 ms added RTT, a short drop |
+| `4g_congested_stadium` | loop | 6 | Crowded cell: little bandwidth per user, high latency |
+| `4g_to_3g_fallback` | once-hold-last | 6 | 4G lost, 3 s outage, 30 s on 3G, then 4G until stopped |
+| `wifi_interference` | loop | 6 | Periodic interference: bandwidth cut, latency up, low loss |
+| `satellite_link` | loop | 2 | Geostationary satellite: about 600 ms added RTT, periodic rain fade |
+| `progressive_degradation` | once-hold-last | 8 | Stress test: worse every 15 s, down to no connectivity, held |
+
+**Values are per direction.** `delay_ms` and `packet_loss_percent` apply to the download
+(towards the clients) and again to the upload: the added RTT is twice `delay_ms`
+(`satellite_link` uses 300 ms for about 600 ms of RTT). An outage is a step with
+`"advanced": {"packet_loss_percent": 100}`. Step durations are whole seconds, so a real
+handover (tens of milliseconds) is approximated by a 1 s outage. The built-in profiles use no
+jitter: netem reorders packets when jitter is set, which hurts TCP far more than a real link.
 
 ### Browse the catalogue
 
@@ -122,6 +131,8 @@ Each step in a profile defines:
 
 The quality score (0–100) is mapped to network impairments:
 
+Values per direction; the added RTT is twice the delay.
+
 | Quality | Packet Loss | Delay | Jitter | Corruption | Perceived |
 |---------|-------------|-------|--------|------------|-----------|
 | 100 | 0% | 0 ms | 0 ms | 0% | Perfect |
@@ -171,7 +182,7 @@ Response:
   "interface": "wlan0",
   "active": true,
   "profile_id": "4g_urban_moving",
-  "description": "Device on foot in city, occasional signal dips between buildings and crossing streets.",
+  "description": "Device on foot in a city on 4G: bandwidth drops between buildings and at crossings, latency rises, loss stays low. Delay and loss are per direction.",
   "source_file": "default.json",
   "mode": "loop",
   "steps": 7,
@@ -233,16 +244,16 @@ Response when active:
   "interface": "wlan0",
   "active": true,
   "profile_id": "4g_highway",
-  "description": "Device in a vehicle at highway speed, frequent cell handovers causing brief signal drops.",
+  "description": "Device in a vehicle at highway speed on 4G: variable bandwidth and cell handovers. A handover is a 1 s outage here (real ones last tens of ms; steps are whole seconds). Delay and loss are per direction.",
   "source_file": "default.json",
   "mode": "loop",
   "steps": 7,
   "current_step": {
-    "index": 3,
-    "elapsed_sec": 1,
-    "duration_sec": 2
+    "index": 2,
+    "elapsed_sec": 5,
+    "duration_sec": 8
   },
-  "total_elapsed_sec": 19
+  "total_elapsed_sec": 14
 }
 ```
 

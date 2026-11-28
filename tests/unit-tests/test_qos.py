@@ -305,6 +305,33 @@ class TestQosManagerQuality:
         assert state.download_netem_params.delay_ms == 140
         assert state.download_netem_params.delay_distribution == "paretonormal"
 
+    def test_advanced_only_step_stays_installed(self, qos):
+        """An outage step (only `advanced`, no speed, no quality) is not torn down."""
+        qos.apply_qos(
+            "wlan0", download_speed_kbit=20000, upload_speed_kbit=6000,
+            download_quality=None, upload_quality=None,
+            download_quality_advanced=QosQualityAdvanced(delay_ms=25),
+            upload_quality_advanced=QosQualityAdvanced(delay_ms=25),
+        )
+        outage = QosQualityAdvanced(packet_loss_percent=100)
+        self.tc_calls.clear()
+        qos.apply_qos(
+            "wlan0", download_speed_kbit=None, upload_speed_kbit=None,
+            download_quality=None, upload_quality=None,
+            download_quality_advanced=outage, upload_quality_advanced=outage,
+        )
+
+        state = qos.get_status("wlan0")
+        assert state is not None
+        assert state.active
+        assert state.htb_installed and state.download_netem_installed
+        assert state.ifb_device is not None and state.upload_netem_installed
+        assert state.download_netem_params is not None
+        assert state.download_netem_params.packet_loss_percent == 100
+        # The last commands install netem; no root qdisc removal comes after them.
+        last_netem = max(i for i, c in enumerate(self.tc_calls) if "netem" in c)
+        assert not any(c[:2] == ["qdisc", "del"] for c in self.tc_calls[last_netem + 1:])
+
     def test_reset_quality_to_none(self, qos):
         qos.apply_qos("wlan0", download_quality=80)
         qos.apply_qos("wlan0", download_quality=None)

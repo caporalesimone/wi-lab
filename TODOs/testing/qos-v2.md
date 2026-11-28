@@ -29,16 +29,32 @@ How QoS works today:
 - The stop of the access point (and so every watchdog AP restart) stops the
   profile and removes the `tc` rules. The frontend has no QoS controls.
 
+## Already Done in 4.1
+
+- **Catalogue rewritten** (`wilab/data/qos-profiles/default.json`, same ids):
+  every profile that imitates a real network limits the bandwidth; latency and
+  loss are moderate and per direction (`satellite_link` 300 ms each way, about
+  600 ms of RTT); outages are `"advanced": {"packet_loss_percent": 100}`; no
+  jitter (point 3) and no corruption; `4g_train_tunnel`, `4g_to_3g_fallback`
+  and `progressive_degradation` are `once-hold-last`, so they no longer end on
+  the unshaped Wi-Fi.
+- **Bug fixed:** a step or inline request with only `advanced` (no speed, no
+  quality) was torn down right after being applied, because
+  `_InterfaceQosState.active` ignored `advanced`. The outage steps depend on it.
+- `docs/qos.md`: catalogue table and a note that values are per direction.
+
+The catalogue is still limited by the engine; the tasks under "Catalogue v2"
+below lift those limits.
+
 ## Problems Found
 
 ### Wrong or misleading numbers
 
 1. **The delay counts twice in the round trip.** The same netem settings go on
    the download (AP interface) and on the upload (IFB). `delay_ms: 600` gives
-   about 1200 ms of RTT. The table in `docs/qos.md` presents the values as the
-   delay of the link, and `satellite_link` (600 ms) simulates a 1.2 s RTT, while
-   a geostationary link has about 600 ms of RTT. Same for the quality table:
-   quality 50 is 500 ms of RTT, not 250 ms.
+   about 1200 ms of RTT. The quality table in `docs/qos.md` still lists one
+   direction only: quality 50 is 500 ms of RTT, not 250 ms. (The catalogue now
+   uses one-way values and `docs/qos.md` says so.)
 2. **Loss also counts twice.** 30% loss in each direction loses about 51% of the
    request and answer pairs (1 − 0.7²). A ping test reads "50% loss" at quality 0.
 3. **Jitter reorders packets.** netem with jitter and no `rate` sends packets in
@@ -48,9 +64,16 @@ How QoS works today:
 4. **Random loss, not bursts.** The loss is independent per packet. Radio loss
    comes in bursts (fading, handovers); netem supports this with
    `loss gemodel` (Gilbert-Elliott) or `loss state`.
-5. **Quality 0 is not "no signal".** It is 30% loss and 1 s of delay. The
-   `4g_train_tunnel` and `4g_rural` profiles use quality 0 for a tunnel or a
-   drop, where a real link loses everything.
+5. **Quality 0 is not "no signal".** It is 30% loss and 1 s of delay. (The
+   catalogue no longer uses quality; its tunnels and drops are 100% loss.)
+   The quality curve is also too steep: quality 50 is already 7.5% loss per
+   direction, a network TCP can hardly use, while on a real mobile link
+   retransmissions keep the IP loss under about 1% and the bandwidth drops
+   instead.
+   - **Steps last whole seconds.** `duration_sec` is an integer of at least 1, so
+     a cell handover (30–60 ms of interruption) can only be a 1 s outage.
+   - **One value for both directions.** `advanced` applies the same delay and
+     loss to download and upload; on 4G the upload usually has more of both.
 6. **netem queue limit.** netem keeps 1000 packets by default. With high delay
    and high rate (1 s at 100 Mbit/s is about 8300 packets) it drops packets that
    no setting asked to drop.
@@ -163,7 +186,7 @@ How QoS works today:
 
 ### Engine
 
-- [ ] Delay and loss mean **one direction**; the documentation says the RTT is the sum; the catalogue profiles are corrected (`satellite_link` 300 ms each way)
+- [ ] Delay and loss mean **one direction** everywhere: the state shows `rtt_added_ms`, the quality table in the documentation shows the RTT (the catalogue is already corrected)
 - [ ] No reordering: netem with `rate` or a `pfifo` child, so jitter does not reorder (check on the kernel in use)
 - [ ] `loss_model: random | bursty` (Gilbert-Elliott via `loss gemodel`), `duplicate_percent`, `reorder_percent` as explicit options
 - [ ] A step `outage: true` (100% loss) for tunnels and drops; `4g_train_tunnel` and `4g_rural` use it
@@ -176,6 +199,18 @@ How QoS works today:
 - [ ] Custom profiles in a configurable directory (`qos_profiles_dir` in `config.yaml`, default `/etc/wilab/qos-profiles`), loaded at startup
 - [ ] `_ensure_ifb` checks for the filter before adding it
 - [ ] The same `tc` tree hosts per-client classes ([rate limit](../clients/rate-limit.md)): the shared class `1:10` becomes the default class, and client classes are added beside it
+
+### Catalogue v2
+
+- [ ] Step durations in milliseconds (`duration_ms`, with `duration_sec` still accepted in files): handovers become 50 ms outages in `4g_highway`
+- [ ] Jitter back in the profiles (5–20 ms on 4G, more on satellite) once netem no longer reorders
+- [ ] Bursty loss (`loss_model: bursty`) in the mobile profiles instead of random loss
+- [ ] Separate download and upload values where real networks differ (4G upload: more delay and loss)
+- [ ] Softer `quality` curve: loss up to about 2–3% at quality 10, bandwidth reduced with the quality, quality 0 an outage; the table in `docs/qos.md` updated
+- [ ] Optional random variation of each step (`variation_percent`) so that loops do not repeat exactly
+- [ ] Check every profile with iperf3 and ping through the AP against reference measurements of real 4G, 3G and satellite links; adjust the numbers
+- [ ] New profiles: 5G (urban, mmWave drops), 3G only, EDGE, hotel Wi-Fi with captive-portal-like congestion, DSL, bufferbloat (deep queue under load)
+- [ ] During an outage DHCP and DNS of the AP are cut too; with `scope: internet` only the Internet traffic is
 
 ### Frontend
 

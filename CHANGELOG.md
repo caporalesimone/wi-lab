@@ -16,10 +16,10 @@ updates its date.
 
 | Item | Count |
 |---|---:|
-| ⚠️ Breaking changes | 14 |
+| ⚠️ Breaking changes | 13 |
 | ✨ New features | 7 |
-| 🐛 Bug fixes | 33 |
-| 🔧 Maintenance changes | 16 |
+| 🐛 Bug fixes | 35 |
+| 🔧 Maintenance changes | 17 |
 | 🔄 CI/CD changes | 2 |
 | ✅ Test changes | 8 |
 | 📦 Commits since 4.0.0 | 112 |
@@ -85,12 +85,14 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - The installer's API test checks `GET /api/v2/status` and fails the installation if the API does not answer; it called an endpoint that no longer exists.
 - `uninstall.sh` removes what a stopped service leaves: the `wilab-protect-existing` rule, `/tmp/wilab-*`, the systemd-networkd rule and QoS devices. `config.yaml` is kept.
 - Web UI, create: a cancelled start is no longer "started successfully", a transient error no longer ends the start, Stop and Release stay usable, and every `404` reason is a sentence (Fable REV-13).
+- QoS: a step or inline request with only `advanced` (no speed, no quality) was removed right after being applied; it now stays until the next step or the stop.
 - Web UI: a reload keeps the saved reservations unless the server answers `404`; Stop is enabled wherever the server accepts it; the dialog requires a password and counts bytes like the server (Fable REV-14).
 - Web UI: a connection error no longer suggests a CORS problem (Fable REV-17).
 - Web UI: the captive portal is chosen only in the create dialog; the antenna card no longer has its own toggle and shows only whether the running access point has a portal.
 
 ### 🔧 Maintenance
 
+- QoS catalogue (experimental) rewritten with realistic values: every network profile limits the bandwidth, latency and loss are moderate and per direction (`satellite_link` 300 ms each way), outages are `packet_loss_percent: 100`, no jitter, no corruption; the single-pass profiles hold their last step (`once-hold-last`). Same ids.
 - The journal tells real problems apart: `ERROR` only when someone must act. Lines carry their syslog priority (`journalctl -u wi-lab -p err` works) and `[ant=… res=…]`; the TX power warning appears once an hour per antenna (Fable ARCH-10).
 - Each AP keeps one control connection to hostapd instead of a `hostapd_cli` every 5 s: a crashed AP is restored in about a second (Fable PERF-4).
 - dnsmasq runs as a foreground child like hostapd, without PID files: an early failure reports dnsmasq's own message (Fable ARCH-6).
@@ -142,6 +144,7 @@ Counts are the entries of the sections below and `git rev-list --count aca248e..
 - Cancelling a start (release or `DELETE /access-point/{reservation_id}`) whose rollback fails: the release answers `200` (before: `404 reservation_invalidated` and the antenna quarantined); `DELETE /access-point/{reservation_id}` answers `503 / 1012`, repeat it (REV-2).
 - `GET /status`: `runtime_state: stop_failed` and `access_point_stop_incomplete` appear only after the client's own `DELETE /access-point/{reservation_id}` failed (REV-9).
 - A watchdog restore whose cleanup fails once now shows `runtime_state: restore_failed` and is retried, instead of `404 reservation_invalidated` (REV-10).
+- QoS (experimental): the built-in profiles have new values and three change mode from `once` to `once-hold-last` (`4g_train_tunnel`, `4g_to_3g_fallback`, `progressive_degradation`); a test that relied on their old numbers sees a different network.
 - QoS (experimental): `POST .../qos/profile` with different `download_quality` and `upload_quality`, or a quality with `advanced`, is now `422` (NET-11).
 - `GET /status` has a new field `restart_required` (`null` or `{service, system, since, message}`); `checks` a new check `os_updates`. Additive: it never makes the status `degraded`.
 - `GET /antennas/{interface}` has a new object `health` (repair budgets, quarantines, USB resets).

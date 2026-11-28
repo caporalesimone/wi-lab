@@ -47,6 +47,9 @@ class _InterfaceQosState:
             self.upload_speed_kbit,
             self.download_quality is not None,
             self.upload_quality is not None,
+            # A step with only `advanced` (an outage) is active too.
+            self.download_quality_advanced is not None,
+            self.upload_quality_advanced is not None,
         ])
 
 
