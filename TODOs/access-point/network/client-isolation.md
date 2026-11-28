@@ -17,6 +17,57 @@ the host, but clients of the same network always see each other.
 - [ ] Both shown in `GET /access-point/{reservation_id}`
 - [ ] Same-body check: different values are different settings (409 / 1008)
 
+## API Proposal
+
+### `POST /api/v2/access-point/{reservation_id}`
+
+New optional fields in the create body (only the changed section is shown; omitted fields keep today's behaviour).
+
+Request:
+
+```json
+{
+  "wifi": {
+    "client_isolation": true,
+    "max_clients": 5
+  }
+}
+```
+
+Response `202`:
+
+```json
+{
+  "runtime_state": "starting",
+  "active": false
+}
+```
+
+Errors: `422` with the field path for an invalid value.
+
+### `GET /api/v2/access-point/{reservation_id}`
+
+The values in use, in the same section of the answer.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "wifi": {
+    "ssid": "lab-net",
+    "hidden": false,
+    "client_isolation": true,
+    "max_clients": 5,
+    "security": {
+      "encryption": "wpa2",
+      "password": "testpass123"
+    }
+  }
+}
+```
+
 ## Testing
 
 - [ ] Unit tests for the hostapd lines

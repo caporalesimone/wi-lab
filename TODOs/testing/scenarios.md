@@ -16,6 +16,106 @@ Run a list of timed steps on a reservation (at 30 s Internet off, at 60 s QoS
 - [ ] Progress and results in `GET .../scenario` and in the event stream
 - [ ] Stop on reservation end; one scenario per reservation
 
+## API Proposal
+
+### `POST /api/v2/reservations/{reservation_id}/scenario`
+
+Start a scenario on the reservation.
+
+Request:
+
+```json
+{
+  "steps": [
+    {
+      "at_seconds": 30,
+      "action": "internet",
+      "parameters": {
+        "enabled": false
+      }
+    },
+    {
+      "at_seconds": 60,
+      "action": "qos_profile",
+      "parameters": {
+        "profile_id": "3g"
+      }
+    },
+    {
+      "at_seconds": 90,
+      "action": "fault",
+      "parameters": {
+        "type": "client_disconnect",
+        "mac": "aa:bb:cc:dd:ee:ff"
+      }
+    },
+    {
+      "at_seconds": 120,
+      "action": "internet",
+      "parameters": {
+        "enabled": true
+      }
+    }
+  ],
+  "repeat": 1
+}
+```
+
+Response `201`:
+
+```json
+{
+  "scenario_id": "s-5",
+  "state": "running",
+  "started_at": "2026-11-28T10:00:00Z"
+}
+```
+
+Errors: `404` with `detail.reason` when the reservation is gone; `409 / 1020 scenario_running` (new code); `422 validation_error` with the field path.
+
+### `GET /api/v2/reservations/{reservation_id}/scenario`
+
+Progress and the result of each step.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "scenario_id": "s-5",
+  "state": "running",
+  "steps": [
+    {
+      "at_seconds": 30,
+      "action": "internet",
+      "state": "done",
+      "result": 200
+    },
+    {
+      "at_seconds": 60,
+      "action": "qos_profile",
+      "state": "pending"
+    }
+  ]
+}
+```
+
+### `DELETE /api/v2/reservations/{reservation_id}/scenario`
+
+Stop the scenario (steps already applied stay).
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "scenario_id": "s-5",
+  "state": "stopped"
+}
+```
+
 ## Testing
 
 - [ ] Unit tests with a fake clock for timing and failure of a step

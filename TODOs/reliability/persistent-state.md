@@ -17,6 +17,32 @@ Today they are in memory: a restart ends every reservation and the clients get
 - [ ] At startup: restore, drop expired reservations, restart networks or mark them stopped
 - [ ] Keep the startup cleanup consistent with restored state
 
+## API Proposal
+
+### `GET /api/v2/status`
+
+New check `restored_state` after a restart (shortened).
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "checks": {
+    "restored_state": {
+      "restored_at": "2026-11-28T00:15:43Z",
+      "reservations": 2,
+      "access_points_restarted": 1,
+      "dropped_expired": 1,
+      "errors": []
+    }
+  }
+}
+```
+
+Reservations and access points keep their IDs and answers; no other API change.
+
 ## Testing
 
 - [ ] Restart with active reservations: they survive with the right expiry

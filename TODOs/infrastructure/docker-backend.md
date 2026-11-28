@@ -39,6 +39,25 @@ hostapd without building on the host), not isolation.
 - [ ] Health check plus `restart: unless-stopped`, keeping the restart-only-when-idle rule
 - [ ] Container as an alternative first; the only install only after a long run passes
 
+## API Proposal
+
+### `GET /api/v2/health/live`
+
+Liveness for the container health check, without the token.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "alive": true,
+  "version": "4.2.0"
+}
+```
+
+Answers `503` with `{"alive": false, "stale_loops": ["watchdog:wlx7419f8176286"]}` when a background loop stalled; the container restarts only when no reservation is active, as the systemd watchdog does today.
+
 ## Testing
 
 - [ ] Unit tests in the image; e2e and long run against the container on the lab machine

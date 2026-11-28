@@ -22,6 +22,55 @@ A local server separates the Wi-Fi link from the rest of the path.
 - [ ] Open only that port in the host guard, only on that interface
 - [ ] Show the address in `GET /access-point/{reservation_id}`
 
+## API Proposal
+
+### `POST /api/v2/access-point/{reservation_id}`
+
+New optional fields in the create body (only the changed section is shown; omitted fields keep today's behaviour).
+
+Request:
+
+```json
+{
+  "throughput_server": {
+    "enabled": true,
+    "kinds": [
+      "iperf3",
+      "web"
+    ]
+  }
+}
+```
+
+Response `202`:
+
+```json
+{
+  "runtime_state": "starting",
+  "active": false
+}
+```
+
+Errors: `422` with the field path for an invalid value.
+
+### `GET /api/v2/access-point/{reservation_id}`
+
+The values in use, in the same section of the answer.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "throughput_server": {
+    "enabled": true,
+    "iperf3": "192.168.120.1:5201",
+    "web": "http://192.168.120.1:8082/"
+  }
+}
+```
+
 ## Testing
 
 - [ ] Unit tests for the process lifecycle and the host guard rule

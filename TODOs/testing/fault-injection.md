@@ -22,6 +22,68 @@ Runtime commands on a running AP (power change, channel switch, reload) have hun
 - [ ] DNS failures (see [dns-manipulation.md](dns-manipulation.md))
 - [ ] Active faults shown in `GET /access-point`; the watchdog must not repair an injected fault
 
+## API Proposal
+
+### `POST /api/v2/access-point/{reservation_id}/faults`
+
+Inject a fault.
+
+Request:
+
+```json
+{
+  "type": "dhcp_no_answer",
+  "duration_seconds": 120,
+  "parameters": {}
+}
+```
+
+Response `201`:
+
+```json
+{
+  "fault_id": "f-2",
+  "type": "dhcp_no_answer",
+  "active_until": "2026-11-28T10:02:00Z"
+}
+```
+
+Errors: `409 / 1007 access_point_not_active` without a running access point; `422 validation_error` with the field path (unknown type or parameters).
+
+Types: `client_disconnect` (`{"mac": ...}`), `password_change` (`{"password": ...}`), `ap_restart`, `dhcp_no_answer`, `dhcp_wrong_gateway` (`{"gateway": ...}`), `dns_failure` (`{"mode": "servfail"}`).
+
+### `GET /api/v2/access-point/{reservation_id}/faults`
+
+Active faults.
+
+Request: no body.
+
+Response `200`:
+
+```json
+[
+  {
+    "fault_id": "f-2",
+    "type": "dhcp_no_answer",
+    "active_until": "2026-11-28T10:02:00Z"
+  }
+]
+```
+
+### `DELETE /api/v2/access-point/{reservation_id}/faults/{fault_id}`
+
+Clear a fault early.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "detail": "Fault f-2 cleared"
+}
+```
+
 ## Testing
 
 - [ ] Unit tests per fault type, including the watchdog exemption

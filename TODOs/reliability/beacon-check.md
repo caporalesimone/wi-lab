@@ -28,6 +28,54 @@ sent +61 TX packets in 5 s then; on 2026-11-27 (kernel 7.0.0-44) it showed +3 in
 - [ ] A failed check is a radio failure: retried, then `start_failed` with a clear message
 - [ ] Optional: check every antenna at Wi-Lab startup and mark failing drivers unavailable, with the reason visible in `/antennas`
 
+## API Proposal
+
+### `POST /api/v2/access-point/{reservation_id}`
+
+No new field: a start whose beacon check fails ends as `start_failed` (after the retries).
+
+Request: no body.
+
+Response `200`: no body.
+
+Polling then reads:
+
+```json
+{
+  "active": false,
+  "runtime_state": "start_failed",
+  "error": {
+    "code": 1013,
+    "reason": "startup_failed",
+    "stage": "beacon_check",
+    "message": "AP started but the radio sent no beacon in 5 s (driver rtw88_8822bu)"
+  }
+}
+```
+
+### `GET /api/v2/antennas`
+
+An antenna excluded at startup by the check shows why.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "antennas": [
+    {
+      "interface": "wlx001122334455",
+      "display_name": "realtek-1",
+      "reservation": null,
+      "access_point_active": false,
+      "recovery_state": "unavailable",
+      "unavailable_reason": "no beacons in AP mode (driver rtw88_8822bu)"
+    }
+  ]
+}
+```
+
 ## Testing
 
 - [ ] Unit tests with fake counters: passing, failing, driver without the option

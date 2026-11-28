@@ -20,6 +20,35 @@ Runtime commands on a running AP (power change, channel switch, reload) have hun
 - [ ] Update the network's channel, subnet rules unchanged; the watchdog must not take the switch for a fault
 - [ ] Report clients that did not follow (gone after the switch)
 
+## API Proposal
+
+### `POST /api/v2/access-point/{reservation_id}/channel-switch`
+
+Move the running access point with a channel switch announcement.
+
+Request:
+
+```json
+{
+  "channel": 44,
+  "channel_width": 40,
+  "beacons_before_switch": 5
+}
+```
+
+Response `200`:
+
+```json
+{
+  "channel": 44,
+  "channel_width": 40,
+  "clients_before": 2,
+  "clients_after": 2
+}
+```
+
+Errors: `409 / 1007 access_point_not_active` without a running access point; `503 / 1006 device_busy` while another operation holds the antenna; `422 validation_error` with the field path (the target is validated like a create).
+
 ## Testing
 
 - [ ] Unit tests with a mocked control socket

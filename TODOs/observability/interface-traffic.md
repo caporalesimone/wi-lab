@@ -16,6 +16,44 @@ directions, with rolling averages, to see the load of a network over time.
 - [ ] `traffic` section in `GET /access-point/{reservation_id}`
 - [ ] Same timestamps and sampling as the client statistics ([statistics.md](../clients/statistics.md))
 
+## API Proposal
+
+### `GET /api/v2/access-point/{reservation_id}`
+
+New `traffic` section in the answer (shortened).
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "traffic": {
+    "sampled_at": "2026-11-28T10:00:05Z",
+    "tx": {
+      "bytes": 450105464,
+      "packets": 712868,
+      "errors": 0,
+      "dropped": 0,
+      "kbit_1m": 74200,
+      "kbit_5m": 31800,
+      "kbit_15m": 12100
+    },
+    "rx": {
+      "bytes": 433522625,
+      "packets": 925891,
+      "errors": 0,
+      "dropped": 0,
+      "kbit_1m": 2100,
+      "kbit_5m": 900,
+      "kbit_15m": 400
+    }
+  }
+}
+```
+
+`tx` is what the access point sent to its clients (download for them), `rx` what it received.
+
 ## Testing
 
 - [ ] Unit tests for the counters and averages

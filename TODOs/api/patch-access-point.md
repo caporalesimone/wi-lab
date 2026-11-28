@@ -18,6 +18,38 @@ create body, e.g. `{"internet": {"enabled": false}}`. Postponed on 2026-11-25.
 - [ ] Keep the old paths for one version, deprecated in Swagger, then remove them
 - [ ] Frontend: use the PATCH
 
+## API Proposal
+
+### `PATCH /api/v2/access-point/{reservation_id}`
+
+Change what can change on a running access point, with the sections of the create body.
+
+Request:
+
+```json
+{
+  "internet": {
+    "enabled": false
+  }
+}
+```
+
+Response `200`:
+
+```json
+{
+  "interface": "wlx7419f8176286",
+  "active": true,
+  "internet": {
+    "enabled": false
+  }
+}
+```
+
+Errors: `409 / 1007 access_point_not_active` without a running access point; `422 validation_error` with the field path (`radio: cannot change on a running access point`); `404` with `detail.reason` when the reservation is gone.
+
+Replaces `POST /api/v2/access-point/{reservation_id}/internet/enable` and `.../disable`. The answer is the full access point, as `GET` returns it (shortened here).
+
 ## Testing
 
 - [ ] The same tests as the internet actions, through PATCH

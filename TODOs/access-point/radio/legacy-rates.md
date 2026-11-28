@@ -17,6 +17,85 @@ only because TKIP turns HT off) and the rate set is hostapd's default.
 - [ ] A preset to drop the 802.11b rates on 2.4 GHz (no 1, 2, 5.5, 11 Mbit/s)
 - [ ] Validation: basic rates are a subset of supported rates; rates valid for the band
 
+## API Proposal
+
+### `POST /api/v2/access-point/{reservation_id}`
+
+New optional fields in the create body (only the changed section is shown; omitted fields keep today's behaviour).
+
+Request:
+
+```json
+{
+  "radio": {
+    "band": "2.4ghz",
+    "channel": 6,
+    "wifi_generation": 3,
+    "supported_rates": [
+      6,
+      9,
+      12,
+      18,
+      24,
+      36,
+      48,
+      54
+    ],
+    "basic_rates": [
+      6,
+      12,
+      24
+    ]
+  }
+}
+```
+
+Response `202`:
+
+```json
+{
+  "runtime_state": "starting",
+  "active": false
+}
+```
+
+Errors: `422` with the field path for an invalid value.
+
+### `GET /api/v2/access-point/{reservation_id}`
+
+The values in use, in the same section of the answer.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "radio": {
+    "band": "2.4ghz",
+    "channel": 6,
+    "wifi_generation": 3,
+    "supported_rates": [
+      6,
+      9,
+      12,
+      18,
+      24,
+      36,
+      48,
+      54
+    ],
+    "basic_rates": [
+      6,
+      12,
+      24
+    ]
+  }
+}
+```
+
+`wifi_generation: 3` means 802.11a/g without HT. Rates are in Mbit/s; `basic_rates` must be a subset of `supported_rates`.
+
 ## Testing
 
 - [ ] Unit tests for the hostapd lines

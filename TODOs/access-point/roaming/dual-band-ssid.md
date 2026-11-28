@@ -16,6 +16,82 @@ dual-band home router, to test band choice and band steering of clients.
 - [ ] Optional band steering: refuse 2.4 GHz associations of dual-band clients for a few seconds
 - [ ] Client list with the band of each client
 
+## API Proposal
+
+### `POST /api/v2/access-point/{reservation_id}`
+
+New optional fields in the create body (only the changed section is shown; omitted fields keep today's behaviour).
+
+Request:
+
+```json
+{
+  "radios": [
+    {
+      "band": "2.4ghz",
+      "channel": 6
+    },
+    {
+      "band": "5ghz",
+      "channel": 36
+    }
+  ],
+  "wifi": {
+    "ssid": "lab-dual",
+    "security": {
+      "encryption": "wpa2",
+      "password": "testpass123"
+    }
+  },
+  "band_steering": true
+}
+```
+
+Response `202`:
+
+```json
+{
+  "runtime_state": "starting",
+  "active": false
+}
+```
+
+Errors: `422` with the field path for an invalid value.
+
+### `GET /api/v2/access-point/{reservation_id}`
+
+The values in use, in the same section of the answer.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "radios": [
+    {
+      "interface": "wlx7419f8176286",
+      "band": "2.4ghz",
+      "channel": 6
+    },
+    {
+      "interface": "wlx7419f817651c",
+      "band": "5ghz",
+      "channel": 36
+    }
+  ],
+  "band_steering": true,
+  "clients": [
+    {
+      "mac": "aa:bb:cc:dd:ee:ff",
+      "band": "5ghz"
+    }
+  ]
+}
+```
+
+Needs a reservation with both antennas (see [fast-roaming.md](fast-roaming.md)). `radios` replaces `radio` in this mode.
+
 ## Testing
 
 - [ ] Unit tests for the paired configuration

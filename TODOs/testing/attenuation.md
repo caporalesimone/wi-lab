@@ -20,7 +20,36 @@ loss, latency and bandwidth, not signal level.
 
 - [ ] Choose hardware: programmable RF attenuators between the antenna connectors and a shielded box, or a shielded box per client
 - [ ] Driver for the attenuator (USB/serial/Ethernet API)
-- [ ] `POST /access-point/{reservation_id}/attenuation` with dB; in scenarios as a step
+- [ ] `PUT /access-point/{reservation_id}/attenuation` with dB; in scenarios as a step
+
+## API Proposal
+
+### `PUT /api/v2/access-point/{reservation_id}/attenuation`
+
+Set the attenuation between the access point and the clients (needs the attenuator hardware).
+
+Request:
+
+```json
+{
+  "db": 30
+}
+```
+
+Response `200`:
+
+```json
+{
+  "db": 30,
+  "device": "attenuator-1",
+  "range_db": [
+    0,
+    95
+  ]
+}
+```
+
+Errors: `409 / 1007 access_point_not_active` without a running access point; `503 / 1021 attenuator_unavailable` (new code); `422 validation_error` with the field path (`db: 0 to 95`).
 
 ## Testing
 

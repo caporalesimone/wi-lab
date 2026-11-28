@@ -28,6 +28,70 @@ tested on IPv6.
 - [ ] `GET /access-point/{reservation_id}`: `ip.ipv6` with prefix, gateway and mode
 - [ ] Client list: IPv6 addresses of each client (from the neighbour table)
 
+## API Proposal
+
+### `POST /api/v2/access-point/{reservation_id}`
+
+New optional fields in the create body (only the changed section is shown; omitted fields keep today's behaviour).
+
+Request:
+
+```json
+{
+  "ip": {
+    "ipv6": {
+      "mode": "dual",
+      "dhcpv6": false
+    }
+  }
+}
+```
+
+Response `202`:
+
+```json
+{
+  "runtime_state": "starting",
+  "active": false
+}
+```
+
+Errors: `422` with the field path for an invalid value.
+
+### `GET /api/v2/access-point/{reservation_id}`
+
+The values in use, in the same section of the answer.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "ip": {
+    "subnet": "192.168.120.0/24",
+    "gateway": "192.168.120.1",
+    "ipv6": {
+      "mode": "dual",
+      "prefix": "fd57:1a8b:120::/64",
+      "gateway": "fd57:1a8b:120::1",
+      "dhcpv6": false
+    }
+  },
+  "clients": [
+    {
+      "mac": "aa:bb:cc:dd:ee:ff",
+      "ip": "192.168.120.23",
+      "ipv6": [
+        "fd57:1a8b:120::a8bb:ccff:fedd:eeff"
+      ]
+    }
+  ]
+}
+```
+
+`mode`: `off` (default), `dual`, `only`. With `only` clients get no IPv4 lease; `ip.subnet` stays for the gateway's own IPv4 address.
+
 ## Testing
 
 - [ ] Unit tests for the dnsmasq configuration per mode

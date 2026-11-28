@@ -18,6 +18,75 @@ DNS server is the global `dns_server` of `config.yaml`).
 - [ ] Validation: range inside the subnet, not the gateway, fixed addresses inside the subnet and unique
 - [ ] `GET /access-point/{reservation_id}`: the values in use in `ip`
 
+## API Proposal
+
+### `POST /api/v2/access-point/{reservation_id}`
+
+New optional fields in the create body (only the changed section is shown; omitted fields keep today's behaviour).
+
+Request:
+
+```json
+{
+  "ip": {
+    "dhcp": {
+      "lease_seconds": 120,
+      "range": {
+        "start": "192.168.120.50",
+        "end": "192.168.120.99"
+      },
+      "dns_server": "1.1.1.1",
+      "fixed": [
+        {
+          "mac": "aa:bb:cc:dd:ee:ff",
+          "ip": "192.168.120.10"
+        }
+      ]
+    }
+  }
+}
+```
+
+Response `202`:
+
+```json
+{
+  "runtime_state": "starting",
+  "active": false
+}
+```
+
+Errors: `422 validation_error` with the field path (e.g. `ip.dhcp.range.start: outside the subnet`).
+
+### `GET /api/v2/access-point/{reservation_id}`
+
+The values in use, in the same section of the answer.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "ip": {
+    "subnet": "192.168.120.0/24",
+    "gateway": "192.168.120.1",
+    "dhcp_range": {
+      "start": "192.168.120.50",
+      "end": "192.168.120.99"
+    },
+    "dns_server": "1.1.1.1",
+    "lease_seconds": 120,
+    "fixed": [
+      {
+        "mac": "aa:bb:cc:dd:ee:ff",
+        "ip": "192.168.120.10"
+      }
+    ]
+  }
+}
+```
+
 ## Testing
 
 - [ ] Unit tests for the generated dnsmasq configuration

@@ -16,6 +16,53 @@ and delivery delays of battery and IoT devices.
 - [ ] hostapd `beacon_int`, `dtim_period`; validate the ranges hostapd accepts
 - [ ] Shown in `GET /access-point/{reservation_id}`
 
+## API Proposal
+
+### `POST /api/v2/access-point/{reservation_id}`
+
+New optional fields in the create body (only the changed section is shown; omitted fields keep today's behaviour).
+
+Request:
+
+```json
+{
+  "radio": {
+    "beacon_interval_tu": 200,
+    "dtim_period": 3
+  }
+}
+```
+
+Response `202`:
+
+```json
+{
+  "runtime_state": "starting",
+  "active": false
+}
+```
+
+Errors: `422 validation_error` with the field path (`beacon_interval_tu` 15-65535, `dtim_period` 1-255).
+
+### `GET /api/v2/access-point/{reservation_id}`
+
+The values in use, in the same section of the answer.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "radio": {
+    "band": "5ghz",
+    "channel": 36,
+    "beacon_interval_tu": 200,
+    "dtim_period": 3
+  }
+}
+```
+
 ## Testing
 
 - [ ] Unit tests for the hostapd lines and the validation

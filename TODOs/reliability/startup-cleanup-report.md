@@ -17,6 +17,33 @@ files and QoS devices are removed and logged, but only the journal shows it.
 - [ ] `checks.startup_cleanup` in `GET /status`: time, counts, failed steps
 - [ ] Decide whether a failed step keeps `service.health` `degraded` until a later cleanup succeeds
 
+## API Proposal
+
+### `GET /api/v2/status`
+
+New check `startup_cleanup` in `checks` (shortened).
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "checks": {
+    "startup_cleanup": {
+      "ran_at": "2026-11-28T00:15:43Z",
+      "removed": {
+        "processes": 1,
+        "firewall_rules": 6,
+        "runtime_files": 4,
+        "qos_devices": 0
+      },
+      "failed_steps": []
+    }
+  }
+}
+```
+
 ## Testing
 
 - [ ] A startup with leftovers of each kind, and one with a failing step

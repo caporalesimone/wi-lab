@@ -19,6 +19,26 @@ Runtime commands on a running AP (power change, channel switch, reload) have hun
 - [ ] Endpoint `POST /access-point/{reservation_id}/radar` (only on DFS channels)
 - [ ] Report the channel the AP moved to (`channel` already follows hostapd after a radar event, REV-12)
 
+## API Proposal
+
+### `POST /api/v2/access-point/{reservation_id}/radar`
+
+Simulate a radar detection on the current DFS channel.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "previous_channel": 100,
+  "channel": 36,
+  "clients_after": 1
+}
+```
+
+Errors: `409 / 1007 access_point_not_active` without a running access point; `409 / 1015 not_dfs_channel` (new code) when the access point is not on a DFS channel.
+
 ## Testing
 
 - [ ] Unit tests for the endpoint rules (DFS channels only)

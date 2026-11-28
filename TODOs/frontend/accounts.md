@@ -30,6 +30,80 @@ events and logs, so it comes before those APIs.
 - [ ] B: session backend in the frontend container
 - [ ] C: users, roles, login; reservations owned by a user; protected commands for the administrator
 
+## API Proposal
+
+Only for option C (option B keeps the API as it is; the session lives in the frontend container).
+
+### `POST /api/v2/auth/login`
+
+Log in and receive a token for this user.
+
+Request:
+
+```json
+{
+  "username": "alice",
+  "password": "s3cret!"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "token": "eyJ...",
+  "expires_at": "2026-11-28T18:00:00Z",
+  "user": {
+    "username": "alice",
+    "role": "user"
+  }
+}
+```
+
+Errors: `401 unauthorized` for wrong credentials.
+
+### `GET /api/v2/auth/me`
+
+The user of the token.
+
+Request: no body.
+
+Response `200`:
+
+```json
+{
+  "username": "alice",
+  "role": "user"
+}
+```
+
+### `POST /api/v2/users`
+
+Create a user (administrator only).
+
+Request:
+
+```json
+{
+  "username": "bob",
+  "password": "pa55word",
+  "role": "user"
+}
+```
+
+Response `201`:
+
+```json
+{
+  "username": "bob",
+  "role": "user"
+}
+```
+
+Errors: `403 forbidden` for a non-administrator; `409 / 1022 user_exists` (new code).
+
+With users, `GET /api/v2/antennas` shows `"owner": "alice"` on reserved antennas, and a user can act only on their own reservations (`403` otherwise).
+
 ## Testing
 
 - [ ] C: a user cannot see or change another user's reservation; the administrator can
