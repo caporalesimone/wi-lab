@@ -181,6 +181,12 @@ How QoS works today:
 
 - [ ] On the antenna card with a running access point: profile picker from the catalogue, static form (download, upload, quality), stop button
 - [ ] Current step and applied values, refreshed with the card
+- [ ] Load a JSON file of profiles from the user's computer, in the same format as the catalogue files (an array of profiles, as `default.json`):
+  - [ ] Read in the browser, no upload to the server: the profiles join the picker for the session, marked "from file"
+  - [ ] Checked in the browser against the step rules (the JSON schema generated from the model, served by the API), with the error and the profile id shown for each invalid profile
+  - [ ] The chosen profile is sent whole in the `profile` field of `PUT .../qos`, so the server needs no file and no restart
+  - [ ] The file name and the profiles loaded are kept in the browser storage, so a reload keeps them
+  - [ ] Export: download the running profile, or a catalogue one, as a JSON file to edit and load again
 
 ### Documentation
 
@@ -225,6 +231,16 @@ Response `200`:
 One profile of the catalogue, in the same format as an item of the list.
 
 Errors: `404 not_found` for an unknown id.
+
+### `GET /api/v2/qos/profile-schema`
+
+The JSON schema of a profile file (an array of profiles), generated from the
+Pydantic model. The frontend uses it to check a file the user loads before
+sending a profile. No authentication.
+
+Request: no body.
+
+Response `200`: a JSON schema (draft 2020-12), the same rules as the server.
 
 ### `PUT /api/v2/access-point/{reservation_id}/qos`
 
@@ -371,3 +387,4 @@ Errors: `409 / 1007`, `409 / 1012`, `503 / 1006`.
 - ✅ A tester sees from `GET` what is applied now and how the last run ended
 - ✅ DHCP and DNS keep working at the worst quality with `scope: internet`
 - ✅ The frontend starts and stops a profile
+- ✅ A JSON file of profiles loaded in the frontend runs on the access point without touching the server's files
