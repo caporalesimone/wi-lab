@@ -21,7 +21,7 @@ flowchart LR
     end
 
     subgraph Process["Wi-Lab process (Uvicorn + FastAPI)"]
-        R["Routes /api/v2<br/>reservations, antennas, network, internet,<br/>txpower, qos, status"]
+        R["Routes /api/v2<br/>reservations, antennas, access point, internet,<br/>qos, status"]
         D["AppContext (context.py)<br/>every singleton, start and stop"]
         RM["ReservationManager<br/>reservations, quarantine"]
         NM["NetworkManager<br/>AP lifecycle"]
@@ -99,7 +99,7 @@ flowchart LR
 | `wilab/reservation.py` | In-memory reservation store, expiry, quarantine state. |
 | `wilab/wifi/manager.py` | `NetworkManager`: start/stop pipeline, expiry loop; owns the parts below and keeps their public methods (`list_clients`, `set_tx_power_level`, `get_tx_power_info`) as delegates. |
 | `wilab/wifi/startup.py` | One AP start attempt through its stages (`StartAttempt`), the internal retry (`RetryPolicy`, `run_startup`) with rollback, `StartupFailure` and the stage names. |
-| `wilab/wifi/txpower.py` | `TxPowerControl`: the four TX power levels of a channel, setting and reading them with `iw`, `TxPowerMismatchError`. |
+| `wilab/wifi/txpower.py` | `TxPowerControl`: the four TX power levels of a channel, applied with `iw` once after each AP start (`radio.tx_power_level`); the MT7921U ignores them in AP mode. |
 | `wilab/wifi/clients.py` | `ClientLister`: associated stations with a DHCP lease, the 1.5 s client cache, the client MAC lookup of the captive portal. |
 | `wilab/network/subnet_allocator.py` | `SubnetAllocator`: one `/24` per antenna from `dhcp_base_network`, never one in use on the host. |
 | `wilab/health.py` | Health checks that run host commands (hostapd and dnsmasq alive, NAT rules; the upstream link only for display), refreshed every 10 s by the `health-checks` thread; `/status` reads the latest result and runs no command (recomputed by the reader only if older than 20 s). |

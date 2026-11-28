@@ -28,10 +28,11 @@ string (`"6"`), `true` for a number, or a number for a boolean is a `422`.
 
 **Not stable in 4.1:**
 
-- **TX power** (`GET`/`POST /access-point/{reservation_id}/tx-power`, and `radio.tx_power_level` beyond its
-  validation) is under debugging: the drivers in use do not apply the requested
-  power reliably, so a change may answer `422` or report another level. The
-  field of `POST /access-point/{reservation_id}/tx-power` is `tx_power_level`, as in the create.
+- **TX power** (`radio.tx_power_level` beyond its validation): the MT7921U in AP
+  mode ignores the level and always transmits at its calibrated maximum (about
+  18 dBm, measured on 2026-11-28), and `radio.tx_power.reported_dbm` comes from
+  a driver value that is always 3 dBm. The endpoints that read and changed the
+  power of a running AP were removed in 4.1.0.
 - **QoS profiles** ([QoS](qos.md)) are experimental and untested.
 
 Both may change in any release: do not build client logic on them.
@@ -724,7 +725,7 @@ sequenceDiagram
         Note over C: Show degraded with the affected antenna
     end
     opt Change the running network
-        C->>W: POST /access-point/{reservation_id}/internet/enable or disable, POST /access-point/{reservation_id}/tx-power, POST or DELETE .../qos/profile
+        C->>W: POST /access-point/{reservation_id}/internet/enable or disable, POST or DELETE .../qos/profile
         alt 200
             W-->>C: applied
         else 409 / 1007

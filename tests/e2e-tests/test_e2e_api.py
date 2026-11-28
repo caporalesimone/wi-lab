@@ -181,7 +181,6 @@ def test_actions_without_a_network_share_one_status_code(wilab: WiLab) -> None:
         "qos/profile": wilab.http.post(
             f"/reservations/{rid}/qos/profile", json={"profile_id": first_profile},
         ).status_code,
-        "txpower": wilab.http.post(f"/access-point/{rid}/tx-power", json={"tx_power_level": 2}).status_code,
     }
     assert set(codes.values()) == {409}, codes  # 409 / 1007 access_point_not_active (API-2)
 
@@ -263,29 +262,6 @@ def test_network_without_internet_is_not_degraded(wilab: WiLab) -> None:
     antenna = wilab.reserve()
     assert wilab.create(antenna, internet_enabled=False).status_code == 200
     assert wilab.status()["service"]["health"] == "good"
-
-
-@pending("BUG-7")
-def test_txpower_reports_what_the_radio_applied(wilab: WiLab, server: Server) -> None:
-    antenna = wilab.reserve()
-    assert wilab.create(antenna).status_code == 200
-    rid = antenna.reservation_id
-    for level in (1, 2, 3, 4):
-        assert wilab.http.post(f"/access-point/{rid}/tx-power", json={"tx_power_level": level}).status_code == 200
-        reported = wilab.http.get(f"/access-point/{rid}/tx-power").json()["tx_power"]["reported_dbm"]
-        on_air = server.iw_txpower_dbm(antenna.interface)
-        assert reported is not None and on_air is not None
-        assert abs(reported - on_air) < 0.5, (level, reported, on_air)
-
-
-@pending("PERF-6")
-def test_txpower_change_is_fast(wilab: WiLab) -> None:
-    antenna = wilab.reserve()
-    assert wilab.create(antenna).status_code == 200
-    start = time.monotonic()
-    response = wilab.http.post(f"/access-point/{antenna.reservation_id}/tx-power", json={"tx_power_level": 3})
-    assert response.status_code == 200
-    assert time.monotonic() - start < 3
 
 
 def test_status_never_flaps_to_degraded_during_create_delete(wilab: WiLab) -> None:

@@ -23,8 +23,6 @@ def idle_reservation(app):
 ACTIONS = [
     ("post", "/access-point/{rid}/internet/enable", None),
     ("post", "/access-point/{rid}/internet/disable", None),
-    ("get", "/access-point/{rid}/tx-power", None),
-    ("post", "/access-point/{rid}/tx-power", {"tx_power_level": 2}),
     ("post", "/reservations/{rid}/qos/profile", {"download_speed_kbit": 1000}),
     ("get", "/reservations/{rid}/qos/profile", None),
     ("delete", "/reservations/{rid}/qos/profile", None),
@@ -67,7 +65,6 @@ def test_openapi_documents_1007():
     paths = create_app().openapi()["paths"]
     for path, method in (
         ("/api/v2/access-point/{reservation_id}/internet/enable", "post"),
-        ("/api/v2/access-point/{reservation_id}/tx-power", "get"),
         ("/api/v2/reservations/{reservation_id}/qos/profile", "post"),
     ):
         assert "1007" in paths[path][method]["responses"]["409"]["description"], (path, method)
@@ -77,7 +74,6 @@ def test_openapi_documents_1007():
 @pytest.mark.parametrize(("method", "path", "manager_call"), [
     ("post", "/internet/enable", "enable_internet"),
     ("post", "/internet/disable", "disable_internet"),
-    ("get", "/tx-power", "get_tx_power_info"),
 ])
 def test_an_internal_error_on_a_valid_reservation_is_never_404(idle_reservation, monkeypatch, method, path, manager_call, context):
     """REV-11 point 2: a 404 on these calls always means the reservation ended."""

@@ -11,7 +11,6 @@ from wilab.network.commands import CommandError, CommandTimeout
 from wilab.network.dhcp import DhcpServerError
 from wilab.wifi import hostapd
 from wilab.wifi.manager import NetworkManager, NetworkNotActive
-from wilab.wifi.txpower import TxPowerMismatchError
 
 
 class TestNetworkManagerInit:
@@ -710,7 +709,7 @@ class TestTxPower:
         monkeypatch.setattr(mgr.isolation_manager, 'add_network', lambda *a, **k: None)
 
         calls = []
-        def fake_set_tx_power(interface, level, channel, verify_change=False):
+        def fake_set_tx_power(interface, level, channel):
             calls.append((interface, level, channel))
             return {
                 'interface': interface,
@@ -738,89 +737,6 @@ class TestTxPower:
         # Hardware-independent: verify interface from config, not hardcoded
         cfg_interface = cfg.antennas[0].interface
         assert calls[-1] == (cfg_interface, 3, 6)
-
-    def test_set_tx_power_level(self, monkeypatch):
-        cfg = load_config()
-        mgr = NetworkManager(cfg, configured_devices(cfg))
-
-        monkeypatch.setattr(mgr.dhcp_server, 'start', lambda **kwargs: {'gateway': '192.168.120.1'})
-        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda **kwargs: {})
-        monkeypatch.setattr(mgr.nat_manager, 'enable_nat', lambda *a, **k: None)
-        monkeypatch.setattr(mgr.isolation_manager, 'add_network', lambda *a, **k: None)
-
-        def fake_set_tx_power(interface, level, channel, verify_change=False):
-            return {
-                'interface': interface,
-                'max_dbm': 20.0,
-                'levels_dbm': {1: 5.0, 2: 10.0, 3: 15.0, 4: 20.0},
-                'tx_power': {
-                    'requested_level': level,
-                    'reported_level': level if not verify_change else None,
-                    'reported_dbm': float(level * 5) if not verify_change else None,
-                },
-            }
-
-        monkeypatch.setattr(mgr.tx_power, 'set_level', fake_set_tx_power)
-
-        req = NetworkCreateRequest(
-            ssid='TestAP',
-            channel=6,
-            encryption='open',
-            band='2.4ghz',
-            tx_power_level=4
-        )
-
-        mgr.start_network('wls16', req)
-        info = mgr.set_tx_power_level('wls16', 2)
-        assert info['tx_power']['requested_level'] == 2
-        assert mgr.active['wls16'].tx_power_level == 2
-
-        # GET should reflect the last level
-        info2 = mgr.get_tx_power_info('wls16')
-        assert info2['tx_power']['requested_level'] == 2
-
-    def test_set_tx_power_level_mismatch_raises_and_preserves_state(self, monkeypatch):
-        cfg = load_config()
-        mgr = NetworkManager(cfg, configured_devices(cfg))
-
-        monkeypatch.setattr(mgr.dhcp_server, 'start', lambda **kwargs: {'gateway': '192.168.120.1'})
-        monkeypatch.setattr(mgr.hostapd_manager, 'start', lambda **kwargs: {})
-        monkeypatch.setattr(mgr.nat_manager, 'enable_nat', lambda *a, **k: None)
-        monkeypatch.setattr(mgr.isolation_manager, 'add_network', lambda *a, **k: None)
-
-        monkeypatch.setattr(
-            mgr.tx_power,
-            'set_level',
-            lambda interface, level, channel, verify_change=False: {
-                'interface': interface,
-                'max_dbm': 20.0,
-                'levels_dbm': {1: 5.0, 2: 10.0, 3: 15.0, 4: 20.0},
-                'tx_power': {
-                    'requested_level': level,
-                    'reported_level': level,
-                    'reported_dbm': float(level * 5),
-                },
-            },
-        )
-
-        req = NetworkCreateRequest(
-            ssid='TestAP',
-            channel=6,
-            encryption='open',
-            band='2.4ghz',
-            tx_power_level=4,
-        )
-        mgr.start_network('wls16', req)
-
-        def fake_mismatch(*args, **kwargs):
-            raise TxPowerMismatchError('Interface does not support dynamic power change.')
-
-        monkeypatch.setattr(mgr.tx_power, 'set_level', fake_mismatch)
-
-        with pytest.raises(TxPowerMismatchError):
-            mgr.set_tx_power_level('wls16', 2)
-
-        assert mgr.active['wls16'].tx_power_level == 4
 
 
 @pytest.mark.parametrize("state, interface, ssid, ready", [

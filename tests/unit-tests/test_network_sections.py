@@ -175,7 +175,7 @@ class TestUnknownFields:
         assert resp.status_code == 422
         assert resp.json()["detail"]["message"] == f"{path}: Extra inputs are not permitted"
 
-    @pytest.mark.parametrize("model", ["ReservationCreateRequest", "TxPowerRequest", "QosProfileStartRequest"])
+    @pytest.mark.parametrize("model", ["ReservationCreateRequest", "QosProfileStartRequest"])
     def test_other_request_bodies_refuse_unknown_fields(self, model):
         from wilab import models
         from wilab.api.routes import reservation

@@ -39,15 +39,3 @@ def test_create_rejects_values_of_another_type(api, field, value):
     body = network_body(**{**VALID, field: value})
     response = client.post(f"/api/v2/access-point/{rid}", headers=headers, json=body)
     assert response.status_code == 422, response.text
-
-
-@pytest.mark.parametrize("body", [{"level": 2}, {"tx_power_level": "2"}, {"tx_power_level": True}])
-def test_txpower_takes_only_an_integer_tx_power_level(api, body):
-    client, headers, rid = api
-    response = client.post(f"/api/v2/access-point/{rid}/tx-power", headers=headers, json=body)
-    assert response.status_code == 422, response.text
-
-
-def test_txpower_field_has_the_name_of_the_create():
-    schema = create_app().openapi()["components"]["schemas"]["TxPowerRequest"]
-    assert list(schema["properties"]) == ["tx_power_level"]

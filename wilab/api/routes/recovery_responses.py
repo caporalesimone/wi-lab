@@ -77,7 +77,7 @@ def require_stop_complete(manager, device_id: str) -> None:
     """409 / 1012 while the client's last stop of the network did not complete (REV-9).
 
     The network is still in the manager's active list, but half stopped: Internet,
-    TX power and QoS must not act on it.
+    and QoS must not act on it.
     """
     if manager.stop_failed(device_id):
         raise HTTPException(status_code=409, detail=domain_error(

@@ -53,9 +53,10 @@ portal page; see the network creation operation. Omitted, it is disabled.
 Request bodies take only the JSON types they document: a number sent as a
 string (`"6"`), `true` for a number, or a number for a boolean is a `422`.
 
-**Not stable in 4.1.** **TX Power** is under debugging: the drivers in use do
-not apply the requested power reliably, so a request may answer `422` or report
-another level. **QoS Profiles** is experimental and untested. Both may change in
+**Not stable in 4.1.** `radio.tx_power_level` is applied once at creation, but
+the MT7921U ignores it in AP mode (it always transmits at its calibrated
+maximum) and `radio.tx_power.reported_dbm` is not a measurement. **QoS
+Profiles** is experimental and untested. Both may change in
 any release: do not build client logic on them.
 
 Operations under **Maintenance** are not part of the client workflow. Each one
@@ -82,7 +83,7 @@ not the message, for control flow. Every code is listed in `docs/error-codes.md`
 | Reserve `503`, `detail.code: 1002` | Retry the **reservation** POST after `Retry-After` (10 seconds, a polling interval). |
 | Reserve `503`, `detail.code: 1003` | All adapters are quarantined and none is recovering. No automatic retry. |
 | Release `200` | Always, even if the cleanup failed: the server then keeps the adapter out of the pool and repeats the cleanup itself (`GET /status`: `cleanup_failed`). |
-| `409`, `detail.code: 1007` | The reservation is valid but has no running network (Internet, TX power, QoS profile, stop). Create a network first. A `404` always means the reservation itself is gone. |
+| `409`, `detail.code: 1007` | The reservation is valid but has no running network (Internet, QoS profile, stop). Create a network first. A `404` always means the reservation itself is gone. |
 | `409`, `detail.code: 1010` / `1011` | A QoS profile is already running / no QoS profile is running. |
 | `503`, `detail.code: 1006` | Adapter busy: another operation on it (for example a network start) still held it after 5 s. Nothing changed; repeat the same request after `Retry-After` (2 seconds). Never on a release; on the create only when the same body finds the network already running (the `200` case). |
 
@@ -128,7 +129,7 @@ OPENAPI_TAGS = [
      "reservation limits; one antenna with its repair health; what an access point on it can use (encryptions, "
      "Wi-Fi generations, channel widths, channels): fill a create form from here. No reservation needed."},
     {"name": "Access point", "description": "Create, stop and inspect the access point of a reservation, "
-     "turn its Internet access on and off, read and set its transmit power (**under debugging, not stable**). "
+     "and turn its Internet access on and off. "
      "The create is asynchronous: poll `GET /access-point/{reservation_id}` for the outcome."},
     {"name": "QoS Profiles", "description": "**Experimental, not stable:** untested, may change in any "
      "release. Inspect and manage traffic shaping profiles for a reserved network."},

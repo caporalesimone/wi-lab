@@ -111,6 +111,13 @@ Scripts:
 
 ### Issue 5: TX Power Not Applied
 
+On the MT7921U the level is ignored in AP mode: the radio always transmits at its
+calibrated maximum (about 18 dBm), whatever `radio.tx_power_level` asks, and `iw dev
+<interface> info` always reports 3 dBm. The driver's real values are in
+`/sys/kernel/debug/ieee80211/<phy>/mt76/txpower_sku` (units of 0.5 dBm: `user` is the
+requested limit, `tmac` what the radio is programmed with). Do not change the power of
+a running AP with `iw`: on 2026-11-28 it detached the adapter and hung the VM.
+
 Script:
 - [diagnostics/troubleshooting/issue_txpower_diagnosis.sh](../diagnostics/troubleshooting/issue_txpower_diagnosis.sh)
 

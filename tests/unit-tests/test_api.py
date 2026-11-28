@@ -10,7 +10,6 @@ from wilab.models import ClientInfo
 from wilab.reservation import ReservationManager
 from wilab.version import __version__
 from wilab.wifi.manager import NetworkManager
-from wilab.wifi.txpower import TxPowerMismatchError
 
 
 @pytest.fixture
@@ -706,150 +705,8 @@ class TestNetworkDeleteEndpoint:
         assert resp.status_code == 404
 
 
-class TestTxPowerGetEndpoint:
-    """Tests for txpower GET response shape."""
-
-    def test_get_txpower_nested_shape(self, client, valid_token, reservation_id, monkeypatch):
-        cfg = load_config()
-        manager = NetworkManager(cfg, configured_devices(cfg))
-
-        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
-        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
-        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
-        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
-        monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 10.0)
-        monkeypatch.setattr(client.app.state.context, 'manager', manager)
-
-        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=2))[1]
-        assert start_resp.status_code == 200
-
-        resp = client.get(f'/api/v2/access-point/{reservation_id}/tx-power', headers={'Authorization': valid_token})
-        assert resp.status_code == 200
-        data = resp.json()
-
-        assert data['interface'] == 'wls16'
-        assert 'max_dbm' in data
-        assert 'levels_dbm' in data
-        assert 'tx_power' in data
-        assert data['tx_power']['requested_level'] == 2
-        assert data['tx_power']['reported_level'] == 2
-        assert data['tx_power']['reported_dbm'] == 10.0
-
-    def test_get_txpower_omits_legacy_warning_fields(self, client, valid_token, reservation_id, monkeypatch):
-        cfg = load_config()
-        manager = NetworkManager(cfg, configured_devices(cfg))
-
-        monkeypatch.setattr(manager.dhcp_server, 'start', lambda *a, **k: {'gateway': '192.168.10.1'})
-        monkeypatch.setattr(manager.hostapd_manager, 'start', lambda *a, **k: {})
-        monkeypatch.setattr(manager.nat_manager, 'enable_nat', lambda *a, **k: None)
-        monkeypatch.setattr(manager.isolation_manager, 'add_network', lambda *a, **k: None)
-        monkeypatch.setattr(manager.tx_power, 'read_dbm', lambda _iface: 20.0)
-        monkeypatch.setattr(client.app.state.context, 'manager', manager)
-
-        start_resp = create_network(client, {'Authorization': valid_token}, f'/api/v2/access-point/{reservation_id}', network_body(ssid='TestAP', channel=6, encryption='wpa2', password='testpass123', band='2.4ghz', tx_power_level=4))[1]
-        assert start_resp.status_code == 200
-
-        resp = client.get(f'/api/v2/access-point/{reservation_id}/tx-power', headers={'Authorization': valid_token})
-        assert resp.status_code == 200
-        data = resp.json()
-
-        assert 'current_level' not in data
-        assert 'current_dbm' not in data
-        assert 'reported_dbm' not in data
-        assert 'warning' not in data
-
-
-class TestTxPowerPostEndpoint:
-    """Tests for txpower POST behavior."""
-
-    def test_post_txpower_success_shape_without_warning(self, client, valid_token, reservation_id, monkeypatch):
-        cfg = load_config()
-        manager = NetworkManager(cfg, configured_devices(cfg))
-
-        monkeypatch.setattr(
-            manager,
-            'set_tx_power_level',
-            lambda device_id, level: {
-                'interface': 'wlx-test0',
-                'max_dbm': 20.0,
-                'levels_dbm': {'1': 5.0, '2': 10.0, '3': 15.0, '4': 20.0},
-                'tx_power': {
-                    'requested_level': level,
-                    'reported_level': level,
-                    'reported_dbm': float(level * 5),
-                },
-            },
-        )
-        monkeypatch.setattr(client.app.state.context, 'manager', manager)
-
-        resp = client.post(
-            f'/api/v2/access-point/{reservation_id}/tx-power',
-            headers={'Authorization': valid_token},
-            json={'tx_power_level': 2},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-
-        assert data['interface'] == 'wlx-test0'
-        assert data['tx_power']['requested_level'] == 2
-        assert data['tx_power']['reported_level'] == 2
-        assert data['tx_power']['reported_dbm'] == 10.0
-        assert 'warning' not in data
-
-    def test_post_txpower_mismatch_returns_422(self, client, valid_token, reservation_id, monkeypatch):
-        cfg = load_config()
-        manager = NetworkManager(cfg, configured_devices(cfg))
-
-        def fake_set_tx_power_level(_device_id, _level):
-            raise TxPowerMismatchError('Interface does not support dynamic power change.')
-
-        monkeypatch.setattr(manager, 'set_tx_power_level', fake_set_tx_power_level)
-        monkeypatch.setattr(client.app.state.context, 'manager', manager)
-
-        resp = client.post(
-            f'/api/v2/access-point/{reservation_id}/tx-power',
-            headers={'Authorization': valid_token},
-            json={'tx_power_level': 2},
-        )
-
-        assert resp.status_code == 422
-        data = resp.json()
-        assert data['detail']['code'] == 422
-        assert data['detail']['message'] == 'Interface does not support dynamic power change.'
-
-    def test_post_txpower_out_of_range_returns_422_coded_error(self, client, valid_token, reservation_id):
-        resp = client.post(
-            f'/api/v2/access-point/{reservation_id}/tx-power',
-            headers={'Authorization': valid_token},
-            json={'tx_power_level': 9},
-        )
-
-        assert resp.status_code == 422
-        data = resp.json()
-        assert data == {
-            'detail': {
-                'code': 422,
-                'reason': 'validation_error',
-                'message': 'Requested power out of range. Valid values are 1, 2, 3, 4.',
-            }
-        }
-
-    def test_post_txpower_openapi_documents_422_examples(self, client, valid_token):
-        resp = client.get('/openapi.json', headers={'Authorization': valid_token})
-        assert resp.status_code == 200
-        schema = resp.json()
-
-        txpower_post = schema['paths']['/api/v2/access-point/{reservation_id}/tx-power']['post']
-        responses = txpower_post['responses']
-        assert '422' in responses
-
-        examples = responses['422']['content']['application/json']['examples']
-        assert examples['out_of_range']['value']['detail']['message'] == (
-            'Requested power out of range. Valid values are 1, 2, 3, 4.'
-        )
-        assert examples['hardware_mismatch']['value']['detail']['message'] == (
-            'Interface does not support dynamic power change.'
-        )
+class TestAccessPointOpenApi:
+    """The published schema of GET /access-point/{reservation_id}."""
 
     def test_get_network_openapi_422_uses_coded_detail_schema(self, client, valid_token):
         resp = client.get('/openapi.json', headers={'Authorization': valid_token})
@@ -1419,3 +1276,12 @@ def test_stop_retry_budget_with_a_fake_clock(stop_clock, monkeypatch):
     assert client.delete(url, headers=headers).status_code == 200
     assert calls["n"] == 3 and clock["pauses"] == [2.0, 2.0]
     assert device not in manager.active and not manager.stop_failed(device)
+
+
+def test_tx_power_endpoints_are_removed(client, valid_token):
+    """2026-11-28: the mt7921u ignores the level in AP mode and a change on a running AP hung the VM."""
+    paths = client.get('/openapi.json', headers={'Authorization': valid_token}).json()['paths']
+    assert not any('tx-power' in path or 'txpower' in path for path in paths)
+    resp = client.post('/api/v2/access-point/deadbeef/tx-power', headers={'Authorization': valid_token},
+                       json={'tx_power_level': 2})
+    assert resp.status_code in (404, 405)

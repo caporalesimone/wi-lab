@@ -2,17 +2,12 @@
 
 import logging
 import re
-import time
 
 from ..models import NetworkTxPower
 from ..network.commands import CommandError, execute_iw
 from .channels import ChannelManager
 
 logger = logging.getLogger(__name__)
-
-
-class TxPowerMismatchError(Exception):
-    """Raised when reported TX power does not match the requested level."""
 
 
 class TxPowerControl:
@@ -64,7 +59,7 @@ class TxPowerControl:
             return None
         return min(levels_dbm, key=lambda lvl: abs(levels_dbm[lvl] - reported_dbm))
 
-    def set_level(self, interface: str, level: int, channel: int, verify_change: bool = False) -> dict:
+    def set_level(self, interface: str, level: int, channel: int) -> dict:
         """
         Set TX power for interface.
 
@@ -72,7 +67,6 @@ class TxPowerControl:
             interface: WiFi interface
             level: Power level 1-4
             channel: WiFi channel
-            verify_change: If True, wait 3s and verify power actually changed
 
         Returns:
             Dict with tx power info
@@ -91,18 +85,6 @@ class TxPowerControl:
             raise ValueError(f"Failed to set txpower: {e}") from e
 
         power_after = None
-        if verify_change:
-            # Wait for driver to apply change
-            time.sleep(3)
-            power_after = self.read_dbm(interface)
-
-            # Compare requested vs reported directly.
-            if power_after is not None and abs(power_after - desired_dbm) > 0.5:
-                logger.warning(
-                    "%s: TX power mismatch (requested=%s, reported=%s)", interface, desired_dbm, power_after
-                )
-                raise TxPowerMismatchError("Interface does not support dynamic power change.")
-
         result = {
             "interface": interface,
             "max_dbm": caps["max_dbm"],
@@ -111,32 +93,6 @@ class TxPowerControl:
                 "requested_level": level,
                 "reported_level": self.reported_level(levels_dbm, power_after),
                 "reported_dbm": power_after,
-            },
-        }
-        return result
-
-    def info(self, device_id: str, interface: str, channel: int, level: int) -> dict:
-        """Requested *level* next to what the interface reports (GET /access-point/{reservation_id}/tx-power)."""
-        # Get channel capabilities and compute levels
-        caps = self.channel_capabilities(interface, channel)
-        levels_dbm = self.levels_dbm(caps["max_dbm"])
-        expected_dbm = levels_dbm[level]
-
-        # Read actual current power from interface
-        reported_dbm = self.read_dbm(interface)
-
-        # Keep mismatch as server-side observability; GET payload no longer exposes warning.
-        if reported_dbm is not None and abs(reported_dbm - expected_dbm) > 0.5:
-            logger.info("%s: Power mismatch - expected %s dBm, reported %s dBm", device_id, expected_dbm, reported_dbm)
-
-        result = {
-            "interface": interface,
-            "max_dbm": caps["max_dbm"],
-            "levels_dbm": levels_dbm,
-            "tx_power": {
-                "requested_level": level,
-                "reported_level": self.reported_level(levels_dbm, reported_dbm),
-                "reported_dbm": reported_dbm,
             },
         }
         return result

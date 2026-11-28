@@ -489,8 +489,6 @@ class WiLab:
             "GET access-point": lambda: self.http.get(point),
             "POST access-point": lambda: self.http.post(point, json=create),
             "DELETE access-point": lambda: self.http.delete(point),
-            "GET tx-power": lambda: self.http.get(f"{point}/tx-power"),
-            "POST tx-power": lambda: self.http.post(f"{point}/tx-power", json={"tx_power_level": 2}),
             "POST internet/enable": lambda: self.http.post(f"{point}/internet/enable"),
             "DELETE": lambda: self.http.delete(base),
         }

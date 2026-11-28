@@ -273,7 +273,7 @@ class NetworkManager:
         """True if the active network of *device_id* has exactly the settings of *req*.
 
         A create repeated after a lost answer then gets the network instead of
-        409 / 1008. Internet and TX power changed since the create make it differ.
+        409 / 1008. Internet changed since the create makes it differ.
         """
         st = self.active.get(device_id)
         if st is None or device_id in self._stop_failed:
@@ -860,50 +860,6 @@ class NetworkManager:
             logger.warning("Failed to read channel width for %s: %s", interface, e)
             return None
         return int(match[1]) if match else None
-
-    # ---- TX power (wilab.wifi.txpower) ----
-
-    def set_tx_power_level(self, device_id: str, level: int) -> dict:
-        """
-        Change TX power level for active network.
-        Verifies if change was applied and warns if interface doesn't support dynamic changes.
-        """
-        st = self.active_status(device_id)
-        if st is None:
-            raise NetworkNotActive(device_id)
-        if level not in [1, 2, 3, 4]:
-            raise ValueError("TX power level must be 1-4")
-        if st.channel is None:
-            raise ValueError("Channel unknown for this network")
-        cfg_net = self.devices.get(device_id)
-        if not cfg_net:
-            raise ValueError(UNKNOWN_ANTENNA)
-        
-        # Set power with verification (waits 3s and checks if change applied)
-        info = self.tx_power.set_level(cfg_net.interface, level, st.channel, verify_change=True)
-        st.tx_power_level = level
-        return info
-
-    def get_tx_power_info(self, device_id: str) -> dict:
-        """
-        Get current TX power info for network.
-        Compares configured level with actual interface power and warns if mismatch.
-        """
-        st = self.active_status(device_id)
-        if st is None:
-            raise NetworkNotActive(device_id)
-        if st.channel is None:
-            raise ValueError("Channel unknown for this network")
-        cfg_net = self.devices.get(device_id)
-        if not cfg_net:
-            raise ValueError(UNKNOWN_ANTENNA)
-        
-        # Get configured level
-        level = st.tx_power_level
-        if level is None:
-            raise ValueError("TX power level not set for this network")
-        
-        return self.tx_power.info(device_id, cfg_net.interface, st.channel, level)
 
     def _expiry_loop(self) -> None:
         """Background loop to auto-expire networks without requiring API calls."""

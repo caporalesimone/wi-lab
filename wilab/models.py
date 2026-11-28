@@ -526,21 +526,6 @@ class NetworkResponse(BaseModel):
         )
 
 
-class TxPowerRequest(BaseModel):
-    # Same name as `radio.tx_power_level` of the create (API-6).
-    tx_power_level: int = Field(..., description="TX power level 1 (low) to 4 (max)")
-
-    model_config = ConfigDict(
-        extra="forbid", strict=True, json_schema_extra={"examples": [{"tx_power_level": 2}]},
-    )
-
-
-class TxPowerInfo(BaseModel):
-    interface: str
-    max_dbm: float
-    levels_dbm: dict
-    tx_power: NetworkTxPower
-
 
 # --- QoS Models ---
 

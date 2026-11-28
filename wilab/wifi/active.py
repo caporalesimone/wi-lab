@@ -23,7 +23,7 @@ class ActiveNetwork:
     request: NetworkCreateRequest
     subnet: str | None
     internet_enabled: bool   # the create's value resolved against the default, then toggled
-    tx_power_level: int      # the create's level, then PUT .../tx-power
+    tx_power_level: int      # the create's level (radio.tx_power_level)
     captive_portal_url: str | None = None
     expires_at: str | None = None    # shown expiry (UTC, RFC 3339)
     deadline: float | None = None    # monotonic expiry (STAB-5); None: no expiry

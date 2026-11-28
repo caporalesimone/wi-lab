@@ -75,8 +75,6 @@ def busy_adapter(valid_token, monkeypatch, context, app):
     ("get", "/access-point/{rid}", None),
     ("delete", "/access-point/{rid}", None),
     ("post", "/access-point/{rid}/internet/enable", None),
-    ("get", "/access-point/{rid}/tx-power", None),
-    ("post", "/access-point/{rid}/tx-power", {"tx_power_level": 2}),
     ("get", "/reservations/{rid}/qos/profile", None),
 ])
 def test_busy_adapter_answers_503_1006_with_retry_after(busy_adapter, method, path, body):

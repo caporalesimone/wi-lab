@@ -1149,7 +1149,7 @@ class TestGoneReasons:
     @pytest.mark.parametrize(("method", "suffix"), [
         ("get", "/reservations/{rid}"), ("delete", "/reservations/{rid}"), ("get", "/access-point/{rid}"),
         ("post", "/access-point/{rid}"), ("delete", "/access-point/{rid}"),
-        ("post", "/access-point/{rid}/internet/enable"), ("get", "/access-point/{rid}/tx-power"),
+        ("post", "/access-point/{rid}/internet/enable"),
     ])
     def test_every_endpoint_with_an_id_answers_the_reason(self, client, valid_token, method, suffix):
         headers = {"Authorization": valid_token}
