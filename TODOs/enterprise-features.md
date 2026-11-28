@@ -6,7 +6,7 @@
 
 ## Description
 
-Provide Docker containerization for deployment flexibility, regulatory domain support for international usage, and lay groundwork for future enterprise features.
+Provide Docker containerization for deployment flexibility and lay groundwork for future enterprise features. (Regulatory domains are done: `country_code` in `config.yaml`, applied with `iw reg set` at startup; the channels offered follow the country.)
 
 ## Part 1: Docker Compose Support
 
@@ -78,78 +78,11 @@ volumes:
 - [ ] Document environment variables
 - [ ] Include troubleshooting section
 
-## Part 2: Regulatory Domain Support
-
-### Implementation Tasks
-
-- [ ] Create domain data structure: `{ domain_code: channels }`
-- [ ] Supported domains:
-  - `US` - United States (channels 1-11 2.4GHz, 36-165 5GHz)
-  - `EU` - Europe (channels 1-13 2.4GHz, 36-144 5GHz)
-  - `JP` - Japan (channels 1-14 2.4GHz, 36-48 5GHz)
-  - `CN` - China (channels 1-13 2.4GHz, 149-165 5GHz)
-  - `AU` - Australia (channels 1-13 2.4GHz, 36-165 5GHz)
-  - `BR` - Brazil (channels 1-13 2.4GHz, 36-165 5GHz)
-  - Add more as needed
-
-### Configuration
-
-- [ ] Add `regulatory_domain` parameter to config.yaml
-- [ ] Default: `US`
-- [ ] API endpoint to get supported domains
-- [ ] Get current domain status
-
-### Implementation
-
-- [ ] Use `iw reg set <domain>` command on startup
-- [ ] Validate domain before application
-- [ ] Verify domain set successfully
-- [ ] Use in channel validation
-- [ ] Document channel support per region
-
-### API Integration
-
-- [ ] `GET /api/v2/admin/regulatory-domains` - List supported domains
-- [ ] `GET /api/v2/admin/regulatory-domain` - Get current domain
-- [ ] `PUT /api/v2/admin/regulatory-domain` - Set domain (admin only)
-- [ ] Response includes available channels per band
-
-### Health Check
-
-- [ ] Add to health endpoint: `regulatory_domain` field
-- [ ] Include available channels in health response
-
-### Testing
-
-- [ ] Unit tests for domain validation
-- [ ] Unit tests for channel list per domain
-- [ ] Test `iw reg set` command execution
-- [ ] Verify channels available after domain change
-- [ ] Mock iw command for test environment
-
-### Documentation
-
-- [ ] Document supported regulatory domains
-- [ ] Explain how to change domain
-- [ ] Include channel availability per region
-- [ ] Add to README and Swagger docs
-
 ## Part 3: Advanced Features Foundation (Planning)
 
 ### Design Documentation
 
-- [ ] **Multi-SSID Architecture** - How multiple networks per interface would work
-  - Use vlan tagging or separate virtual interfaces
-  - Share physical interface, separate virtual APs
-  - Scalability implications (max N networks per interface)
-  - Example: eth0 → vlan100 (SSID-A), vlan101 (SSID-B)
-
-- [ ] **WPA-Enterprise / RADIUS Integration** - Enterprise authentication
-  - Replace WPA2-PSK with WPA2-Enterprise
-  - RADIUS server configuration (address, port, secret)
-  - User database integration points
-  - Security considerations
-
+- Multi-SSID and WPA-Enterprise / RADIUS: see [ap-improvements.md](ap-improvements.md) (items 2 and 19).
 - [ ] **Persistent Network Storage** - Long-term data persistence
   - Current: In-memory storage (lost on restart)
   - Options: Redis, SQLite, PostgreSQL
@@ -182,7 +115,6 @@ volumes:
 - **Portability:** Docker enables deployment anywhere
 - **Isolation:** Container isolation for security
 - **Flexibility:** Compose configuration for custom setups
-- **Global Ready:** Support for international regulatory requirements
 - **Future Proof:** Foundation for enterprise scalability
 
 ## Breaking Changes
@@ -194,7 +126,5 @@ volumes:
 - ✅ docker-compose.yml working end-to-end
 - ✅ Container starts and serves API correctly
 - ✅ Volumes persist data across restarts
-- ✅ Regulatory domains configurable
-- ✅ Channel availability reflects domain
 - ✅ Architecture documentation for v3.4+
 - ✅ All features documented

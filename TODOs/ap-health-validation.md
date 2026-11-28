@@ -42,10 +42,6 @@ This is a **silent failure**: the API returns success, the user sees "Network st
 - `wilab/wifi/manager.py` — handle the new failure case in `start_network()`
 
 
-IMPORTANT COMMENT:
-
-Before starting this development, evaluate the cost of keeping an API waiting more than 5 seconds for a response.
-The impact of switching to a request/job-id/polling pattern is high, as it requires clients to refactor their existing code.
 **Measured on 2026-11-27 (mt7921u, kernel 7.0.0-44, Fable WD-7):** with the AP up
 and no client, `tx_packets` grew by 3 in 10 s, and `iw dev <if> survey dump` gives
 no data in AP mode: MediaTek sends beacons from the firmware and the counter does

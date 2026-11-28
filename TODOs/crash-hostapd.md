@@ -69,14 +69,16 @@ classify it as a radio failure (like `HostapdInitFailure`), so it is retried.
 
 ## Plan (in this order)
 
-1. Restart Wi-Lab with `hostapd_debug_dir` enabled and run a long stress test.
-2. From the reports, find the nl80211 command that fails before the crash.
-3. Add its output line to hostapd's output classification in Wi-Lab
+`hostapd_debug_dir` is enabled on the lab host and has collected reports
+(`/var/log/wilab/hostapd`, `*-HostapdSegfault.log`).
+
+1. From the reports, find the nl80211 command that fails before the crash.
+2. Add its output line to hostapd's output classification in Wi-Lab
    (`_classify_output` in `wilab/wifi/hostapd.py`) as a radio failure, with a
    test.
-4. Try the patched package by hand on the lab host (recipe below).
-5. Only if it works: make it an optional install step (design below).
-6. In parallel (optional): report the bug on Launchpad (`wpa` source package)
+3. Try the patched package by hand on the lab host (recipe below).
+4. Only if it works: make it an optional install step (design below).
+5. In parallel (optional): report the bug on Launchpad (`wpa` source package)
    asking for an SRU with `015f6a5a`.
 
 ## Recipe: rebuild the Ubuntu package with the one-line patch
@@ -102,7 +104,7 @@ readelf -n /usr/sbin/hostapd | grep "Build ID"                # must differ
 - Building upstream git instead is not recommended: it brings every change
   after 2.11, needs the build options aligned with Ubuntu's, and bypasses apt.
 
-## Design: optional install step (if step 5 is reached)
+## Design: optional install step (if step 4 is reached)
 
 - A separate `scripts/patch-hostapd.sh`, also usable alone (e.g. after an
   Ubuntu update). `install.sh` calls it only with `--patch-hostapd`, or asks

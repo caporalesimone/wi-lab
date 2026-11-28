@@ -9,20 +9,13 @@ implementing.
 
 ## Breaking, postponed (decided 2026-11-25: not now)
 
-- **Actions as paths (Fable API-7).** Replace `POST .../internet/enable`,
-  `.../internet/disable` and `POST .../txpower` with one `PATCH .../network`
-  that takes the same sections as the create body, e.g.
-  `{"internet": {"enabled": false}, "radio": {"tx_power_level": 2}}`. It would
-  also settle the TX power field name (`level` vs `radio.tx_power_level`).
+- **Actions as paths (Fable API-7).** Replace `POST /access-point/{id}/internet/enable`
+  and `.../internet/disable` with one `PATCH /access-point/{id}` that takes the
+  same sections as the create body, e.g. `{"internet": {"enabled": false}}`.
 
 ## Additions (not breaking)
 
 - **Extend a reservation** without releasing it.
-
-## Duplicated data (Fable API-1): done 2026-11-25
-
-`stop_failed` in `/status` (`network_stop_incomplete`), the reservation object
-and `network_active` in `/status` antennas, `/debug` removed.
 
 ## Decided
 

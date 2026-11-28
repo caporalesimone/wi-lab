@@ -1,80 +1,25 @@
-# Feature: Startup Recovery & Crash Cleanup
+# Startup recovery: show what was cleaned up
 
-**Priority:** 4  
-**Status:** PROPOSED  
-**Estimated Effort:** ~1.5 hours  
+**Priority:** 4
+**Status:** PROPOSED (reduced on 2026-11-28)
 
-## Description
+The cleanup itself is done (`wilab/runtime_cleanup.py`, Fable STAB-4): at
+startup Wi-Lab stops the hostapd and dnsmasq processes a previous run left,
+removes its stale firewall rules and captive portal chains, runtime files and
+`wilab-ifbN` QoS devices, and resets every radio when discovery adds it. Each
+action is written to the journal (`Stopped orphan ...`, `Removed stale ...`).
+Wi-Lab uses no network namespaces.
 
-Auto-cleanup on startup if previous instance crashed. Detects and removes orphaned processes, iptables rules, and other leftover resources to ensure clean state.
+## What is left
 
-### Problem Statement
+- Report the last startup cleanup in the API, for an operator who cannot read
+  the journal: for example `checks.startup_cleanup` in `GET /status` with the
+  time, the counts per kind (processes, rules, files, QoS devices) and the steps
+  that failed.
+- A failed step is already logged as `ERROR`; decide whether it should also make
+  `service.health` `degraded` until the next successful cleanup.
 
-When Wi-Lab crashes or is forcefully terminated:
-- Stale dnsmasq processes remain running
-- iptables NAT rules remain active
-- Network namespaces may not be properly cleaned
-- Next startup may encounter port conflicts or rule duplicates
+## Success criteria
 
-## Implementation Tasks
-
-### Orphaned Process Cleanup
-
-- [ ] On startup, detect orphaned dnsmasq processes
-- [ ] Check for processes not owned by current service instance
-- [ ] Safely terminate stale processes with SIGTERM then SIGKILL
-- [ ] Log all killed processes with PIDs
-- [ ] Verify cleanup success before starting new services
-
-### iptables Rule Cleanup
-
-- [ ] Scan iptables rules with `wilab-*` comment markers
-- [ ] Compare against active networks in config
-- [ ] Identify orphaned rules (comment exists but network not active)
-- [ ] Create cleanup report with rules to be removed
-- [ ] Safely remove orphaned rules
-- [ ] Verify removal success
-
-### Network Namespace Cleanup
-
-- [ ] Detect orphaned network namespaces with `wilab-*` naming pattern
-- [ ] Remove unused namespaces
-- [ ] Handle namespace dependencies (veth pairs, etc.)
-- [ ] Log cleanup actions
-
-### Health Check Integration
-
-- [ ] Add recovery stats to `GET /api/v2/health` response:
-  - Orphaned processes found and cleaned
-  - Orphaned rules found and cleaned
-  - Orphaned namespaces found and cleaned
-  - Recovery timestamp
-- [ ] Mark recovery status: success/partial/failed
-
-### Testing
-
-- [ ] Unit tests for orphaned process detection
-- [ ] Unit tests for iptables rule parsing
-- [ ] Integration tests for cleanup sequence
-- [ ] Test with manually created orphaned resources
-- [ ] Verify health check reports cleanup status
-
-## Benefits
-
-- **Reliability:** Service can recover from crashes automatically
-- **Cleanliness:** No accumulated orphaned resources
-- **Visibility:** Admin can see what was cleaned up
-- **Peace of Mind:** Don't need manual cleanup after crashes
-
-## Breaking Changes
-
-- None
-
-## Success Criteria
-
-- ✅ Orphaned processes detected and cleaned on startup
-- ✅ Orphaned iptables rules detected and cleaned
-- ✅ Health endpoint reports recovery actions
-- ✅ Cleanup operations are idempotent (safe to run multiple times)
-- ✅ All cleanup logged with details
-- ✅ No false positives (don't kill unrelated processes)
+- `GET /status` shows what the last startup cleaned and what it could not.
+- Tests: a startup with leftovers of each kind, and one with a failing step.

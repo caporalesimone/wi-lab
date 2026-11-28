@@ -89,14 +89,11 @@ container, on the Wi-Lab machine or anywhere else. Wi-Lab becomes API only.
   `_candidate_frontend_paths` lookup: Wi-Lab serves only `/api/v2`, `/docs`,
   `/redoc`. This removes the whole class of SEC-1.
 - APIs the new UI needs (separate work, see the Fable notes):
-  - `health` in `GET /antennas/{interface}` (repair budgets used and left,
-    quarantines, last USB reset);
   - events: `GET /api/v2/events` and its stream (SSE), see
     [realtime-events.md](realtime-events.md);
   - logs: a ring buffer of structured records (`wilab/log.py` already adds
     antenna and reservation) with `GET /api/v2/logs` and its stream; who may
     read them depends on the accounts decision;
-  - `service.restart_required` of `/status` (done) for the red bar.
 
 ## Application
 
@@ -128,8 +125,6 @@ container, on the Wi-Lab machine or anywhere else. Wi-Lab becomes API only.
     sent: the reserve dialog offers the free antennas of `antennas[]` in `GET /antennas`.
   - **`health`** of `GET /antennas/{interface}` (budgets, quarantines, USB
     resets) on the antenna detail page.
-  - Done already: compile check without publishing (`make frontend-check`) and
-    the create specs (`make frontend-test`, unit-test-15).
 
 ## Tests and CI
 
@@ -143,7 +138,7 @@ container, on the Wi-Lab machine or anywhere else. Wi-Lab becomes API only.
 ## Steps
 
 1. Decide the accounts point (TBD above).
-2. Wi-Lab APIs: `health`, events, logs (independent of the UI).
+2. Wi-Lab APIs: events, logs (independent of the UI).
 3. Container and nginx configuration with today's UI, the installer question
    and `install-frontend.sh`; remove the frontend routes from Wi-Lab.
 4. CI: build and publish the image.
